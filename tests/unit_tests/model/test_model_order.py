@@ -45,6 +45,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.base import Order
 from nautilus_trader.model.order.market import MarketOrder
+from nautilus_trader.model.order.stop_limit import StopLimitOrder
 from nautilus_trader.model.order.stop_market import StopMarketOrder
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -101,7 +102,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, result)
 
-    def test_market_order_with_quantity_zero_raises_exception(self):
+    def test_market_order_with_quantity_zero_raises_value_error(self):
         # Arrange
         # Act
         self.assertRaises(
@@ -117,7 +118,7 @@ class OrderTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-    def test_market_order_with_invalid_tif_raises_exception(self):
+    def test_market_order_with_invalid_tif_raises_value_error(self):
         # Arrange
         # Act
         self.assertRaises(
@@ -133,7 +134,7 @@ class OrderTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-    def test_stop_order_with_gtd_and_expire_time_none_raises_exception(self):
+    def test_stop_market_order_with_gtd_and_expire_time_none_raises_type_error(self):
         # Arrange
         # Act
         self.assertRaises(
@@ -145,6 +146,25 @@ class OrderTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
+            init_id=uuid4(),
+            timestamp=UNIX_EPOCH,
+            time_in_force=TimeInForce.GTD,
+            expire_time=None,
+        )
+
+    def test_stop_limit_buy_order_with_gtd_and_expire_time_none_raises_type_error(self):
+        # Arrange
+        # Act
+        self.assertRaises(
+            TypeError,
+            StopLimitOrder,
+            ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("1.00001"),
+            trigger=Price("1.00000"),
             init_id=uuid4(),
             timestamp=UNIX_EPOCH,
             time_in_force=TimeInForce.GTD,
@@ -186,28 +206,12 @@ class OrderTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"),
-        )
-
-        order3 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
-        )
-
-        order4 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
             Price("1.00001"),
         )
 
         # Assert
         self.assertEqual(Price("1.00000"), order1.price)
-        self.assertEqual(Price("1.00000"), order2.price)
-        self.assertEqual(Price("1.00000"), order3.price)
-        self.assertEqual(Price("1.00001"), order4.price)
+        self.assertEqual(Price("1.00001"), order2.price)
 
     def test_initialize_buy_market_order(self):
         # Arrange
@@ -326,7 +330,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertEqual(OrderInitialized, type(order.init_event))
 
-    def test_initialize_stop_order(self):
+    def test_initialize_stop_market_order(self):
         # Arrange
         # Act
         order = self.order_factory.stop_market(
@@ -338,6 +342,26 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
+        self.assertEqual(OrderState.INITIALIZED, order.state)
+        self.assertEqual(TimeInForce.GTC, order.time_in_force)
+        self.assertTrue(order.is_passive)
+        self.assertFalse(order.is_aggressive)
+        self.assertFalse(order.is_completed)
+        self.assertEqual(OrderInitialized, type(order.init_event))
+
+    def test_initialize_stop_limit_order(self):
+        # Arrange
+        # Act
+        order = self.order_factory.stop_limit(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("1.00000"),
+            Price("1.10010"),
+        )
+
+        # Assert
+        self.assertEqual(OrderType.STOP_LIMIT, order.type)
         self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.GTC, order.time_in_force)
         self.assertTrue(order.is_passive)
@@ -359,40 +383,15 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        bracket_order1 = self.order_factory.bracket(entry1, Price("1.00000"))
-        bracket_order2 = self.order_factory.bracket(entry2, Price("1.00000"))
+        bracket_order1 = self.order_factory.bracket(entry1, Price("1.00000"), Price("1.00010"))
+        bracket_order2 = self.order_factory.bracket(entry2, Price("1.00000"), Price("1.00010"))
 
         # Act
         # Assert
         self.assertTrue(bracket_order1 == bracket_order1)
         self.assertTrue(bracket_order1 != bracket_order2)
 
-    def test_initialize_bracket_order_market_with_no_take_profit(self):
-        # Arrange
-        entry_order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        # Act
-        bracket_order = self.order_factory.bracket(entry_order, Price("0.99990"))
-
-        # Assert
-        self.assertEqual(AUDUSD_SIM.symbol, bracket_order.stop_loss.symbol)
-        self.assertFalse(bracket_order.take_profit is not None)
-        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
-        self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
-        self.assertEqual(Quantity(100000), bracket_order.entry.quantity)
-        self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
-        self.assertEqual(Price("0.99990"), bracket_order.stop_loss.price)
-        self.assertEqual(TimeInForce.GTC, bracket_order.stop_loss.time_in_force)
-        self.assertEqual(None, bracket_order.stop_loss.expire_time)
-        self.assertEqual(BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id)
-        self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
-
-    def test_initialize_bracket_order_stop_with_take_profit(self):
+    def test_initialize_bracket_order(self):
         # Arrange
         entry_order = self.order_factory.stop_market(
             AUDUSD_SIM.symbol,
@@ -406,6 +405,8 @@ class OrderTests(unittest.TestCase):
             entry_order,
             Price("0.99990"),
             Price("1.00010"),
+            TimeInForce.GTC,
+            TimeInForce.GTC,
         )
 
         # Assert

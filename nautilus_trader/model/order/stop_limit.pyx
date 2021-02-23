@@ -30,18 +30,21 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport PassiveOrder
 
 
-cdef class StopMarketOrder(PassiveOrder):
+cdef class StopLimitOrder(PassiveOrder):
     """
-    Represents a stop-market order.
+    Represents a stop-limit order.
 
-    A stop-market order is an instruction to submit a buy or sell market order
-    if and when the user-specified stop trigger price is attained or penetrated.
-    A stop-market order is not guaranteed a specific execution price and may
-    execute significantly away from its stop price. A Sell Stop order is always
-    placed below the current market price and is typically used to limit a loss
-    or protect a profit on a long stock position. A Buy Stop order is always
-    placed above the current market price. It is typically used to limit a loss
-    or help protect a profit on a short sale.
+    A stop-limit order is an instruction to submit a buy or sell limit order
+    when the user-specified stop trigger price is attained or penetrated. The
+    order has two basic components: the stop price and the limit price. When a
+    trade has occurred at or through the stop price, the order becomes
+    executable and enters the market as a limit order, which is an order to buy
+    or sell at a specified price or better.
+
+    A stop-limit eliminates the price risk associated with a stop order where
+    the execution price cannot be guaranteed, but exposes the trader to the
+    risk that the order may never fill even if the stop price is reached. The
+    trader could "miss the market" altogether.
     """
     def __init__(
         self,
@@ -51,6 +54,7 @@ cdef class StopMarketOrder(PassiveOrder):
         OrderSide order_side,
         Quantity quantity not None,
         Price price not None,
+        Price trigger not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
@@ -58,7 +62,7 @@ cdef class StopMarketOrder(PassiveOrder):
         bint reduce_only=False,
     ):
         """
-        Initialize a new instance of the `StopMarketOrder` class.
+        Initialize a new instance of the `StopLimitOrder` class.
 
         Parameters
         ----------
@@ -73,7 +77,9 @@ cdef class StopMarketOrder(PassiveOrder):
         quantity : Quantity
             The order quantity (> 0).
         price : Price
-            The order stop price.
+            The order limit price.
+        trigger : Price
+            The order stop trigger price.
         time_in_force : TimeInForce (Enum)
             The order time-in-force.
         expire_time : datetime, optional
@@ -102,22 +108,26 @@ cdef class StopMarketOrder(PassiveOrder):
             strategy_id,
             symbol,
             order_side,
-            OrderType.STOP_MARKET,
+            OrderType.STOP_LIMIT,
             quantity,
             price,
             time_in_force,
             expire_time,
             init_id,
             timestamp,
-            options={REDUCE_ONLY: reduce_only},
+            options={
+                TRIGGER: str(trigger),
+                REDUCE_ONLY: reduce_only,
+            },
         )
 
+        self.trigger = trigger
         self.is_reduce_only = reduce_only
 
     @staticmethod
-    cdef StopMarketOrder create(OrderInitialized event):
+    cdef StopLimitOrder create(OrderInitialized event):
         """
-        Return a stop-market order from the given initialized event.
+        Return a stop-limit order from the given initialized event.
 
         Parameters
         ----------
@@ -126,24 +136,25 @@ cdef class StopMarketOrder(PassiveOrder):
 
         Returns
         -------
-        StopMarketOrder
+        StopLimitOrder
 
         Raises
         ------
         ValueError
-            If event.order_type is not equal to OrderType.STOP_MARKET.
+            If event.order_type is not equal to OrderType.STOP_LIMIT.
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(event.order_type, OrderType.STOP_MARKET, "event.order_type", "OrderType")
+        Condition.equal(event.order_type, OrderType.STOP_LIMIT, "event.order_type", "OrderType")
 
-        return StopMarketOrder(
+        return StopLimitOrder(
             cl_ord_id=event.cl_ord_id,
             strategy_id=event.strategy_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
             price=Price(event.options.get(PRICE)),
+            trigger=Price(event.options.get(TRIGGER)),
             time_in_force=event.time_in_force,
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,

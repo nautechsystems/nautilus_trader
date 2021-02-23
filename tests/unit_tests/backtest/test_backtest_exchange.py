@@ -184,6 +184,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket2 = self.strategy.order_factory.bracket(
             entry_order=entry2,
             stop_loss=Price("89.800"),
+            take_profit=Price("91.000"),
         )
 
         self.strategy.submit_bracket_order(bracket1)
@@ -204,6 +205,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.check_residuals()
 
         # Assert
+        # TODO: Revisit testing
         self.assertEqual(3, len(self.exchange.get_working_orders()))
         self.assertIn(bracket1.stop_loss, self.exchange.get_working_orders().values())
         self.assertIn(bracket1.take_profit, self.exchange.get_working_orders().values())
@@ -310,6 +312,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket_order = self.strategy.order_factory.bracket(
             entry_order,
             Price("80.000"),
+            Price("91.000"),
         )
 
         # Act
@@ -476,6 +479,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket_order = self.strategy.order_factory.bracket(
             entry_order,
             stop_loss=Price("85.000"),
+            take_profit=Price("91.000"),
         )
 
         self.strategy.submit_bracket_order(bracket_order)
@@ -728,6 +732,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket = self.strategy.order_factory.bracket(
             entry_order=entry,
             stop_loss=Price("89.900"),
+            take_profit=Price("91.000"),
         )
 
         self.strategy.submit_bracket_order(bracket)
@@ -745,7 +750,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Assert
-        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(2, len(self.exchange.get_working_orders()))
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
 
     def test_process_quote_tick_fills_sell_limit_entry_with_bracket(self):

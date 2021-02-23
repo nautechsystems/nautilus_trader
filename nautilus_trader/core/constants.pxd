@@ -59,6 +59,7 @@ cdef str LEAVES_QTY
 cdef str QUANTITY
 cdef str COMMISSION
 cdef str PRICE
+cdef str TRIGGER
 cdef str CURRENCY
 cdef str TIME_IN_FORCE
 cdef str LIQUIDITY_SIDE

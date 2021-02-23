@@ -15,7 +15,7 @@
 
 from nautilus_trader.model.identifiers cimport BracketOrderId
 from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 
 
@@ -30,14 +30,14 @@ cdef class BracketOrder:
     order and a low-side buy order.
 
     Once the 'parent' entry order is triggered the 'child' OCO orders being a
-    `StopMarket` and optional take-profit `PassiveOrder` automatically become
-    working on the exchange/broker side.
+    `StopMarketOrder` and take-profit `LimitOrder` automatically become
+    working on the exchange.
     """
     def __init__(
         self,
         Order entry not None,
         StopMarketOrder stop_loss not None,
-        PassiveOrder take_profit=None,
+        LimitOrder take_profit not None,
     ):
         """
         Initialize a new instance of the `BracketOrder` class.
@@ -48,8 +48,8 @@ cdef class BracketOrder:
             The entry 'parent' order.
         stop_loss : StopMarketOrder
             The stop-loss (SL) 'child' order.
-        take_profit : PassiveOrder, optional
-            The take-profit (TP) 'child' order. Normally a `LimitOrder`.
+        take_profit : Limit
+            The take-profit (TP) 'child' order.
 
         """
         self.id = BracketOrderId(f"B{entry.cl_ord_id.value}")

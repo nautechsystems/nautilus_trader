@@ -20,7 +20,6 @@ import unittest
 from parameterized import parameterized
 import pytz
 
-from nautilus_trader.data.base import Data
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
@@ -31,6 +30,7 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
+from nautilus_trader.data.base import Data
 from nautilus_trader.data.base import DataType
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase

@@ -400,7 +400,8 @@ cdef class SimulatedExchange:
             self._cancel_reject_order(
                 command.cl_ord_id,
                 "amend order",
-                "order not found")
+                "order not found",
+            )
             return  # Rejected the amend order request
 
         cdef PassiveOrder order = self._working_orders[command.cl_ord_id]
@@ -410,7 +411,8 @@ cdef class SimulatedExchange:
             self._cancel_reject_order(
                 order.cl_ord_id,
                 "amend order",
-                f"amended quantity {command.quantity} invalid")
+                f"amended quantity {command.quantity} invalid",
+            )
             return  # Cannot amend order
 
         cdef Price market_bid = self._market_bids.get(order.symbol)
@@ -424,7 +426,8 @@ cdef class SimulatedExchange:
                         order.cl_ord_id,
                         "amend order",
                         f"BUY STOP order price of {order.price} is too "
-                        f"far from the market, ask={market_ask}")
+                        f"far from the market, ask={market_ask}",
+                    )
                     return  # Rejected the amend order request
             elif order.type == OrderType.LIMIT:
                 if order.price >= market_ask:
@@ -433,7 +436,8 @@ cdef class SimulatedExchange:
                             order.cl_ord_id,
                             "amend order",
                             f"BUY LIMIT order price of {order.price} is too "
-                            f"far from the market, ask={market_ask}")
+                            f"far from the market, ask={market_ask}",
+                        )
                         return  # Rejected the amend order request
                     else:
                         self._fill_order(order, market_ask, LiquiditySide.TAKER)
@@ -445,7 +449,8 @@ cdef class SimulatedExchange:
                         order.cl_ord_id,
                         "amend order",
                         f"SELL STOP order price of {order.price} is too "
-                        f"far from the market, bid={market_bid}")
+                        f"far from the market, bid={market_bid}",
+                    )
                     return  # Rejected the amend order request
             elif order.type == OrderType.LIMIT:
                 if order.price <= market_bid:
@@ -454,7 +459,8 @@ cdef class SimulatedExchange:
                             order.cl_ord_id,
                             "amend order",
                             f"SELL LIMIT order price of {order.price} is too "
-                            f"far from the market, bid={market_bid}")
+                            f"far from the market, bid={market_bid}",
+                        )
                         return  # Rejected the amend order request
                     else:
                         self._fill_order(order, market_bid, LiquiditySide.TAKER)

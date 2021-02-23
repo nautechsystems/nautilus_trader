@@ -63,6 +63,7 @@ from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.order.bracket cimport BracketOrder
 from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
@@ -169,6 +170,9 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             package[HIDDEN] = order.is_hidden
         elif isinstance(order, StopMarketOrder):
             package[REDUCE_ONLY] = order.is_reduce_only
+        elif isinstance(order, StopLimitOrder):
+            package[TRIGGER] = str(order.trigger)
+            package[REDUCE_ONLY] = order.is_reduce_only
 
         return MsgPackSerializer.serialize(package)
 
@@ -256,7 +260,23 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 reduce_only=unpacked[REDUCE_ONLY],
             )
 
-        raise ValueError(f"Invalid order_type, was {OrderTypeParser.to_str(order_type)}")
+        if order_type == OrderType.STOP_LIMIT:
+            return StopLimitOrder(
+                cl_ord_id=cl_ord_id,
+                strategy_id=strategy_id,
+                symbol=symbol,
+                order_side=order_side,
+                quantity=quantity,
+                price=Price(unpacked[PRICE]),
+                trigger=Price(unpacked[TRIGGER]),
+                time_in_force=time_in_force,
+                expire_time=expire_time,
+                init_id=init_id,
+                timestamp=timestamp,
+                reduce_only=unpacked[REDUCE_ONLY],
+            )
+
+        raise ValueError(f"Invalid order_type: was {OrderTypeParser.to_str(order_type)}")
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):

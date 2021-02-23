@@ -13,19 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum OrderType:
-    UNDEFINED = 0,  # Invalid value
-    MARKET = 1,
-    LIMIT = 2,
-    STOP_MARKET = 3,
-    STOP_LIMIT = 4,
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.order.base cimport PassiveOrder
 
 
-cdef class OrderTypeParser:
-
-    @staticmethod
-    cdef str to_str(int value)
+cdef class StopLimitOrder(PassiveOrder):
+    cdef readonly Price trigger
+    """The trigger stop price for the order.\n\n:returns: `Price`"""
+    cdef readonly bint is_reduce_only
+    """If the order will only reduce an option position.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef OrderType from_str(str value)
+    cdef StopLimitOrder create(OrderInitialized event)

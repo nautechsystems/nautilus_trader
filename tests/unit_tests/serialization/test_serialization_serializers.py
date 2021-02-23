@@ -52,6 +52,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
+from nautilus_trader.model.order.stop_limit import StopLimitOrder
 from nautilus_trader.model.order.stop_market import StopMarketOrder
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
@@ -139,7 +140,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             Quantity(100000),
             Price("1.00000"),
             TimeInForce.DAY,
-            expire_time=None,
         )
 
         # Act
@@ -175,7 +175,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(order)
 
-    def test_serialize_and_deserialize_stop_orders_with_expire_time(self):
+    def test_serialize_and_deserialize_stop_market_orders_with_expire_time(self):
         # Arrange
         order = StopMarketOrder(
             ClientOrderId("O-123456"),
@@ -184,6 +184,56 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH,
+            init_id=uuid4(),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(order)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(order, deserialized)
+        print(b64encode(serialized))
+        print(order)
+
+    def test_serialize_and_deserialize_stop_limit_orders(self):
+        # Arrange
+        order = StopLimitOrder(
+            ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("1.00000"),
+            trigger=Price("1.00010"),
+            time_in_force=TimeInForce.GTC,
+            expire_time=None,
+            init_id=uuid4(),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(order)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(order, deserialized)
+        print(b64encode(serialized))
+        print(order)
+
+    def test_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
+        # Arrange
+        order = StopLimitOrder(
+            ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("1.00000"),
+            trigger=Price("1.00010"),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
@@ -254,6 +304,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         bracket_order = self.order_factory.bracket(
             entry_order,
             stop_loss=Price("0.99900"),
+            take_profit=Price("1.00100"),
         )
 
         command = SubmitBracketOrder(
