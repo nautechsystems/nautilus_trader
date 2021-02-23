@@ -219,10 +219,11 @@ The following order types are available (when possible on an exchange);
 - `Market`
 - `Limit`
 - `StopMarket`
+- `StopLimit`
 
-More will be added in due course including `StopLimit`, `MarketIfTouched`,
-`LimitIfTouched` and icebergs. Users are invited to open discussion issues to
-request specific order types or features.
+More will be added in due course including `MarketIfTouched`, `LimitIfTouched`
+and icebergs. Users are invited to open discussion issues to request specific
+order types or features.
 
 ## Integrations
 
