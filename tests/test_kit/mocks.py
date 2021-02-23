@@ -178,10 +178,11 @@ class MockStrategy(TradingStrategy):
 
     def on_save(self) -> dict:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return {}
+        return {"UserState": 1}
 
     def on_load(self, state) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(state)
 
     def on_dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)

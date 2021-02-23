@@ -45,6 +45,7 @@ from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.mocks import MockStrategy
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 
@@ -56,17 +57,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        clock = TestClock()
-        logger = TestLogger(clock)
-
+        self.clock = TestClock()
+        self.logger = TestLogger(self.clock)
         self.trader_id = TraderId("TESTER", "000")
 
         self.strategy = TradingStrategy(order_id_tag="001")
-        self.strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock,
-            logger,
-        )
+        self.strategy.register_trader(self.trader_id, self.clock, self.logger)
 
         config = {
             'host': 'localhost',
@@ -75,7 +71,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database = RedisExecutionDatabase(
             trader_id=self.trader_id,
-            logger=logger,
+            logger=self.logger,
             command_serializer=MsgPackCommandSerializer(),
             event_serializer=MsgPackEventSerializer(),
             config=config,
@@ -261,6 +257,18 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(position, self.database.load_position(position.id))
 
+    def test_update_strategy(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())
+        strategy.register_trader(self.trader_id, self.clock, self.logger)
+
+        # Act
+        self.database.update_strategy(strategy)
+        result = self.database.load_strategy(strategy.id)
+
+        # Assert
+        self.assertEqual({"UserState": b'1'}, result)
+
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
         event = TestStubs.event_account_state()
@@ -401,7 +409,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(account, self.database.load_account(account.id))
+        self.assertEqual({account.id: account}, self.database.load_accounts())
 
     def test_load_orders_cache_when_no_orders(self):
         # Arrange
