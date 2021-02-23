@@ -41,11 +41,11 @@ from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.mocks import MockStrategy
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 

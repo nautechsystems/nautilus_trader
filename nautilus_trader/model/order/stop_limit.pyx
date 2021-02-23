@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -122,6 +123,7 @@ cdef class StopLimitOrder(PassiveOrder):
         )
 
         self.trigger = trigger
+        self.is_triggered = False
         self.is_reduce_only = reduce_only
 
     @staticmethod
@@ -141,7 +143,7 @@ cdef class StopLimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to OrderType.STOP_LIMIT.
+            If event.order_type is not equal to STOP_LIMIT.
 
         """
         Condition.not_none(event, "event")
@@ -153,11 +155,14 @@ cdef class StopLimitOrder(PassiveOrder):
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=Price(event.options.get(PRICE)),
-            trigger=Price(event.options.get(TRIGGER)),
+            price=Price(event.options[PRICE]),
+            trigger=Price(event.options[TRIGGER]),
             time_in_force=event.time_in_force,
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
             timestamp=event.timestamp,
             reduce_only=event.options[REDUCE_ONLY],
         )
+
+    cdef void _triggered(self, OrderTriggered event) except *:
+        self._is_triggered = True

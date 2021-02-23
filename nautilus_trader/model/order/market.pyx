@@ -130,7 +130,7 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to OrderType.MARKET.
+            If event.order_type is not equal to MARKET.
 
         """
         Condition.not_none(event, "event")

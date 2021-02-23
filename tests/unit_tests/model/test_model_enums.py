@@ -303,6 +303,7 @@ class OrderStateTests(unittest.TestCase):
         [OrderState.REJECTED, "REJECTED"],
         [OrderState.CANCELLED, "CANCELLED"],
         [OrderState.EXPIRED, "EXPIRED"],
+        [OrderState.TRIGGERED, "TRIGGERED"],
         [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
         [OrderState.FILLED, "FILLED"],
     ])
@@ -325,6 +326,7 @@ class OrderStateTests(unittest.TestCase):
         ["REJECTED", OrderState.REJECTED],
         ["CANCELLED", OrderState.CANCELLED],
         ["EXPIRED", OrderState.EXPIRED],
+        ["TRIGGERED", OrderState.TRIGGERED],
         ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
         ["FILLED", OrderState.FILLED],
     ])

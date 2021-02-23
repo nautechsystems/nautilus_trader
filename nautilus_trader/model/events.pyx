@@ -715,6 +715,57 @@ cdef class OrderExpired(OrderEvent):
                 f"event_id={self.id})")
 
 
+cdef class OrderTriggered(OrderEvent):
+    """
+    Represents an event where an order has triggered.
+    """
+
+    def __init__(
+            self,
+            AccountId account_id not None,
+            ClientOrderId cl_ord_id not None,
+            OrderId order_id not None,
+            datetime triggered_time not None,
+            UUID event_id not None,
+            datetime event_timestamp not None,
+    ):
+        """
+        Initialize a new instance of the `OrderTriggered` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+        order_id : OrderId
+            The exchange/broker order identifier.
+        triggered_time : datetime
+            The order triggered time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        """
+        super().__init__(
+            cl_ord_id,
+            order_id,
+            event_id,
+            event_timestamp,
+        )
+
+        self.account_id = account_id
+        self.triggered_time = triggered_time
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
+                f"order_id={self.order_id}, "
+                f"event_id={self.id})")
+
+
 cdef class OrderFilled(OrderEvent):
     """
     Represents an event where an order has been filled at the exchange.
