@@ -28,7 +28,7 @@ from nautilus_trader.model.tick cimport TradeTick
 
 cdef class Data:
     """
-    Represents wrapped data which includes data type information.
+    Provides a generic data wrapper which includes data type information.
     """
 
     def __init__(self, DataType data_type not None, data not None):
@@ -85,6 +85,7 @@ cdef class DataType:
             metadata = {}
 
         self._metadata_key = frozenset(metadata.items())
+        self._hash = hash(self._metadata_key)  # Assign hash for improved time complexity
         self.type = data_type
         self.metadata = metadata
 
@@ -95,7 +96,7 @@ cdef class DataType:
         return self.type != other.type or self.metadata != other.metadata
 
     def __hash__(self) -> int:
-        return hash((self.type, self._metadata_key))
+        return self._hash
 
     def __str__(self) -> str:
         return f"<{self.type.__name__}> {self.metadata}"

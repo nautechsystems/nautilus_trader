@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.bar cimport Bar
@@ -219,14 +220,14 @@ cdef class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    cpdef void on_data(self, data) except *:
+    cpdef void on_data(self, Data data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 
         Parameters
         ----------
-        data : object
-            The data object received.
+        data : Data
+            The data received.
 
         """
         pass
