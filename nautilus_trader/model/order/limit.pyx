@@ -147,7 +147,7 @@ cdef class LimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to OrderType.LIMIT.
+            If event.order_type is not equal to LIMIT.
 
         """
         Condition.not_none(event, "event")
@@ -159,7 +159,7 @@ cdef class LimitOrder(PassiveOrder):
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=Price(event.options.get(PRICE)),
+            price=Price(event.options[PRICE]),
             time_in_force=event.time_in_force,
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,

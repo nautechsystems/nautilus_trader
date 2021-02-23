@@ -31,7 +31,6 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 
@@ -65,7 +64,7 @@ cdef class SimulationModule:
 
         self._exchange = exchange
 
-    cpdef void process(self, QuoteTick tick, datetime now) except *:
+    cpdef void process(self, datetime now) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -102,19 +101,16 @@ cdef class FXRolloverInterestModule(SimulationModule):
         self._rollover_totals = {}
         self._day_number = 0
 
-    cpdef void process(self, QuoteTick tick, datetime now) except *:
+    cpdef void process(self, datetime now) except *:
         """
         Process the given tick through the module.
 
         Parameters
         ----------
-        tick : QuoteTick
-            The quote tick to process.
         now : datetime
             The current time in the simulated exchange.
 
         """
-        Condition.not_none(tick, "tick")
         Condition.not_none(now, "now")
 
         cdef datetime rollover_local

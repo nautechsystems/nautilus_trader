@@ -21,6 +21,8 @@ from nautilus_trader.model.order.base cimport PassiveOrder
 cdef class StopLimitOrder(PassiveOrder):
     cdef readonly Price trigger
     """The trigger stop price for the order.\n\n:returns: `Price`"""
+    cdef readonly bint is_triggered
+    """If the order has been triggered.\n\n:returns: `bool`"""
     cdef readonly bint is_reduce_only
     """If the order will only reduce an option position.\n\n:returns: `bool`"""
 

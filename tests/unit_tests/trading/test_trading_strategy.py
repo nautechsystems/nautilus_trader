@@ -856,7 +856,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.load(state)
 
         # Assert
-        self.assertEqual({}, state)
+        self.assertEqual({"UserState": 1}, state)
         self.assertTrue("on_save" in strategy.calls)
         self.assertEqual(ComponentState.INITIALIZED, strategy.state)
 

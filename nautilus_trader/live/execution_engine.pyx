@@ -141,7 +141,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         self._log.info("Resolving states...")
 
-        cdef list active_orders = self.cache.orders_active()
+        cdef list orders = self.cache.orders()
 
         # Initialize order state map
         cdef dict venue_orders = {}   # type: dict[Venue, list[Order]]
@@ -151,11 +151,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Build order state map
         cdef Order order
-        for order in active_orders:
-            if not order.is_active_c():
-                self._log.error(f"Order was not active, "
-                                f"was OrderState.{order.state_string_c()}.")
-                # This would only occur if the cache was in error
+        for order in orders:
+            if order.is_completed_c():
+                # Order already completed
                 continue
             if order.symbol.venue in venue_orders:
                 venue_orders[order.symbol.venue].append(order)
@@ -182,7 +180,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 return False
 
             resolved = True
-            for order in active_orders:
+            for order in orders:
                 target_state = venue_reports[order.symbol.venue].order_states.get(order.id, 0)
                 if order.state_c() != target_state:
                     resolved = False  # Incorrect state

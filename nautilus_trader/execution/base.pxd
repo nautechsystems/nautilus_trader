@@ -37,7 +37,6 @@ cdef class ExecutionCacheFacade:
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cpdef set order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set order_active_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set order_working_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set order_completed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set position_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
@@ -51,15 +50,12 @@ cdef class ExecutionCacheFacade:
     cpdef ClientOrderId cl_ord_id(self, OrderId order_id)
     cpdef OrderId order_id(self, ClientOrderId cl_ord_id)
     cpdef list orders(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list orders_active(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef list orders_completed(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_order_active(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *
     cpdef int orders_total_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
-    cpdef int orders_active_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
     cpdef int orders_working_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
     cpdef int orders_completed_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
 

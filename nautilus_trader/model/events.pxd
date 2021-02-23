@@ -140,6 +140,13 @@ cdef class OrderExpired(OrderEvent):
     """The order expired time.\n\n:returns: `datetime`"""
 
 
+cdef class OrderTriggered(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly datetime triggered_time
+    """The order triggered time.\n\n:returns: `datetime`"""
+
+
 cdef class OrderFilled(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""

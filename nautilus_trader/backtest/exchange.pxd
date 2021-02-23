@@ -92,6 +92,7 @@ cdef class SimulatedExchange:
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
     cpdef void process_tick(self, Tick tick) except *
+    cpdef void process_modules(self, datetime now) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
@@ -122,7 +123,7 @@ cdef class SimulatedExchange:
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
-    cdef inline void _cancel_reject_order(self, ClientOrderId cl_ord_id, str response, str reason) except *
+    cdef inline void _cancel_reject(self, ClientOrderId cl_ord_id, str response, str reason) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _process_order(self, Order order) except *
     cdef inline void _process_market_order(self, MarketOrder order, Price market_bid, Price market_ask) except *
