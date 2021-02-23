@@ -338,7 +338,7 @@ cdef class Order:
     @property
     def is_working(self):
         """
-        If the order is working at the venue.
+        If the order is open/working at the venue.
 
         An order is considered working when its state is either `ACCEPTED` or
         `PARTIALLY_FILLED`.
@@ -354,12 +354,11 @@ cdef class Order:
     @property
     def is_completed(self):
         """
-        If the order is completed.
+        If the order is closed/completed.
 
         An order is considered completed when its state can no longer change.
         The possible states of completed orders include; `INVALID`, `DENIED`,
         `REJECTED`, `CANCELLED`, `EXPIRED` and `FILLED`.
-
 
         Returns
         -------

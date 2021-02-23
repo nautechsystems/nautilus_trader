@@ -23,6 +23,8 @@ cdef class OrderTypeParser:
             return "LIMIT"
         elif value == 3:
             return "STOP_MARKET"
+        elif value == 4:
+            return "STOP_LIMIT"
         else:
             return "UNDEFINED"
 
@@ -34,6 +36,8 @@ cdef class OrderTypeParser:
             return OrderType.LIMIT
         elif value == "STOP_MARKET":
             return OrderType.STOP_MARKET
+        elif value == "STOP_LIMIT":
+            return OrderType.STOP_LIMIT
         else:
             return OrderType.UNDEFINED
 

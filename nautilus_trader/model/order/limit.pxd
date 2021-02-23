@@ -21,7 +21,7 @@ cdef class LimitOrder(PassiveOrder):
     cdef readonly bint is_post_only
     """If the order will only make liquidity.\n\n:returns: `bool`"""
     cdef readonly bint is_reduce_only
-    """If the order will only reduce an option position.\n\n:returns: `bool`"""
+    """If the order will only reduce an open position.\n\n:returns: `bool`"""
     cdef readonly bint is_hidden
     """If the order is hidden from the public book.\n\n:returns: `bool`"""
 

@@ -185,7 +185,11 @@ class BacktestExecClientTests(unittest.TestCase):
             Quantity(100),
         )
 
-        bracket = self.order_factory.bracket(entry, Price("500.00000"))
+        bracket = self.order_factory.bracket(
+            entry,
+            Price("500.00000"),
+            Price("600.00000"),
+        )
 
         command = SubmitBracketOrder(
             BINANCE,

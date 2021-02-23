@@ -38,10 +38,10 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 class EMACrossWithTrailingStop(TradingStrategy):
     """
-    A simple moving average cross example strategy with a stop market entry and
+    A simple moving average cross example strategy with a stop-market entry and
     trailing stop.
 
-    When the fast EMA crosses the slow EMA then submits a stop market order one
+    When the fast EMA crosses the slow EMA then submits a stop-market order one
     tick above the current bar for BUY, or one tick below the current bar
     for SELL.
 

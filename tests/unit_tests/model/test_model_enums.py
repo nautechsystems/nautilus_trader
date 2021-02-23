@@ -344,6 +344,7 @@ class OrderTypeTests(unittest.TestCase):
         [OrderType.MARKET, "MARKET"],
         [OrderType.LIMIT, "LIMIT"],
         [OrderType.STOP_MARKET, "STOP_MARKET"],
+        [OrderType.STOP_LIMIT, "STOP_LIMIT"],
     ])
     def test_order_type_to_str(self, enum, expected):
         # Arrange
@@ -359,6 +360,7 @@ class OrderTypeTests(unittest.TestCase):
         ["MARKET", OrderType.MARKET],
         ["LIMIT", OrderType.LIMIT],
         ["STOP_MARKET", OrderType.STOP_MARKET],
+        ["STOP_LIMIT", OrderType.STOP_LIMIT],
     ])
     def test_order_type_from_str(self, string, expected):
         # Arrange

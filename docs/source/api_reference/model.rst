@@ -112,6 +112,15 @@ Stop-Market Order
    :members:
    :member-order: bysource
 
+Stop-Limit Order
+----------------
+
+.. automodule:: nautilus_trader.model.order.stop_limit
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Bracket Order
 -------------
 

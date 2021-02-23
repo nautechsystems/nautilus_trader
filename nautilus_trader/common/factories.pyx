@@ -29,6 +29,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.order.bracket cimport BracketOrder
+from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 
 
@@ -162,7 +163,8 @@ cdef class OrderFactory:
             quantity,
             time_in_force,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now_c())
+            timestamp=self._clock.utc_now_c(),
+        )
 
     cpdef LimitOrder limit(
         self,
@@ -233,7 +235,8 @@ cdef class OrderFactory:
             timestamp=self._clock.utc_now_c(),
             post_only=post_only,
             reduce_only=reduce_only,
-            hidden=hidden)
+            hidden=hidden,
+        )
 
     cpdef StopMarketOrder stop_market(
         self,
@@ -295,23 +298,96 @@ cdef class OrderFactory:
             reduce_only=reduce_only,
         )
 
+    cpdef StopLimitOrder stop_limit(
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Price trigger,
+        TimeInForce time_in_force=TimeInForce.GTC,
+        datetime expire_time=None,
+        bint reduce_only=False,
+    ):
+        """
+        Create a new stop-limit order.
+
+        If the time-in-force is GTD then a valid expire time must be given.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The orders symbol.
+        order_side : OrderSide (Enum)
+            The orders side.
+        quantity : Quantity
+            The orders quantity (> 0).
+        price : Price
+            The orders limit price.
+        trigger : Price
+            The orders stop trigger price.
+        time_in_force : TimeInForce (Enum), optional
+            The orders time-in-force.
+        expire_time : datetime, optional
+            The order expire time (for GTD orders).
+        reduce_only : bool,
+            If the order will only reduce an open position.
+
+        Returns
+        -------
+        StopLimitOrder
+
+        Raises
+        ------
+        ValueError
+            If quantity is not positive (> 0).
+        ValueError
+            If order_side is UNDEFINED.
+        ValueError
+            If time_in_force is UNDEFINED.
+        ValueError
+            If time_in_force is GTD and the expire_time is None.
+
+        """
+        return StopLimitOrder(
+            self._id_generator.generate(),
+            self.strategy_id,
+            symbol,
+            order_side,
+            quantity,
+            price=price,
+            trigger=trigger,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=self._uuid_factory.generate(),
+            timestamp=self._clock.utc_now_c(),
+            reduce_only=reduce_only,
+        )
+
     cpdef BracketOrder bracket(
         self,
         Order entry_order,
         Price stop_loss,
-        Price take_profit=None,
+        Price take_profit,
+        TimeInForce sl_tif=TimeInForce.GTC,
+        TimeInForce tp_tif=TimeInForce.GTC,
     ):
         """
-        Create a bracket order from the given entry.
+        Create a bracket order from the given entry order, stop-loss price and
+        take-profit price.
 
         Parameters
         ----------
         entry_order : Order
             The entry parent order for the bracket.
         stop_loss : Price
-            The stop-loss child order price.
-        take_profit : Price, optional
-            The take-profit child order price.
+            The stop-loss child order stop price.
+        take_profit : Price
+            The take-profit child order limit price.
+        sl_tif : TimeInForce (Enum), optional
+            The stop-loss orders time-in-force (DAY or GTC).
+        tp_tif : TimeInForce (Enum), optional
+            The take-profit orders time-in-force (DAY or GTC).
 
         Returns
         -------
@@ -319,6 +395,10 @@ cdef class OrderFactory:
 
         Raises
         ------
+        ValueError
+            If sl_tif is not either DAY or GTC.
+        ValueError
+            If tp_tif is not either DAY or GTC.
         ValueError
             If entry_order.side is BUY and entry_order.price <= stop_loss.price.
         ValueError
@@ -329,40 +409,39 @@ cdef class OrderFactory:
             If entry_order.side is SELL and entry_order.price <= take_profit.price.
 
         """
+        Condition.true(sl_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "sl_tif is unsupported")
+        Condition.true(tp_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "tp_tif is unsupported")
+
         # Validate prices
         if entry_order.side == OrderSide.BUY:
-            Condition.true(take_profit is None or stop_loss < take_profit, "stop_loss was >= take_profit")
+            Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
             if isinstance(entry_order, PassiveOrder):
                 Condition.true(entry_order.price > stop_loss, "entry_order.price was <= stop_loss")
-                Condition.true(take_profit is None or entry_order.price < take_profit, "entry_order.price was > take_profit")
+                Condition.true(entry_order.price < take_profit, "entry_order.price was > take_profit")
         else:  # entry_order.side == OrderSide.SELL
-            Condition.true(take_profit is None or stop_loss > take_profit, "stop_loss was <= take_profit")
+            Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
             if isinstance(entry_order, PassiveOrder):
                 Condition.true(entry_order.price < stop_loss, "entry_order.price < stop_loss")
-                Condition.true(take_profit is None or entry_order.price > take_profit, "entry_order.price > take_profit")
+                Condition.true(entry_order.price > take_profit, "entry_order.price > take_profit")
 
-        cdef OrderSide child_order_side = OrderSide.BUY if entry_order.side == OrderSide.SELL else OrderSide.SELL
-
-        cdef Order stop_loss_order = self.stop_market(
+        cdef StopMarketOrder stop_loss_order = self.stop_market(
             entry_order.symbol,
-            child_order_side,
+            Order.opposite_side_c(entry_order.side),
             entry_order.quantity,
             stop_loss,
-            TimeInForce.GTC,
+            sl_tif,
             expire_time=None,
             reduce_only=True,
         )
 
-        cdef Order take_profit_order = None
-        if take_profit is not None:
-            take_profit_order = self.limit(
-                entry_order.symbol,
-                child_order_side,
-                entry_order.quantity,
-                take_profit,
-                TimeInForce.GTC,
-                expire_time=None,
-                reduce_only=True,
-            )
+        cdef LimitOrder take_profit_order = self.limit(
+            entry_order.symbol,
+            Order.opposite_side_c(entry_order.side),
+            entry_order.quantity,
+            take_profit,
+            tp_tif,
+            expire_time=None,
+            reduce_only=True,
+        )
 
         return BracketOrder(entry_order, stop_loss_order, take_profit_order)
