@@ -46,6 +46,7 @@ from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataRequest
@@ -388,14 +389,14 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_data(self, data) except *:
+    cpdef void on_data(self, Data data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 
         Parameters
         ----------
-        data : object
-            The data object received.
+        data : Data
+            The data received.
 
         Warnings
         --------
@@ -1768,16 +1769,16 @@ cdef class TradingStrategy(Component):
         for i in range(length):
             self.handle_bar(bar_type, bars[i], is_historical=True)
 
-    cpdef void handle_data(self, data) except *:
+    cpdef void handle_data(self, Data data) except *:
         """
-        Handle the given data object.
+        Handle the given data.
 
         Calls `on_data` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
-        data : object
-            The received data object.
+        data : Data
+            The received data.
 
         Warnings
         --------
