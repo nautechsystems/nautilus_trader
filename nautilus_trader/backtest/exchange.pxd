@@ -46,6 +46,7 @@ from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
@@ -126,6 +127,8 @@ cdef class SimulatedExchange:
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
+    cdef inline void _amend_order(self, ClientOrderId cl_ord_id, Quantity qty, Price price) except *
+    cdef inline void _cancel_order(self, ClientOrderId cl_ord_id) except *
     cdef inline void _cancel_reject(self, ClientOrderId cl_ord_id, str response, str reason) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _trigger_order(self, StopLimitOrder order) except *
@@ -141,10 +144,9 @@ cdef class SimulatedExchange:
     cdef inline void _match_limit_order(self, LimitOrder order, Price bid, Price ask) except *
     cdef inline void _match_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *
     cdef inline void _match_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *
-    cdef inline bint _is_limit_valid(self, OrderSide side, Price order_price, Price bid, Price ask) except *
-    cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *
-    cdef inline bint _is_stop_valid(self, OrderSide side, Price order_price, Price bid, Price ask) except *
+    cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *
+    cdef inline bint _is_stop_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline Price _market_fill_price(self, Symbol symbol, OrderSide side, Price bid, Price ask)
     cdef inline Price _stop_fill_price(self, Symbol symbol, OrderSide side, Price stop)
