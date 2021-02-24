@@ -1848,7 +1848,7 @@ class TradingStrategyTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("90.003"),
+            Price("90.004"),
         )
 
         order2 = strategy.order_factory.stop_market(

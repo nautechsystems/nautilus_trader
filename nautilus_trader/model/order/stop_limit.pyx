@@ -60,7 +60,9 @@ cdef class StopLimitOrder(PassiveOrder):
         datetime expire_time,  # Can be None
         UUID init_id not None,
         datetime timestamp not None,
+        bint post_only=True,
         bint reduce_only=False,
+        bint hidden=False,
     ):
         """
         Initialize a new instance of the `StopLimitOrder` class.
@@ -89,8 +91,13 @@ cdef class StopLimitOrder(PassiveOrder):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
+        post_only : bool, optional
+            If the order will only make a market (once triggered).
         reduce_only : bool, optional
-            If the order will only reduce an open position.
+            If the order will only reduce an open position (once triggered).
+        hidden : bool, optional
+            If the order will be hidden from the public book (once triggered).
+
 
         Raises
         ------
@@ -104,6 +111,11 @@ cdef class StopLimitOrder(PassiveOrder):
             If time_in_force is GTD and the expire_time is None.
 
         """
+        if post_only:
+            Condition.false(hidden, "A post-only order is not hidden")
+        if hidden:
+            Condition.false(post_only, "A hidden order is not post-only")
+
         super().__init__(
             cl_ord_id,
             strategy_id,
@@ -118,13 +130,27 @@ cdef class StopLimitOrder(PassiveOrder):
             timestamp,
             options={
                 TRIGGER: str(trigger),
+                POST_ONLY: post_only,
                 REDUCE_ONLY: reduce_only,
+                HIDDEN: hidden,
             },
         )
 
         self.trigger = trigger
         self.is_triggered = False
+        self.is_post_only = post_only
         self.is_reduce_only = reduce_only
+        self.is_hidden = hidden
+
+    def __repr__(self) -> str:
+        cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
+        return (f"{type(self).__name__}("
+                f"cl_ord_id={self.cl_ord_id.value}, "
+                f"id={self.id.value}, "
+                f"{id_string}"
+                f"state={self._fsm.state_string_c()}, "
+                f"trigger={self.trigger}, "
+                f"{self.status_string_c()})")
 
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized event):
@@ -161,7 +187,9 @@ cdef class StopLimitOrder(PassiveOrder):
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
             timestamp=event.timestamp,
+            post_only=event.options[POST_ONLY],
             reduce_only=event.options[REDUCE_ONLY],
+            hidden=event.options[HIDDEN],
         )
 
     cdef void _triggered(self, OrderTriggered event) except *:
