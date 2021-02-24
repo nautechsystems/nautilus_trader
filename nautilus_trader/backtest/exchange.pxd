@@ -23,6 +23,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
@@ -42,6 +43,8 @@ from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
+from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
@@ -125,18 +128,26 @@ cdef class SimulatedExchange:
     cdef inline void _reject_order(self, Order order, str reason) except *
     cdef inline void _cancel_reject(self, ClientOrderId cl_ord_id, str response, str reason) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
+    cdef inline void _trigger_order(self, StopLimitOrder order) except *
     cdef inline void _process_order(self, Order order) except *
-    cdef inline void _process_market_order(self, MarketOrder order, Price market_bid, Price market_ask) except *
-    cdef inline void _process_limit_order(self, LimitOrder order, Price market_bid, Price market_ask) except *
-    cdef inline void _process_passive_order(self, PassiveOrder order, Price market_bid, Price market_ask) except *
-    cdef inline void _auction_buy_order(self, PassiveOrder order, Price market) except *
-    cdef inline void _auction_buy_stop_order(self, PassiveOrder order, Price market) except *
-    cdef inline void _auction_buy_limit_order(self, PassiveOrder order, Price market) except *
-    cdef inline void _auction_sell_order(self, PassiveOrder order, Price market) except *
-    cdef inline void _auction_sell_stop_order(self, PassiveOrder order, Price market) except *
-    cdef inline void _auction_sell_limit_order(self, PassiveOrder order, Price market) except *
-    cdef inline bint _is_marginal_limit_fill(self, Price order_price, Price market) except *
-    cdef inline bint _is_marginal_stop_fill(self, Price order_price, Price market) except *
+    cdef inline void _process_market_order(self, MarketOrder order, Price bid, Price ask) except *
+    cdef inline void _process_limit_order(self, LimitOrder order, Price bid, Price ask) except *
+    cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *
+    cdef inline void _process_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *
+
+# -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
+
+    cdef inline void _match_order(self, PassiveOrder order, Price bid, Price ask) except *
+    cdef inline void _match_limit_order(self, LimitOrder order, Price bid, Price ask) except *
+    cdef inline void _match_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *
+    cdef inline void _match_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *
+    cdef inline bint _is_limit_valid(self, OrderSide side, Price order_price, Price bid, Price ask) except *
+    cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *
+    cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *
+    cdef inline bint _is_stop_valid(self, OrderSide side, Price order_price, Price bid, Price ask) except *
+    cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *
+    cdef inline Price _market_fill_price(self, Symbol symbol, OrderSide side, Price bid, Price ask)
+    cdef inline Price _stop_fill_price(self, Symbol symbol, OrderSide side, Price stop)
     cdef inline void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
     cdef inline void _clean_up_child_orders(self, ClientOrderId cl_ord_id) except *
     cdef inline void _check_oco_order(self, ClientOrderId cl_ord_id) except *

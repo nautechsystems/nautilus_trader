@@ -172,7 +172,9 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             package[REDUCE_ONLY] = order.is_reduce_only
         elif isinstance(order, StopLimitOrder):
             package[TRIGGER] = str(order.trigger)
+            package[POST_ONLY] = order.is_post_only
             package[REDUCE_ONLY] = order.is_reduce_only
+            package[HIDDEN] = order.is_hidden
 
         return MsgPackSerializer.serialize(package)
 
@@ -273,7 +275,9 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 expire_time=expire_time,
                 init_id=init_id,
                 timestamp=timestamp,
+                post_only=unpacked[POST_ONLY],
                 reduce_only=unpacked[REDUCE_ONLY],
+                hidden=unpacked[HIDDEN],
             )
 
         raise ValueError(f"Invalid order_type: was {OrderTypeParser.to_str(order_type)}")
