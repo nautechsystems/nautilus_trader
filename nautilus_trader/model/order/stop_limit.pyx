@@ -23,6 +23,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -191,6 +192,14 @@ cdef class StopLimitOrder(PassiveOrder):
             reduce_only=event.options[REDUCE_ONLY],
             hidden=event.options[HIDDEN],
         )
+
+    cdef void _amended(self, OrderAmended event) except *:
+        self.id = event.order_id
+        self.quantity = event.quantity
+        if self.is_triggered:
+            self.price = event.price
+        else:
+            self.trigger = event.price
 
     cdef void _triggered(self, OrderTriggered event) except *:
         self._is_triggered = True
