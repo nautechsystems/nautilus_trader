@@ -376,153 +376,12 @@ cdef class SimulatedExchange:
     cpdef void handle_cancel_order(self, CancelOrder command) except *:
         Condition.not_none(command, "command")
 
-        if command.cl_ord_id not in self._working_orders:
-            self._cancel_reject(
-                command.cl_ord_id,
-                "cancel order",
-                "order not found",
-            )
-            return  # Rejected the cancel order command
-
-        cdef Order order = self._working_orders[command.cl_ord_id]
-
-        # Generate event
-        cdef OrderCancelled cancelled = OrderCancelled(
-            command.account_id,
-            order.cl_ord_id,
-            order.id,
-            self._clock.utc_now_c(),
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
-        )
-
-        # Remove from working orders (checked it was in dictionary above)
-        del self._working_orders[command.cl_ord_id]
-
-        self.exec_client.handle_event(cancelled)
-        self._check_oco_order(command.cl_ord_id)
+        self._cancel_order(command.cl_ord_id)
 
     cpdef void handle_amend_order(self, AmendOrder command) except *:
         Condition.not_none(command, "command")
 
-        if command.cl_ord_id not in self._working_orders:
-            self._cancel_reject(
-                command.cl_ord_id,
-                "amend order",
-                "order not found",
-            )
-            return  # Rejected the amend order request
-
-        cdef PassiveOrder order = self._working_orders[command.cl_ord_id]
-        cdef Instrument instrument = self.instruments[order.symbol]
-
-        if command.quantity == 0:
-            self._cancel_reject(
-                order.cl_ord_id,
-                "amend order",
-                f"amended quantity {command.quantity} invalid",
-            )
-            return  # Cannot amend order
-
-        cdef Price market_bid = self._market_bids.get(order.symbol)
-        cdef Price market_ask = self._market_asks.get(order.symbol)
-
-        cdef bint fill = False
-        cdef Price fill_price = None
-
-        # TODO [Refactor]: Below logic
-        # Check order price is valid and reject or fill
-        if order.side == OrderSide.BUY:
-            if order.type == OrderType.STOP_MARKET:
-                if order.price < market_ask:
-                    self._cancel_reject(
-                        order.cl_ord_id,
-                        "amend order",
-                        f"BUY STOP order price of {order.price} is too "
-                        f"close to the market, ask={market_ask}",
-                    )
-                    return  # Rejected the amend order request
-            elif order.type == OrderType.STOP_LIMIT:
-                if order.is_triggered:
-                    if order.price >= market_ask:
-                        if order.is_post_only:
-                            self._cancel_reject(
-                                order.cl_ord_id,
-                                "amend order",
-                                f"BUY LIMIT order price of {order.price} is too "
-                                f"close to the market, ask={market_ask}",
-                            )
-                            return  # Rejected the amend order request
-                        else:
-                            fill = True
-                            fill_price = market_ask
-            elif order.type == OrderType.LIMIT:
-                if order.price >= market_ask:
-                    if order.is_post_only:
-                        self._cancel_reject(
-                            order.cl_ord_id,
-                            "amend order",
-                            f"BUY LIMIT order price of {order.price} is too "
-                            f"far from the market, ask={market_ask}",
-                        )
-                        return  # Rejected the amend order request
-                    else:
-                        fill = True
-                        fill_price = market_ask
-        elif order.side == OrderSide.SELL:
-            if order.type == OrderType.STOP_MARKET:
-                if order.price > market_bid:
-                    self._cancel_reject(
-                        order.cl_ord_id,
-                        "amend order",
-                        f"SELL STOP order price of {order.price} is too "
-                        f"close to the market, bid={market_bid}",
-                    )
-                    return  # Rejected the amend order request
-            elif order.type == OrderType.STOP_LIMIT:
-                if order.is_triggered:
-                    if order.price <= market_bid:
-                        if order.is_post_only:
-                            self._cancel_reject(
-                                order.cl_ord_id,
-                                "amend order",
-                                f"SELL LIMIT order price of {order.price} is too "
-                                f"close to the market, bid={market_bid}",
-                            )
-                            return  # Rejected the amend order request
-                        else:
-                            fill = True
-                            fill_price = market_bid
-            elif order.type == OrderType.LIMIT:
-                if order.price <= market_bid:
-                    if order.is_post_only:
-                        self._cancel_reject(
-                            order.cl_ord_id,
-                            "amend order",
-                            f"SELL LIMIT order price of {order.price} is too "
-                            f"close to the market, bid={market_bid}",
-                        )
-                        return  # Rejected the amend order request
-                    else:
-                        fill = True
-                        fill_price = market_bid
-
-        # Generate event
-        cdef OrderAmended amended = OrderAmended(
-            command.account_id,
-            order.cl_ord_id,
-            order.id,
-            command.quantity,
-            command.price,
-            self._clock.utc_now_c(),
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
-        )
-
-        self.exec_client.handle_event(amended)
-
-        if fill:
-            self._fill_order(order, fill_price, LiquiditySide.TAKER)
+        self._amend_order(command.cl_ord_id, command.quantity, command.price)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -658,6 +517,125 @@ cdef class SimulatedExchange:
         self._check_oco_order(order.cl_ord_id)
         self._clean_up_child_orders(order.cl_ord_id)
 
+    cdef inline void _amend_order(self, ClientOrderId cl_ord_id, Quantity qty, Price price) except *:
+        cdef PassiveOrder order = self._working_orders.get(cl_ord_id)
+        if order is None:
+            self._cancel_reject(
+                cl_ord_id,
+                "amend order",
+                f"repr{cl_ord_id} not found",
+            )
+            return  # Rejected the amend order request
+
+        cdef Instrument instrument = self.instruments[order.symbol]
+
+        if qty <= 0:
+            self._cancel_reject(
+                order.cl_ord_id,
+                "amend order",
+                f"amended quantity {qty} invalid",
+            )
+            return  # Cannot amend order
+
+        cdef Price bid = self._market_bids.get(order.symbol)
+        cdef Price ask = self._market_asks.get(order.symbol)
+
+        cdef bint fill = False
+        # Check if request valid and if filled
+        if order.type == OrderType.LIMIT:
+            if self._is_limit_marketable(order.side, order.price, bid, ask):
+                if order.is_post_only:
+                    self._cancel_reject(
+                        order.cl_ord_id,
+                        "amend order",
+                        f"{OrderSideParser.to_str(order.side)} POST_ONLY LIMIT order "
+                        f"px of {order.price} would have been TAKER: bid={bid}, ask={ask}",
+                    )
+                    return  # Rejected the amend order request
+                else:
+                    fill = True
+        elif order.type == OrderType.STOP_MARKET:
+            if self._is_stop_marketable(order.side, order.price, bid, ask):
+                self._cancel_reject(
+                    order.cl_ord_id,
+                    "amend order",
+                    f"{OrderSideParser.to_str(order.side)} STOP order "
+                    f"px of {order.price} was in the market: bid={bid}, ask={ask}",
+                )
+                return  # Rejected the amend order request
+        elif order.type == OrderType.STOP_LIMIT:
+            if not order.is_triggered:
+                # Amending stop price
+                if self._is_stop_marketable(order.side, order.trigger, bid, ask):
+                    self._cancel_reject(
+                        order.cl_ord_id,
+                        "amend order",
+                        f"{OrderSideParser.to_str(order.side)} STOP_LIMIT order "
+                        f"trigger px of {order.trigger} was in the market: bid={bid}, ask={ask}",
+                    )
+                    return  # Rejected the amend order request
+            else:
+                # Amending limit price
+                if self._is_limit_marketable(order.side, order.price, bid, ask):
+                    if order.is_post_only:
+                        self._cancel_reject(
+                            order.cl_ord_id,
+                            "amend order",
+                            f"{OrderSideParser.to_str(order.side)} POST_ONLY LIMIT order "
+                            f"limit px of {order.price} would have been TAKER: bid={bid}, ask={ask}",
+                        )
+                        return  # Rejected the amend order request
+                    else:
+                        fill = True
+        else:
+            raise RuntimeError(f"Invalid order type")
+
+        # Generate event
+        cdef OrderAmended amended = OrderAmended(
+            order.account_id,
+            order.cl_ord_id,
+            order.id,
+            qty,
+            price,
+            self._clock.utc_now_c(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now_c(),
+        )
+
+        self.exec_client.handle_event(amended)
+
+        if fill:
+            fill_price = self._market_fill_price(
+                order.side,
+                order.symbol,
+                bid,
+                ask,
+            )
+            self._fill_order(order, fill_price, LiquiditySide.TAKER)
+
+    cdef inline void _cancel_order(self, ClientOrderId cl_ord_id) except *:
+        cdef PassiveOrder order = self._working_orders.pop(cl_ord_id, None)
+        if order is None:
+            self._cancel_reject(
+                cl_ord_id,
+                "cancel order",
+                f"{repr(cl_ord_id)} not found",
+            )
+            return  # Rejected the cancel order command
+
+        # Generate event
+        cdef OrderCancelled cancelled = OrderCancelled(
+            order.account_id,
+            order.cl_ord_id,
+            order.id,
+            self._clock.utc_now_c(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now_c(),
+        )
+
+        self.exec_client.handle_event(cancelled)
+        self._check_oco_order(order.cl_ord_id)
+
     cdef inline void _cancel_reject(
         self,
         ClientOrderId cl_ord_id,
@@ -754,10 +732,8 @@ cdef class SimulatedExchange:
             self._reject_order(order, f"no market for {order.symbol}")
             return  # Cannot accept order
 
-        # Check if market order and accept and fill immediately
         if order.type == OrderType.MARKET:
             self._process_market_order(order, bid, ask)
-            return  # Market order filled - nothing further to process
         elif order.type == OrderType.LIMIT:
             self._process_limit_order(order, bid, ask)
         elif order.type == OrderType.STOP_MARKET:
@@ -779,11 +755,11 @@ cdef class SimulatedExchange:
 
     cdef inline void _process_limit_order(self, LimitOrder order, Price bid, Price ask) except *:
         if order.is_post_only:
-            if not self._is_limit_valid(order.side, order.price, bid, ask):
+            if self._is_limit_marketable(order.side, order.price, bid, ask):
                 self._reject_order(
                     order,
                     f"{OrderSideParser.to_str(order.side)} POST_ONLY LIMIT order "
-                    f"price of {order.price} is too far from the market, bid={bid}, ask={ask}",
+                    f"limit px of {order.price} would have been a TAKER: bid={bid}, ask={ask}",
                 )
                 return  # Invalid price
 
@@ -798,11 +774,11 @@ cdef class SimulatedExchange:
             self._fill_order(order, fill_price, LiquiditySide.TAKER)
 
     cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *:
-        if not self._is_stop_valid(order.side, order.price, bid, ask):
+        if self._is_stop_marketable(order.side, order.price, bid, ask):
             self._reject_order(
                 order,
                 f"{OrderSideParser.to_str(order.side)} STOP order "
-                f"price of {order.price} is too far from the market, bid={bid}, ask={ask}",
+                f"px of {order.price} was in the market: bid={bid}, ask={ask}",
             )
             return  # Invalid price
 
@@ -811,11 +787,11 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
     cdef inline void _process_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *:
-        if not self._is_stop_valid(order.side, order.trigger, bid, ask):
+        if self._is_stop_marketable(order.side, order.trigger, bid, ask):
             self._reject_order(
                 order,
                 f"{OrderSideParser.to_str(order.side)} STOP_LIMIT order "
-                f"price of {order.trigger} is too far from the market, bid={bid}, ask={ask}",
+                f"trigger px of {order.trigger} was in the market: bid={bid}, ask={ask}",
             )
             return  # Invalid price
 
@@ -867,20 +843,20 @@ cdef class SimulatedExchange:
                         self._market_fill_price(order.symbol, order.side, bid, ask),
                         LiquiditySide.TAKER,  # Immediate fill takes liquidity
                     )
-                return  # Rejected or filled
+            return  # Triggered, rejected or filled
 
-        if order.is_triggered and self._is_limit_matched(order.side, order.price, bid, ask):
+        if self._is_limit_matched(order.side, order.price, bid, ask):
             self._fill_order(
                 order,
                 order.price,          # Price is 'guaranteed' (negative slippage not currently modeled)
                 LiquiditySide.MAKER,  # Providing liquidity
             )
 
-    cdef inline bint _is_limit_valid(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
+    cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
-            return bid > order_price
+            return order_price >= ask
         else:  # => OrderSide.SELL
-            return ask < order_price
+            return order_price <= bid
 
     cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
@@ -888,23 +864,17 @@ cdef class SimulatedExchange:
         else:  # => OrderSide.SELL
             return ask > order_price or (ask == order_price and self.fill_model.is_limit_filled())
 
-    cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
+    cdef inline bint _is_stop_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
-            return ask <= order_price
+            return order_price <= ask
         else:  # => OrderSide.SELL
-            return bid >= order_price
-
-    cdef inline bint _is_stop_valid(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
-        if side == OrderSide.BUY:
-            return ask < order_price
-        else:  # => OrderSide.SELL
-            return bid > order_price
+            return order_price >= bid
 
     cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
-            return ask > order_price or (ask == order_price and self.fill_model.is_stop_filled())
+            return order_price < ask or (order_price == ask and self.fill_model.is_stop_filled())
         else:  # => OrderSide.SELL
-            return bid < order_price or (bid == order_price and self.fill_model.is_stop_filled())
+            return order_price > bid or (order_price == bid and self.fill_model.is_stop_filled())
 
     cdef inline Price _market_fill_price(self, Symbol symbol, OrderSide side, Price bid, Price ask):
         if side == OrderSide.BUY:
