@@ -21,9 +21,9 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderTriggered
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
