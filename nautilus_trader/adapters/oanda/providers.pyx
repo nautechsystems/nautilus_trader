@@ -32,7 +32,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class OandaInstrumentProvider:
     """
-    Provides a means of loading Oanda `Instrument` objects.
+    Provides a means of loading `Instrument` objects through Oanda.
     """
 
     def __init__(
@@ -95,6 +95,11 @@ cdef class OandaInstrumentProvider:
     cpdef Instrument get(self, Symbol symbol):
         """
         Return the instrument for the given symbol (if found).
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the instrument.
 
         Returns
         -------
