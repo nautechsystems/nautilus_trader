@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import pickle
 import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
+from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.identifiers import Exchange
+from nautilus_trader.model.identifiers import Security
 from tests import TESTS_PACKAGE_ROOT
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
@@ -25,5 +28,28 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 class IBInstrumentProviderTests(unittest.TestCase):
 
-    def test_load_futures_contract(self):
-        pass
+    def test_load_futures_contract_instrument(self):
+        # Arrange
+        mock_client = MagicMock()
+
+        with open(TEST_PATH + "contract_details_cl.pickle", "rb") as file:
+            details = pickle.load(file)
+
+        mock_client.reqContractDetails.return_value = [details]
+
+        provider = IBInstrumentProvider(client=mock_client)
+        provider.connect()
+
+        security = Security(
+            symbol="CL",
+            venue=Exchange("NYMEX"),
+            sec_type=AssetType.FUTURE,
+            expiry="20211119",
+            currency="USD",
+        )
+
+        # Act
+        instrument = provider.load_future(security)
+
+        # Assert
+        self.assertEqual(security, instrument.symbol)
