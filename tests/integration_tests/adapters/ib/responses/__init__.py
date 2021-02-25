@@ -12,19 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.instrument cimport Instrument
-
-
-cdef class IBInstrumentProvider:
-    cdef dict _instruments
-    cdef object _client
-
-    cdef readonly str name
-    """The venue of the provider.\n\n:returns: `Venue`"""
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
-
-    cpdef Instrument get(self, Security security)
-    cdef Instrument _parse_instrument(self, dict values)

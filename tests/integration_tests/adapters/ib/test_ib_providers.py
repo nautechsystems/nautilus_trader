@@ -13,18 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.instrument cimport Instrument
+import json
+import unittest
+from unittest.mock import MagicMock
+
+from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
+from tests import TESTS_PACKAGE_ROOT
+
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
-cdef class IBInstrumentProvider:
-    cdef dict _instruments
-    cdef object _client
+class IBInstrumentProviderTests(unittest.TestCase):
 
-    cdef readonly str name
-    """The venue of the provider.\n\n:returns: `Venue`"""
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
-
-    cpdef Instrument get(self, Security security)
-    cdef Instrument _parse_instrument(self, dict values)
+    def test_load_futures_contract(self):
+        pass
