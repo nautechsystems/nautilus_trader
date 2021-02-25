@@ -13,23 +13,35 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.instrument cimport Instrument
+import pickle
+
+import ib_insync
+from ib_insync import Future
+
+# Requirements:
+# - An internet connection
+# - Running TWS on local host and port 7497
 
 
-cdef class IBInstrumentProvider:
-    cdef dict _instruments
-    cdef object _client
-    cdef str _host
-    cdef str _port
-    cdef int _client_id
+def contract_details_cl():
+    # Write pickled CL contract details to a file
 
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
+    client = ib_insync.IB()
+    client.connect()
 
-    cpdef void connect(self)
-    cpdef Instrument load_future(self, Security security, AssetClass asset_class=*)
-    cpdef Instrument get(self, Security security)
-    cdef inline int _tick_size_to_precision(self, double tick_size) except *
-    cdef Instrument _parse_futures_contract(self, Security security, AssetClass asset_class, list details_list)
+    contract = Future(
+        symbol="CL",
+        lastTradeDateOrContractMonth="20211119",
+        exchange="NYMEX",
+        currency="USD",
+    )
+
+    details = client.reqContractDetails(contract)
+
+    with open("contract_details_cl.pickle", "wb") as file:
+        pickle.dump(details[0], file)
+
+
+if __name__ == "__main__":
+    # Enter function to run
+    pass

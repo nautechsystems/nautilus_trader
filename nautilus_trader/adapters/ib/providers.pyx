@@ -13,10 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import ib_insync
 
+from cpython.datetime cimport datetime
+
+from ib_insync.contract import ContractDetails
+from ib_insync.contract import Future
+
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instrument cimport Quantity
 
 
 cdef class IBInstrumentProvider:
@@ -24,20 +35,81 @@ cdef class IBInstrumentProvider:
     Provides a means of loading `Instrument` objects through Interactive Brokers.
     """
 
-    def __init__(self, client not None: ib_insync.Client):
+    def __init__(
+        self,
+        client not None: ib_insync.IB,
+        str host="127.0.0.1",
+        str port="7497",
+        int client_id=1,
+    ):
         """
         Initialize a new instance of the `IBInstrumentProvider` class.
 
         Parameters
         ----------
-        client : ib_insync.Client
+        client : ib_insync.IB
             The Interactive Brokers client.
+        host : str
+            The client host name or IP address.
+        port : str
+            The client port number.
+        client_id : int
+            The unique client identifier number for the connection.
 
         """
-        self.name = "IB"
         self.count = 0
         self._instruments = {}  # type: dict[Security, Instrument]
         self._client = client
+        self._host = host
+        self._port = port
+        self._client_id = client_id
+
+    cpdef void connect(self):
+        self._client.connect(
+            host=self._host,
+            port=self._port,
+            clientId=self._client_id,
+        )
+
+    cpdef Instrument load_future(
+        self,
+        Security security,
+        AssetClass asset_class=AssetClass.UNDEFINED,
+    ):
+        """
+        Return the future contract instrument for the given security identifier.
+
+        Parameters
+        ----------
+        security : Security
+            The security identifier for the futures contract.
+        asset_class : AssetClass, optional
+            The optional asset class for the future (not used to filter).
+
+        Returns
+        -------
+        Instrument or None
+
+        """
+        Condition.not_none(security, "security")
+
+        if not self._client.client.CONNECTED:
+            self.connect()
+
+        contract = Future(
+            symbol=security.code,
+            lastTradeDateOrContractMonth=security.expiry,
+            exchange=security.venue.value,
+            multiplier=security.multiplier,
+            currency=security.currency,
+        )
+
+        cdef list details = self._client.reqContractDetails(contract=contract)
+        cdef Instrument instrument = self._parse_futures_contract(security, asset_class, details)
+
+        self._instruments[instrument.symbol] = instrument
+
+        return instrument
 
     cpdef Instrument get(self, Security security):
         """
@@ -50,5 +122,53 @@ cdef class IBInstrumentProvider:
         """
         return self._instruments.get(security)
 
-    cdef Instrument _parse_instrument(self, dict values):
-        pass
+    cdef inline int _tick_size_to_precision(self, double tick_size) except *:
+        cdef tick_size_str = f"{tick_size:f}"
+        return len(tick_size_str.partition('.')[2].rstrip('0'))
+
+    cdef Instrument _parse_futures_contract(
+        self,
+        Security security,
+        AssetClass asset_class,
+        list details_list,
+    ):
+        if len(details_list) == 0:
+            raise ValueError(f"No contract details found for the given security identifier {security}")
+        elif len(details_list) > 1:
+            raise ValueError(f"Multiple contract details found for the given security identifier {security}")
+
+        details: ContractDetails = details_list[0]
+
+        cdef Currency currency = Currency.from_str_c(security.currency)
+        cdef int price_precision = self._tick_size_to_precision(details.minTick)
+
+        cdef Instrument instrument = Instrument(
+            symbol=security,
+            asset_type=security.sec_type,
+            asset_class=asset_class,
+            base_currency=None,
+            quote_currency=currency,
+            settlement_currency=currency,
+            is_inverse=False,  # TODO: TBC
+            price_precision=price_precision,
+            size_precision=0,
+            tick_size=Decimal(f"{details.minTick:.{price_precision}f}"),
+            multiplier=Decimal(1000),  # TODO: Placeholder (find multiplier)
+            leverage=Decimal(1),       # TODO: Refactor this out of instrument
+            lot_size=Quantity(1),      # TODO: TBC
+            max_quantity=None,         # TODO: TBC
+            min_quantity=None,         # TODO: TBC
+            max_notional=None,         # TODO: TBC
+            min_notional=None,         # TODO: TBC
+            max_price=None,            # TODO: TBC
+            min_price=None,            # TODO: TBC
+            margin_init=Decimal(),     # TODO: TBC
+            margin_maint=Decimal(),    # TODO: TBC
+            maker_fee=Decimal(),       # TODO: TBC
+            taker_fee=Decimal(),       # TODO: TBC
+            financing={},              # TODO: TBC
+            timestamp=datetime.utcnow(),
+            info={"contract_details": details},
+        )
+
+        return instrument
