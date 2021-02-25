@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -80,7 +81,7 @@ class EventTests(unittest.TestCase):
         event = OrderInitialized(
             cl_ord_id=ClientOrderId("O-2020872378423"),
             strategy_id=StrategyId("SCALPER", "001"),
-            symbol=Symbol("BTC/USDT", Exchange("BINANCE")),
+            symbol=Symbol("BTC/USDT", Venue("BINANCE")),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
             quantity=Quantity("0.561000"),
@@ -272,7 +273,7 @@ class EventTests(unittest.TestCase):
             execution_id=ExecutionId("1"),
             position_id=PositionId("2"),
             strategy_id=StrategyId("SCALPER", "001"),
-            symbol=Symbol("BTC/USDT", Exchange("BINANCE")),
+            symbol=Symbol("BTC/USDT", Venue("BINANCE")),
             order_side=OrderSide.BUY,
             fill_qty=Quantity("0.561000"),
             cum_qty=Quantity("0.561000"),
