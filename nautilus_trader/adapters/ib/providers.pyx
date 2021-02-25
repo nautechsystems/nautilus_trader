@@ -12,3 +12,43 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import ib_insync
+
+from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.instrument cimport Instrument
+
+
+cdef class IBInstrumentProvider:
+    """
+    Provides a means of loading `Instrument` objects through Interactive Brokers.
+    """
+
+    def __init__(self, client not None: ib_insync.Client):
+        """
+        Initialize a new instance of the `IBInstrumentProvider` class.
+
+        Parameters
+        ----------
+        client : ib_insync.Client
+            The Interactive Brokers client.
+
+        """
+        self.name = "IB"
+        self.count = 0
+        self._instruments = {}  # type: dict[Security, Instrument]
+        self._client = client
+
+    cpdef Instrument get(self, Security security):
+        """
+        Return the instrument for the given security (if found).
+
+        Returns
+        -------
+        Instrument or None
+
+        """
+        return self._instruments.get(security)
+
+    cdef Instrument _parse_instrument(self, dict values):
+        pass
