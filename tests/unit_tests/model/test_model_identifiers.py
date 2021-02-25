@@ -17,6 +17,7 @@ import unittest
 
 from parameterized import parameterized
 
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Brokerage
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -25,6 +26,7 @@ from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import Issuer
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -150,44 +152,6 @@ class IdentifierTests(unittest.TestCase):
         self.assertTrue(id1 == id1)
         self.assertFalse(id1 == id2)
 
-    def test_symbol_equality(self):
-        # Arrange
-        symbol1 = Symbol("AUD/USD", Venue("SIM"))
-        symbol2 = Symbol("AUD/USD", Venue('IDEALPRO'))
-        symbol3 = Symbol("GBP/USD", Venue("SIM"))
-
-        # Act
-        # Assert
-        self.assertTrue(symbol1 == symbol1)
-        self.assertTrue(symbol1 != symbol2)
-        self.assertTrue(symbol1 != symbol3)
-
-    def test_symbol_str(self):
-        # Arrange
-        symbol = Symbol("AUD/USD", Venue("SIM"))
-
-        # Act
-        # Assert
-        self.assertEqual("AUD/USD.SIM", str(symbol))
-
-    def test_symbol_repr(self):
-        # Arrange
-        symbol = Symbol("AUD/USD", Venue("SIM"))
-
-        # Act
-        # Assert
-        self.assertEqual("Symbol('AUD/USD.SIM')", repr(symbol))
-
-    def test_parse_symbol_from_str(self):
-        # Arrange
-        symbol = Symbol("AUD/USD", Venue("SIM"))
-
-        # Act
-        result = Symbol.from_str(symbol.value)
-
-        # Assert
-        self.assertEqual(symbol, result)
-
     def test_account_id_given_malformed_string_raises_value_error(self):
         # Arrange
         # Act
@@ -260,3 +224,122 @@ class IdentifierTests(unittest.TestCase):
 
         # Assert
         self.assertEqual("NULL", order_id.value)
+
+
+class SymbolIdentifierTests(unittest.TestCase):
+
+    def test_symbol_equality(self):
+        # Arrange
+        symbol1 = Symbol("AUD/USD", Venue("SIM"))
+        symbol2 = Symbol("AUD/USD", Venue('IDEALPRO'))
+        symbol3 = Symbol("GBP/USD", Venue("SIM"))
+
+        # Act
+        # Assert
+        self.assertTrue(symbol1 == symbol1)
+        self.assertTrue(symbol1 != symbol2)
+        self.assertTrue(symbol1 != symbol3)
+
+    def test_symbol_str(self):
+        # Arrange
+        symbol = Symbol("AUD/USD", Venue("SIM"))
+
+        # Act
+        # Assert
+        self.assertEqual("AUD/USD.SIM", str(symbol))
+
+    def test_symbol_repr(self):
+        # Arrange
+        symbol = Symbol("AUD/USD", Venue("SIM"))
+
+        # Act
+        # Assert
+        self.assertEqual("Symbol('AUD/USD.SIM')", repr(symbol))
+
+    def test_parse_symbol_from_str(self):
+        # Arrange
+        symbol = Symbol("AUD/USD", Venue("SIM"))
+
+        # Act
+        result = Symbol.from_str(symbol.value)
+
+        # Assert
+        self.assertEqual(symbol, result)
+
+
+class SecurityIdentifierTests(unittest.TestCase):
+
+    def test_security_hash_str_and_repr(self):
+        # Arrange
+        security = Security(
+            symbol="DAX",
+            venue=Exchange("DTB"),
+            sec_type=AssetType.FUTURE,
+            expiry="201609",
+            currency="EUR",
+            multiplier="5",
+        )
+
+        # Act
+        # Assert
+        self.assertEqual("DAX.DTB", str(security))
+        self.assertEqual("Security('DAX.DTB')", repr(security))
+        self.assertEqual(int, type(hash(security)))
+
+    def test_security_equality(self):
+        # Arrange
+        dax1 = Security(
+            symbol="DAX",
+            venue=Exchange("DTB"),
+            sec_type=AssetType.FUTURE,
+            expiry="201009",
+            currency="EUR",
+            multiplier="5",
+        )
+
+        dax2 = Security(
+            symbol="DAX",
+            venue=Exchange("DTB"),
+            sec_type=AssetType.FUTURE,
+            expiry="201010",  # <-- Different expiry
+            currency="EUR",
+            multiplier="5",
+        )
+
+        # Act
+        # Assert
+        self.assertTrue(dax1 == dax1)
+        self.assertTrue(dax1 != dax2)
+
+    def test_parse_security_from_str_with_all_fields(self):
+        # Arrange
+        security = Security(
+            symbol="DAX",
+            venue=Exchange("DTB"),
+            sec_type=AssetType.FUTURE,
+            expiry="201609",
+            currency="EUR",
+            multiplier="5",
+        )
+
+        # Act
+        result = Security.from_str(security.to_serializable_str())
+
+        # Assert
+        self.assertEqual(security, result)
+
+    def test_parse_security_from_str_with_some_fields(self):
+        # Arrange
+        security = Security(
+            symbol="ES",
+            venue=Exchange("GLOBEX"),
+            sec_type=AssetType.FUTURE,
+            expiry="201803",
+            currency="USD",
+        )
+
+        # Act
+        result = Security.from_str(security.to_serializable_str())
+
+        # Assert
+        self.assertEqual(security, result)
