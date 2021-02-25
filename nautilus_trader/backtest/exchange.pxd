@@ -39,6 +39,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.order.limit cimport LimitOrder
@@ -46,7 +47,6 @@ from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
