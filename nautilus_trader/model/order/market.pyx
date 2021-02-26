@@ -43,6 +43,8 @@ cdef set _MARKET_ORDER_VALID_TIF = {
 
 cdef class MarketOrder(Order):
     """
+    Represents a market order.
+
     A market order is an order to buy or sell an instrument immediately. This
     type of order guarantees that the order will be executed, but does not
     guarantee the execution price. A market order generally will execute at or
@@ -128,7 +130,7 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to OrderType.MARKET.
+            If event.order_type is not equal to MARKET.
 
         """
         Condition.not_none(event, "event")

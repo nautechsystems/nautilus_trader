@@ -29,6 +29,7 @@ from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.bracket cimport BracketOrder
 from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 
 
@@ -79,9 +80,23 @@ cdef class OrderFactory:
         bint reduce_only=*,
     )
 
+    cpdef StopLimitOrder stop_limit(
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        Price trigger,
+        TimeInForce time_in_force=*,
+        datetime expire_time=*,
+        bint reduce_only=*,
+    )
+
     cpdef BracketOrder bracket(
         self,
-        Order entry_order,
+        Order entry,
         Price stop_loss,
-        Price take_profit=*,
+        Price take_profit,
+        TimeInForce sl_tif=*,
+        TimeInForce tp_tif=*,
     )

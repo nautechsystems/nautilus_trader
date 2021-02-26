@@ -32,8 +32,16 @@ from nautilus_trader.model.order.base cimport PassiveOrder
 
 cdef class StopMarketOrder(PassiveOrder):
     """
-    Represents a stop market order. Once the price crosses the predefined
-    trigger price, the stop order becomes a market order.
+    Represents a stop-market order.
+
+    A stop-market order is an instruction to submit a buy or sell market order
+    if and when the user-specified stop trigger price is attained or penetrated.
+    A stop-market order is not guaranteed a specific execution price and may
+    execute significantly away from its stop price. A Sell Stop order is always
+    placed below the current market price and is typically used to limit a loss
+    or protect a profit on a long stock position. A Buy Stop order is always
+    placed above the current market price. It is typically used to limit a loss
+    or help protect a profit on a short sale.
     """
     def __init__(
         self,
@@ -109,7 +117,7 @@ cdef class StopMarketOrder(PassiveOrder):
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized event):
         """
-        Return a stop order from the given initialized event.
+        Return a stop-market order from the given initialized event.
 
         Parameters
         ----------
@@ -123,7 +131,7 @@ cdef class StopMarketOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to OrderType.STOP_MARKET.
+            If event.order_type is not equal to STOP_MARKET.
 
         """
         Condition.not_none(event, "event")
@@ -135,7 +143,7 @@ cdef class StopMarketOrder(PassiveOrder):
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=Price(event.options.get(PRICE)),
+            price=Price(event.options[PRICE]),
             time_in_force=event.time_in_force,
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,

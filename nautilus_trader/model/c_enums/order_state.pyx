@@ -34,8 +34,10 @@ cdef class OrderStateParser:
         elif value == 8:
             return "EXPIRED"
         elif value == 9:
-            return "PARTIALLY_FILLED"
+            return "TRIGGERED"
         elif value == 10:
+            return "PARTIALLY_FILLED"
+        elif value == 11:
             return "FILLED"
         else:
             return "UNDEFINED"
@@ -58,6 +60,8 @@ cdef class OrderStateParser:
             return OrderState.CANCELLED
         elif value == "EXPIRED":
             return OrderState.EXPIRED
+        elif value == "TRIGGERED":
+            return OrderState.TRIGGERED
         elif value == "PARTIALLY_FILLED":
             return OrderState.PARTIALLY_FILLED
         elif value == "FILLED":

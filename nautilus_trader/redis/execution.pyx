@@ -29,6 +29,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
@@ -251,6 +252,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             order = LimitOrder.create(event=initial)
         elif initial.order_type == OrderType.STOP_MARKET:
             order = StopMarketOrder.create(event=initial)
+        elif initial.order_type == OrderType.STOP_LIMIT:
+            order = StopLimitOrder.create(event=initial)
         else:
             raise RuntimeError("Invalid order type")
 

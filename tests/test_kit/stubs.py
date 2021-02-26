@@ -33,6 +33,7 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
@@ -312,6 +313,17 @@ class TestStubs:
     @staticmethod
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
+            TestStubs.account_id(),
+            order.cl_ord_id,
+            order.id,
+            UNIX_EPOCH,
+            uuid4(),
+            UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def event_order_triggered(order) -> OrderTriggered:
+        return OrderTriggered(
             TestStubs.account_id(),
             order.cl_ord_id,
             order.id,

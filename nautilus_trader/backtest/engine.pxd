@@ -75,14 +75,15 @@ cdef class BacktestEngine:
         bint print_log_store=*,
     ) except *
 
-    cdef void _advance_time(self, datetime timestamp) except *
-    cdef void _log_header(
+    cdef inline void _advance_time(self, datetime now) except *
+    cdef inline void _process_modules(self, datetime now) except *
+    cdef inline void _log_header(
         self,
         datetime run_started,
         datetime start,
         datetime stop,
     ) except *
-    cdef void _log_footer(
+    cdef inline void _log_footer(
         self,
         datetime run_started,
         datetime run_finished,

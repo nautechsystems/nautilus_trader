@@ -170,7 +170,7 @@ class QuoteTickTests(unittest.TestCase):
         # Assert
         self.assertRaises(
             ValueError,
-            QuoteTick.from_serializable_string,
+            QuoteTick.from_serializable_str,
             AUDUSD_SIM.symbol,
             "NOT_A_TICK",
         )
@@ -187,7 +187,7 @@ class QuoteTickTests(unittest.TestCase):
         )
 
         # Act
-        result = QuoteTick.from_serializable_string(AUDUSD_SIM.symbol, tick.to_serializable_string())
+        result = QuoteTick.from_serializable_str(AUDUSD_SIM.symbol, tick.to_serializable_str())
 
         # Assert
         self.assertEqual(tick, result)
@@ -204,7 +204,7 @@ class QuoteTickTests(unittest.TestCase):
         )
 
         # Act
-        result = tick.to_serializable_string()
+        result = tick.to_serializable_str()
 
         # Assert
         self.assertEqual("1.00000,1.00001,1,1,0", result)
@@ -277,7 +277,7 @@ class TradeTickTests(unittest.TestCase):
         # Assert
         self.assertRaises(
             ValueError,
-            TradeTick.from_serializable_string,
+            TradeTick.from_serializable_str,
             AUDUSD_SIM.symbol,
             "NOT_A_TICK",
         )
@@ -294,7 +294,7 @@ class TradeTickTests(unittest.TestCase):
         )
 
         # Act
-        result = TradeTick.from_serializable_string(AUDUSD_SIM.symbol, tick.to_serializable_string())
+        result = TradeTick.from_serializable_str(AUDUSD_SIM.symbol, tick.to_serializable_str())
 
         # Assert
         self.assertEqual(tick, result)
@@ -311,7 +311,7 @@ class TradeTickTests(unittest.TestCase):
         )
 
         # Act
-        result = tick.to_serializable_string()
+        result = tick.to_serializable_str()
 
         # Assert
         self.assertEqual("1.00000,10000,BUY,123456789,0", result)

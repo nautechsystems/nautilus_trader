@@ -186,7 +186,7 @@ cdef class QuoteTick(Tick):
             raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
 
     @staticmethod
-    cdef QuoteTick from_serializable_string_c(Symbol symbol, str values):
+    cdef QuoteTick from_serializable_str_c(Symbol symbol, str values):
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
 
@@ -205,7 +205,7 @@ cdef class QuoteTick(Tick):
         )
 
     @staticmethod
-    def from_serializable_string(Symbol symbol, str values):
+    def from_serializable_str(Symbol symbol, str values):
         """
         Parse a tick from the given symbol and values string.
 
@@ -226,11 +226,11 @@ cdef class QuoteTick(Tick):
             If values is not a valid string.
 
         """
-        return QuoteTick.from_serializable_string_c(symbol, values)
+        return QuoteTick.from_serializable_str_c(symbol, values)
 
-    cpdef str to_serializable_string(self):
+    cpdef str to_serializable_str(self):
         """
-        The serializable string representation of this object.
+        Return a serializable string representation of this object.
 
         Returns
         -------
@@ -306,7 +306,7 @@ cdef class TradeTick(Tick):
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef TradeTick from_serializable_string_c(Symbol symbol, str values):
+    cdef TradeTick from_serializable_str_c(Symbol symbol, str values):
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
 
@@ -325,7 +325,7 @@ cdef class TradeTick(Tick):
         )
 
     @staticmethod
-    def from_serializable_string(Symbol symbol, str values):
+    def from_serializable_str(Symbol symbol, str values):
         """
         Parse a tick from the given symbol and values string.
 
@@ -346,11 +346,11 @@ cdef class TradeTick(Tick):
             If values is not a valid string.
 
         """
-        return TradeTick.from_serializable_string_c(symbol, values)
+        return TradeTick.from_serializable_str_c(symbol, values)
 
-    cpdef str to_serializable_string(self):
+    cpdef str to_serializable_str(self):
         """
-        The serializable string representation of this object.
+        Return a serializable string representation of this object.
 
         Returns
         -------

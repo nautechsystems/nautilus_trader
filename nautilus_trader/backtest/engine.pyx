@@ -553,6 +553,7 @@ cdef class BacktestEngine:
             self._advance_time(tick.timestamp)
             self._exchanges[tick.symbol.venue].process_tick(tick)
             self._data_engine.process(tick)
+            self._process_modules(tick.timestamp)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -562,19 +563,24 @@ cdef class BacktestEngine:
         if print_log_store:
             self.print_log_store()
 
-    cdef void _advance_time(self, datetime timestamp) except *:
+    cdef inline void _advance_time(self, datetime now) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
         for strategy in self.trader.strategies_c():
-            # noinspection PyUnresolvedReferences
-            time_events += strategy.clock.advance_time(timestamp)
+            time_events += strategy.clock.advance_time(now)
         for event_handler in sorted(time_events):
             self._test_clock.set_time(event_handler.event.timestamp)
             event_handler.handle()
-        self._test_clock.set_time(timestamp)
+        self._test_clock.set_time(now)
 
-    cdef void _log_header(
+    cdef inline void _process_modules(self, datetime now) except *:
+        cdef Venue venue
+        cdef SimulatedExchange exchange
+        for venue, exchange in self._exchanges.items():
+            exchange.process_modules(now)
+
+    cdef inline void _log_header(
         self,
         datetime run_started,
         datetime start,
@@ -599,7 +605,7 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    cdef void _log_footer(
+    cdef inline void _log_footer(
         self,
         datetime run_started,
         datetime run_finished,
