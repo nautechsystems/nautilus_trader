@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
+
 
 cdef class Identifier:
     cdef readonly str value
@@ -41,6 +43,21 @@ cdef class Exchange(Venue):
 
 cdef class Brokerage(Identifier):
     pass
+
+
+cdef class Security(Symbol):
+    cdef readonly AssetType sec_type
+    """The security asset type.\n\n:returns: `AssetType (Enum)`"""
+    cdef readonly str expiry
+    """The security contracts last trading day or month.\n\n:returns: `str`"""
+    cdef readonly str currency
+    """The underlying currency of the security.\n\n:returns: `str`"""
+    cdef readonly str multiplier
+    """The multiplier identifier of the security.\n\n:returns: `str`"""
+
+    @staticmethod
+    cdef Security from_str_c(str value)
+    cpdef str to_serializable_str(self)
 
 
 cdef class IdTag(Identifier):

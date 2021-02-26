@@ -109,6 +109,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         for k, v in self._client.markets.items():
             symbol = Symbol(k, self.venue)
             instrument = self._parse_instrument(symbol, v)
+            if instrument is None:
+                continue  # Something went wrong in parsing
 
             self._instruments[symbol.code] = instrument
 
@@ -124,9 +126,12 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             currency_type = self._parse_currency_type(code)
             currency = Currency.from_str_c(code)
             if currency is None:
+                precision = values.get("precision")
+                if precision is None:
+                    continue
                 currency = Currency(
                     code=code,
-                    precision=self._get_precision(values["precision"], precision_mode),
+                    precision=self._get_precision(precision, precision_mode),
                     currency_type=currency_type,
                 )
 
@@ -174,7 +179,9 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         if base_currency is not None:
             base_currency = Currency.from_str_c(values["base"])
             if base_currency is None:
-                base_currency = self._currencies[values["base"]]
+                base_currency = self._currencies.get(values["base"])
+                if base_currency is None:
+                    return None
 
         quote_currency = Currency.from_str_c(values["quote"])
         if quote_currency is None:

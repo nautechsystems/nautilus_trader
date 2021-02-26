@@ -30,6 +30,7 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
+from nautilus_trader.data.base import Data
 from nautilus_trader.data.base import DataType
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -303,7 +304,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy = TradingStrategy("000")
 
         # Act
-        strategy.on_data("DATA")
+        strategy.on_data(Data(DataType(str), "DATA"))
 
         # Assert
         self.assertTrue(True)  # Exception not raised
@@ -662,7 +663,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, strategy.handle_data, "SOME_DATA")
+        self.assertRaises(RuntimeError, strategy.handle_data, Data(DataType(str), "SOME_DATA"))
 
     def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self):
         # Arrange
@@ -855,7 +856,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.load(state)
 
         # Assert
-        self.assertEqual({}, state)
+        self.assertEqual({"UserState": 1}, state)
         self.assertTrue("on_save" in strategy.calls)
         self.assertEqual(ComponentState.INITIALIZED, strategy.state)
 
@@ -1296,7 +1297,7 @@ class TradingStrategyTests(unittest.TestCase):
             self.logger,
         )
 
-        data = "SOME_DATA"
+        data = Data(DataType(str), "SOME_DATA")
 
         # Act
         strategy.handle_data(data)
@@ -1315,7 +1316,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.start()
 
-        data = "SOME_DATA"
+        data = Data(DataType(str), "SOME_DATA")
 
         # Act
         strategy.handle_data(data)
@@ -1847,7 +1848,7 @@ class TradingStrategyTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("90.003"),
+            Price("90.004"),
         )
 
         order2 = strategy.order_factory.stop_market(

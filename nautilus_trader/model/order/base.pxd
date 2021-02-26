@@ -34,6 +34,7 @@ from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -97,7 +98,6 @@ cdef class Order:
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
-    cdef bint is_active_c(self) except *
     cdef bint is_working_c(self) except *
     cdef bint is_completed_c(self) except *
 
@@ -118,6 +118,7 @@ cdef class Order:
     cdef void _amended(self, OrderAmended event) except *
     cdef void _cancelled(self, OrderCancelled event) except *
     cdef void _expired(self, OrderExpired event) except *
+    cdef void _triggered(self, OrderTriggered event) except *
     cdef void _filled(self, OrderFilled event) except *
     cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity)
 

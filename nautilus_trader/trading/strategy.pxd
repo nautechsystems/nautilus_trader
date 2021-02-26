@@ -21,6 +21,7 @@ from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.cache cimport DataCacheFacade
 from nautilus_trader.data.engine cimport DataEngine
@@ -96,7 +97,7 @@ cdef class TradingStrategy(Component):
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *
-    cpdef void on_data(self, data) except *
+    cpdef void on_data(self, Data data) except *
     cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
@@ -184,7 +185,7 @@ cdef class TradingStrategy(Component):
     cpdef void handle_trade_ticks(self, list ticks) except *
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
-    cpdef void handle_data(self, data) except *
+    cpdef void handle_data(self, Data data) except *
     cpdef void handle_event(self, Event event) except *
 
     cdef void handle_event_c(self, Event event) except *

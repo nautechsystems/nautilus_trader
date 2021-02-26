@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 
@@ -25,7 +24,7 @@ cdef class SimulationModule:
     cdef SimulatedExchange _exchange
 
     cpdef void register_exchange(self, SimulatedExchange exchange) except *
-    cpdef void process(self, QuoteTick tick, datetime now) except *
+    cpdef void process(self, datetime now) except *
     cpdef void log_diagnostics(self, LoggerAdapter log) except *
     cpdef void reset(self) except *
 

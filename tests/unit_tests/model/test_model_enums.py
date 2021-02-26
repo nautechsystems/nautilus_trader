@@ -303,6 +303,7 @@ class OrderStateTests(unittest.TestCase):
         [OrderState.REJECTED, "REJECTED"],
         [OrderState.CANCELLED, "CANCELLED"],
         [OrderState.EXPIRED, "EXPIRED"],
+        [OrderState.TRIGGERED, "TRIGGERED"],
         [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
         [OrderState.FILLED, "FILLED"],
     ])
@@ -325,6 +326,7 @@ class OrderStateTests(unittest.TestCase):
         ["REJECTED", OrderState.REJECTED],
         ["CANCELLED", OrderState.CANCELLED],
         ["EXPIRED", OrderState.EXPIRED],
+        ["TRIGGERED", OrderState.TRIGGERED],
         ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
         ["FILLED", OrderState.FILLED],
     ])
@@ -344,6 +346,7 @@ class OrderTypeTests(unittest.TestCase):
         [OrderType.MARKET, "MARKET"],
         [OrderType.LIMIT, "LIMIT"],
         [OrderType.STOP_MARKET, "STOP_MARKET"],
+        [OrderType.STOP_LIMIT, "STOP_LIMIT"],
     ])
     def test_order_type_to_str(self, enum, expected):
         # Arrange
@@ -359,6 +362,7 @@ class OrderTypeTests(unittest.TestCase):
         ["MARKET", OrderType.MARKET],
         ["LIMIT", OrderType.LIMIT],
         ["STOP_MARKET", OrderType.STOP_MARKET],
+        ["STOP_LIMIT", OrderType.STOP_LIMIT],
     ])
     def test_order_type_from_str(self, string, expected):
         # Arrange

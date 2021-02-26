@@ -184,6 +184,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket2 = self.strategy.order_factory.bracket(
             entry_order=entry2,
             stop_loss=Price("89.800"),
+            take_profit=Price("91.000"),
         )
 
         self.strategy.submit_bracket_order(bracket1)
@@ -204,6 +205,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.check_residuals()
 
         # Assert
+        # TODO: Revisit testing
         self.assertEqual(3, len(self.exchange.get_working_orders()))
         self.assertIn(bracket1.stop_loss, self.exchange.get_working_orders().values())
         self.assertIn(bracket1.take_profit, self.exchange.get_working_orders().values())
@@ -294,6 +296,49 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
 
+    def test_submit_stop_market_order(self):
+        # Arrange
+        # Prepare market
+        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.stop_market(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("90.100"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
+
+    def test_submit_stop_limit_order(self):
+        # Arrange
+        # Prepare market
+        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("90.100"),
+            trigger=Price("90.150"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
+
     def test_submit_bracket_market_order(self):
         # Arrange
         # Prepare market
@@ -310,6 +355,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket_order = self.strategy.order_factory.bracket(
             entry_order,
             Price("80.000"),
+            Price("91.000"),
         )
 
         # Act
@@ -318,7 +364,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, entry_order.state)
 
-    def test_submit_bracket_stop_order(self):
+    def test_submit_stop_market_order_with_bracket(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
@@ -476,6 +522,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket_order = self.strategy.order_factory.bracket(
             entry_order,
             stop_loss=Price("85.000"),
+            take_profit=Price("91.000"),
         )
 
         self.strategy.submit_bracket_order(bracket_order)
@@ -601,6 +648,39 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price("96.711"), order.avg_price)
+
+    def test_process_quote_tick_triggers_buy_stop_limit_order(self):
+        # Arrange
+        # Prepare market
+        tick1 = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        self.data_engine.process(tick1)
+        self.exchange.process_tick(tick1)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("96.500"),  # LimitPx
+            Price("96.710"),  # StopPx
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        tick2 = QuoteTick(
+            USDJPY_SIM.symbol,
+            Price("96.710"),
+            Price("96.712"),
+            Quantity(100000),
+            Quantity(100000),
+            UNIX_EPOCH,
+        )
+
+        self.exchange.process_tick(tick2)
+
+        # Assert
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(OrderState.TRIGGERED, order.state)
 
     def test_process_quote_tick_fills_buy_limit_order(self):
         # Arrange
@@ -728,6 +808,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         bracket = self.strategy.order_factory.bracket(
             entry_order=entry,
             stop_loss=Price("89.900"),
+            take_profit=Price("91.000"),
         )
 
         self.strategy.submit_bracket_order(bracket)
@@ -745,7 +826,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Assert
-        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(2, len(self.exchange.get_working_orders()))
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
 
     def test_process_quote_tick_fills_sell_limit_entry_with_bracket(self):
@@ -787,7 +868,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
         self.assertIn(bracket.take_profit, self.exchange.get_working_orders().values())
 
-    def test_process_trade_tick_fills_buy_limit_entry_with_bracket(self):
+    def test_process_trade_tick_fills_buy_limit_entry_bracket(self):
         # Arrange
         # Prepare market
         tick1 = TradeTick(
@@ -833,7 +914,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("0.99899"),
             Quantity(100000),
-            OrderSide.BUY,  # Lowers ask price
+            OrderSide.SELL,  # Lowers bid price
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )

@@ -36,6 +36,7 @@ cdef class Data:
 
 cdef class DataType:
     cdef frozenset _metadata_key
+    cdef int _hash
 
     cdef readonly type type
     """The type of the data.\n\n:returns: `type`"""

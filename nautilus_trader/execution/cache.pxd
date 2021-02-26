@@ -45,7 +45,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef set _index_orders
-    cdef set _index_orders_active
     cdef set _index_orders_working
     cdef set _index_orders_completed
     cdef set _index_positions
