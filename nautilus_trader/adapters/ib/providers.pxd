@@ -15,6 +15,7 @@
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.instrument cimport Future
 from nautilus_trader.model.instrument cimport Instrument
 
 
@@ -29,7 +30,7 @@ cdef class IBInstrumentProvider:
     """The count of instruments held by the provider.\n\n:returns: `int`"""
 
     cpdef void connect(self)
-    cpdef Instrument load_future(self, Security security, AssetClass asset_class=*)
+    cpdef Future load_future(self, Security security, AssetClass asset_class=*)
     cpdef Instrument get(self, Security security)
     cdef inline int _tick_size_to_precision(self, double tick_size) except *
-    cdef Instrument _parse_futures_contract(self, Security security, AssetClass asset_class, list details_list)
+    cdef Future _parse_futures_contract(self, Security security, AssetClass asset_class, list details_list)

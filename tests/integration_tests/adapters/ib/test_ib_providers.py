@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import pickle
 import unittest
 from unittest.mock import MagicMock
@@ -44,12 +45,17 @@ class IBInstrumentProviderTests(unittest.TestCase):
             symbol="CL",
             venue=Exchange("NYMEX"),
             sec_type=AssetType.FUTURE,
+            multiplier="1000",
             expiry="20211119",
             currency="USD",
         )
 
         # Act
-        instrument = provider.load_future(security)
+        future = provider.load_future(security)
 
         # Assert
-        self.assertEqual(security, instrument.symbol)
+        self.assertEqual(security, future.symbol)
+        self.assertEqual(1000, future.multiplier)
+        self.assertEqual(Decimal("0.01"), future.tick_size)
+        self.assertEqual(2, future.price_precision)
+        # TODO: Test all properties

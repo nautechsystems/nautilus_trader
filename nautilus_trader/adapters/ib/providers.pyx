@@ -20,12 +20,13 @@ import ib_insync
 from cpython.datetime cimport datetime
 
 from ib_insync.contract import ContractDetails
-from ib_insync.contract import Future
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.instrument cimport Future
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.instrument cimport Quantity
 
@@ -58,7 +59,7 @@ cdef class IBInstrumentProvider:
 
         """
         self.count = 0
-        self._instruments = {}  # type: dict[Security, Instrument]
+        self._instruments = {}  # type: dict[Symbol, Instrument]
         self._client = client
         self._host = host
         self._port = port
@@ -71,7 +72,7 @@ cdef class IBInstrumentProvider:
             clientId=self._client_id,
         )
 
-    cpdef Instrument load_future(
+    cpdef Future load_future(
         self,
         Security security,
         AssetClass asset_class=AssetClass.UNDEFINED,
@@ -88,7 +89,7 @@ cdef class IBInstrumentProvider:
 
         Returns
         -------
-        Instrument or None
+        Future or None
 
         """
         Condition.not_none(security, "security")
@@ -96,7 +97,7 @@ cdef class IBInstrumentProvider:
         if not self._client.client.CONNECTED:
             self.connect()
 
-        contract = Future(
+        contract = ib_insync.contract.Future(
             symbol=security.code,
             lastTradeDateOrContractMonth=security.expiry,
             exchange=security.venue.value,
@@ -105,11 +106,11 @@ cdef class IBInstrumentProvider:
         )
 
         cdef list details = self._client.reqContractDetails(contract=contract)
-        cdef Instrument instrument = self._parse_futures_contract(security, asset_class, details)
+        cdef Future future = self._parse_futures_contract(security, asset_class, details)
 
-        self._instruments[instrument.symbol] = instrument
+        self._instruments[future.symbol] = future
 
-        return instrument
+        return future
 
     cpdef Instrument get(self, Security security):
         """
@@ -126,7 +127,7 @@ cdef class IBInstrumentProvider:
         cdef tick_size_str = f"{tick_size:f}"
         return len(tick_size_str.partition('.')[2].rstrip('0'))
 
-    cdef Instrument _parse_futures_contract(
+    cdef Future _parse_futures_contract(
         self,
         Security security,
         AssetClass asset_class,
@@ -142,33 +143,23 @@ cdef class IBInstrumentProvider:
         cdef Currency currency = Currency.from_str_c(security.currency)
         cdef int price_precision = self._tick_size_to_precision(details.minTick)
 
-        cdef Instrument instrument = Instrument(
-            symbol=security,
-            asset_type=security.sec_type,
+        cdef Future future = Future(
+            security=security,
             asset_class=asset_class,
-            base_currency=None,
-            quote_currency=currency,
-            settlement_currency=currency,
-            is_inverse=False,  # TODO: TBC
+            contract_id=details.contract.conId,
+            local_symbol=details.contract.localSymbol,
+            trading_class=details.contract.tradingClass,
+            market_name=details.marketName,
+            long_name=details.longName,
+            contract_month=details.contractMonth,
+            time_zone_id=details.timeZoneId,
+            trading_hours=details.tradingHours,
+            liquid_hours=details.liquidHours,
+            last_trade_time=details.lastTradeTime,
             price_precision=price_precision,
-            size_precision=0,
             tick_size=Decimal(f"{details.minTick:.{price_precision}f}"),
-            multiplier=Decimal(1000),  # TODO: Placeholder (find multiplier)
-            leverage=Decimal(1),       # TODO: Refactor this out of instrument
-            lot_size=Quantity(1),      # TODO: TBC
-            max_quantity=None,         # TODO: TBC
-            min_quantity=None,         # TODO: TBC
-            max_notional=None,         # TODO: TBC
-            min_notional=None,         # TODO: TBC
-            max_price=None,            # TODO: TBC
-            min_price=None,            # TODO: TBC
-            margin_init=Decimal(),     # TODO: TBC
-            margin_maint=Decimal(),    # TODO: TBC
-            maker_fee=Decimal(),       # TODO: TBC
-            taker_fee=Decimal(),       # TODO: TBC
-            financing={},              # TODO: TBC
+            lot_size=Quantity(1),
             timestamp=datetime.utcnow(),
-            info={"contract_details": details},
         )
 
-        return instrument
+        return future
