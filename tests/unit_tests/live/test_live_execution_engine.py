@@ -79,7 +79,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         asyncio.set_event_loop(self.loop)
 
         self.database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
-        self.exec_engine = LiveExecutionEngine(
+        self.engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
             portfolio=self.portfolio,
@@ -88,33 +88,33 @@ class LiveExecutionEngineTests(unittest.TestCase):
         )
 
         self.venue = Venue("SIM")
-        self.exec_client = MockExecutionClient(
+        self.client = MockExecutionClient(
             self.venue,
             self.account_id,
-            self.exec_engine,
+            self.engine,
             self.clock,
             self.logger,
         )
 
-        self.exec_engine.register_client(self.exec_client)
+        self.engine.register_client(self.client)
 
     def tearDown(self):
-        self.exec_engine.dispose()
+        self.engine.dispose()
         self.loop.stop()
         self.loop.close()
 
     def test_start_when_loop_not_running_logs(self):
         # Arrange
         # Act
-        self.exec_engine.start()
+        self.engine.start()
 
         # Assert
         self.assertTrue(True)  # No exceptions raised
-        self.exec_engine.stop()
+        self.engine.stop()
 
     def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
-        self.exec_engine = LiveExecutionEngine(
+        self.engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
             portfolio=self.portfolio,
@@ -130,7 +130,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
             self.logger,
         )
 
-        self.exec_engine.register_strategy(strategy)
+        self.engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.symbol,
@@ -150,16 +150,16 @@ class LiveExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order)
-        self.exec_engine.execute(submit_order)
+        self.engine.execute(submit_order)
+        self.engine.execute(submit_order)
 
         # Assert
-        self.assertEqual(1, self.exec_engine.qsize())
-        self.assertEqual(0, self.exec_engine.command_count)
+        self.assertEqual(1, self.engine.qsize())
+        self.assertEqual(0, self.engine.command_count)
 
     def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
-        self.exec_engine = LiveExecutionEngine(
+        self.engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
             portfolio=self.portfolio,
@@ -175,7 +175,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
             self.logger,
         )
 
-        self.exec_engine.register_strategy(strategy)
+        self.engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.symbol,
@@ -197,17 +197,17 @@ class LiveExecutionEngineTests(unittest.TestCase):
         event = TestStubs.event_order_submitted(order)
 
         # Act
-        self.exec_engine.execute(submit_order)
-        self.exec_engine.process(event)  # Add over max size
+        self.engine.execute(submit_order)
+        self.engine.process(event)  # Add over max size
 
         # Assert
-        self.assertEqual(1, self.exec_engine.qsize())
-        self.assertEqual(0, self.exec_engine.command_count)
+        self.assertEqual(1, self.engine.qsize())
+        self.assertEqual(0, self.engine.command_count)
 
     def test_get_event_loop_returns_expected_loop(self):
         # Arrange
         # Act
-        loop = self.exec_engine.get_event_loop()
+        loop = self.engine.get_event_loop()
 
         # Assert
         self.assertEqual(self.loop, loop)
@@ -216,14 +216,14 @@ class LiveExecutionEngineTests(unittest.TestCase):
         async def run_test():
             # Arrange
             # Act
-            self.exec_engine.start()
+            self.engine.start()
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(ComponentState.RUNNING, self.exec_engine.state)
+            self.assertEqual(ComponentState.RUNNING, self.engine.state)
 
             # Tear Down
-            self.exec_engine.stop()
+            self.engine.stop()
 
         self.loop.run_until_complete(run_test())
 
@@ -231,12 +231,12 @@ class LiveExecutionEngineTests(unittest.TestCase):
         async def run_test():
             # Arrange
             # Act
-            self.exec_engine.start()
+            self.engine.start()
             await asyncio.sleep(0)
-            self.exec_engine.kill()
+            self.engine.kill()
 
             # Assert
-            self.assertEqual(ComponentState.STOPPED, self.exec_engine.state)
+            self.assertEqual(ComponentState.STOPPED, self.engine.state)
 
         self.loop.run_until_complete(run_test())
 
@@ -244,17 +244,17 @@ class LiveExecutionEngineTests(unittest.TestCase):
         async def run_test():
             # Arrange
             # Act
-            self.exec_engine.kill()
+            self.engine.kill()
 
             # Assert
-            self.assertEqual(0, self.exec_engine.qsize())
+            self.assertEqual(0, self.engine.qsize())
 
         self.loop.run_until_complete(run_test())
 
     def test_execute_command_places_command_on_queue(self):
         async def run_test():
             # Arrange
-            self.exec_engine.start()
+            self.engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -263,7 +263,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
                 self.logger,
             )
 
-            self.exec_engine.register_strategy(strategy)
+            self.engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.symbol,
@@ -283,22 +283,22 @@ class LiveExecutionEngineTests(unittest.TestCase):
             )
 
             # Act
-            self.exec_engine.execute(submit_order)
+            self.engine.execute(submit_order)
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(0, self.exec_engine.qsize())
-            self.assertEqual(1, self.exec_engine.command_count)
+            self.assertEqual(0, self.engine.qsize())
+            self.assertEqual(1, self.engine.command_count)
 
             # Tear Down
-            self.exec_engine.stop()
+            self.engine.stop()
 
         self.loop.run_until_complete(run_test())
 
     def test_handle_position_opening_with_position_id_none(self):
         async def run_test():
             # Arrange
-            self.exec_engine.start()
+            self.engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -307,7 +307,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
                 self.logger,
             )
 
-            self.exec_engine.register_strategy(strategy)
+            self.engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.symbol,
@@ -318,15 +318,15 @@ class LiveExecutionEngineTests(unittest.TestCase):
             event = TestStubs.event_order_submitted(order)
 
             # Act
-            self.exec_engine.process(event)
+            self.engine.process(event)
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(0, self.exec_engine.qsize())
-            self.assertEqual(1, self.exec_engine.event_count)
+            self.assertEqual(0, self.engine.qsize())
+            self.assertEqual(1, self.engine.event_count)
 
             # Tear Down
-            self.exec_engine.stop()
+            self.engine.stop()
 
         self.loop.run_until_complete(run_test())
 

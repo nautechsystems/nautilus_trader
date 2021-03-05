@@ -393,7 +393,7 @@ class MockExecutionClient(ExecutionClient):
         self,
         venue,
         account_id,
-        exec_engine,
+        engine,
         clock,
         logger,
     ):
@@ -406,7 +406,7 @@ class MockExecutionClient(ExecutionClient):
             The venue for the client.
         account_id : AccountId
             The account_id for the client.
-        exec_engine : ExecutionEngine
+        engine : ExecutionEngine
             The execution engine for the component.
         clock : Clock
             The clock for the component.
@@ -417,7 +417,7 @@ class MockExecutionClient(ExecutionClient):
         super().__init__(
             venue,
             account_id,
-            exec_engine,
+            engine,
             clock,
             logger,
         )
