@@ -36,7 +36,6 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
