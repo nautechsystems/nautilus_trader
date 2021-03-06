@@ -22,6 +22,7 @@ from tests.test_kit.stubs import TestStubs
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 
+
 class VolatilityCompressionRatioTests(unittest.TestCase):
 
     def setUp(self):

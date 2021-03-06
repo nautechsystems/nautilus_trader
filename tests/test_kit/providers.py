@@ -96,6 +96,11 @@ class TestInstrumentProvider:
     def btcusdt_binance() -> Instrument:
         """
         Return the Binance BTC/USDT instrument for backtesting.
+
+        Returns
+        -------
+        Instrument
+
         """
         return Instrument(
             symbol=Symbol("BTC/USDT", Venue("BINANCE")),
@@ -129,6 +134,11 @@ class TestInstrumentProvider:
     def ethusdt_binance() -> Instrument:
         """
         Return the Binance ETH/USDT instrument for backtesting.
+
+        Returns
+        -------
+        Instrument
+
         """
         return Instrument(
             symbol=Symbol("ETH/USDT", Venue("BINANCE")),
@@ -162,6 +172,16 @@ class TestInstrumentProvider:
     def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
+
+        Parameters
+        ----------
+        leverage : Decimal
+            The margined leverage for the instrument.
+
+        Returns
+        -------
+        Instrument
+
         """
         return Instrument(
             symbol=Symbol("XBT/USD", Venue("BITMEX")),
@@ -195,6 +215,16 @@ class TestInstrumentProvider:
     def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
         Return the BitMEX ETH/USD perpetual contract for backtesting.
+
+        Parameters
+        ----------
+        leverage : Decimal
+            The margined leverage for the instrument.
+
+        Returns
+        -------
+        Instrument
+
         """
         return Instrument(
             symbol=Symbol("ETH/USD", Venue("BITMEX")),
@@ -233,8 +263,12 @@ class TestInstrumentProvider:
         ----------
         symbol : Symbol
             The currency pair symbol.
-        leverage : Decimal, optional
+        leverage : Decimal
             The leverage for the instrument.
+
+        Returns
+        -------
+        Instrument
 
         Raises
         ------
