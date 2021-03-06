@@ -383,8 +383,8 @@ cdef class ExecutionEngine(Component):
         self.cache.check_integrity()
         self._set_position_id_counts()
 
-        cdef long total_ns = round((self._clock.unix_time() - ts) * 1000000)
-        self._log.info(f"Loaded cache in {total_ns}μs.")
+        cdef long total_us = round((self._clock.unix_time() - ts) * 1000000)
+        self._log.info(f"Loaded cache in {total_us}μs.")
 
         # Update portfolio
         for account in self.cache.accounts():
