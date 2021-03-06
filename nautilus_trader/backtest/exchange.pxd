@@ -137,6 +137,10 @@ cdef class SimulatedExchange:
     cdef inline void _process_limit_order(self, LimitOrder order, Price bid, Price ask) except *
     cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *
     cdef inline void _process_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *
+    cdef inline void _amend_limit_order(self, LimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
+    cdef inline void _amend_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price, Price bid, Price ask) except *
+    cdef inline void _amend_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
+    cdef inline void _generate_order_amended(self, PassiveOrder order, Quantity qty, Price price) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
@@ -150,6 +154,9 @@ cdef class SimulatedExchange:
     cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline Price _market_fill_price(self, Symbol symbol, OrderSide side, Price bid, Price ask)
     cdef inline Price _stop_fill_price(self, Symbol symbol, OrderSide side, Price stop)
+
+# --------------------------------------------------------------------------------------------------
+
     cdef inline void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
     cdef inline void _clean_up_child_orders(self, ClientOrderId cl_ord_id) except *
     cdef inline void _check_oco_order(self, ClientOrderId cl_ord_id) except *

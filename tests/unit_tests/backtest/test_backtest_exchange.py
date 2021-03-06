@@ -431,7 +431,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, self.exec_engine.event_count)
 
-    def test_modify_stop_order_when_order_does_not_exist(self):
+    def test_amend_stop_order_when_order_does_not_exist(self):
         # Arrange
         command = AmendOrder(
             venue=SIM,
@@ -450,7 +450,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, self.exec_engine.event_count)
 
-    def test_modify_stop_order(self):
+    def test_amend_stop_order(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
@@ -506,7 +506,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, len(self.exchange.get_working_orders()))
 
-    def test_modify_bracket_order_working_stop_loss(self):
+    def test_amend_bracket_order_working_stop_loss(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
