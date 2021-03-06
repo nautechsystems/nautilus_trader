@@ -40,15 +40,6 @@ Portfolio
    :members:
    :member-order: bysource
 
-Sizing
-------
-
-.. automodule:: nautilus_trader.trading.sizing
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Strategy
 --------
 
