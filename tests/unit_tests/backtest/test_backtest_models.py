@@ -27,7 +27,7 @@ class FillModelTests(unittest.TestCase):
         # Act
         # Assert
         self.assertFalse(fill_model.is_slipped())
-        self.assertFalse(fill_model.is_limit_filled())
+        self.assertTrue(fill_model.is_limit_filled())
         self.assertTrue(fill_model.is_stop_filled())
 
     def test_instantiate_with_random_seed(self):
@@ -37,14 +37,15 @@ class FillModelTests(unittest.TestCase):
         # Act
         # Assert
         self.assertFalse(fill_model.is_slipped())
-        self.assertFalse(fill_model.is_limit_filled())
+        self.assertTrue(fill_model.is_limit_filled())
         self.assertTrue(fill_model.is_stop_filled())
 
     def test_is_stop_filled_with_random_seed(self):
         # Arrange
         fill_model = FillModel(
             prob_fill_at_stop=0.5,
-            random_seed=42)
+            random_seed=42,
+        )
 
         # Act
         # Assert
@@ -54,7 +55,8 @@ class FillModelTests(unittest.TestCase):
         # Arrange
         fill_model = FillModel(
             prob_fill_at_limit=0.5,
-            random_seed=42)
+            random_seed=42,
+        )
 
         # Act
         # Assert
@@ -64,7 +66,8 @@ class FillModelTests(unittest.TestCase):
         # Arrange
         fill_model = FillModel(
             prob_slippage=0.5,
-            random_seed=42)
+            random_seed=42,
+        )
 
         # Act
         # Assert
