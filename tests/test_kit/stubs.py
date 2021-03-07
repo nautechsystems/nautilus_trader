@@ -163,32 +163,32 @@ class TestStubs:
         )
 
     @staticmethod
-    def quote_tick_3decimal(symbol=None) -> QuoteTick:
+    def quote_tick_3decimal(symbol=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
             symbol if symbol is not None else TestStubs.symbol_usdjpy(),
-            Price("90.002"),
-            Price("90.003"),
+            bid if bid is not None else Price("90.002"),
+            ask if ask is not None else Price("90.005"),
             Quantity(1),
             Quantity(1),
             UNIX_EPOCH,
         )
 
     @staticmethod
-    def quote_tick_5decimal(symbol=None) -> QuoteTick:
+    def quote_tick_5decimal(symbol=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
             symbol if symbol is not None else TestStubs.symbol_audusd(),
-            Price("1.00001"),
-            Price("1.00003"),
+            bid if bid is not None else Price("1.00001"),
+            ask if ask is not None else Price("1.00003"),
             Quantity(1),
             Quantity(1),
             UNIX_EPOCH,
         )
 
     @staticmethod
-    def trade_tick_5decimal(symbol=None) -> TradeTick:
+    def trade_tick_5decimal(symbol=None, price=None) -> TradeTick:
         return TradeTick(
             symbol if symbol is not None else TestStubs.symbol_audusd(),
-            Price("1.00001"),
+            price if price is not None else Price("1.00001"),
             Quantity(100000),
             OrderSide.BUY,
             TradeMatchId("123456"),
