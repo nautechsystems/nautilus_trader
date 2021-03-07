@@ -89,7 +89,9 @@ cdef class OrderFactory:
         Price trigger,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
+        bint post_only=*,
         bint reduce_only=*,
+        bint hidden=*,
     )
 
     cpdef BracketOrder bracket(
