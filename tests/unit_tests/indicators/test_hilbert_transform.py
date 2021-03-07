@@ -22,6 +22,7 @@ from tests.test_kit.stubs import TestStubs
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 
+
 class HilbertTransformTests(unittest.TestCase):
 
     def setUp(self):

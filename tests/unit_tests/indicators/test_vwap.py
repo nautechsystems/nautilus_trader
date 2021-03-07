@@ -23,6 +23,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 
+
 class VolumeWeightedAveragePriceTests(unittest.TestCase):
 
     def setUp(self):

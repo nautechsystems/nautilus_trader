@@ -20,8 +20,8 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.trading.sizing import FixedRiskSizer
-from nautilus_trader.trading.sizing import PositionSizer
+from nautilus_trader.risk.sizing import FixedRiskSizer
+from nautilus_trader.risk.sizing import PositionSizer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 

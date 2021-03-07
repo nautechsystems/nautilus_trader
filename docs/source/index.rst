@@ -120,6 +120,7 @@ Index
     api_reference/live
     api_reference/model
     api_reference/redis
+    api_reference/risk
     api_reference/serialization
     api_reference/trading
 

@@ -30,7 +30,7 @@ cdef class FillModel:
 
     def __init__(
         self,
-        double prob_fill_at_limit=0.0,
+        double prob_fill_at_limit=1.0,
         double prob_fill_at_stop=1.0,
         double prob_slippage=0.0,
         random_seed=None,
@@ -108,7 +108,5 @@ cdef class FillModel:
         # probability is the probability of the event occurring [0, 1].
         if probability == 0:
             return False
-        elif probability == 1.:
-            return True
         else:
             return probability >= drand48()

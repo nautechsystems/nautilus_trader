@@ -15,8 +15,8 @@
 
 from decimal import Decimal
 
-from nautilus_trader.data.base cimport Data
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification

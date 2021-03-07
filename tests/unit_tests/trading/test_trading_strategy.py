@@ -1757,7 +1757,7 @@ class TradingStrategyTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("90.005"),
+            Price("90.006"),
         )
 
         strategy.submit_order(order)
@@ -1815,19 +1815,19 @@ class TradingStrategyTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("90.001"),
+            Price("90.000"),
         )
 
         strategy.submit_order(order)
 
         # Act
-        strategy.amend_order(order, Quantity(110000), Price("90.002"))
+        strategy.amend_order(order, Quantity(110000), Price("90.001"))
 
         # Assert
         self.assertEqual(order, strategy.execution.orders()[0])
         self.assertEqual(OrderState.ACCEPTED, strategy.execution.orders()[0].state)
         self.assertEqual(Quantity(110000), strategy.execution.orders()[0].quantity)
-        self.assertEqual(Price("90.002"), strategy.execution.orders()[0].price)
+        self.assertEqual(Price("90.001"), strategy.execution.orders()[0].price)
         self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
         self.assertTrue(strategy.execution.is_order_working(order.cl_ord_id))
         self.assertFalse(strategy.execution.is_order_completed(order.cl_ord_id))
@@ -1848,14 +1848,14 @@ class TradingStrategyTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("90.004"),
+            Price("90.007"),
         )
 
         order2 = strategy.order_factory.stop_market(
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("90.005"),
+            Price("90.006"),
         )
 
         strategy.submit_order(order1)

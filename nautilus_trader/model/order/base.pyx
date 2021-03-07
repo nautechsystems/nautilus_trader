@@ -74,6 +74,9 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
 
+# Valid states to amend an order in
+cdef tuple _AMENDING_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
+
 
 cdef class Order:
     """
@@ -445,7 +448,7 @@ cdef class Order:
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
         elif isinstance(event, OrderAmended):
-            Condition.true(self._fsm.state == OrderState.ACCEPTED, "state was != OrderState.ACCEPTED")
+            Condition.true(self._fsm.state in _AMENDING_STATES, "state was invalid for amending")
             self._amended(event)
         elif isinstance(event, OrderCancelled):
             # OrderId should have been assigned
@@ -460,6 +463,7 @@ cdef class Order:
         elif isinstance(event, OrderTriggered):
             Condition.true(self.type == OrderType.STOP_LIMIT, "can only trigger a STOP_LIMIT order")
             self._fsm.trigger(OrderState.TRIGGERED)
+            self._triggered(event)
         elif isinstance(event, OrderFilled):
             if self.id.not_null():
                 Condition.equal(self.id, event.order_id, "id", "event.order_id")

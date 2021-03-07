@@ -52,7 +52,15 @@ class DataMessageTests(unittest.TestCase):
 
         # Assert
         self.assertEqual("Subscribe(<str> {'type': 'newswire'})", str(command))
-        self.assertEqual(f"Subscribe(provider=BINANCE, data_type=<str> {{'type': 'newswire'}}, handler={repr(handler)}, id={command_id}, timestamp=1970-01-01 00:00:00+00:00)", repr(command))
+        self.assertEqual(
+            f"Subscribe("
+            f"provider=BINANCE, "
+            f"data_type=<str> {{'type': 'newswire'}}, "
+            f"handler={repr(handler)}, "
+            f"id={command_id}, "
+            f"timestamp=1970-01-01 00:00:00+00:00)",
+            repr(command),
+        )
 
     def test_data_request_message_str_and_repr(self):
         # Arrange
@@ -74,8 +82,24 @@ class DataMessageTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("DataRequest(<str> {'Symbol': Symbol('SOMETHING.RANDOM'), 'FromDateTime': None, 'ToDateTime': None, 'Limit': 1000})", str(request))
-        self.assertEqual(f"DataRequest(provider=BINANCE, data_type=<str> {{'Symbol': Symbol('SOMETHING.RANDOM'), 'FromDateTime': None, 'ToDateTime': None, 'Limit': 1000}}, callback={repr(handler)}, id={request_id}, timestamp=1970-01-01 00:00:00+00:00)", repr(request))
+        self.assertEqual(
+            "DataRequest("
+            "<str> {'Symbol': Symbol('SOMETHING.RANDOM'), "
+            "'FromDateTime': None, 'ToDateTime': None, 'Limit': 1000})",
+            str(request),
+        )
+        self.assertEqual(
+            f"DataRequest("
+            f"provider=BINANCE, "
+            f"data_type=<str> {{'Symbol': Symbol('SOMETHING.RANDOM'), "
+            f"'FromDateTime': None, "
+            f"'ToDateTime': None, "
+            f"'Limit': 1000}}, "
+            f"callback={repr(handler)}, "
+            f"id={request_id}, "
+            f"timestamp=1970-01-01 00:00:00+00:00)",
+            repr(request),
+        )
 
     def test_data_response_message_str_and_repr(self):
         # Arrange
@@ -94,4 +118,12 @@ class DataMessageTests(unittest.TestCase):
 
         # Assert
         self.assertEqual("DataResponse(<QuoteTick> {'Symbol': Symbol('AUD/USD.IDEALPRO')})", str(response))
-        self.assertEqual(f"DataResponse(provider=BINANCE, data_type=<QuoteTick> {{'Symbol': Symbol('AUD/USD.IDEALPRO')}}, correlation_id={correlation_id}, id={response_id}, timestamp=1970-01-01 00:00:00+00:00)", repr(response))
+        self.assertEqual(
+            f"DataResponse("
+            f"provider=BINANCE, "
+            f"data_type=<QuoteTick> {{'Symbol': Symbol('AUD/USD.IDEALPRO')}}, "
+            f"correlation_id={correlation_id}, "
+            f"id={response_id}, "
+            f"timestamp=1970-01-01 00:00:00+00:00)",
+            repr(response),
+        )
