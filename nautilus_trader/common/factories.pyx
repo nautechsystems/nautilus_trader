@@ -150,6 +150,8 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
+            If order_side is UNDEFINED.
+        ValueError
             If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is other than GTC, IOC or FOK.
@@ -212,6 +214,8 @@ cdef class OrderFactory:
         ------
         ValueError
             If quantity is not positive (> 0).
+        ValueError
+            If order_side is UNDEFINED.
         ValueError
             If time_in_force is UNDEFINED.
         ValueError
@@ -279,6 +283,8 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
+            If order_side is UNDEFINED.
+        ValueError
             If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is GTD and expire_time is None.
@@ -307,7 +313,9 @@ cdef class OrderFactory:
         Price trigger,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
+        bint post_only=True,
         bint reduce_only=False,
+        bint hidden=False,
     ):
         """
         Create a new stop-limit order.
@@ -330,8 +338,12 @@ cdef class OrderFactory:
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders).
-        reduce_only : bool,
+        post_only : bool, optional
+            If the order will only make a market.
+        reduce_only : bool, optional
             If the order will only reduce an open position.
+        hidden : bool, optional
+            If the order should be hidden from the public book.
 
         Returns
         -------
@@ -347,6 +359,10 @@ cdef class OrderFactory:
             If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is GTD and the expire_time is None.
+        ValueError
+            If post_only and hidden.
+        ValueError
+            If hidden and post_only.
 
         """
         return StopLimitOrder(
@@ -361,7 +377,9 @@ cdef class OrderFactory:
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.utc_now_c(),
+            post_only=post_only,
             reduce_only=reduce_only,
+            hidden=hidden,
         )
 
     cpdef BracketOrder bracket(
