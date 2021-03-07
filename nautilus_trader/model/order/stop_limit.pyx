@@ -202,4 +202,4 @@ cdef class StopLimitOrder(PassiveOrder):
             self.trigger = event.price
 
     cdef void _triggered(self, OrderTriggered event) except *:
-        self._is_triggered = True
+        self.is_triggered = True
