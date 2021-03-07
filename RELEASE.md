@@ -1,4 +1,6 @@
-## NautilusTrader 1.108.0 Beta - Release Notes
+## NautilusTrader 1.107.1 Beta - Release Notes
+
+This is a patch release which applies various fixes and refactorings.
 
 The behaviour of the `StopLimitOrder` continued to be fixed and refined.
 `SimulatedExchange` was refactored further to reduce complexity.
