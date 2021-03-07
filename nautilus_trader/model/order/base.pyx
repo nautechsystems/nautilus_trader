@@ -69,6 +69,11 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.ACCEPTED, OrderState.TRIGGERED): OrderState.TRIGGERED,
     (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.TRIGGERED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.TRIGGERED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.TRIGGERED, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.TRIGGERED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.TRIGGERED, OrderState.FILLED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
@@ -142,7 +147,6 @@ cdef class Order:
         cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
-                f"id={self.id.value}, "
                 f"{id_string}"
                 f"state={self._fsm.state_string_c()}, "
                 f"{self.status_string_c()})")
