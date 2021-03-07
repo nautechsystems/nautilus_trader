@@ -8,7 +8,7 @@ None
 - Refactored `SimulatedExchange` order matching and amendment logic.
 
 ### Fixes
-- `StopLimitOrder` behaviour in `SimulatedExchange`.
+- `StopLimitOrder` triggering behaviour.
 - All flake8 warnings.
 
 # NautilusTrader 1.106.0 Beta Release Notes

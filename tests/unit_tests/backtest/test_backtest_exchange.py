@@ -235,9 +235,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertTrue(isinstance(self.strategy.object_storer.get_store()[1], OrderRejected))
 
     def test_submit_order_with_invalid_price_gets_rejected(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.exchange.process_tick(tick)
         self.portfolio.update_tick(tick)
 
@@ -245,7 +248,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("80.000"),
+            Price("90.005"),  # Price at ask
         )
 
         # Act
@@ -255,9 +258,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.REJECTED, order.state)
 
     def test_submit_market_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -273,12 +279,15 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Decimal("90.003"), order.avg_price)
+        self.assertEqual(Decimal("90.005"), order.avg_price)  # No slippage
 
     def test_submit_limit_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -286,7 +295,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("80.000"),
+            Price("90.001"),
         )
 
         # Act
@@ -297,9 +306,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
 
     def test_submit_stop_market_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -307,7 +319,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("90.100"),
+            Price("90.010"),
         )
 
         # Act
@@ -318,9 +330,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
 
     def test_submit_stop_limit_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -328,8 +343,8 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            price=Price("90.100"),
-            trigger=Price("90.150"),
+            price=Price("90.000"),
+            trigger=Price("90.010"),
         )
 
         # Act
@@ -340,9 +355,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
 
     def test_submit_bracket_market_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -353,21 +371,29 @@ class SimulatedExchangeTests(unittest.TestCase):
         )
 
         bracket_order = self.strategy.order_factory.bracket(
-            entry_order,
-            Price("80.000"),
-            Price("91.000"),
+            entry_order=entry_order,
+            stop_loss=Price("89.950"),
+            take_profit=Price("90.050"),
         )
 
         # Act
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
+        stop_loss_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
+        take_profit_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+
         self.assertEqual(OrderState.FILLED, entry_order.state)
+        self.assertEqual(OrderState.ACCEPTED, stop_loss_order.state)
+        self.assertEqual(OrderState.ACCEPTED, take_profit_order.state)
 
     def test_submit_stop_market_order_with_bracket(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -375,26 +401,35 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("96.710"),
+            Price("90.020"),
         )
 
         bracket_order = self.strategy.order_factory.bracket(
-            entry_order,
-            Price("86.000"),
-            Price("97.000"),
+            entry_order=entry_order,
+            stop_loss=Price("90.000"),
+            take_profit=Price("90.040"),
         )
 
         # Act
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
+        stop_loss_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
+        take_profit_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+
+        self.assertEqual(OrderState.ACCEPTED, entry_order.state)
+        self.assertEqual(OrderState.SUBMITTED, stop_loss_order.state)
+        self.assertEqual(OrderState.SUBMITTED, take_profit_order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertIn(entry_order.cl_ord_id, self.exchange.get_working_orders())
 
     def test_cancel_stop_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -402,7 +437,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("96.711"),
+            Price("90.010"),
         )
 
         self.strategy.submit_order(order)
@@ -450,10 +485,67 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, self.exec_engine.event_count)
 
-    def test_amend_stop_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+    def test_amend_post_only_limit_order_when_marketable_then_rejects_amendment(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("90.001"),
+            post_only=True,  # Default value
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act: Amending BUY LIMIT order limit price to ask will become marketable
+        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+
+        # Assert
+        self.assertEqual(1, len(self.exchange.get_working_orders()))  # Order still working
+        self.assertEqual(Price("90.001"), order.price)            # Did not amend
+
+    def test_amend_limit_order_when_marketable_then_fills_order(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("90.001"),
+            post_only=False,  # Ensures marketable on amendment
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act: Amending BUY LIMIT order limit price to ask will become marketable
+        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+
+        # Assert
+        self.assertEqual(0, len(self.exchange.get_working_orders()))
+        self.assertEqual(Price("90.005"), order.avg_price)
+
+    def test_amend_stop_market_order_when_price_inside_market_then_rejects_amendment(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -461,55 +553,178 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("96.711"),
+            Price("90.010"),
         )
 
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("96.714"))
+        self.strategy.amend_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(1, len(self.exchange.get_working_orders()))
-        self.assertEqual(Price("96.714"), order.price)
+        self.assertEqual(Price("90.010"), order.price)
 
-    def test_expire_order(self):
-        # Arrange
-        # Prepare market
-        tick1 = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
-        self.data_engine.process(tick1)
-        self.exchange.process_tick(tick1)
+    def test_amend_stop_market_order_when_price_valid_then_amends(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
 
         order = self.strategy.order_factory.stop_market(
             USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
-            Price("96.711"),
-            time_in_force=TimeInForce.GTD,
-            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+            Price("90.010"),
         )
 
         self.strategy.submit_order(order)
 
-        tick2 = QuoteTick(
-            USDJPY_SIM.symbol,
-            Price("96.709"),
-            Price("96.710"),
-            Quantity(100000),
-            Quantity(100000),
-            UNIX_EPOCH + timedelta(minutes=1),
-        )
-
         # Act
-        self.exchange.process_tick(tick2)
+        self.strategy.amend_order(order, order.quantity, Price("90.011"))
 
         # Assert
-        self.assertEqual(0, len(self.exchange.get_working_orders()))
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(Price("90.011"), order.price)
 
-    def test_amend_bracket_order_working_stop_loss(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+    def test_amend_untriggered_stop_limit_order_when_price_inside_market_then_rejects_amendment(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("90.000"),
+            trigger=Price("90.010")
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+
+        # Assert
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(Price("90.010"), order.trigger)
+
+    def test_amend_untriggered_stop_limit_order_when_price_valid_then_amends(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("90.000"),
+            trigger=Price("90.010")
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        self.strategy.amend_order(order, order.quantity, Price("90.011"))
+
+        # Assert
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(Price("90.011"), order.trigger)
+
+    def test_amend_triggered_stop_limit_order_when_price_inside_market_then_rejects_amendment(self):
+        # Arrange: Prepare market
+        tick1 = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick1)
+        self.exchange.process_tick(tick1)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("90.000"),
+            trigger=Price("90.010")
+        )
+
+        self.strategy.submit_order(order)
+
+        # Trigger order
+        tick2 = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.009"),
+            ask=Price("90.010"),
+        )
+        self.data_engine.process(tick2)
+        self.exchange.process_tick(tick2)
+
+        # Act
+        self.strategy.amend_order(order, order.quantity, Price("90.010"))
+
+        # Assert
+        self.assertTrue(order.is_triggered)
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(Price("90.000"), order.price)
+
+    def test_amend_triggered_stop_limit_order_when_price_valid_then_amends(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("90.000"),
+            trigger=Price("90.010")
+        )
+
+        self.strategy.submit_order(order)
+
+        # Trigger order
+        tick2 = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.009"),
+            ask=Price("90.010"),
+        )
+        self.data_engine.process(tick2)
+        self.exchange.process_tick(tick2)
+
+        # Act
+        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+
+        # Assert
+        self.assertEqual(1, len(self.exchange.get_working_orders()))
+        self.assertEqual(Price("90.005"), order.price)
+
+    def test_amend_bracket_orders_working_stop_loss(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -534,9 +749,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Price("85.100"), bracket_order.stop_loss.price)
 
     def test_submit_market_order_with_slippage_fill_model_slips_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -559,12 +777,15 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(Decimal("90.004"), order.avg_price)
+        self.assertEqual(Decimal("90.006"), order.avg_price)
 
     def test_order_fills_gets_commissioned(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -606,10 +827,49 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Money(90.00, JPY), account_event3.commission)
         self.assertTrue(Money(999995.00, USD), account.balance())
 
+    def test_expire_order(self):
+        # Arrange: Prepare market
+        tick1 = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick1)
+        self.exchange.process_tick(tick1)
+
+        order = self.strategy.order_factory.stop_market(
+            USDJPY_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("96.711"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+        )
+
+        self.strategy.submit_order(order)
+
+        tick2 = QuoteTick(
+            USDJPY_SIM.symbol,
+            Price("96.709"),
+            Price("96.710"),
+            Quantity(100000),
+            Quantity(100000),
+            UNIX_EPOCH + timedelta(minutes=1),
+        )
+
+        # Act
+        self.exchange.process_tick(tick2)
+
+        # Assert
+        self.assertEqual(0, len(self.exchange.get_working_orders()))
+
     def test_process_quote_tick_fills_buy_stop_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -650,9 +910,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Price("96.711"), order.avg_price)
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
-        # Arrange
-        # Prepare market
-        tick1 = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick1 = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick1)
         self.exchange.process_tick(tick1)
 
@@ -683,11 +946,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.TRIGGERED, order.state)
 
     def test_process_quote_tick_fills_buy_limit_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
-        self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
+        # Arrange: Prepare market
+        tick1 = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick1)
+        self.exchange.process_tick(tick1)
 
         order = self.strategy.order_factory.limit(
             USDJPY_SIM.symbol,
@@ -710,8 +976,8 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         tick3 = QuoteTick(
             USDJPY_SIM.symbol,
-            Price("89.998"),
-            Price("89.999"),
+            Price("90.000"),
+            Price("90.001"),
             Quantity(100000),
             Quantity(100000),
             UNIX_EPOCH,
@@ -726,9 +992,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Price("90.001"), order.avg_price)
 
     def test_process_quote_tick_fills_sell_stop_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -759,9 +1028,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Price("90.000"), order.avg_price)
 
     def test_process_quote_tick_fills_sell_limit_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -792,9 +1064,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Price("90.100"), order.avg_price)
 
     def test_process_quote_tick_fills_buy_limit_entry_with_bracket(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -830,9 +1105,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
 
     def test_process_quote_tick_fills_sell_limit_entry_with_bracket(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -869,8 +1147,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertIn(bracket.take_profit, self.exchange.get_working_orders().values())
 
     def test_process_trade_tick_fills_buy_limit_entry_bracket(self):
-        # Arrange
-        # Prepare market
+        # Arrange: Prepare market
         tick1 = TradeTick(
             AUDUSD_SIM.symbol,
             Price("1.00000"),
@@ -927,9 +1204,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertIn(bracket.take_profit, self.exchange.get_working_orders().values())
 
     def test_filling_oco_sell_cancels_other_order(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -974,9 +1254,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
 
     def test_realized_pnl_contains_commission(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -996,9 +1279,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual([Money(180.01, JPY)], position.commissions())
 
     def test_unrealized_pnl(self):
-        # Arrange
-        # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol)
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            symbol=USDJPY_SIM.symbol,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
 
@@ -1036,11 +1322,10 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         position = self.exec_engine.cache.positions_open()[0]
-        self.assertEqual(Money(500000.00, JPY), position.unrealized_pnl(Price("100.003")))
+        self.assertEqual(Money(499900.00, JPY), position.unrealized_pnl(Price("100.003")))
 
     def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
-        # Arrange
-        # Prepare market
+        # Arrange: Prepare market
         open_quote = QuoteTick(
             USDJPY_SIM.symbol,
             Price("90.002"),

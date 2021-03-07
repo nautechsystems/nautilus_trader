@@ -694,7 +694,7 @@ cdef class SimulatedExchange:
         # Immediately fill marketable order
         self._fill_order(
             order,
-            self._market_fill_price(order.symbol, order.side, bid, ask),
+            self._fill_price_taker(order.symbol, order.side, bid, ask),
             LiquiditySide.TAKER,
         )
 
@@ -714,8 +714,8 @@ cdef class SimulatedExchange:
 
         # Check for immediate fill
         cdef Price fill_price
-        if self._is_limit_marketable(order.side, order.price, bid, ask):
-            fill_price = self._market_fill_price(order.symbol, order.side, bid, ask)
+        if not order.is_post_only and self._is_limit_marketable(order.side, order.price, bid, ask):
+            fill_price = self._fill_price_maker(order.side, bid, ask)
             self._fill_order(order, fill_price, LiquiditySide.TAKER)
 
     cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *:
@@ -752,6 +752,7 @@ cdef class SimulatedExchange:
         Price bid,
         Price ask,
     ) except *:
+        cdef Price fill_price
         if self._is_limit_marketable(order.side, price, bid, ask):
             if order.is_post_only:
                 self._cancel_reject(
@@ -761,17 +762,15 @@ cdef class SimulatedExchange:
                     f"amended limit px of {price} would have been TAKER: bid={bid}, ask={ask}",
                 )
                 return  # Cannot amend order
+            else:
+                # Immediate fill as TAKER
+                self._generate_order_amended(order, qty, price)
+
+                fill_price = self._fill_price_taker(order.symbol, order.side, bid, ask)
+                self._fill_order(order, fill_price, LiquiditySide.TAKER)
+                return  # Filled
 
         self._generate_order_amended(order, qty, price)
-
-        if not order.is_post_only and self._is_limit_matched(order.side, price, bid, ask):
-            fill_price = self._market_fill_price(
-                order.side,
-                order.symbol,
-                bid,
-                ask,
-            )
-            self._fill_order(order, fill_price, LiquiditySide.TAKER)
 
     cdef inline void _amend_stop_market_order(
         self,
@@ -800,6 +799,7 @@ cdef class SimulatedExchange:
         Price bid,
         Price ask,
     ) except *:
+        cdef Price fill_price
         if not order.is_triggered:
             # Amending stop price
             if self._is_stop_marketable(order.side, price, bid, ask):
@@ -807,7 +807,7 @@ cdef class SimulatedExchange:
                     order.cl_ord_id,
                     "amend order",
                     f"{OrderSideParser.to_str(order.side)} STOP_LIMIT order "
-                    f"amended stop trigger px of {price} was in the market: bid={bid}, ask={ask}",
+                    f"amended stop px trigger of {price} was in the market: bid={bid}, ask={ask}",
                 )
                 return  # Cannot amend order
 
@@ -823,17 +823,15 @@ cdef class SimulatedExchange:
                         f"amended limit px of {price} would have been TAKER: bid={bid}, ask={ask}",
                     )
                     return  # Cannot amend order
+                else:
+                    # Immediate fill as TAKER
+                    self._generate_order_amended(order, qty, price)
+
+                    fill_price = self._fill_price_taker(order.symbol, order.side, bid, ask)
+                    self._fill_order(order, fill_price, LiquiditySide.TAKER)
+                    return  # Filled
 
             self._generate_order_amended(order, qty, price)
-
-            if not order.is_post_only and self._is_limit_matched(order.side, price, bid, ask):
-                fill_price = self._market_fill_price(
-                    order.side,
-                    order.symbol,
-                    bid,
-                    ask,
-                )
-                self._fill_order(order, fill_price, LiquiditySide.TAKER)
 
     cdef inline void _generate_order_amended(self, PassiveOrder order, Quantity qty, Price price) except *:
         # Generate event
@@ -874,7 +872,7 @@ cdef class SimulatedExchange:
         if self._is_stop_triggered(order.side, order.price, bid, ask):
             self._fill_order(
                 order,
-                self._stop_fill_price(order.symbol, order.side, order.price),
+                self._fill_price_stop(order.symbol, order.side, order.price),
                 LiquiditySide.TAKER,
             )
 
@@ -891,7 +889,7 @@ cdef class SimulatedExchange:
                 else:
                     self._fill_order(
                         order,
-                        self._market_fill_price(order.symbol, order.side, bid, ask),
+                        self._fill_price_taker(order.symbol, order.side, bid, ask),
                         LiquiditySide.TAKER,  # Immediate fill takes liquidity
                     )
             return  # Triggered, rejected or filled
@@ -905,9 +903,9 @@ cdef class SimulatedExchange:
 
     cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
-            return order_price >= ask
+            return order_price >= ask  # Match with LIMIT sells
         else:  # => OrderSide.SELL
-            return order_price <= bid
+            return order_price <= bid  # Match with LIMIT buys
 
     cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
@@ -917,9 +915,9 @@ cdef class SimulatedExchange:
 
     cdef inline bint _is_stop_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
-            return order_price <= ask
+            return order_price <= ask  # Match with LIMIT sells
         else:  # => OrderSide.SELL
-            return order_price >= bid
+            return order_price >= bid  # Match with LIMIT buys
 
     cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
@@ -927,13 +925,22 @@ cdef class SimulatedExchange:
         else:  # => OrderSide.SELL
             return order_price > bid or (order_price == bid and self.fill_model.is_stop_filled())
 
-    cdef inline Price _market_fill_price(self, Symbol symbol, OrderSide side, Price bid, Price ask):
+    cdef inline Price _fill_price_maker(self, OrderSide side, Price bid, Price ask):
+        # LIMIT orders will always fill at the top of the book,
+        # (currently not simulating market impact).
+        if side == OrderSide.BUY:
+            return bid
+        else:  # => OrderSide.SELL
+            return ask
+
+    cdef inline Price _fill_price_taker(self, Symbol symbol, OrderSide side, Price bid, Price ask):
+        # Simulating potential slippage of one tick
         if side == OrderSide.BUY:
             return ask if not self.fill_model.is_slipped() else Price(ask + self._slippages[symbol])
         else:  # => OrderSide.SELL
             return bid if not self.fill_model.is_slipped() else Price(bid - self._slippages[symbol])
 
-    cdef inline Price _stop_fill_price(self, Symbol symbol, OrderSide side, Price stop):
+    cdef inline Price _fill_price_stop(self, Symbol symbol, OrderSide side, Price stop):
         if side == OrderSide.BUY:
             return stop if not self.fill_model.is_slipped() else Price(stop + self._slippages[symbol])
         else:  # => OrderSide.SELL

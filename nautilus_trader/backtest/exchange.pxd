@@ -152,8 +152,9 @@ cdef class SimulatedExchange:
     cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline bint _is_stop_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *
-    cdef inline Price _market_fill_price(self, Symbol symbol, OrderSide side, Price bid, Price ask)
-    cdef inline Price _stop_fill_price(self, Symbol symbol, OrderSide side, Price stop)
+    cdef inline Price _fill_price_maker(self, OrderSide side, Price bid, Price ask)
+    cdef inline Price _fill_price_taker(self, Symbol symbol, OrderSide side, Price bid, Price ask)
+    cdef inline Price _fill_price_stop(self, Symbol symbol, OrderSide side, Price stop)
 
 # --------------------------------------------------------------------------------------------------
 
