@@ -336,14 +336,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 error_count += 1
 
         # Finally
-        cdef long total_ns = round((time.time() - ts) * 1000000)
+        cdef long total_us = round((time.time() - ts) * 1000000)
         if error_count == 0:
-            self._log.info(f"Integrity check passed in {total_ns}μs.", LogColor.GREEN)
+            self._log.info(f"Integrity check passed in {total_us}μs.", LogColor.GREEN)
             return True
         else:
             self._log.error(f"Integrity check failed with "
                             f"{error_count} error{'' if error_count == 1 else 's'} "
-                            f"in {total_ns}μs.")
+                            f"in {total_us}μs.")
             return False
 
     cpdef bint check_residuals(self) except *:

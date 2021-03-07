@@ -78,7 +78,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         exec_client = MockExecutionClient(
             venue=Venue("BINANCE"),
             account_id=self.account_id,
-            exec_engine=self.exec_engine,
+            engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
         )

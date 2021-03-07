@@ -130,6 +130,7 @@ jobs:
           release_name: ${{ env.RELEASE_NAME }}
           draft: false
           prerelease: false
+          body_path: RELEASE.md
 
 
   publish_sdist:

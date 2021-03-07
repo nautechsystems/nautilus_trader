@@ -44,11 +44,20 @@ class PerformanceHarness:
         print_output : bool
             If the output should be printed to the console.
 
+        Raises
+        ------
+        ValueError
+            If runs is not positive (> 1).
+        ValueError
+            If iterations is not positive (> 1).
+
         Returns
         -------
         float
 
         """
+        if runs < 1:
+            raise ValueError("runs cannot be less than 1")
         if iterations < 1:
             raise ValueError("iterations cannot be less than 1")
 
