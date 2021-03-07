@@ -1,11 +1,21 @@
 # NautilusTrader 1.107.0 Beta Release Notes
 
+The main thrust of this release is to refine some subtleties relating to order
+matching and amendment behaviour for improved realism. This involved a fairly substantial refactoring
+of `SimulatedExchange` to manage its complexity, and support extending the order types.
+
+The `post_only` flag for LIMIT orders now results in the expected behaviour regarding
+when a marketable limit order will become a liquidity `TAKER` during order placement
+and amendment.
+
+Test coverage was moderately increased.
+
 ### Breaking Changes
 None
 
 ### Enhancements
-- Add `risk` sub-package to group risk components.
 - Refactored `SimulatedExchange` order matching and amendment logic.
+- Add `risk` sub-package to group risk components.
 
 ### Fixes
 - `StopLimitOrder` triggering behaviour.
