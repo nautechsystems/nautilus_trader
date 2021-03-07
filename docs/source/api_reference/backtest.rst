@@ -3,20 +3,28 @@ Backtest
 
 .. automodule:: nautilus_trader.backtest
 
+Data Client
+-----------
 
-Config
-------
-
-.. automodule:: nautilus_trader.backtest.config
+.. automodule:: nautilus_trader.backtest.data_client
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 
-Data
-----
+Data Container
+--------------
 
-.. automodule:: nautilus_trader.backtest.data
+.. automodule:: nautilus_trader.backtest.data_container
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Data Producer
+-------------
+
+.. automodule:: nautilus_trader.backtest.data_producer
    :show-inheritance:
    :inherited-members:
    :members:
@@ -58,19 +66,19 @@ Loaders
    :members:
    :member-order: bysource
 
-Logging
--------
+Models
+------
 
-.. automodule:: nautilus_trader.backtest.logging
+.. automodule:: nautilus_trader.backtest.models
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 
-Models
-------
+Modules
+-------
 
-.. automodule:: nautilus_trader.backtest.models
+.. automodule:: nautilus_trader.backtest.modules
    :show-inheritance:
    :inherited-members:
    :members:
