@@ -1,4 +1,4 @@
-# NautilusTrader 1.108.0 Beta - Release Notes
+# NautilusTrader 1.107.2 Beta - Release Notes
 
 
 
@@ -9,7 +9,7 @@ None
 None
 
 ## Fixes
-None
+- `StopLimitOrder` serialization.
 
 ---
 

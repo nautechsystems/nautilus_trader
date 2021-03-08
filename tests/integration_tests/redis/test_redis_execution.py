@@ -356,6 +356,26 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(order, result)
 
+    def test_load_order_when_stop_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_limit(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("1.00000"),
+            trigger=Price("1.00010"),
+        )
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.cl_ord_id)
+
+        # Assert
+        self.assertEqual(order, result)
+        self.assertEqual(order.price, result.price)
+        self.assertEqual(order.trigger, result.trigger)
+
     def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
         position_id = PositionId('P-1')

@@ -503,6 +503,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 package[PRICE] = str(event.options[PRICE])
                 package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)  # Can be None
                 package[REDUCE_ONLY] = event.options[REDUCE_ONLY]
+            elif event.order_type == OrderType.STOP_LIMIT:
+                package[PRICE] = str(event.options[PRICE])
+                package[TRIGGER] = str(event.options[TRIGGER])
+                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)  # Can be None
+                package[POST_ONLY] = event.options[POST_ONLY]
+                package[REDUCE_ONLY] = event.options[REDUCE_ONLY]
+                package[HIDDEN] = event.options[HIDDEN]
 
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -626,6 +633,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 options[PRICE] = Price(unpacked[PRICE])
                 options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
                 options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
+            elif order_type == OrderType.STOP_LIMIT:
+                options[PRICE] = Price(unpacked[PRICE])
+                options[TRIGGER] = Price(unpacked[TRIGGER])
+                options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
+                options[POST_ONLY] = unpacked[POST_ONLY]
+                options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
+                options[HIDDEN] = unpacked[HIDDEN]
 
             return OrderInitialized(
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
