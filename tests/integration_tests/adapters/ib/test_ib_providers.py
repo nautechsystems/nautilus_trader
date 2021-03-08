@@ -36,6 +36,7 @@ class IBInstrumentProviderTests(unittest.TestCase):
         with open(TEST_PATH + "contract_details_cl.pickle", "rb") as file:
             details = pickle.load(file)
 
+        print(details)
         mock_client.reqContractDetails.return_value = [details]
 
         provider = IBInstrumentProvider(client=mock_client)

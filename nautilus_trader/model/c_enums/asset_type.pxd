@@ -18,10 +18,11 @@ cpdef enum AssetType:
     UNDEFINED = 0,  # Invalid value
     SPOT = 1,
     SWAP = 2,
-    FUTURE = 3,
-    FORWARD = 4,
-    CFD = 5,
-    OPTION = 6,
+    STOCK = 3,
+    FUTURE = 4,
+    FORWARD = 5,
+    CFD = 6,
+    OPTION = 7,
 
 
 cdef class AssetTypeParser:

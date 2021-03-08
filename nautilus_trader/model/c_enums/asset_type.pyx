@@ -22,12 +22,14 @@ cdef class AssetTypeParser:
         elif value == 2:
             return "SWAP"
         elif value == 3:
-            return "FUTURE"
+            return "STOCK"
         elif value == 4:
-            return "FORWARD"
+            return "FUTURE"
         elif value == 5:
-            return "CFD"
+            return "FORWARD"
         elif value == 6:
+            return "CFD"
+        elif value == 7:
             return "OPTION"
         else:
             return "UNDEFINED"
@@ -38,6 +40,8 @@ cdef class AssetTypeParser:
             return AssetType.SPOT
         elif value == "SWAP":
             return AssetType.SWAP
+        elif value == "STOCK":
+            return AssetType.STOCK
         elif value == "FUTURE":
             return AssetType.FUTURE
         elif value == "FORWARD":
