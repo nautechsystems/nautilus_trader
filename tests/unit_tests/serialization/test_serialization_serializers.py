@@ -432,7 +432,59 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_serialize_and_deserialize_order_initialized_events(self):
+    def test_serialize_and_deserialize_market_order_initialized_events(self):
+        # Arrange
+        event = OrderInitialized(
+            ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            OrderType.MARKET,
+            Quantity(100000),
+            TimeInForce.FOK,
+            uuid4(),
+            UNIX_EPOCH,
+            options={},
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
+    def test_serialize_and_deserialize_limit_order_initialized_events(self):
+        # Arrange
+        options = {
+            'Price': '1.0010',
+            'PostOnly': True,
+            'ReduceOnly': True,
+            'Hidden': False,
+        }
+
+        event = OrderInitialized(
+            ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            OrderType.LIMIT,
+            Quantity(100000),
+            TimeInForce.DAY,
+            uuid4(),
+            UNIX_EPOCH,
+            options=options,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+        self.assertEqual(options, event.options)
+
+    def test_serialize_and_deserialize_stop_market_order_initialized_events(self):
         # Arrange
         options = {'Price': '1.0005', 'ReduceOnly': False}
 
@@ -442,6 +494,37 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             OrderSide.SELL,
             OrderType.STOP_MARKET,
+            Quantity(100000),
+            TimeInForce.DAY,
+            uuid4(),
+            UNIX_EPOCH,
+            options=options,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+        self.assertEqual(options, event.options)
+
+    def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
+        # Arrange
+        options = {
+            'Price': '1.0005',
+            'Trigger': '1.0010',
+            'PostOnly': True,
+            'ReduceOnly': False,
+            'Hidden': False,
+        }
+
+        event = OrderInitialized(
+            ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            OrderType.STOP_LIMIT,
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
