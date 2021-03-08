@@ -6,7 +6,7 @@
 None
 
 ## Enhancements
-None
+- Add `AssetType.STOCK`.
 
 ## Fixes
 - `StopLimitOrder` serialization.
