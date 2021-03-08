@@ -153,9 +153,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Build order state map
         cdef Order order
         for order in open_orders:
-            if order.is_completed_c():
-                # Order already completed
-                continue
             if order.symbol.venue in venue_orders:
                 venue_orders[order.symbol.venue].append(order)
             else:
