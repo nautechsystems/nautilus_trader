@@ -1,12 +1,12 @@
-# NautilusTrader 1.107.2 Beta - Release Notes
+# NautilusTrader 1.108.0 Beta - Release Notes
 
 
 
 ## Breaking Changes
-None
+- `AssetClass.EQUITY` becomes `AssetClass.STOCK`.
 
 ## Enhancements
-- Add `AssetType.STOCK`.
+- Add `AssetType.WARRANT`.
 
 ## Fixes
 - `StopLimitOrder` serialization.
