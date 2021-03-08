@@ -13,15 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
-from parameterized import parameterized
+import pytest
 
 from nautilus_trader.core.cache import ObjectCache
 from nautilus_trader.model.identifiers import Symbol
 
 
-class ObjectCacheTests(unittest.TestCase):
+class TestObjectCache:
 
     def test_cache_initialization(self):
         # Arrange
@@ -29,24 +27,26 @@ class ObjectCacheTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(str, cache.type_key)
-        self.assertEqual(Symbol, cache.type_value)
-        self.assertEqual([], cache.keys())
+        assert str == cache.type_key
+        assert Symbol == cache.type_value
+        assert [] == cache.keys()
 
-    @parameterized.expand([
-        [None, TypeError],
-        ["", ValueError],
-        [" ", ValueError],
-        ["  ", ValueError],
-        [1234, TypeError],
-    ])
+    @pytest.mark.parametrize(
+        "value,ex",
+        [[None, TypeError],
+         ["", ValueError],
+         [" ", ValueError],
+         ["  ", ValueError],
+         [1234, TypeError]],
+    )
     def test_get_given_none_raises_value_error(self, value, ex):
         # Arrange
         cache = ObjectCache(Symbol, Symbol.from_str)
 
         # Act
         # Assert
-        self.assertRaises(ex, cache.get, value)
+        with pytest.raises(ex):
+            cache.get(value)
 
     def test_get_from_empty_cache(self):
         # Arrange
@@ -57,8 +57,8 @@ class ObjectCacheTests(unittest.TestCase):
         result = cache.get(symbol)
 
         # Assert
-        self.assertEqual(symbol, str(result))
-        self.assertEqual(["AUD/USD.SIM"], cache.keys())
+        assert symbol == str(result)
+        assert ["AUD/USD.SIM"] == cache.keys()
 
     def test_get_from_cache(self):
         # Arrange
@@ -72,9 +72,9 @@ class ObjectCacheTests(unittest.TestCase):
         result2 = cache.get(symbol)
 
         # Assert
-        self.assertEqual(symbol, str(result1))
-        self.assertEqual(id(result1), id(result2))
-        self.assertEqual(["AUD/USD.SIM"], cache.keys())
+        assert symbol == str(result1)
+        assert id(result1) == id(result2)
+        assert ["AUD/USD.SIM"] == cache.keys()
 
     def test_keys_when_cache_empty_returns_empty_list(self):
         # Arrange
@@ -84,7 +84,7 @@ class ObjectCacheTests(unittest.TestCase):
         result = cache.keys()
 
         # Assert
-        self.assertEqual([], result)
+        assert [] == result
 
     def test_clear_cache(self):
         # Arrange
@@ -96,4 +96,4 @@ class ObjectCacheTests(unittest.TestCase):
         cache.clear()
 
         # Assert
-        self.assertEqual([], cache.keys())
+        assert [] == cache.keys()

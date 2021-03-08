@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.c_enums.component_state import ComponentState
 from nautilus_trader.common.c_enums.component_state import ComponentStateParser
@@ -23,9 +23,9 @@ from nautilus_trader.core.fsm import FiniteStateMachine
 from nautilus_trader.core.fsm import InvalidStateTrigger
 
 
-class FiniteStateMachineTests(unittest.TestCase):
+class TestFiniteStateMachine:
 
-    def setUp(self):
+    def setup(self):
         # Fixture Setup
         self.fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
@@ -37,7 +37,7 @@ class FiniteStateMachineTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(ComponentState.INITIALIZED, self.fsm.state)
+        assert self.fsm.state == ComponentState.INITIALIZED
 
     def test_trigger_with_invalid_transition_raises_exception(self):
         # Arrange
@@ -50,7 +50,8 @@ class FiniteStateMachineTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(InvalidStateTrigger, fsm.trigger, ComponentTrigger.RUNNING)
+        with pytest.raises(InvalidStateTrigger):
+            fsm.trigger(ComponentTrigger.RUNNING)
 
     def test_trigger_with_valid_transition_results_in_expected_state(self):
         # Arrange
@@ -58,4 +59,4 @@ class FiniteStateMachineTests(unittest.TestCase):
         self.fsm.trigger(ComponentTrigger.START)
 
         # Assert
-        self.assertEqual(ComponentState.STARTING, self.fsm.state)
+        assert self.fsm.state == ComponentState.STARTING
