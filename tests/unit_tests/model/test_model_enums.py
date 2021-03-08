@@ -47,12 +47,12 @@ class AssetClassTests(unittest.TestCase):
 
     @parameterized.expand([
         [AssetClass.UNDEFINED, "UNDEFINED"],
-        [AssetClass.CRYPTO, "CRYPTO"],
         [AssetClass.FX, "FX"],
-        [AssetClass.EQUITY, "EQUITY"],
+        [AssetClass.STOCK, "STOCK"],
         [AssetClass.COMMODITY, "COMMODITY"],
         [AssetClass.BOND, "BOND"],
         [AssetClass.INDEX, "INDEX"],
+        [AssetClass.CRYPTO, "CRYPTO"],
     ])
     def test_asset_class_to_str(self, enum, expected):
         # Arrange
@@ -65,12 +65,12 @@ class AssetClassTests(unittest.TestCase):
     @parameterized.expand([
         ["", AssetClass.UNDEFINED],
         ["UNDEFINED", AssetClass.UNDEFINED],
-        ["CRYPTO", AssetClass.CRYPTO],
         ["FX", AssetClass.FX],
-        ["EQUITY", AssetClass.EQUITY],
+        ["STOCK", AssetClass.STOCK],
         ["COMMODITY", AssetClass.COMMODITY],
         ["BOND", AssetClass.BOND],
         ["INDEX", AssetClass.INDEX],
+        ["CRYPTO", AssetClass.CRYPTO],
     ])
     def test_asset_class_from_str(self, string, expected):
         # Arrange
@@ -87,11 +87,11 @@ class AssetTypeTests(unittest.TestCase):
         [AssetType.UNDEFINED, "UNDEFINED"],
         [AssetType.SPOT, "SPOT"],
         [AssetType.SWAP, "SWAP"],
-        [AssetType.STOCK, "STOCK"],
         [AssetType.FUTURE, "FUTURE"],
         [AssetType.FORWARD, "FORWARD"],
         [AssetType.CFD, "CFD"],
         [AssetType.OPTION, "OPTION"],
+        [AssetType.WARRANT, "WARRANT"],
     ])
     def test_asset_type_to_str(self, enum, expected):
         # Arrange
@@ -106,11 +106,11 @@ class AssetTypeTests(unittest.TestCase):
         ["UNDEFINED", AssetType.UNDEFINED],
         ["SPOT", AssetType.SPOT],
         ["SWAP", AssetType.SWAP],
-        ["STOCK", AssetType.STOCK],
         ["FUTURE", AssetType.FUTURE],
         ["FORWARD", AssetType.FORWARD],
         ["CFD", AssetType.CFD],
         ["OPTION", AssetType.OPTION],
+        ["WARRANT", AssetType.WARRANT],
     ])
     def test_asset_type_from_str(self, string, expected):
         # Arrange
