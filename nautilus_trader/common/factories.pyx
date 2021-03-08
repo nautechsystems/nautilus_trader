@@ -219,7 +219,7 @@ cdef class OrderFactory:
         ValueError
             If time_in_force is UNDEFINED.
         ValueError
-            If time_in_force is GTD and expire_time is None.
+            If time_in_force is GTD expire_time is None.
         ValueError
             If post_only and hidden.
         ValueError
@@ -287,7 +287,7 @@ cdef class OrderFactory:
         ValueError
             If time_in_force is UNDEFINED.
         ValueError
-            If time_in_force is GTD and expire_time is None.
+            If time_in_force is GTD expire_time is None.
 
         """
         return StopMarketOrder(
@@ -358,7 +358,7 @@ cdef class OrderFactory:
         ValueError
             If time_in_force is UNDEFINED.
         ValueError
-            If time_in_force is GTD and the expire_time is None.
+            If time_in_force is GTD and expire_time is None.
         ValueError
             If post_only and hidden.
         ValueError
