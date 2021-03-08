@@ -178,7 +178,7 @@ class TestCondition:
     @pytest.mark.parametrize(
         "value, type",
         [[["a", "b", "c"], str],
-          [[], None]],
+         [[], None]],
     )
     def test_list_type_when_contains_correct_types_or_none_does_nothing(self, value, type):
         # Arrange
