@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.108.0"
+version = "1.108.1"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -33,7 +33,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-ccxt = "^1.42.66"
+ccxt = "^1.42.67"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 ib_insync = "^0.9.65"
@@ -61,7 +61,7 @@ flake8 = "^3.8.4"
 isort = "^5.7.0"
 nox = "^2020.12.31"
 parameterized = "^0.8.1"
-pre-commit = "^2.11.0"
+pre-commit = "2.10.0"
 pytest = "^6.2.2"
 pytest-cov = "^2.10.1"
 pytest-xdist = { version = "^2.2.0", extras = ["psutil"] }
