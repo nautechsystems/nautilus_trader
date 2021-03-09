@@ -82,7 +82,8 @@ cdef class Identifier:
 
 cdef class Venue(Identifier):
     """
-    Represents a trading venue for a financial market tradeable instrument.
+    Represents a valid trading venue identifier for a financial market tradeable
+    security.
 
     The identifier value must be unique at the fund level.
     """
@@ -107,7 +108,8 @@ cdef class Venue(Identifier):
 
 cdef class Exchange(Venue):
     """
-    Represents an exchange that financial market instruments are traded on.
+    Represents a valid exchange identifier which financial market securities are
+    traded on.
 
     The identifier value must be unique at the fund level.
     """
@@ -132,9 +134,9 @@ cdef class Exchange(Venue):
 
 cdef class Security(Identifier):
     """
-    Represents a financial market tradeable security.
+    Represents a valid financial market tradeable security identifier.
 
-    The security and venue combination uniquely identifying a security.
+    The symbol and venue combination should uniquely identify the security.
     """
 
     def __init__(
@@ -150,7 +152,7 @@ cdef class Security(Identifier):
         Parameters
         ----------
         symbol : str
-            The securities symbol identifier value.
+            The securities ticker symbol.
         venue : Venue
             The securities primary trading venue.
         asset_class : AssetClass, optional
@@ -212,9 +214,9 @@ cdef class Security(Identifier):
     def from_serializable_str(value: str) -> Security:
         """
         Return a security parsed from the given string value. Must be correctly
-        formatted with two valid strings either side of a period.
+        formatted including a single period and two commas.
 
-        Example: "AUD/USD.IDEALPRO".
+        Example: "AUD/USD.IDEALPRO,FX,SPOT".
 
         Parameters
         ----------
@@ -241,9 +243,9 @@ cdef class Security(Identifier):
 
 
 
-# cdef class Security(Security):
+# cdef class FutureSecurity(Security):
 #     """
-#     Represents a financial market tradeable security.
+#     Represents a futures contract security identifier.
 #     """
 #
 #     def __init__(
@@ -364,7 +366,9 @@ cdef class Security(Identifier):
 
 cdef class IdTag(Identifier):
     """
-    Represents a generic identifier tag.
+    Represents a valid identifier tag.
+
+    Can be used as part of a more complex identifier.
     """
 
     def __init__(self, str value):
