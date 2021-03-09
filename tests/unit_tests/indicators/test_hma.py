@@ -20,7 +20,7 @@ from nautilus_trader.model.enums import PriceType
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class HullMovingAverageTests(unittest.TestCase):
@@ -61,7 +61,7 @@ class HullMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = HullMovingAverage(10, PriceType.MID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -74,7 +74,7 @@ class HullMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = HullMovingAverage(10, PriceType.MID)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
 
         # Act
         indicator.handle_trade_tick(tick)

@@ -33,7 +33,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
@@ -43,20 +42,19 @@ from tests.test_kit.providers import TestInstrumentProvider
 if __name__ == "__main__":
     # Setup trading instruments
     SIM = Venue("SIM")
-    symbol = Symbol("AUD/USD", SIM)
-    AUDUSD = TestInstrumentProvider.default_fx_ccy(symbol)
+    AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 
     # Setup data container
     data = BacktestDataContainer()
     data.add_instrument(AUDUSD)
     data.add_quote_ticks(
-        symbol=AUDUSD.symbol,
+        security=AUDUSD.security,
         data=TestDataProvider.audusd_ticks(),  # Stub data from the test kit
     )
 
     # Instantiate your strategy
     strategy = EMACross(
-        symbol=AUDUSD.symbol,
+        security=AUDUSD.security,
         bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
         fast_ema_period=10,
         slow_ema_period=20,

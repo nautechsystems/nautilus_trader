@@ -5,6 +5,10 @@ generally identified within the platform. This will allow a smoother integration
 with Interactive Brokers and other exchanges, brokerages and trading
 counterparties.
 
+Previously the `Symbol` identifier also included a venue which confused the concept.
+The replacement `Security` identifier is more clearly expressed with a symbol string, a
+primary `Venue`, `AssetClass` and `AssetType` properties.
+
 ## Breaking Changes
 - All previous serializations.
 - `Security` replaces `Symbol` with expanded properties.

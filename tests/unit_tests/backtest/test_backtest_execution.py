@@ -154,7 +154,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         order = self.order_factory.market(
-            ETHUSDT_BINANCE.symbol,
+            ETHUSDT_BINANCE.security,
             OrderSide.BUY,
             Quantity(100),
         )
@@ -180,7 +180,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         entry = self.order_factory.market(
-            ETHUSDT_BINANCE.symbol,
+            ETHUSDT_BINANCE.security,
             OrderSide.BUY,
             Quantity(100),
         )
@@ -210,7 +210,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_cancel_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
         order = self.order_factory.market(
-            ETHUSDT_BINANCE.symbol,
+            ETHUSDT_BINANCE.security,
             OrderSide.BUY,
             Quantity(100),
         )
@@ -234,7 +234,7 @@ class BacktestExecClientTests(unittest.TestCase):
     def test_amend_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
         order = self.order_factory.stop_market(
-            ETHUSDT_BINANCE.symbol,
+            ETHUSDT_BINANCE.security,
             OrderSide.BUY,
             Quantity(100),
             Price("1000.00"),

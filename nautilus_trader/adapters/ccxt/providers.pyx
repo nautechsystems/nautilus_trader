@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -76,7 +76,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
         Returns
         -------
-        dict[Symbol, Instrument]
+        dict[Security, Instrument]
 
         """
         return self._instruments.copy()
@@ -97,22 +97,22 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         """
         return self._currencies.get(code)
 
-    cdef Instrument get_c(self, str symbol_code):
+    cdef Instrument get_c(self, str symbol):
         # Provides fast C level access assuming the venue is correct
-        return self._instruments.get(symbol_code)
+        return self._instruments.get(symbol)
 
     cdef void _load_instruments(self) except *:
         cdef str k
         cdef dict v
-        cdef Symbol symbol
+        cdef Security security
         cdef Instrument instrument
         for k, v in self._client.markets.items():
-            symbol = Symbol(k, self.venue)
-            instrument = self._parse_instrument(symbol, v)
+            security = Security(k, self.venue, AssetClass.CRYPTO, AssetType.SPOT)
+            instrument = self._parse_instrument(security, v)
             if instrument is None:
                 continue  # Something went wrong in parsing
 
-            self._instruments[symbol.code] = instrument
+            self._instruments[security.symbol] = instrument
 
         self.count = len(self._instruments)
 
@@ -150,7 +150,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
     cdef inline CurrencyType _parse_currency_type(self, str code):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
-    cdef Instrument _parse_instrument(self, Symbol symbol, dict values):
+    cdef Instrument _parse_instrument(self, Security security, dict values):
         # Precisions
         cdef dict precisions = values["precision"]
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
@@ -234,9 +234,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
 
         return Instrument(
-            symbol=symbol,
-            asset_class=AssetClass.CRYPTO,
-            asset_type=asset_type,
+            security=security,
             base_currency=base_currency,
             quote_currency=quote_currency,
             settlement_currency=quote_currency,

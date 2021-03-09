@@ -15,7 +15,7 @@
 
 from nautilus_trader.live.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 
 
@@ -27,4 +27,4 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
     cdef inline int _tick_size_to_precision(self, double tick_size) except *
     cdef inline int _get_precision(self, double value, int mode) except *
     cdef inline CurrencyType _parse_currency_type(self, str code)
-    cdef Instrument _parse_instrument(self, Symbol symbol, dict values)
+    cdef Instrument _parse_instrument(self, Security security, dict values)

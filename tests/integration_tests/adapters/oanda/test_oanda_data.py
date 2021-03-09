@@ -31,9 +31,11 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
@@ -43,7 +45,7 @@ from tests.test_kit.mocks import ObjectStorer
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 OANDA = Venue("OANDA")
-AUDUSD = Symbol("AUD/USD", OANDA)
+AUDUSD = Security("AUD/USD", OANDA, AssetClass.FX, AssetType.SPOT)
 
 
 class OandaDataClientTests(unittest.TestCase):
@@ -179,7 +181,7 @@ class OandaDataClientTests(unittest.TestCase):
     def test_subscribe_bars(self):
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
-        bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
+        bar_type = BarType(security=AUDUSD, bar_spec=bar_spec)
 
         # Act
         self.client.subscribe_bars(bar_type)
@@ -221,7 +223,7 @@ class OandaDataClientTests(unittest.TestCase):
     def test_unsubscribe_bars(self):
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
-        bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
+        bar_type = BarType(security=AUDUSD, bar_spec=bar_spec)
 
         # Act
         self.client.unsubscribe_bars(bar_type)
@@ -272,7 +274,6 @@ class OandaDataClientTests(unittest.TestCase):
     def test_request_bars(self):
         async def run_test():
             # Arrange
-
             with open(TEST_PATH + "instruments.json") as response:
                 instruments = json.load(response)
 
@@ -287,7 +288,7 @@ class OandaDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
-            bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
+            bar_type = BarType(security=AUDUSD, bar_spec=bar_spec)
 
             request = DataRequest(
                 provider=OANDA.value,

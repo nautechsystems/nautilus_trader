@@ -35,8 +35,8 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -112,8 +112,8 @@ cdef class TradingStrategy(Component):
     cpdef void register_data_engine(self, DataEngine engine) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_portfolio(self, Portfolio portfolio) except *
-    cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
-    cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *
+    cpdef void register_indicator_for_quote_ticks(self, Security security, Indicator indicator) except *
+    cpdef void register_indicator_for_trade_ticks(self, Security security, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
 
 # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
@@ -124,23 +124,23 @@ cdef class TradingStrategy(Component):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, str provider, DataType data_type) except *
-    cpdef void subscribe_instrument(self, Symbol symbol) except *
+    cpdef void subscribe_instrument(self, Security security) except *
     cpdef void subscribe_order_book(
         self,
-        Symbol symbol,
+        Security security,
         int level=*,
         int depth=*,
         int interval=*,
         dict kwargs=*,
     ) except *
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_quote_ticks(self, Security security) except *
+    cpdef void subscribe_trade_ticks(self, Security security) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_data(self, str provider, DataType data_type) except *
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
-    cpdef void unsubscribe_order_book(self, Symbol symbol, int interval=*) except *
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_instrument(self, Security security) except *
+    cpdef void unsubscribe_order_book(self, Security security, int interval=*) except *
+    cpdef void unsubscribe_quote_ticks(self, Security security) except *
+    cpdef void unsubscribe_trade_ticks(self, Security security) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
 
 # -- REQUESTS --------------------------------------------------------------------------------------
@@ -148,13 +148,13 @@ cdef class TradingStrategy(Component):
     cpdef void request_data(self, str provider, DataType data_type) except *
     cpdef void request_quote_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime=*,
         datetime to_datetime=*,
     ) except *
     cpdef void request_trade_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime=*,
         datetime to_datetime=*,
     ) except *
@@ -171,9 +171,9 @@ cdef class TradingStrategy(Component):
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
     cpdef void amend_order(self, PassiveOrder order, Quantity quantity=*, Price price=*) except *
     cpdef void cancel_order(self, Order order) except *
-    cpdef void cancel_all_orders(self, Symbol symbol) except *
+    cpdef void cancel_all_orders(self, Security security) except *
     cpdef void flatten_position(self, Position position) except *
-    cpdef void flatten_all_positions(self, Symbol symbol) except *
+    cpdef void flatten_all_positions(self, Security security) except *
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 

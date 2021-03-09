@@ -26,7 +26,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
@@ -35,8 +35,8 @@ from tests import TESTS_PACKAGE_ROOT
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
-BTCUSDT = Symbol("BTC/USDT", BINANCE)
-ETHUSDT = Symbol("ETH/USDT", BINANCE)
+BTCUSDT = Security("BTC/USDT", BINANCE)
+ETHUSDT = Security("ETH/USDT", BINANCE)
 
 
 # Monkey patch magic mock

@@ -23,7 +23,7 @@ cdef str INFO
 cdef str OPTIONS
 cdef str TIMESTAMP
 cdef str VENUE
-cdef str SYMBOL
+cdef str SECURITY
 cdef str ORDER_ID
 cdef str TRADER_ID
 cdef str STRATEGY_ID

@@ -25,8 +25,8 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestStubs.symbol_audusd()
-GBPUSD_SIM = TestStubs.symbol_gbpusd()
+AUDUSD_SIM = TestStubs.security_audusd()
+GBPUSD_SIM = TestStubs.security_gbpusd()
 
 
 class CurrencyTests(unittest.TestCase):

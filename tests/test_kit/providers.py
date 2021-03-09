@@ -30,7 +30,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Money
@@ -103,9 +103,7 @@ class TestInstrumentProvider:
 
         """
         return Instrument(
-            symbol=Symbol("BTC/USDT", Venue("BINANCE")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SPOT,
+            security=Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
             base_currency=BTC,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -141,9 +139,7 @@ class TestInstrumentProvider:
 
         """
         return Instrument(
-            symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SPOT,
+            security=Security("ETH/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
             base_currency=ETH,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -184,9 +180,7 @@ class TestInstrumentProvider:
 
         """
         return Instrument(
-            symbol=Symbol("XBT/USD", Venue("BITMEX")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
+            security=Security("XBT/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP),
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -227,9 +221,7 @@ class TestInstrumentProvider:
 
         """
         return Instrument(
-            symbol=Symbol("ETH/USD", Venue("BITMEX")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
+            security=Security("ETH/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP),
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -255,14 +247,16 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: Symbol, leverage: Decimal=Decimal("50")) -> Instrument:
+    def default_fx_ccy(symbol: str, venue: Venue=None, leverage: Decimal=Decimal("50")) -> Instrument:
         """
-        Return a default FX currency pair instrument from the given symbol.
+        Return a default FX currency pair instrument from the given security.
 
         Parameters
         ----------
-        symbol : Symbol
+        symbol : str
             The currency pair symbol.
+        venue : Venue
+            The currency pair venue.
         leverage : Decimal
             The leverage for the instrument.
 
@@ -273,14 +267,18 @@ class TestInstrumentProvider:
         Raises
         ------
         ValueError
-            If the symbol.code length is not in range [6, 7].
+            If the security.security length is not in range [6, 7].
 
         """
-        PyCondition.not_none(symbol, "symbol")
-        PyCondition.in_range_int(len(symbol.code), 6, 7, "len(symbol)")
+        if venue is None:
+            venue = Venue("SIM")
+        PyCondition.valid_string(symbol, "symbol")
+        PyCondition.in_range_int(len(symbol), 6, 7, "len(symbol)")
 
-        base_currency = symbol.code[:3]
-        quote_currency = symbol.code[-3:]
+        security = Security(symbol, venue, AssetClass.FX, AssetType.SPOT)
+
+        base_currency = symbol[:3]
+        quote_currency = symbol[-3:]
 
         # Check tick precision of quote currency
         if quote_currency == 'JPY':
@@ -289,9 +287,7 @@ class TestInstrumentProvider:
             price_precision = 5
 
         return Instrument(
-            symbol=symbol,
-            asset_class=AssetClass.FX,
-            asset_type=AssetType.SPOT,
+            security=security,
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             settlement_currency=Currency.from_str(quote_currency),

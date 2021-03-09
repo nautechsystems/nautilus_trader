@@ -35,7 +35,7 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
@@ -229,19 +229,19 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+    cpdef void subscribe_instrument(self, Security security) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, Symbol symbol, int level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book(self, Security security, int level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_quote_ticks(self, Security security) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_trade_ticks(self, Security security) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -249,19 +249,19 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
+    cpdef void unsubscribe_instrument(self, Security security) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book(self, Symbol symbol) except *:
+    cpdef void unsubscribe_order_book(self, Security security) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_quote_ticks(self, Security security) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_trade_ticks(self, Security security) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -275,7 +275,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
+    cpdef void request_instrument(self, Security security, UUID correlation_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -285,7 +285,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void request_quote_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -296,7 +296,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void request_trade_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -336,11 +336,11 @@ cdef class MarketDataClient(DataClient):
     def _handle_instruments_py(self, list instruments, UUID correlation_id):
         self._handle_instruments(instruments, correlation_id)
 
-    def _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id):
-        self._handle_quote_ticks(symbol, ticks, correlation_id)
+    def _handle_quote_ticks_py(self, Security security, list ticks, UUID correlation_id):
+        self._handle_quote_ticks(security, ticks, correlation_id)
 
-    def _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id):
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
+    def _handle_trade_ticks_py(self, Security security, list ticks, UUID correlation_id):
+        self._handle_trade_ticks(security, ticks, correlation_id)
 
     def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
         self._handle_bars(bar_type, bars, partial, correlation_id)
@@ -374,10 +374,10 @@ cdef class MarketDataClient(DataClient):
 
         self._engine.receive(response)
 
-    cdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+    cdef void _handle_quote_ticks(self, Security security, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             provider=self.name,
-            data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
+            data_type=DataType(QuoteTick, metadata={SECURITY: security}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -386,10 +386,10 @@ cdef class MarketDataClient(DataClient):
 
         self._engine.receive(response)
 
-    cdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+    cdef void _handle_trade_ticks(self, Security security, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             provider=self.name,
-            data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
+            data_type=DataType(TradeTick, metadata={SECURITY: security}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

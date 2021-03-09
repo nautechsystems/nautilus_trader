@@ -17,7 +17,7 @@ from cpython.datetime cimport date
 
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 
 
 cdef class ExchangeRateCalculator:
@@ -35,4 +35,4 @@ cdef class RolloverInterestCalculator:
     cdef dict _rate_data
 
     cpdef object get_rate_data(self)
-    cpdef object calc_overnight_rate(self, Symbol symbol, date timestamp)
+    cpdef object calc_overnight_rate(self, Security security, date timestamp)

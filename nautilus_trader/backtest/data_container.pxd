@@ -15,13 +15,13 @@
 
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class BacktestDataContainer:
     cdef readonly set venues
-    cdef readonly set symbols
+    cdef readonly set securities
     cdef readonly dict instruments
     cdef readonly dict quote_ticks
     cdef readonly dict trade_ticks
@@ -29,10 +29,10 @@ cdef class BacktestDataContainer:
     cdef readonly dict bars_ask
 
     cpdef void add_instrument(self, Instrument instrument) except *
-    cpdef void add_quote_ticks(self, Symbol symbol, data) except *
-    cpdef void add_trade_ticks(self, Symbol symbol, data) except *
-    cpdef void add_bars(self, Symbol symbol, BarAggregation aggregation, PriceType price_type, data) except *
+    cpdef void add_quote_ticks(self, Security security, data) except *
+    cpdef void add_trade_ticks(self, Security security, data) except *
+    cpdef void add_bars(self, Security security, BarAggregation aggregation, PriceType price_type, data) except *
     cpdef void check_integrity(self) except *
-    cpdef bint has_quote_data(self, Symbol symbol) except *
-    cpdef bint has_trade_data(self, Symbol symbol) except *
+    cpdef bint has_quote_data(self, Security security) except *
+    cpdef bint has_trade_data(self, Security security) except *
     cpdef long total_data_size(self)

@@ -38,8 +38,8 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -56,8 +56,8 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
-GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
@@ -244,7 +244,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         strategy_id = StrategyId("S", "001")
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.symbol,
+            BTCUSDT_BINANCE.security,
             OrderSide.BUY,
             Quantity("1.00000000"),
         )
@@ -305,7 +305,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -343,7 +343,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            Symbol("AAPL", Venue("NYSE")),
+            Security("AAPL", Venue("NYSE")),
             OrderSide.BUY,
             Quantity(1000),
         )
@@ -380,7 +380,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -416,7 +416,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -458,20 +458,20 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         entry = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         stop_loss = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("0.50000")
         )
 
         take_profit = strategy.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000")
@@ -516,20 +516,20 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         entry1 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         stop_loss1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("0.50000")
         )
 
         take_profit1 = strategy.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000")
@@ -552,13 +552,13 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         entry2 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         stop_loss2 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("0.50000")
@@ -610,20 +610,20 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         entry1 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         stop_loss1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("0.50000")
         )
 
         take_profit1 = strategy.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000")
@@ -646,13 +646,13 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         entry2 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         take_profit2 = strategy.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000")
@@ -705,7 +705,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -742,7 +742,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -780,7 +780,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -817,7 +817,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -844,7 +844,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Push order state to filled (completed)
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -896,7 +896,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Push order state to filled (completed)
         order = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.85101"),
@@ -950,7 +950,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -999,7 +999,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1048,7 +1048,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1099,7 +1099,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1156,7 +1156,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1213,7 +1213,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1266,7 +1266,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1335,7 +1335,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1388,13 +1388,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1461,14 +1461,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
@@ -1548,14 +1548,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy2)
 
         order1 = strategy1.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = strategy2.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -1650,21 +1650,21 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy2)
 
         order1 = strategy1.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = strategy1.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order3 = strategy2.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -1762,13 +1762,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(150000),
         )
@@ -1844,13 +1844,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(150000),
         )

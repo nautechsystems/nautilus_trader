@@ -29,8 +29,8 @@ from nautilus_trader.model.position import Position
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
-GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class AnalyzerTests(unittest.TestCase):
@@ -95,25 +95,25 @@ class AnalyzerTests(unittest.TestCase):
     def test_get_realized_pnls_when_all_flat_positions_returns_expected_series(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         order3 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order4 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
         )

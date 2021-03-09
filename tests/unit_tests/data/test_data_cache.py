@@ -27,7 +27,6 @@ from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -40,8 +39,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 SIM = Venue("SIM")
-USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", SIM))
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
@@ -58,15 +57,15 @@ class DataCacheTests(unittest.TestCase):
 
         # Assert
         self.assertEqual([], self.cache.instruments())
-        self.assertEqual([], self.cache.quote_ticks(AUDUSD_SIM.symbol))
-        self.assertEqual([], self.cache.trade_ticks(AUDUSD_SIM.symbol))
+        self.assertEqual([], self.cache.quote_ticks(AUDUSD_SIM.security))
+        self.assertEqual([], self.cache.trade_ticks(AUDUSD_SIM.security))
         self.assertEqual([], self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()))
 
-    def test_symbols_when_no_instruments_returns_empty_list(self):
+    def test_securities_when_no_instruments_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.symbols())
+        self.assertEqual([], self.cache.securities())
 
     def test_instruments_when_no_instruments_returns_empty_list(self):
         # Arrange
@@ -74,19 +73,19 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual([], self.cache.instruments())
 
-    def test_quote_ticks_for_unknown_symbol_returns_empty_list(self):
+    def test_quote_ticks_for_unknown_security_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.quote_ticks(AUDUSD_SIM.symbol))
+        self.assertEqual([], self.cache.quote_ticks(AUDUSD_SIM.security))
 
-    def test_trade_ticks_for_unknown_symbol_returns_empty_list(self):
+    def test_trade_ticks_for_unknown_security_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.trade_ticks(AUDUSD_SIM.symbol))
+        self.assertEqual([], self.cache.trade_ticks(AUDUSD_SIM.security))
 
-    def test_bars_for_unknown_symbol_returns_empty_list(self):
+    def test_bars_for_unknown_bar_type_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
@@ -96,25 +95,25 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.instrument(AUDUSD_SIM.symbol))
+        self.assertIsNone(self.cache.instrument(AUDUSD_SIM.security))
 
-    def test_order_book_for_unknown_symbol_returns_none(self):
+    def test_order_book_for_unknown_security_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.order_book(AUDUSD_SIM.symbol))
+        self.assertIsNone(self.cache.order_book(AUDUSD_SIM.security))
 
     def test_quote_tick_when_no_ticks_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.quote_tick(AUDUSD_SIM.symbol))
+        self.assertIsNone(self.cache.quote_tick(AUDUSD_SIM.security))
 
     def test_trade_tick_when_no_ticks_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.trade_tick(AUDUSD_SIM.symbol))
+        self.assertIsNone(self.cache.trade_tick(AUDUSD_SIM.security))
 
     def test_bar_when_no_bars_returns_none(self):
         # Arrange
@@ -122,35 +121,35 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertIsNone(self.cache.bar(TestStubs.bartype_gbpusd_1sec_mid()))
 
-    def test_quote_tick_count_for_unknown_symbol_returns_zero(self):
+    def test_quote_tick_count_for_unknown_security_returns_zero(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.cache.quote_tick_count(AUDUSD_SIM.symbol))
+        self.assertEqual(0, self.cache.quote_tick_count(AUDUSD_SIM.security))
 
-    def test_trade_tick_count_for_unknown_symbol_returns_zero(self):
+    def test_trade_tick_count_for_unknown_security_returns_zero(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.cache.trade_tick_count(AUDUSD_SIM.symbol))
+        self.assertEqual(0, self.cache.trade_tick_count(AUDUSD_SIM.security))
 
-    def test_has_order_book_for_unknown_symbol_returns_false(self):
+    def test_has_order_book_for_unknown_security_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_order_book(AUDUSD_SIM.symbol))
+        self.assertFalse(self.cache.has_order_book(AUDUSD_SIM.security))
 
-    def test_has_quote_ticks_for_unknown_symbol_returns_false(self):
+    def test_has_quote_ticks_for_unknown_security_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_quote_ticks(AUDUSD_SIM.symbol))
+        self.assertFalse(self.cache.has_quote_ticks(AUDUSD_SIM.security))
 
-    def test_has_trade_ticks_for_unknown_symbol_returns_false(self):
+    def test_has_trade_ticks_for_unknown_security_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_trade_ticks(AUDUSD_SIM.symbol))
+        self.assertFalse(self.cache.has_trade_ticks(AUDUSD_SIM.security))
 
     def test_has_bars_for_unknown_bar_type_returns_false(self):
         # Arrange
@@ -158,17 +157,17 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertFalse(self.cache.has_bars(TestStubs.bartype_gbpusd_1sec_mid()))
 
-    def test_symbols_when_one_instrument_returns_expected_list(self):
+    def test_securities_when_one_instrument_returns_expected_list(self):
         # Arrange
         instrument = TestInstrumentProvider.ethusdt_binance()
 
         self.cache.add_instrument(instrument)
 
         # Act
-        result = self.cache.symbols()
+        result = self.cache.securities()
 
         # Assert
-        self.assertEqual([instrument.symbol], result)
+        self.assertEqual([instrument.security], result)
 
     def test_instruments_when_one_instrument_returns_expected_list(self):
         # Arrange
@@ -185,7 +184,7 @@ class DataCacheTests(unittest.TestCase):
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -196,7 +195,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_quote_ticks([tick])
 
         # Act
-        result = self.cache.quote_ticks(tick.symbol)
+        result = self.cache.quote_ticks(tick.security)
 
         # Assert
         self.assertEqual([tick], result)
@@ -204,7 +203,7 @@ class DataCacheTests(unittest.TestCase):
     def test_add_quote_ticks_when_already_ticks_does_not_add(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -216,7 +215,7 @@ class DataCacheTests(unittest.TestCase):
 
         # Act
         self.cache.add_quote_ticks([tick])
-        result = self.cache.quote_ticks(tick.symbol)
+        result = self.cache.quote_ticks(tick.security)
 
         # Assert
         self.assertEqual([tick], result)
@@ -224,7 +223,7 @@ class DataCacheTests(unittest.TestCase):
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Quantity(10000),
             OrderSide.BUY,
@@ -235,7 +234,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_trade_ticks([tick])
 
         # Act
-        result = self.cache.trade_ticks(tick.symbol)
+        result = self.cache.trade_ticks(tick.security)
 
         # Assert
         self.assertEqual([tick], result)
@@ -243,7 +242,7 @@ class DataCacheTests(unittest.TestCase):
     def test_add_trade_ticks_when_already_ticks_does_not_add(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Quantity(10000),
             OrderSide.BUY,
@@ -255,7 +254,7 @@ class DataCacheTests(unittest.TestCase):
 
         # Act
         self.cache.add_trade_ticks([tick])
-        result = self.cache.trade_ticks(tick.symbol)
+        result = self.cache.trade_ticks(tick.security)
 
         # Assert
         self.assertEqual([tick], result)
@@ -304,7 +303,7 @@ class DataCacheTests(unittest.TestCase):
     def test_instrument_when_no_instrument_returns_none(self):
         # Arrange
         # Act
-        result = self.cache.instrument(AUDUSD_SIM.symbol)
+        result = self.cache.instrument(AUDUSD_SIM.security)
 
         # Assert
         self.assertIsNone(result)
@@ -314,7 +313,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_instrument(AUDUSD_SIM)
 
         # Act
-        result = self.cache.instrument(AUDUSD_SIM.symbol)
+        result = self.cache.instrument(AUDUSD_SIM.security)
 
         # Assert
         self.assertEqual(AUDUSD_SIM, result)
@@ -322,7 +321,7 @@ class DataCacheTests(unittest.TestCase):
     def test_order_book_when_order_book_exists_returns_expected(self):
         # Arrange
         order_book = OrderBook(
-            symbol=ETHUSDT_BINANCE.symbol,
+            security=ETHUSDT_BINANCE.security,
             level=2,
             depth=25,
             price_precision=2,
@@ -336,14 +335,14 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_order_book(order_book)
 
         # Act
-        result = self.cache.order_book(ETHUSDT_BINANCE.symbol)
+        result = self.cache.order_book(ETHUSDT_BINANCE.security)
 
         # Assert
         self.assertEqual(order_book, result)
 
     def test_price_when_no_ticks_returns_none(self):
         # Act
-        result = self.cache.price(AUDUSD_SIM.symbol, PriceType.LAST)
+        result = self.cache.price(AUDUSD_SIM.security, PriceType.LAST)
 
         # Assert
         self.assertIsNone(result)
@@ -351,7 +350,7 @@ class DataCacheTests(unittest.TestCase):
     def test_price_given_last_when_no_trade_ticks_returns_none(self):
         # Act
         tick = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -361,7 +360,7 @@ class DataCacheTests(unittest.TestCase):
 
         self.cache.add_quote_tick(tick)
 
-        result = self.cache.price(AUDUSD_SIM.symbol, PriceType.LAST)
+        result = self.cache.price(AUDUSD_SIM.security, PriceType.LAST)
 
         # Assert
         self.assertIsNone(result)
@@ -369,7 +368,7 @@ class DataCacheTests(unittest.TestCase):
     def test_price_given_quote_price_type_when_no_quote_ticks_returns_none(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Quantity(10000),
             OrderSide.BUY,
@@ -380,7 +379,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_trade_tick(tick)
 
         # Act
-        result = self.cache.price(AUDUSD_SIM.symbol, PriceType.MID)
+        result = self.cache.price(AUDUSD_SIM.security, PriceType.MID)
 
         # Assert
         self.assertIsNone(result)
@@ -388,7 +387,7 @@ class DataCacheTests(unittest.TestCase):
     def test_price_given_last_when_trade_tick_returns_expected_price(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Quantity(10000),
             OrderSide.BUY,
@@ -399,7 +398,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_trade_tick(tick)
 
         # Act
-        result = self.cache.price(AUDUSD_SIM.symbol, PriceType.LAST)
+        result = self.cache.price(AUDUSD_SIM.security, PriceType.LAST)
 
         # Assert
         self.assertEqual(Price("1.00000"), result)
@@ -412,7 +411,7 @@ class DataCacheTests(unittest.TestCase):
     def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(self, price_type, expected):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -423,7 +422,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_quote_tick(tick)
 
         # Act
-        result = self.cache.price(AUDUSD_SIM.symbol, price_type)
+        result = self.cache.price(AUDUSD_SIM.security, price_type)
 
         # Assert
         self.assertEqual(expected, result)
@@ -431,7 +430,7 @@ class DataCacheTests(unittest.TestCase):
     def test_quote_tick_when_index_out_of_range_returns_none(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -442,16 +441,16 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_quote_tick(tick)
 
         # Act
-        result = self.cache.quote_tick(AUDUSD_SIM.symbol, index=1)
+        result = self.cache.quote_tick(AUDUSD_SIM.security, index=1)
 
         # Assert
-        self.assertEqual(1, self.cache.quote_tick_count(AUDUSD_SIM.symbol))
+        self.assertEqual(1, self.cache.quote_tick_count(AUDUSD_SIM.security))
         self.assertIsNone(result)
 
     def test_quote_tick_with_two_ticks_returns_expected_tick(self):
         # Arrange
         tick1 = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -460,7 +459,7 @@ class DataCacheTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00001"),
             Price("1.00003"),
             Quantity(1),
@@ -472,16 +471,16 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_quote_tick(tick2)
 
         # Act
-        result = self.cache.quote_tick(AUDUSD_SIM.symbol, index=0)
+        result = self.cache.quote_tick(AUDUSD_SIM.security, index=0)
 
         # Assert
-        self.assertEqual(2, self.cache.quote_tick_count(AUDUSD_SIM.symbol))
+        self.assertEqual(2, self.cache.quote_tick_count(AUDUSD_SIM.security))
         self.assertEqual(tick2, result)
 
     def test_trade_tick_when_index_out_of_range_returns_none(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Quantity(10000),
             OrderSide.BUY,
@@ -492,16 +491,16 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_trade_tick(tick)
 
         # Act
-        result = self.cache.trade_tick(AUDUSD_SIM.symbol, index=1)
+        result = self.cache.trade_tick(AUDUSD_SIM.security, index=1)
 
         # Assert
-        self.assertEqual(1, self.cache.trade_tick_count(AUDUSD_SIM.symbol))
+        self.assertEqual(1, self.cache.trade_tick_count(AUDUSD_SIM.security))
         self.assertIsNone(result)
 
     def test_trade_tick_with_one_tick_returns_expected_tick(self):
         # Arrange
         tick1 = TradeTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00000"),
             Quantity(10000),
             OrderSide.BUY,
@@ -510,7 +509,7 @@ class DataCacheTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("1.00001"),
             Quantity(20000),
             OrderSide.SELL,
@@ -522,10 +521,10 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_trade_tick(tick2)
 
         # Act
-        result = self.cache.trade_tick(AUDUSD_SIM.symbol, index=0)
+        result = self.cache.trade_tick(AUDUSD_SIM.security, index=0)
 
         # Assert
-        self.assertEqual(2, self.cache.trade_tick_count(AUDUSD_SIM.symbol))
+        self.assertEqual(2, self.cache.trade_tick_count(AUDUSD_SIM.security))
         self.assertEqual(tick2, result)
 
     def test_bar_index_out_of_range_returns_expected_bar(self):
@@ -585,7 +584,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_instrument(USDJPY_SIM)
 
         tick = QuoteTick(
-            USDJPY_SIM.symbol,
+            USDJPY_SIM.security,
             Price("110.80000"),
             Price("110.80010"),
             Quantity(1),
@@ -614,7 +613,7 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_instrument(AUDUSD_SIM)
 
         tick = QuoteTick(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             Price("0.80000"),
             Price("0.80010"),
             Quantity(1),

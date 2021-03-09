@@ -18,7 +18,7 @@ from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.tick cimport TradeTick
 
 
@@ -37,7 +37,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *
     cdef inline void _on_quote_tick(
         self,
-        Symbol symbol,
+        Security security,
         double best_bid,
         double best_ask,
         double best_bid_size,
@@ -48,7 +48,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     ) except *
     cdef inline void _on_trade_tick(
         self,
-        Symbol symbol,
+        Security security,
         double price,
         double amount,
         str order_side,
@@ -72,7 +72,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     ) except *
     cdef inline TradeTick _parse_trade_tick(
         self,
-        Symbol symbol,
+        Security security,
         dict trade,
         int price_precision,
         int size_precision,

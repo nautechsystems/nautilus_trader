@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 
@@ -78,68 +80,6 @@ cdef class Identifier:
         return issubclass(other, type_self) or issubclass(type_self, other)
 
 
-cdef class Symbol(Identifier):
-    """
-    Represents a financial market tradeable security.
-
-    The symbol and venue combination uniquely identify the security.
-    """
-
-    def __init__(self, str code, Venue venue not None):
-        """
-        Initialize a new instance of the `Symbol` class.
-
-        Parameters
-        ----------
-        code : str
-            The symbols code identifier value.
-        venue : Venue
-            The symbols venue.
-
-        Raises
-        ------
-        ValueError
-            If code is not a valid string.
-
-        """
-        Condition.valid_string(code, "code")
-        super().__init__(f"{code}.{venue.value}")
-
-        self.code = code
-        self.venue = venue
-
-    @staticmethod
-    cdef Symbol from_str_c(str value):
-        Condition.valid_string(value, "value")
-
-        cdef tuple pieces = value.partition('.')
-
-        if len(pieces) != 3:
-            raise ValueError(f"The Symbol string value was malformed, was {value}")
-
-        return Symbol(code=pieces[0], venue=Venue(pieces[2]))
-
-    @staticmethod
-    def from_str(value: str) -> Symbol:
-        """
-        Return a symbol parsed from the given string value. Must be correctly
-        formatted with two valid strings either side of a period.
-
-        Example: "AUD/USD.IDEALPRO".
-
-        Parameters
-        ----------
-        value : str
-            The symbol string value to parse.
-
-        Returns
-        -------
-        Symbol
-
-        """
-        return Symbol.from_str_c(value)
-
-
 cdef class Venue(Identifier):
     """
     Represents a trading venue for a financial market tradeable instrument.
@@ -190,14 +130,125 @@ cdef class Exchange(Venue):
         super().__init__(name)
 
 
-# cdef class Security(Symbol):
+cdef class Security(Identifier):
+    """
+    Represents a financial market tradeable security.
+
+    The security and venue combination uniquely identifying a security.
+    """
+
+    def __init__(
+        self,
+        str symbol,
+        Venue venue not None,
+        AssetClass asset_class=AssetClass.UNDEFINED,
+        AssetType asset_type=AssetType.UNDEFINED,
+    ):
+        """
+        Initialize a new instance of the `Security` class.
+
+        Parameters
+        ----------
+        symbol : str
+            The securities symbol identifier value.
+        venue : Venue
+            The securities primary trading venue.
+        asset_class : AssetClass, optional
+            The securities asset class.
+        asset_type : AssetType, optional
+            The securities asset type.
+
+        Raises
+        ------
+        ValueError
+            If symbol is not a valid string.
+
+        """
+        Condition.valid_string(symbol, "symbol")
+        super().__init__(f"{symbol}.{venue.value}")
+
+        self.symbol = symbol
+        self.venue = venue
+        self.asset_class = asset_class
+        self.asset_type = asset_type
+
+    def __eq__(self, Security other) -> bool:
+        return self._is_subclass(type(other)) \
+            and self.value == other.value \
+            and self.asset_class == other.asset_class \
+            and self.asset_type == other.asset_type
+
+    def __hash__(self) -> int:
+        return hash((type(self), self.value, self.asset_type, self.asset_type))
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}('"
+                f"{self.value},"
+                f"{AssetClassParser.to_str(self.asset_class)},"
+                f"{AssetTypeParser.to_str(self.asset_type)}')")
+
+    @staticmethod
+    cdef Security from_serializable_str_c(str value):
+        Condition.valid_string(value, "value")
+
+        cdef list pieces = value.split(',', maxsplit=2)
+
+        if len(pieces) != 3:
+            raise ValueError(f"The Security string value was malformed, was {value}")
+
+        cdef tuple symbol_venue = pieces[0].partition('.')
+
+        if len(symbol_venue) != 3:
+            raise ValueError(f"The Security string value was malformed, was {value}")
+
+        return Security(
+            symbol=symbol_venue[0],
+            venue=Venue(symbol_venue[2]),
+            asset_class=AssetClassParser.from_str(pieces[1]),
+            asset_type=AssetTypeParser.from_str(pieces[2]),
+        )
+
+    @staticmethod
+    def from_serializable_str(value: str) -> Security:
+        """
+        Return a security parsed from the given string value. Must be correctly
+        formatted with two valid strings either side of a period.
+
+        Example: "AUD/USD.IDEALPRO".
+
+        Parameters
+        ----------
+        value : str
+            The security string value to parse.
+
+        Returns
+        -------
+        Security
+
+        """
+        return Security.from_serializable_str_c(value)
+
+    cpdef str to_serializable_str(self):
+        """
+        Return a serializable string representation of this object.
+
+        Returns
+        -------
+        str
+
+        """
+        return f"{self.value},{AssetClassParser.to_str(self.asset_class)},{AssetTypeParser.to_str(self.asset_type)}"
+
+
+
+# cdef class Security(Security):
 #     """
 #     Represents a financial market tradeable security.
 #     """
 #
 #     def __init__(
 #         self,
-#         str symbol,
+#         str security,
 #         Venue venue not None,
 #         AssetType sec_type,
 #         str expiry not None='',
@@ -209,19 +260,19 @@ cdef class Exchange(Venue):
 #
 #         Parameters
 #         ----------
-#         symbol : str
-#             The security symbol code.
+#         security : str
+#             The security security security.
 #         venue : Venue
 #             The securities venue.
 #
 #         Raises
 #         ------
 #         ValueError
-#             If code is not a valid string.
+#             If security is not a valid string.
 #
 #         """
-#         # Condition.valid_string(code, "code") check in base class
-#         super().__init__(symbol, venue)
+#         # Condition.valid_string(security, "security") check in base class
+#         super().__init__(security, venue)
 #
 #         self.sec_type = sec_type
 #         self.expiry = expiry
@@ -266,7 +317,7 @@ cdef class Exchange(Venue):
 #             raise ValueError(f"The Security string value was malformed, was {value}")
 #
 #         return Security(
-#             symbol=pieces0[0],
+#             security=pieces0[0],
 #             venue=Venue(pieces0[2]),
 #             sec_type=AssetTypeParser.from_str(pieces[1]),
 #             expiry=pieces[2],
@@ -286,11 +337,11 @@ cdef class Exchange(Venue):
 #         Parameters
 #         ----------
 #         value : str
-#             The symbol string value to parse.
+#             The security string value to parse.
 #
 #         Returns
 #         -------
-#         Symbol
+#         Security
 #
 #         """
 #         return Security.from_str_c(value)

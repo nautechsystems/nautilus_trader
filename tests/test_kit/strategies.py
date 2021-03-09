@@ -21,7 +21,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order_book import OrderBook
@@ -57,7 +57,7 @@ class TickTock(TradingStrategy):
 
     def on_start(self):
         self.subscribe_bars(self.bar_type)
-        self.subscribe_quote_ticks(self.bar_type.symbol)
+        self.subscribe_quote_ticks(self.bar_type.security)
 
     def on_quote_tick(self, tick):
         self.log.info(f"Received Tick({tick})")
@@ -94,7 +94,7 @@ class EMACross(TradingStrategy):
 
     def __init__(
         self,
-        symbol: Symbol,
+        security: Security,
         bar_spec: BarSpecification,
         trade_size: Decimal,
         fast_ema: int=10,
@@ -106,8 +106,8 @@ class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the strategy.
+        security : Security
+            The security for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -122,11 +122,11 @@ class EMACross(TradingStrategy):
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(order_id_tag=symbol.code.replace('/', "") + extra_id_tag)
+        super().__init__(order_id_tag=security.symbol.replace('/', "") + extra_id_tag)
 
         # Custom strategy variables
-        self.symbol = symbol
-        self.bar_type = BarType(symbol, bar_spec)
+        self.security = security
+        self.bar_type = BarType(security, bar_spec)
         self.trade_size = trade_size
 
         # Create the indicators for the strategy
@@ -203,18 +203,18 @@ class EMACross(TradingStrategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
+            if self.portfolio.is_flat(self.security):
                 self.buy()
-            elif self.portfolio.is_net_short(self.symbol):
-                self.flatten_all_positions(self.symbol)
+            elif self.portfolio.is_net_short(self.security):
+                self.flatten_all_positions(self.security)
                 self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
+            if self.portfolio.is_flat(self.security):
                 self.sell()
-            elif self.portfolio.is_net_long(self.symbol):
-                self.flatten_all_positions(self.symbol)
+            elif self.portfolio.is_net_long(self.security):
+                self.flatten_all_positions(self.security)
                 self.sell()
 
     def buy(self):
@@ -222,7 +222,7 @@ class EMACross(TradingStrategy):
         Users simple buy method (example).
         """
         order = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
         )
@@ -234,7 +234,7 @@ class EMACross(TradingStrategy):
         Users simple sell method (example).
         """
         order = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
         )
@@ -270,8 +270,8 @@ class EMACross(TradingStrategy):
         Actions to be performed when the strategy is stopped.
 
         """
-        self.cancel_all_orders(self.symbol)
-        self.flatten_all_positions(self.symbol)
+        self.cancel_all_orders(self.security)
+        self.flatten_all_positions(self.security)
 
     def on_reset(self):
         """

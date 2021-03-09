@@ -25,7 +25,6 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -37,8 +36,9 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("SIM")))
-GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", Venue("SIM")))
+SIM = Venue("SIM")
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
 
 class ReportProviderTests(unittest.TestCase):
@@ -109,7 +109,7 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -119,7 +119,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -146,7 +146,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(2, len(report))
         self.assertEqual("cl_ord_id", report.index.name)
         self.assertEqual(order1.cl_ord_id.value, report.index[0])
-        self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
+        self.assertEqual("AUD/USD", report.iloc[0]["security"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
@@ -159,7 +159,7 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -169,7 +169,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -197,7 +197,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(1, len(report))
         self.assertEqual("cl_ord_id", report.index.name)
         self.assertEqual(order1.cl_ord_id.value, report.index[0])
-        self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
+        self.assertEqual("AUD/USD", report.iloc[0]["security"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
@@ -209,13 +209,13 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -251,7 +251,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(2, len(report))
         self.assertEqual("position_id", report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
-        self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
+        self.assertEqual("AUD/USD", report.iloc[0]["security"])
         self.assertEqual("BUY", report.iloc[0]["entry"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])
         self.assertEqual(1.0001, report.iloc[0]["avg_open"])

@@ -25,7 +25,7 @@ cdef class OrderBook:
 
     def __init__(
         self,
-        Symbol symbol not None,
+        Security security not None,
         int level,
         int depth,
         int price_precision,
@@ -40,8 +40,8 @@ cdef class OrderBook:
 
         Parameters
         ----------
-        symbol : Symbol
-            The order book symbol.
+        security : Security
+            The order book security identifier.
         level : int
             The order book data level (L1, L2, L3).
         depth : int
@@ -72,7 +72,7 @@ cdef class OrderBook:
         self._bids = bids
         self._asks = asks
 
-        self.symbol = symbol
+        self.security = security
         self.level = level
         self.depth = depth
         self.price_precision = price_precision
@@ -81,7 +81,7 @@ cdef class OrderBook:
         self.timestamp = timestamp
 
     def __str__(self) -> str:
-        return (f"{self.symbol}, "
+        return (f"{self.security}, "
                 f"level={self.level}, "
                 f"depth={self.depth}, "
                 f"last_update_id={self.update_id}, "

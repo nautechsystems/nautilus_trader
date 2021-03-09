@@ -18,6 +18,8 @@ import unittest
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -39,17 +41,16 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class EventTests(unittest.TestCase):
@@ -80,7 +81,7 @@ class EventTests(unittest.TestCase):
         event = OrderInitialized(
             cl_ord_id=ClientOrderId("O-2020872378423"),
             strategy_id=StrategyId("SCALPER", "001"),
-            symbol=Symbol("BTC/USDT", Venue("BINANCE")),
+            security=Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
             quantity=Quantity("0.561000"),
@@ -272,7 +273,7 @@ class EventTests(unittest.TestCase):
             execution_id=ExecutionId("1"),
             position_id=PositionId("2"),
             strategy_id=StrategyId("SCALPER", "001"),
-            symbol=Symbol("BTC/USDT", Venue("BINANCE")),
+            security=Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
             order_side=OrderSide.BUY,
             fill_qty=Quantity("0.561000"),
             cum_qty=Quantity("0.561000"),
@@ -290,11 +291,11 @@ class EventTests(unittest.TestCase):
         # Act
         self.assertEqual(f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                         f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
+                         f"security=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                          f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                          f"commission=12.20000000 USDT, event_id={uuid})", str(event))  # noqa
         self.assertEqual(f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                         f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
+                         f"security=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                          f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                          f"commission=12.20000000 USDT, event_id={uuid})", repr(event))  # noqa

@@ -17,8 +17,8 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.position cimport Position
@@ -36,12 +36,12 @@ cdef class ExecutionCacheFacade:
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cpdef set order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set order_working_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set order_completed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set position_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set position_open_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef set position_closed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef set order_ids(self, Security security=*, StrategyId strategy_id=*)
+    cpdef set order_working_ids(self, Security security=*, StrategyId strategy_id=*)
+    cpdef set order_completed_ids(self, Security security=*, StrategyId strategy_id=*)
+    cpdef set position_ids(self, Security security=*, StrategyId strategy_id=*)
+    cpdef set position_open_ids(self, Security security=*, StrategyId strategy_id=*)
+    cpdef set position_closed_ids(self, Security security=*, StrategyId strategy_id=*)
     cpdef set strategy_ids(self)
 
 # -- ORDER QUERIES ---------------------------------------------------------------------------------
@@ -49,29 +49,29 @@ cdef class ExecutionCacheFacade:
     cpdef Order order(self, ClientOrderId cl_ord_id)
     cpdef ClientOrderId cl_ord_id(self, OrderId order_id)
     cpdef OrderId order_id(self, ClientOrderId cl_ord_id)
-    cpdef list orders(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list orders_completed(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list orders(self, Security security=*, StrategyId strategy_id=*)
+    cpdef list orders_working(self, Security security=*, StrategyId strategy_id=*)
+    cpdef list orders_completed(self, Security security=*, StrategyId strategy_id=*)
     cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *
-    cpdef int orders_total_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
-    cpdef int orders_working_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
-    cpdef int orders_completed_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
+    cpdef int orders_total_count(self, Security security=*, StrategyId strategy_id=*) except *
+    cpdef int orders_working_count(self, Security security=*, StrategyId strategy_id=*) except *
+    cpdef int orders_completed_count(self, Security security=*, StrategyId strategy_id=*) except *
 
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id)
     cpdef PositionId position_id(self, ClientOrderId cl_ord_id)
-    cpdef list positions(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list positions_open(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef list positions_closed(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef list positions(self, Security security=*, StrategyId strategy_id=*)
+    cpdef list positions_open(self, Security security=*, StrategyId strategy_id=*)
+    cpdef list positions_closed(self, Security security=*, StrategyId strategy_id=*)
     cpdef bint position_exists(self, PositionId position_id) except *
     cpdef bint is_position_open(self, PositionId position_id) except *
     cpdef bint is_position_closed(self, PositionId position_id) except *
-    cpdef int positions_total_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
-    cpdef int positions_open_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
-    cpdef int positions_closed_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
+    cpdef int positions_total_count(self, Security security=*, StrategyId strategy_id=*) except *
+    cpdef int positions_open_count(self, Security security=*, StrategyId strategy_id=*) except *
+    cpdef int positions_closed_count(self, Security security=*, StrategyId strategy_id=*) except *
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 
