@@ -109,7 +109,7 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "ccxt"
-version = "1.42.66"
+version = "1.42.67"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -310,7 +310,7 @@ nest-asyncio = "*"
 
 [[package]]
 name = "identify"
-version = "2.1.0"
+version = "2.1.1"
 description = "File identification library for Python"
 category = "dev"
 optional = false
@@ -563,7 +563,7 @@ dev = ["pre-commit", "tox"]
 
 [[package]]
 name = "pre-commit"
-version = "2.11.0"
+version = "2.10.0"
 description = "A framework for managing and maintaining multi-language pre-commit hooks."
 category = "dev"
 optional = false
@@ -1014,7 +1014,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "5e0aa35d5a64fca5aa08dd6f2807e188659ccf69a8c1a5761294b4cab7cedb9a"
+content-hash = "49efff1b74d6228f11ab6df14b1c0179e1d3902b0ec6fb465d920e039f89496f"
 
 [metadata.files]
 aiodns = [
@@ -1093,8 +1093,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 ccxt = [
-    {file = "ccxt-1.42.66-py2.py3-none-any.whl", hash = "sha256:d0be50d4a1dee962de957b32751da4e95b9771a02d885aad45c94d5fd69ccfd5"},
-    {file = "ccxt-1.42.66.tar.gz", hash = "sha256:e22bc25c990bde7f3cc077520e4f2ac6d92289e1e6e026b4c04d3f2feace8759"},
+    {file = "ccxt-1.42.67-py2.py3-none-any.whl", hash = "sha256:01e69541fd92f314eda5c9f2f76ad1f9e12e1284721aca9155044370c507dab1"},
+    {file = "ccxt-1.42.67.tar.gz", hash = "sha256:4790a52bf236b0a64c70602464f486518d937729da2cf66b017b445d52a829f4"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1276,8 +1276,8 @@ ib-insync = [
     {file = "ib_insync-0.9.65.tar.gz", hash = "sha256:7fe0bb294bb7a86414ebc0935a5f759ebb3b3abe903907b73ce0ba938a0c0510"},
 ]
 identify = [
-    {file = "identify-2.1.0-py2.py3-none-any.whl", hash = "sha256:2a5fdf2f5319cc357eda2550bea713a404392495961022cf2462624ce62f0f46"},
-    {file = "identify-2.1.0.tar.gz", hash = "sha256:2179e7359471ab55729f201b3fdf7dc2778e221f868410fedcb0987b791ba552"},
+    {file = "identify-2.1.1-py2.py3-none-any.whl", hash = "sha256:220169a38a0c977c8fef377dc808d6a3330641b5211ec7356c7bbe73cda487c7"},
+    {file = "identify-2.1.1.tar.gz", hash = "sha256:da3d757c94596c50865aae63db6ba4e2e5e3f666c3ea6a6da0cd09a8b2d34abc"},
 ]
 idna = [
     {file = "idna-2.10-py2.py3-none-any.whl", hash = "sha256:b97d804b1e9b523befed77c48dacec60e6dcb0b5391d57af6a65a312a90648c0"},
@@ -1530,8 +1530,8 @@ pluggy = [
     {file = "pluggy-0.13.1.tar.gz", hash = "sha256:15b2acde666561e1298d71b523007ed7364de07029219b604cf808bfa1c765b0"},
 ]
 pre-commit = [
-    {file = "pre_commit-2.11.0-py2.py3-none-any.whl", hash = "sha256:c4853e29c24b27d81359357fae891e00bc83e6a0575c93d815e0e8077bd53b3b"},
-    {file = "pre_commit-2.11.0.tar.gz", hash = "sha256:06f8cb95e29e56788fb5dc98d7ca7a714969dc96633e1ba654ccd5953b64c195"},
+    {file = "pre_commit-2.10.0-py2.py3-none-any.whl", hash = "sha256:391ed331fdd0a21d0be48c1b9919921e9d372dfd60f6dc77b8f01dd6b13161c1"},
+    {file = "pre_commit-2.10.0.tar.gz", hash = "sha256:f413348d3a8464b77987e36ef6e02c3372dadb823edf0dfe6fb0c3dc2f378ef9"},
 ]
 psutil = [
     {file = "psutil-5.8.0-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:0066a82f7b1b37d334e68697faba68e5ad5e858279fd6351c8ca6024e8d6ba64"},
