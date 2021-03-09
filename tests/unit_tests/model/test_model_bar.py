@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
-from parameterized import parameterized
+import pytest
 
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData
@@ -36,7 +34,7 @@ AUDUSD_SIM = TestStubs.security_audusd()
 GBPUSD_SIM = TestStubs.security_gbpusd()
 
 
-class BarSpecificationTests(unittest.TestCase):
+class TestBarSpecification:
 
     def test_bar_spec_equality(self):
         # Arrange
@@ -46,9 +44,9 @@ class BarSpecificationTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(bar_spec1 == bar_spec1)
-        self.assertTrue(bar_spec1 == bar_spec2)
-        self.assertTrue(bar_spec1 != bar_spec3)
+        assert bar_spec1 == bar_spec1
+        assert bar_spec1 == bar_spec2
+        assert bar_spec1 != bar_spec3
 
     def test_bar_spec_hash_str_and_repr(self):
         # Arrange
@@ -56,43 +54,43 @@ class BarSpecificationTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(int, type(hash(bar_spec)))
-        self.assertEqual("1-MINUTE-BID", str(bar_spec))
-        self.assertEqual("BarSpecification(1-MINUTE-BID)", repr(bar_spec))
+        assert isinstance(hash(bar_spec), int)
+        assert "1-MINUTE-BID" == str(bar_spec)
+        assert "BarSpecification(1-MINUTE-BID)" == repr(bar_spec)
 
-    @parameterized.expand([
-        [""],
-        ["1"],
-        ["-1-TICK-MID"],
-        ["1-TICK_MID"],
-    ])
+    @pytest.mark.parametrize(
+        "value",
+        ["", "1", "-1-TICK-MID", "1-TICK_MID"],
+    )
     def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, BarSpecification.from_str, value)
+        with pytest.raises(ValueError):
+            BarSpecification.from_str(value)
 
-    @parameterized.expand([
-        ["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
-        ["15-MINUTE-MID", BarSpecification(15, BarAggregation.MINUTE, PriceType.MID)],
-        ["100-TICK-LAST", BarSpecification(100, BarAggregation.TICK, PriceType.LAST)],
-        ["10000-VALUE_IMBALANCE-MID", BarSpecification(10000, BarAggregation.VALUE_IMBALANCE, PriceType.MID)],
-
-    ])
+    @pytest.mark.parametrize(
+        "value, expected",
+        [["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
+         ["15-MINUTE-MID", BarSpecification(15, BarAggregation.MINUTE, PriceType.MID)],
+         ["100-TICK-LAST", BarSpecification(100, BarAggregation.TICK, PriceType.LAST)],
+         ["10000-VALUE_IMBALANCE-MID", BarSpecification(10000, BarAggregation.VALUE_IMBALANCE, PriceType.MID)]],
+    )
     def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
         spec = BarSpecification.from_str(value)
 
         # Assert
-        self.assertEqual(spec, expected)
+        assert spec == expected
 
-    @parameterized.expand([
-        [BarSpecification(1, BarAggregation.SECOND, PriceType.BID), True, False, False],
-        [BarSpecification(1, BarAggregation.MINUTE, PriceType.BID), True, False, False],
-        [BarSpecification(1000, BarAggregation.TICK, PriceType.MID), False, True, False],
-        [BarSpecification(10000, BarAggregation.VALUE_RUNS, PriceType.MID), False, False, True],
-    ])
+    @pytest.mark.parametrize(
+        "bar_spec, is_time_aggregated, is_threshold_aggregated, is_information_aggregated",
+        [[BarSpecification(1, BarAggregation.SECOND, PriceType.BID), True, False, False],
+         [BarSpecification(1, BarAggregation.MINUTE, PriceType.BID), True, False, False],
+         [BarSpecification(1000, BarAggregation.TICK, PriceType.MID), False, True, False],
+         [BarSpecification(10000, BarAggregation.VALUE_RUNS, PriceType.MID), False, False, True]],
+    )
     def test_aggregation_queries(
         self,
         bar_spec,
@@ -103,12 +101,12 @@ class BarSpecificationTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(is_time_aggregated, bar_spec.is_time_aggregated())
-        self.assertEqual(is_threshold_aggregated, bar_spec.is_threshold_aggregated())
-        self.assertEqual(is_information_aggregated, bar_spec.is_information_aggregated())
+        assert is_time_aggregated == bar_spec.is_time_aggregated()
+        assert is_threshold_aggregated == bar_spec.is_threshold_aggregated()
+        assert is_information_aggregated == bar_spec.is_information_aggregated()
 
 
-class BarTypeTests(unittest.TestCase):
+class TestBarType:
 
     def test_bar_type_equality(self):
         # Arrange
@@ -121,9 +119,9 @@ class BarTypeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(bar_type1 == bar_type1)
-        self.assertTrue(bar_type1 == bar_type2)
-        self.assertTrue(bar_type1 != bar_type3)
+        assert bar_type1 == bar_type1
+        assert bar_type1 == bar_type2
+        assert bar_type1 != bar_type3
 
     def test_bar_type_to_serializable_string(self):
         # Arrange
@@ -135,7 +133,7 @@ class BarTypeTests(unittest.TestCase):
         result = bar_type.to_serializable_str()
 
         # Assert
-        self.assertEqual("AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", result)
+        assert "AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID" == result
 
     def test_bar_type_hash_str_and_repr(self):
         # Arrange
@@ -145,85 +143,83 @@ class BarTypeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(int, type(hash(bar_type)))
-        self.assertEqual("AUD/USD.SIM-1-MINUTE-BID", str(bar_type))
-        self.assertEqual("BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)", repr(bar_type))
+        assert isinstance(hash(bar_type), int)
+        assert "AUD/USD.SIM-1-MINUTE-BID" == str(bar_type)
+        assert "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)" == repr(bar_type)
 
-    @parameterized.expand([
-        [""],
-        ["AUD/USD"],
-        ["AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
-    ])
+    @pytest.mark.parametrize(
+        "value",
+        ["", "AUD/USD", "AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
+    )
     def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, BarType.from_serializable_str, value)
+        with pytest.raises(ValueError):
+            BarType.from_serializable_str(value)
 
-    @parameterized.expand([
-        ["AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", BarType(Security("AUD/USD", Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
-        ["GBP/USD.SIM,FX,SPOT-1000-TICK-MID", BarType(Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
-        ["AAPL.NYSE,STOCK,SPOT-1-HOUR-MID", BarType(Security("AAPL", Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
-        ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],  # noqa
-    ])
+    @pytest.mark.parametrize(
+        "value, expected",
+        [["AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", BarType(Security("AUD/USD", Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
+         ["GBP/USD.SIM,FX,SPOT-1000-TICK-MID", BarType(Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
+         ["AAPL.NYSE,STOCK,SPOT-1-HOUR-MID", BarType(Security("AAPL", Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
+         ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
+    )
     def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
         bar_type = BarType.from_serializable_str(value, internal_aggregation=True)
 
         # Assert
-        self.assertEqual(bar_type, expected)
+        assert bar_type == expected
 
 
-class BarTests(unittest.TestCase):
+class TestBar:
 
     def test_check_when_high_below_low_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            ValueError,
-            Bar,
-            Price("1.00001"),
-            Price("1.00000"),  # High below low
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            UNIX_EPOCH,
-            True,
-        )
+        with pytest.raises(ValueError):
+            Bar(
+                Price("1.00001"),
+                Price("1.00000"),  # High below low
+                Price("1.00002"),
+                Price("1.00003"),
+                Quantity(100000),
+                UNIX_EPOCH,
+                True,
+            )
 
     def test_check_when_high_below_close_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            ValueError,
-            Bar,
-            Price("1.00000"),
-            Price("1.00000"),  # High below close
-            Price("1.00000"),
-            Price("1.00005"),
-            Quantity(100000),
-            UNIX_EPOCH,
-            True,
-        )
+        with pytest.raises(ValueError):
+            Bar(
+                Price("1.00000"),
+                Price("1.00000"),  # High below close
+                Price("1.00000"),
+                Price("1.00005"),
+                Quantity(100000),
+                UNIX_EPOCH,
+                True,
+            )
 
     def test_check_when_low_above_close_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            ValueError,
-            Bar,
-            Price("1.00000"),
-            Price("1.00005"),
-            Price("1.00000"),
-            Price("0.99999"),  # Close below low
-            Quantity(100000),
-            UNIX_EPOCH,
-            True,
-        )
+        with pytest.raises(ValueError):
+            Bar(
+                Price("1.00000"),
+                Price("1.00005"),
+                Price("1.00000"),
+                Price("0.99999"),  # Close below low
+                Quantity(100000),
+                UNIX_EPOCH,
+                True,
+            )
 
     def test_equality(self):
         # Arrange
@@ -247,8 +243,8 @@ class BarTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(bar1, bar1)
-        self.assertNotEqual(bar1, bar2)
+        assert bar1 == bar1
+        assert bar1 != bar2
 
     def test_hash_str_repr(self):
         # Arrange
@@ -263,9 +259,9 @@ class BarTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(int, type(hash(bar)))
-        self.assertEqual("1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z", str(bar))
-        self.assertEqual("Bar(1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", repr(bar))
+        assert isinstance(hash(bar), int)
+        assert "1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z" == str(bar)
+        assert "Bar(1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)" == repr(bar)
 
     def test_to_serializable_string(self):
         # Arrange
@@ -282,7 +278,7 @@ class BarTests(unittest.TestCase):
         serializable = bar.to_serializable_str()
 
         # Assert
-        self.assertEqual("1.00001,1.00004,1.00002,1.00003,100000,0", serializable)
+        assert "1.00001,1.00004,1.00002,1.00003,100000,0" == serializable
 
     def test_from_serializable_string_given_malformed_string_raises_value_error(self):
         # Arrange
@@ -297,7 +293,8 @@ class BarTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, bar.from_serializable_str, "NOT_A_BAR")
+        with pytest.raises(ValueError):
+            bar.from_serializable_str("NOT_A_BAR")
 
     def test_from_serializable_string_given_valid_string_returns_expected_bar(self):
         # Arrange
@@ -307,10 +304,10 @@ class BarTests(unittest.TestCase):
         result = Bar.from_serializable_str(bar.to_serializable_str())
 
         # Assert
-        self.assertEqual(bar, result)
+        assert bar == result
 
 
-class BarDataTests(unittest.TestCase):
+class TestBarData:
 
     def test_str_repr(self):
         # Arrange
@@ -330,5 +327,5 @@ class BarDataTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", str(bar_data))   # noqa
-        self.assertEqual("BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", repr(bar_data))  # noqa
+        assert "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)" == str(bar_data)  # noqa
+        assert "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)" == repr(bar_data)  # noqa

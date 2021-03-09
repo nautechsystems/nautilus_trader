@@ -114,9 +114,14 @@ jobs:
       - name: Set output
         id: vars
         run: |
+          release = sed -n '/^#/,${p;/^---/q}' RELEASES.md
+          release="${release//'%'/'%25'}"
+          release="${release//$'\n'/'%0A'}"
+          release="${release//$'\r'/'%0D'}"
+          echo $release
           echo "::set-output name=tag_name::v$(poetry version --short)"
           echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
-          echo "::set-output name=body::$(sed -n '/^#/,${p;/^---/q}' RELEASES.md)"
+          echo "::set-output name=body::$release"
 
       # Create GitHub release
       - name: Create release

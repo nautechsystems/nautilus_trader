@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
-from parameterized import parameterized
+import pytest
 
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
@@ -29,7 +27,7 @@ AUDUSD_SIM = TestStubs.security_audusd()
 GBPUSD_SIM = TestStubs.security_gbpusd()
 
 
-class CurrencyTests(unittest.TestCase):
+class TestCurrency:
 
     def test_currency_equality(self):
         # Arrange
@@ -39,9 +37,9 @@ class CurrencyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(currency1 == currency1)
-        self.assertTrue(currency1 == currency2)
-        self.assertTrue(currency1 != currency3)
+        assert currency1 == currency1
+        assert currency1 == currency2
+        assert currency1 != currency3
 
     def test_currency_hash(self):
         # Arrange
@@ -49,8 +47,8 @@ class CurrencyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(int, type(hash(currency)))
-        self.assertEqual(hash(currency), hash(currency))
+        assert isinstance(hash(currency), int)
+        assert hash(currency) == hash(currency)
 
     def test_str_repr(self):
         # Arrange
@@ -58,8 +56,8 @@ class CurrencyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("AUD", str(currency))
-        self.assertEqual("Currency(code=AUD, precision=2, type=FIAT)", repr(currency))
+        assert "AUD" == str(currency)
+        assert "Currency(code=AUD, precision=2, type=FIAT)" == repr(currency)
 
     def test_from_str_given_unknown_code_returns_none(self):
         # Arrange
@@ -67,30 +65,32 @@ class CurrencyTests(unittest.TestCase):
         result = Currency.from_str("SOME_CURRENCY")
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
-    @parameterized.expand([
-        ["AUD", AUD],
-        ["GBP", GBP],
-        ["BTC", BTC],
-        ["ETH", ETH],
-    ])
+    @pytest.mark.parametrize(
+        "string, expected",
+        [["AUD", AUD],
+         ["GBP", GBP],
+         ["BTC", BTC],
+         ["ETH", ETH]],
+    )
     def test_from_str(self, string, expected):
         # Arrange
         # Act
         result = Currency.from_str(string)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert expected == result
 
-    @parameterized.expand([
-        ["AUD", True],
-        ["ZZZ", False],
-    ])
+    @pytest.mark.parametrize(
+        "string, expected",
+        [["AUD", True],
+         ["ZZZ", False]],
+    )
     def test_is_fiat(self, string, expected):
         # Arrange
         # Act
         result = Currency.is_fiat(string)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert expected == result
