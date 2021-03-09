@@ -146,7 +146,7 @@ cdef class ReportProvider:
         return {
             "cl_ord_id": order.cl_ord_id.value,
             "order_id": order.id.value,
-            "security": order.security.symbol,
+            "security": order.security.value,
             "side": OrderSideParser.to_str(order.side),
             "type": OrderTypeParser.to_str(order.type),
             "quantity": order.quantity,
@@ -158,7 +158,7 @@ cdef class ReportProvider:
     cdef dict _position_to_dict(self, Position position):
         return {
             "position_id": position.id.value,
-            "security": position.security.symbol,
+            "security": position.security.value,
             "strategy_id": position.strategy_id.tag.value,
             "entry": OrderSideParser.to_str(position.entry),
             "peak_quantity": position.peak_quantity,
