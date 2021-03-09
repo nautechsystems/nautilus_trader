@@ -1,4 +1,4 @@
-# NautilusTrader 1.108.1 Beta - Release Notes
+# NautilusTrader 1.108.0 Beta - Release Notes
 
 This release executes a major refactoring of `Symbol` and how securities are
 generally identified within the platform. This will allow a smoother integration
