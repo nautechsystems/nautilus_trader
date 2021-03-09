@@ -109,7 +109,7 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "ccxt"
-version = "1.42.67"
+version = "1.42.69"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -1014,7 +1014,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "49efff1b74d6228f11ab6df14b1c0179e1d3902b0ec6fb465d920e039f89496f"
+content-hash = "81e25ff6f8936911a90a396792602db98f40a6ee253a355f73c29cc4d0ad3d43"
 
 [metadata.files]
 aiodns = [
@@ -1093,8 +1093,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 ccxt = [
-    {file = "ccxt-1.42.67-py2.py3-none-any.whl", hash = "sha256:01e69541fd92f314eda5c9f2f76ad1f9e12e1284721aca9155044370c507dab1"},
-    {file = "ccxt-1.42.67.tar.gz", hash = "sha256:4790a52bf236b0a64c70602464f486518d937729da2cf66b017b445d52a829f4"},
+    {file = "ccxt-1.42.69-py2.py3-none-any.whl", hash = "sha256:dbbe45e0afc23a76815733d52076884ca7befe96d6bb8d499665040dcfcc7d61"},
+    {file = "ccxt-1.42.69.tar.gz", hash = "sha256:c867c85d37c14ee06f02b21187e9bc9edf7086fc6f59e8ec596c59f12b630d94"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
