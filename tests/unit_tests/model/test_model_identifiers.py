@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
-from parameterized import parameterized
+import pytest
 
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
@@ -33,20 +31,22 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 
 
-class IdentifierTests(unittest.TestCase):
+class TestIdentifiers:
 
-    @parameterized.expand([
-        [None, TypeError],
-        ["", ValueError],
-        [" ", ValueError],
-        ["  ", ValueError],
-        [1234, TypeError],
-    ])
+    @pytest.mark.parametrize(
+        "value, ex",
+        [[None, TypeError],
+         ["", ValueError],
+         [" ", ValueError],
+         ["  ", ValueError],
+         [1234, TypeError]],
+    )
     def test_instantiate_given_various_invalid_values_raises_exception(self, value, ex):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ex, Identifier, value)
+        with pytest.raises(ex):
+            Identifier(value)
 
     def test_equality(self):
         # Arrange
@@ -56,10 +56,10 @@ class IdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue("abc123", id1.value)
-        self.assertTrue(id1 == id1)
-        self.assertTrue(id1 == id2)
-        self.assertTrue(id1 != id3)
+        assert "abc123" == id1.value
+        assert id1 == id1
+        assert id1 == id2
+        assert id1 != id3
 
     def test_equality_of_subclass(self):
         # Arrange
@@ -70,13 +70,13 @@ class IdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(id1 == id1)
-        self.assertTrue(id2 == id2)
-        self.assertTrue(id1 == id2)
-        self.assertTrue(id2 == id1)
-        self.assertTrue(id1 != id3)
-        self.assertTrue(id2 != id3)
-        self.assertTrue(id2 != id4)
+        assert id1 == id1
+        assert id2 == id2
+        assert id1 == id2
+        assert id2 == id1
+        assert id1 != id3
+        assert id2 != id3
+        assert id2 != id4
 
     def test_comparison(self):
         # Arrange
@@ -87,13 +87,13 @@ class IdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(string1 <= string1)
-        self.assertTrue(string1 <= string2)
-        self.assertTrue(string1 < string2)
-        self.assertTrue(string2 > string1)
-        self.assertTrue(string2 >= string1)
-        self.assertTrue(string2 >= string2)
-        self.assertTrue(string3 <= string4)
+        assert string1 <= string1
+        assert string1 <= string2
+        assert string1 < string2
+        assert string2 > string1
+        assert string2 >= string1
+        assert string2 >= string2
+        assert string3 <= string4
 
     def test_hash(self):
         # Arrange
@@ -102,8 +102,8 @@ class IdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(int, type(hash(identifier1)))
-        self.assertEqual(hash(identifier1), hash(identifier2))
+        assert isinstance(hash(identifier1), int)
+        assert hash(identifier1) == hash(identifier2)
 
     def test_identifier_equality(self):
         # Arrange
@@ -111,16 +111,9 @@ class IdentifierTests(unittest.TestCase):
         id2 = Identifier("some-id-2")
 
         # Act
-        result1 = id1 == id1
-        result2 = id1 != id1
-        result3 = id1 == id2
-        result4 = id1 != id2
-
         # Assert
-        self.assertTrue(result1)
-        self.assertFalse(result2)
-        self.assertFalse(result3)
-        self.assertTrue(result4)
+        assert id1 == id1
+        assert id1 != id2
 
     def test_identifier_to_str(self):
         # Arrange
@@ -130,7 +123,7 @@ class IdentifierTests(unittest.TestCase):
         result = str(identifier)
 
         # Assert
-        self.assertEqual("some-id", result)
+        assert "some-id" == result
 
     def test_identifier_repr(self):
         # Arrange
@@ -140,7 +133,7 @@ class IdentifierTests(unittest.TestCase):
         result = repr(identifier)
 
         # Assert
-        self.assertEqual("Identifier('some-id')", result)
+        assert "Identifier('some-id')" == result
 
     def test_mixed_identifier_equality(self):
         # Arrange
@@ -149,26 +142,29 @@ class IdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(id1 == id1)
-        self.assertFalse(id1 == id2)
+        assert id1 == id1
+        assert id1 != id2
 
     def test_account_id_given_malformed_string_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, AccountId.from_str, "BAD_STRING")
+        with pytest.raises(ValueError):
+            AccountId.from_str("BAD_STRING")
 
     def test_strategy_id_given_malformed_string_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, StrategyId.from_str, "BAD_STRING")
+        with pytest.raises(ValueError):
+            StrategyId.from_str("BAD_STRING")
 
     def test_trader_id_given_malformed_string_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, TraderId.from_str, "BAD_STRING")
+        with pytest.raises(ValueError):
+            TraderId.from_str("BAD_STRING")
 
     def test_trader_identifier(self):
         # Arrange
@@ -177,11 +173,11 @@ class IdentifierTests(unittest.TestCase):
         trader_id2 = TraderId("TESTER", "001")
 
         # Assert
-        self.assertEqual(trader_id1, trader_id1)
-        self.assertNotEqual(trader_id1, trader_id2)
-        self.assertEqual("TESTER-000", trader_id1.value)
-        self.assertEqual("TESTER", trader_id1.name)
-        self.assertEqual(trader_id1, TraderId.from_str("TESTER-000"))
+        assert trader_id1 == trader_id1
+        assert trader_id1 != trader_id2
+        assert "TESTER-000" == trader_id1.value
+        assert "TESTER" == trader_id1.name
+        assert trader_id1 == TraderId.from_str("TESTER-000")
 
     def test_strategy_identifier(self):
         # Arrange
@@ -190,11 +186,11 @@ class IdentifierTests(unittest.TestCase):
         strategy_id2 = StrategyId("SCALPER", "01")
 
         # Assert
-        self.assertEqual("NULL-NULL", strategy_id1.value)
-        self.assertEqual(strategy_id1, strategy_id1)
-        self.assertNotEqual(strategy_id1, strategy_id2)
-        self.assertEqual("NULL", strategy_id1.name)
-        self.assertEqual(strategy_id2, StrategyId.from_str('SCALPER-01'))
+        assert "NULL-NULL" == strategy_id1.value
+        assert strategy_id1 == strategy_id1
+        assert strategy_id1 != strategy_id2
+        assert "NULL" == strategy_id1.name
+        assert strategy_id2 == StrategyId.from_str('SCALPER-01')
 
     def test_account_identifier(self):
         # Arrange
@@ -203,11 +199,11 @@ class IdentifierTests(unittest.TestCase):
         account_id2 = AccountId("SIM", "09999999")
 
         # Assert
-        self.assertEqual(account_id1, account_id1)
-        self.assertNotEqual(account_id1, account_id2)
-        self.assertEqual("SIM-02851908", account_id1.value)
-        self.assertEqual(Issuer("SIM"), account_id1.issuer)
-        self.assertEqual(account_id1, AccountId("SIM", "02851908"))
+        assert account_id1 == account_id1
+        assert account_id1 != account_id2
+        assert "SIM-02851908", account_id1.value
+        assert Issuer("SIM") == account_id1.issuer
+        assert account_id1 == AccountId("SIM", "02851908")
 
     def test_position_identifier(self):
         # Arrange
@@ -215,7 +211,7 @@ class IdentifierTests(unittest.TestCase):
         position_id0 = PositionId.null()
 
         # Assert
-        self.assertEqual("NULL", position_id0.value)
+        assert "NULL" == position_id0.value
 
     def test_order_identifier(self):
         # Arrange
@@ -223,10 +219,10 @@ class IdentifierTests(unittest.TestCase):
         order_id = OrderId.null()
 
         # Assert
-        self.assertEqual("NULL", order_id.value)
+        assert "NULL" == order_id.value
 
 
-class SecurityIdentifierTests(unittest.TestCase):
+class TestSecurityIdentifier:
 
     def test_security_equality(self):
         # Arrange
@@ -236,9 +232,9 @@ class SecurityIdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(security1 == security1)
-        self.assertTrue(security1 != security2)
-        self.assertTrue(security1 != security3)
+        assert security1 == security1
+        assert security1 != security2
+        assert security1 != security3
 
     def test_security_str(self):
         # Arrange
@@ -246,7 +242,7 @@ class SecurityIdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("AUD/USD.SIM", str(security))
+        assert "AUD/USD.SIM" == str(security)
 
     def test_security_repr(self):
         # Arrange
@@ -254,7 +250,7 @@ class SecurityIdentifierTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("Security('AUD/USD.SIM,FX,SPOT')", repr(security))
+        assert "Security('AUD/USD.SIM,FX,SPOT')" == repr(security)
 
     def test_parse_security_from_str(self):
         # Arrange
@@ -264,7 +260,7 @@ class SecurityIdentifierTests(unittest.TestCase):
         result = Security.from_serializable_str(security.to_serializable_str())
 
         # Assert
-        self.assertEqual(security, result)
+        assert security == result
 
 
 # class SecurityIdentifierTests(unittest.TestCase):
