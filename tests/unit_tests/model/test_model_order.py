@@ -51,7 +51,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class OrderTests(unittest.TestCase):
@@ -110,7 +110,7 @@ class OrderTests(unittest.TestCase):
             MarketOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(),
             TimeInForce.DAY,
@@ -126,7 +126,7 @@ class OrderTests(unittest.TestCase):
             MarketOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100),
             TimeInForce.GTD,
@@ -142,7 +142,7 @@ class OrderTests(unittest.TestCase):
             StopMarketOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -160,7 +160,7 @@ class OrderTests(unittest.TestCase):
             StopLimitOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00001"),
@@ -174,7 +174,7 @@ class OrderTests(unittest.TestCase):
     def test_reset_order_factory(self):
         # Arrange
         self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -184,7 +184,7 @@ class OrderTests(unittest.TestCase):
         self.order_factory.reset()
 
         order2 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -196,14 +196,14 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order1 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00001"),
@@ -217,7 +217,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -243,7 +243,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -265,7 +265,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -278,7 +278,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -291,7 +291,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -310,7 +310,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -319,7 +319,7 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(AUDUSD_SIM.symbol, order.symbol)
+        self.assertEqual(AUDUSD_SIM.security, order.security)
         self.assertEqual(OrderType.LIMIT, order.type)
         self.assertEqual(Price("1.00000"), order.price)
         self.assertEqual(OrderState.INITIALIZED, order.state)
@@ -332,7 +332,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -351,7 +351,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.stop_limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -370,13 +370,13 @@ class OrderTests(unittest.TestCase):
     def test_bracket_order_equality(self):
         # Arrange
         entry1 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         entry2 = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -392,7 +392,7 @@ class OrderTests(unittest.TestCase):
     def test_initialize_bracket_order(self):
         # Arrange
         entry_order = self.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.99995"),
@@ -408,9 +408,9 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(AUDUSD_SIM.symbol, bracket_order.stop_loss.symbol)
+        self.assertEqual(AUDUSD_SIM.security, bracket_order.stop_loss.security)
         self.assertTrue(bracket_order.take_profit is not None)
-        self.assertEqual(AUDUSD_SIM.symbol, bracket_order.take_profit.symbol)
+        self.assertEqual(AUDUSD_SIM.security, bracket_order.take_profit.security)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-3"), bracket_order.take_profit.cl_ord_id)
@@ -432,7 +432,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         entry_order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -450,7 +450,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_invalid_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -474,7 +474,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_denied_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -498,7 +498,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_submitted_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -518,7 +518,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_accepted_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -536,7 +536,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_rejected_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -554,7 +554,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_expired_event(self):
         # Arrange
         order = self.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.99990"),
@@ -576,7 +576,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_triggered_event(self):
         # Arrange
         order = self.order_factory.stop_limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -599,7 +599,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_cancelled_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -618,7 +618,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_amended_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -653,7 +653,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_filled_event_to_order_without_accepted(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -684,7 +684,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -715,7 +715,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -757,7 +757,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_filled_events_to_market_order_results_in_filled(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -809,7 +809,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
         order = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -825,7 +825,7 @@ class OrderTests(unittest.TestCase):
             ExecutionId("E-1"),
             PositionId("P-1"),
             StrategyId.null(),
-            order.symbol,
+            order.security,
             order.side,
             order.quantity,
             order.quantity,
@@ -856,7 +856,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
         order = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -872,7 +872,7 @@ class OrderTests(unittest.TestCase):
             ExecutionId("E-1"),
             PositionId("P-1"),
             StrategyId.null(),
-            order.symbol,
+            order.security,
             order.side,
             Quantity(50000),
             Quantity(50000),

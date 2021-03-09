@@ -41,7 +41,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -107,7 +107,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         # Subscriptions
         self._subscribed_instruments = set()
-        self._subscribed_quote_ticks = {}  # type: dict[Symbol, (threading.Event, asyncio.Future)]
+        self._subscribed_quote_ticks = {}  # type: dict[Security, (threading.Event, asyncio.Future)]
 
         # Scheduled tasks
         self._update_instruments_handle: asyncio.Handle = None
@@ -122,7 +122,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._subscribed_instruments))
@@ -130,11 +130,11 @@ cdef class OandaDataClient(LiveMarketDataClient):
     @property
     def subscribed_quote_ticks(self):
         """
-        The quote tick symbols subscribed to.
+        The quote tick securities subscribed to.
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._subscribed_quote_ticks.keys()))
@@ -166,8 +166,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
         """
         self._log.info("Disconnecting...")
 
-        for symbol in self._subscribed_quote_ticks.copy():
-            self.unsubscribe_quote_ticks(symbol)
+        for security in self._subscribed_quote_ticks.copy():
+            self.unsubscribe_quote_ticks(security)
 
         if self._update_instruments_handle is not None:
             self._update_instruments_handle.cancel()
@@ -202,50 +202,50 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+    cpdef void subscribe_instrument(self, Security security) except *:
         """
-        Subscribe to `Instrument` data for the given symbol.
+        Subscribe to `Instrument` data for the given security.
 
         Parameters
         ----------
-        symbol : Instrument
-            The instrument symbol to subscribe to.
+        security : Security
+            The instrument security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        self._subscribed_instruments.add(symbol)
+        self._subscribed_instruments.add(security)
 
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_quote_ticks(self, Security security) except *:
         """
-        Subscribe to `QuoteTick` data for the given symbol.
+        Subscribe to `QuoteTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to subscribe to.
+        security : Security
+            The tick security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol not in self._subscribed_quote_ticks:
+        if security not in self._subscribed_quote_ticks:
             event = threading.Event()
-            future = self._loop.run_in_executor(None, self._stream_prices, symbol, event)
-            self._subscribed_quote_ticks[symbol] = (event, future)
+            future = self._loop.run_in_executor(None, self._stream_prices, security, event)
+            self._subscribed_quote_ticks[security] = (event, future)
 
-            self._log.debug(f"Subscribed to quote ticks for {symbol}.")
+            self._log.debug(f"Subscribed to quote ticks for {security}.")
 
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_trade_ticks(self, Security security) except *:
         """
-        Subscribe to `TradeTick` data for the given symbol.
+        Subscribe to `TradeTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to subscribe to.
+        security : Security
+            The tick security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
         self._log.error(f"`subscribe_trade_ticks` was called when not supported by the brokerage.")
 
@@ -264,50 +264,50 @@ cdef class OandaDataClient(LiveMarketDataClient):
         self._log.error(f"`subscribe_bars` was called when not supported by the brokerage "
                         f"(use internal aggregation).")
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
+    cpdef void unsubscribe_instrument(self, Security security) except *:
         """
-        Unsubscribe from `Instrument` data for the given symbol.
+        Unsubscribe from `Instrument` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The instrument symbol to unsubscribe from.
+        security : Security
+            The instrument security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        self._subscribed_instruments.discard(symbol)
+        self._subscribed_instruments.discard(security)
 
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_quote_ticks(self, Security security) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given symbol.
+        Unsubscribe from `QuoteTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to unsubscribe from.
+        security : Security
+            The tick security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol in self._subscribed_quote_ticks:
-            event, future = self._subscribed_quote_ticks.pop(symbol)
+        if security in self._subscribed_quote_ticks:
+            event, future = self._subscribed_quote_ticks.pop(security)
             event.set()
             future.cancel()
 
-            self._log.debug(f"Unsubscribed from quote ticks for {symbol}.")
+            self._log.debug(f"Unsubscribed from quote ticks for {security}.")
 
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_trade_ticks(self, Security security) except *:
         """
-        Unsubscribe from `TradeTick` data for the given symbol.
+        Unsubscribe from `TradeTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to unsubscribe from.
+        security : Security
+            The tick security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
         self._log.error(f"`unsubscribe_trade_ticks` was called when not supported by the brokerage.")
 
@@ -328,22 +328,22 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
+    cpdef void request_instrument(self, Security security, UUID correlation_id) except *:
         """
-        Request the instrument for the given symbol.
+        Request the instrument for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the request.
+        security : Security
+            The security for the request.
         correlation_id : UUID
             The correlation identifier for the request.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._loop.run_in_executor(None, self._request_instrument, symbol, correlation_id)
+        self._loop.run_in_executor(None, self._request_instrument, security, correlation_id)
 
     cpdef void request_instruments(self, UUID correlation_id) except *:
         """
@@ -361,7 +361,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void request_quote_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -372,8 +372,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol for the request.
+        security : Security
+            The tick security for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -385,14 +385,14 @@ cdef class OandaDataClient(LiveMarketDataClient):
             The correlation identifier for the request.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(correlation_id, "correlation_id")
 
         self._log.error(f"`request_quote_ticks` was called when not supported by the brokerage.")
 
     cpdef void request_trade_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -403,8 +403,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol for the request.
+        security : Security
+            The tick security for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -416,7 +416,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
             The correlation identifier for the request.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
@@ -484,13 +484,13 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
-    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
+    cpdef void _request_instrument(self, Security security, UUID correlation_id) except *:
         self._load_instruments()
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        cdef Instrument instrument = self._instrument_provider.get(security)
         if instrument is not None:
             self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
         else:
-            self._log.error(f"Could not find instrument {symbol.code}.")
+            self._log.error(f"Could not find instrument {security.symbol}.")
 
     cpdef void _request_instruments(self, UUID correlation_id) except *:
         self._load_instruments()
@@ -503,14 +503,14 @@ cdef class OandaDataClient(LiveMarketDataClient):
     cpdef void _subscribed_instruments_load_and_send(self) except *:
         self._instrument_provider.load_all()
 
-        cdef Symbol symbol
+        cdef Security security
         cdef Instrument instrument
-        for symbol in self._subscribed_instruments:
-            instrument = self._instrument_provider.get(symbol)
+        for security in self._subscribed_instruments:
+            instrument = self._instrument_provider.get(security)
             if instrument is not None:
                 self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
             else:
-                self._log.error(f"Could not find instrument {symbol.code}.")
+                self._log.error(f"Could not find instrument {security.symbol}.")
 
         # Reschedule subscribed instruments update in one hour
         self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
@@ -523,9 +523,9 @@ cdef class OandaDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ) except *:
-        cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
+        cdef Instrument instrument = self._instrument_provider.get(bar_type.security)
         if instrument is None:
-            self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
+            self._log.error(f"Cannot request bars (no instrument for {bar_type.security}).")
             return
 
         oanda_name = instrument.info["name"]
@@ -634,15 +634,15 @@ cdef class OandaDataClient(LiveMarketDataClient):
             correlation_id,
         )
 
-    cpdef void _stream_prices(self, Symbol symbol, event: threading.Event) except *:
+    cpdef void _stream_prices(self, Security security, event: threading.Event) except *:
         cdef dict res
         cdef dict best_bid
         cdef dict best_ask
         cdef QuoteTick tick
         try:
             params = {
-                "instruments": symbol.code.replace('/', '_', 1),
-                "sessionId": f"{symbol.code}-001",
+                "instruments": security.symbol.replace('/', '_', 1),
+                "sessionId": f"{security.symbol}-001",
             }
 
             req = PricingStream(accountID=self._account_id, params=params)
@@ -654,16 +654,16 @@ cdef class OandaDataClient(LiveMarketDataClient):
                     if res["type"] != "PRICE":
                         # Heartbeat
                         continue
-                    tick = self._parse_quote_tick(symbol, res)
+                    tick = self._parse_quote_tick(security, res)
                     self._handle_quote_tick_py(tick)
         except asyncio.CancelledError:
             pass  # Expected cancellation
         except Exception as ex:
             self._log.exception(ex)
 
-    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
+    cdef inline QuoteTick _parse_quote_tick(self, Security security, dict values):
         return QuoteTick(
-            symbol,
+            security,
             Price(values["bids"][0]["price"]),
             Price(values["asks"][0]["price"]),
             Quantity(1),
@@ -706,11 +706,11 @@ cdef class OandaDataClient(LiveMarketDataClient):
     cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
         self._handle_instruments(instruments, correlation_id)
 
-    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
-        self._handle_quote_ticks(symbol, ticks, correlation_id)
+    cpdef void _handle_quote_ticks_py(self, Security security, list ticks, UUID correlation_id) except *:
+        self._handle_quote_ticks(security, ticks, correlation_id)
 
-    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
+    cpdef void _handle_trade_ticks_py(self, Security security, list ticks, UUID correlation_id) except *:
+        self._handle_trade_ticks(security, ticks, correlation_id)
 
     cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         self._handle_bars(bar_type, bars, partial, correlation_id)

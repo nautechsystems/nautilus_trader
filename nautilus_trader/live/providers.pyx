@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 
@@ -59,26 +59,26 @@ cdef class InstrumentProvider:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Instrument get(self, Symbol symbol):
+    cpdef Instrument get(self, Security security):
         """
-        Get the instrument for the given symbol (if found).
+        Get the instrument for the given security (if found).
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the instrument
+        security : Security
+            The security for the instrument
 
         Returns
         -------
         Instrument or None
 
         """
-        return self.get_c(symbol.code)
+        return self.get_c(security.symbol)
 
     cpdef Currency currency(self, str code):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef Instrument get_c(self, str symbol_code):
+    cdef Instrument get_c(self, str symbol):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

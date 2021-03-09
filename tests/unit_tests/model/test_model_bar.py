@@ -21,17 +21,19 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestStubs.symbol_audusd()
-GBPUSD_SIM = TestStubs.symbol_gbpusd()
+AUDUSD_SIM = TestStubs.security_audusd()
+GBPUSD_SIM = TestStubs.security_gbpusd()
 
 
 class BarSpecificationTests(unittest.TestCase):
@@ -110,12 +112,12 @@ class BarTypeTests(unittest.TestCase):
 
     def test_bar_type_equality(self):
         # Arrange
-        symbol1 = Symbol("AUD/USD", Venue("SIM"))
-        symbol2 = Symbol("GBP/USD", Venue("SIM"))
+        security1 = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security2 = Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type1 = BarType(symbol1, bar_spec)
-        bar_type2 = BarType(symbol1, bar_spec)
-        bar_type3 = BarType(symbol2, bar_spec)
+        bar_type1 = BarType(security1, bar_spec)
+        bar_type2 = BarType(security1, bar_spec)
+        bar_type3 = BarType(security2, bar_spec)
 
         # Act
         # Assert
@@ -123,11 +125,23 @@ class BarTypeTests(unittest.TestCase):
         self.assertTrue(bar_type1 == bar_type2)
         self.assertTrue(bar_type1 != bar_type3)
 
+    def test_bar_type_to_serializable_string(self):
+        # Arrange
+        security = Security("AUD/USD", Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(security, bar_spec)
+
+        # Act
+        result = bar_type.to_serializable_str()
+
+        # Assert
+        self.assertEqual("AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", result)
+
     def test_bar_type_hash_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue("SIM"))
+        security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type = BarType(symbol, bar_spec)
+        bar_type = BarType(security, bar_spec)
 
         # Act
         # Assert
@@ -144,18 +158,18 @@ class BarTypeTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, BarType.from_str, value)
+        self.assertRaises(ValueError, BarType.from_serializable_str, value)
 
     @parameterized.expand([
-        ["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(Symbol("AUD/USD", Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],
-        ["GBP/USD.SIM-1000-TICK-MID", BarType(Symbol("GBP/USD", Venue("SIM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],
-        ["AAPL.NYSE-1-HOUR-MID", BarType(Symbol("AAPL", Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],
-        ["BTC/USDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTC/USDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
+        ["AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", BarType(Security("AUD/USD", Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
+        ["GBP/USD.SIM,FX,SPOT-1000-TICK-MID", BarType(Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
+        ["AAPL.NYSE,STOCK,SPOT-1-HOUR-MID", BarType(Security("AAPL", Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
+        ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],  # noqa
     ])
     def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
-        bar_type = BarType.from_str(value, internal_aggregation=True)
+        bar_type = BarType.from_serializable_str(value, internal_aggregation=True)
 
         # Assert
         self.assertEqual(bar_type, expected)
@@ -265,7 +279,7 @@ class BarTests(unittest.TestCase):
         )
 
         # Act
-        serializable = bar.to_serializable_string()
+        serializable = bar.to_serializable_str()
 
         # Assert
         self.assertEqual("1.00001,1.00004,1.00002,1.00003,100000,0", serializable)
@@ -283,14 +297,14 @@ class BarTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, bar.from_serializable_string, "NOT_A_BAR")
+        self.assertRaises(ValueError, bar.from_serializable_str, "NOT_A_BAR")
 
     def test_from_serializable_string_given_valid_string_returns_expected_bar(self):
         # Arrange
         bar = TestStubs.bar_5decimal()
 
         # Act
-        result = Bar.from_serializable_string(bar.to_serializable_string())
+        result = Bar.from_serializable_str(bar.to_serializable_str())
 
         # Assert
         self.assertEqual(bar, result)
@@ -300,9 +314,9 @@ class BarDataTests(unittest.TestCase):
 
     def test_str_repr(self):
         # Arrange
-        symbol = Symbol("GBP/USD", Venue("SIM"))
+        security = Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type = BarType(symbol, bar_spec)
+        bar_type = BarType(security, bar_spec)
         bar = Bar(
             Price("1.00001"),
             Price("1.00004"),

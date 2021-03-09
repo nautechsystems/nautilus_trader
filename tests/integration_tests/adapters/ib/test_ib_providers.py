@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import Exchange
+
 #from nautilus_trader.model.identifiers import Security
 from tests import TESTS_PACKAGE_ROOT
 
@@ -44,7 +45,7 @@ class IBInstrumentProviderTests(unittest.TestCase):
     #     provider.connect()
     #
     #     security = Security(
-    #         symbol="CL",
+    #         security="CL",
     #         venue=Exchange("NYMEX"),
     #         sec_type=AssetType.FUTURE,
     #         multiplier="1000",
@@ -56,7 +57,7 @@ class IBInstrumentProviderTests(unittest.TestCase):
     #     future = provider.load_future(security)
     #
     #     # Assert
-    #     self.assertEqual(security, future.symbol)
+    #     self.assertEqual(security, future.security)
     #     self.assertEqual(1000, future.multiplier)
     #     self.assertEqual(Decimal("0.01"), future.tick_size)
     #     self.assertEqual(2, future.price_precision)

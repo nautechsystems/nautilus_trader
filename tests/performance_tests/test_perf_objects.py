@@ -22,14 +22,14 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestStubs.symbol_audusd()
+AUDUSD_SIM = TestStubs.security_audusd()
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 
 
 class ObjectTests:
 
     @staticmethod
-    def symbol_to_str():
+    def security_to_str():
         str(AUDUSD_SIM)
 
     @staticmethod
@@ -60,8 +60,8 @@ class ObjectTests:
 class ObjectPerformanceTests(unittest.TestCase):
 
     @staticmethod
-    def test_symbol_to_str():
-        PerformanceHarness.profile_function(ObjectTests.symbol_to_str, 100000, 1)
+    def test_security_to_str():
+        PerformanceHarness.profile_function(ObjectTests.security_to_str, 100000, 1)
         # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod

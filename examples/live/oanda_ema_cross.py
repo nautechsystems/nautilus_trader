@@ -23,9 +23,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative im
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Venue
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
@@ -77,7 +79,7 @@ config = {
 # custom options into the configuration file or even use another configuration
 # file.
 strategy1 = EMACross(
-    symbol=Symbol("AUD/USD", Venue("OANDA")),
+    security=Security("AUD/USD", Venue("OANDA"), AssetClass.FX, AssetType.SPOT),
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,
@@ -86,7 +88,7 @@ strategy1 = EMACross(
 )
 
 strategy2 = EMACross(
-    symbol=Symbol("EUR/USD", Venue("OANDA")),
+    security=Security("EUR/USD", Venue("OANDA"), AssetClass.FX, AssetType.SPOT),
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,
@@ -95,7 +97,7 @@ strategy2 = EMACross(
 )
 
 strategy3 = EMACross(
-    symbol=Symbol("GBP/USD", Venue("OANDA")),
+    security=Security("GBP/USD", Venue("OANDA"), AssetClass.FX, AssetType.SPOT),
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,

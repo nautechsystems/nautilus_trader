@@ -18,13 +18,11 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
-#from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -35,9 +33,7 @@ cdef class Instrument:
 
     def __init__(
         self,
-        Symbol symbol not None,
-        AssetClass asset_class,
-        AssetType asset_type,
+        Security security not None,
         Currency base_currency,  # Can be None
         Currency quote_currency not None,
         Currency settlement_currency not None,
@@ -67,12 +63,8 @@ cdef class Instrument:
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol.
-        asset_class : AssetClass (Enum)
-            The asset class.
-        asset_type : AssetType (Enum)
-            The asset type.
+        security : Security
+            The security identifier for the instrument.
         base_currency : Currency, optional
             The base currency. Not applicable for all asset classes.
         quote_currency : Currency
@@ -178,9 +170,7 @@ cdef class Instrument:
         if info is None:
             info = {}
 
-        self.symbol = symbol
-        self.asset_class = asset_class
-        self.asset_type = asset_type
+        self.security = security
         self.base_currency = base_currency  # Can be None
         self.quote_currency = quote_currency
         # Currently not handling quanto settlement
@@ -219,16 +209,16 @@ cdef class Instrument:
         return settlement_currency != base_currency and settlement_currency != quote_currency
 
     def __eq__(self, Instrument other) -> bool:
-        return self.symbol.value == other.symbol.value
+        return self.security.value == other.security.value
 
     def __ne__(self, Instrument other) -> bool:
-        return self.symbol.value != other.symbol.value
+        return self.security.value != other.security.value
 
     def __hash__(self) -> int:
-        return hash(self.symbol.value)
+        return hash(self.security.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.symbol.value}')"
+        return f"{type(self).__name__}('{self.security.value}')"
 
     cpdef Money market_value(self, Quantity quantity, close_price: Decimal):
         """
@@ -329,7 +319,7 @@ cdef class Instrument:
         quantity : Quantity
             The currency position quantity.
         last : Price
-            The position symbols last price.
+            The position securities last price.
 
         Returns
         -------
@@ -451,7 +441,7 @@ cdef class Instrument:
 #
 #         """
 #         super().__init__(
-#             symbol=security,  # TODO: Refactor
+#             security=security,  # TODO: Refactor
 #             asset_class=asset_class,
 #             asset_type=AssetType.FUTURE,
 #             base_currency=None,  # N/A

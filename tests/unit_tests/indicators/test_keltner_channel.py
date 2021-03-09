@@ -20,7 +20,7 @@ from nautilus_trader.indicators.keltner_channel import KeltnerChannel
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class KeltnerChannelTests(unittest.TestCase):

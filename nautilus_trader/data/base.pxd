@@ -18,7 +18,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -48,23 +48,23 @@ cdef class DataCacheFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
-    cpdef list symbols(self)
+    cpdef list securities(self)
     cpdef list instruments(self)
-    cpdef list quote_ticks(self, Symbol symbol)
-    cpdef list trade_ticks(self, Symbol symbol)
+    cpdef list quote_ticks(self, Security security)
+    cpdef list trade_ticks(self, Security security)
     cpdef list bars(self, BarType bar_type)
-    cpdef Instrument instrument(self, Symbol symbol)
-    cpdef Price price(self, Symbol symbol, PriceType price_type)
-    cpdef OrderBook order_book(self, Symbol symbol)
-    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
-    cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
+    cpdef Instrument instrument(self, Security security)
+    cpdef Price price(self, Security security, PriceType price_type)
+    cpdef OrderBook order_book(self, Security security)
+    cpdef QuoteTick quote_tick(self, Security security, int index=*)
+    cpdef TradeTick trade_tick(self, Security security, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
-    cpdef int quote_tick_count(self, Symbol symbol) except *
-    cpdef int trade_tick_count(self, Symbol symbol) except *
+    cpdef int quote_tick_count(self, Security security) except *
+    cpdef int trade_tick_count(self, Security security) except *
     cpdef int bar_count(self, BarType bar_type) except *
-    cpdef bint has_order_book(self, Symbol symbol) except *
-    cpdef bint has_quote_ticks(self, Symbol symbol) except *
-    cpdef bint has_trade_ticks(self, Symbol symbol) except *
+    cpdef bint has_order_book(self, Security security) except *
+    cpdef bint has_quote_ticks(self, Security security) except *
+    cpdef bint has_trade_ticks(self, Security security) except *
     cpdef bint has_bars(self, BarType bar_type) except *
 
     cpdef object get_xrate(

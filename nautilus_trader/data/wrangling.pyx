@@ -87,14 +87,14 @@ cdef class QuoteTickDataWrangler:
         self.processed_data = []
         self.resolution = BarAggregation.UNDEFINED
 
-    def pre_process(self, int symbol_indexer, random_seed=None):
+    def pre_process(self, int security_indexer, random_seed=None):
         """
         Pre-process the tick data in preparation for building ticks.
 
         Parameters
         ----------
-        symbol_indexer : int
-            The symbol indexer for the built ticks.
+        security_indexer : int
+            The security indexer for the built ticks.
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is None then won't shuffle.
@@ -121,7 +121,7 @@ cdef class QuoteTickDataWrangler:
             size_cols = ["bid_size", "ask_size"]
             self._data_quotes[size_cols] = self._data_quotes[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
 
-            self.processed_data["symbol"] = symbol_indexer
+            self.processed_data["security"] = security_indexer
             self.resolution = BarAggregation.TICK
             return
 
@@ -227,7 +227,7 @@ cdef class QuoteTickDataWrangler:
                     df_ticks_final.iloc[i + 2] = high
 
         self.processed_data = df_ticks_final
-        self.processed_data["symbol"] = symbol_indexer
+        self.processed_data["security"] = security_indexer
 
     cpdef list build_ticks(self):
         """
@@ -246,7 +246,7 @@ cdef class QuoteTickDataWrangler:
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
-            symbol=self.instrument.symbol,
+            security=self.instrument.security,
             bid=Price(values[0], self.instrument.price_precision),
             ask=Price(values[1], self.instrument.price_precision),
             bid_size=Quantity(values[2], self.instrument.size_precision),
@@ -287,14 +287,14 @@ cdef class TradeTickDataWrangler:
 
         self.processed_data = []
 
-    def pre_process(self, int symbol_indexer):
+    def pre_process(self, int security_indexer):
         """
         Pre-process the tick data in preparation for building ticks.
 
         Parameters
         ----------
-        symbol_indexer : int
-            The symbol indexer for the built ticks.
+        security_indexer : int
+            The security indexer for the built ticks.
 
         """
         processed_trades = pd.DataFrame(index=self._data_trades.index)
@@ -302,7 +302,7 @@ cdef class TradeTickDataWrangler:
         processed_trades["quantity"] = self._data_trades["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
         processed_trades["side"] = self._create_side_if_not_exist()
         processed_trades["match_id"] = self._data_trades["trade_id"].apply(str)
-        processed_trades["symbol"] = symbol_indexer
+        processed_trades["security"] = security_indexer
         self.processed_data = processed_trades
 
     def _create_side_if_not_exist(self):
@@ -328,7 +328,7 @@ cdef class TradeTickDataWrangler:
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick(
-            symbol=self.instrument.symbol,
+            security=self.instrument.security,
             price=Price(values[0]),
             size=Quantity(values[1]),
             side=OrderSideParser.from_str(values[2]),

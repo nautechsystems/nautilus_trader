@@ -375,7 +375,7 @@ cdef class EconomicNewsEventFilter:
         Parameters
         ----------
         currencies : list[str]
-            The list of three letter currency symbols to filter.
+            The list of three letter currency codes to filter.
         impacts : list[str]
             The list of impact levels to filter ('LOW', 'MEDIUM', 'HIGH').
         news_data : pd.DataFrame

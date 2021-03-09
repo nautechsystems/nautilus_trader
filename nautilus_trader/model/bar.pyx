@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -190,12 +190,12 @@ cdef class BarSpecification:
 
 cdef class BarType:
     """
-    Represents the symbol and bar specification of bar data.
+    Represents a bar type being the security and bar specification of bar data.
     """
 
     def __init__(
         self,
-        Symbol symbol not None,
+        Security security not None,
         BarSpecification bar_spec not None,
         internal_aggregation=True,
     ):
@@ -204,10 +204,10 @@ cdef class BarType:
 
         Parameters
         ----------
-        symbol : Symbol
-            The bar symbol.
+        security : Security
+            The bar types security.
         bar_spec : BarSpecification
-            The bar specification.
+            The bar types specification.
         internal_aggregation : bool
             If bars are aggregated internally by the platform. If True the
             `DataEngine` will subscribe to the necessary ticks and aggregate
@@ -220,12 +220,12 @@ cdef class BarType:
         internally aggregated.
 
         """
-        self.symbol = symbol
+        self.security = security
         self.spec = bar_spec
         self.is_internal_aggregation = internal_aggregation
 
     def __eq__(self, BarType other) -> bool:
-        return self.symbol == other.symbol \
+        return self.security == other.security \
             and self.spec == other.spec \
             and self.is_internal_aggregation == other.is_internal_aggregation
 
@@ -233,16 +233,16 @@ cdef class BarType:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash((self.symbol, self.spec))
+        return hash((self.security, self.spec))
 
     def __str__(self) -> str:
-        return f"{self.symbol}-{self.spec}"
+        return f"{self.security}-{self.spec}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self}, internal_aggregation={self.is_internal_aggregation})"
 
     @staticmethod
-    cdef BarType from_str_c(str value, bint internal_aggregation=True):
+    cdef BarType from_serializable_str_c(str value, bint internal_aggregation=True):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=3)
@@ -250,17 +250,17 @@ cdef class BarType:
         if len(pieces) != 4:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
-        cdef Symbol symbol = Symbol.from_str_c(pieces[0])
+        cdef Security security = Security.from_serializable_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
             BarAggregationParser.from_str(pieces[2]),
             PriceTypeParser.from_str(pieces[3]),
         )
 
-        return BarType(symbol, bar_spec, internal_aggregation)
+        return BarType(security, bar_spec, internal_aggregation)
 
     @staticmethod
-    def from_str(str value, bint internal_aggregation=False) -> BarType:
+    def from_serializable_str(str value, bint internal_aggregation=False) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -281,7 +281,18 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_str_c(value, internal_aggregation)
+        return BarType.from_serializable_str_c(value, internal_aggregation)
+
+    cpdef str to_serializable_str(self):
+        """
+        The serializable string representation of this object.
+
+        Returns
+        -------
+        str
+
+        """
+        return f"{self.security.to_serializable_str()}-{self.spec}"
 
 
 cdef class Bar:
@@ -363,7 +374,7 @@ cdef class Bar:
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef Bar from_serializable_string_c(str value):
+    cdef Bar from_serializable_str_c(str value):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split(',', maxsplit=5)
@@ -381,7 +392,7 @@ cdef class Bar:
         )
 
     @staticmethod
-    def from_serializable_string(str value) -> Bar:
+    def from_serializable_str(str value) -> Bar:
         """
         Parse a bar parsed from the given string.
 
@@ -395,9 +406,9 @@ cdef class Bar:
         Bar
 
         """
-        return Bar.from_serializable_string_c(value)
+        return Bar.from_serializable_str_c(value)
 
-    cpdef str to_serializable_string(self):
+    cpdef str to_serializable_str(self):
         """
         The serializable string representation of this object.
 

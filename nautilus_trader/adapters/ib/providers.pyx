@@ -24,8 +24,10 @@ from ib_insync.contract import ContractDetails
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.currency cimport Currency
+
 #from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
+
 #from nautilus_trader.model.instrument cimport Future
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.instrument cimport Quantity
@@ -59,7 +61,7 @@ cdef class IBInstrumentProvider:
 
         """
         self.count = 0
-        self._instruments = {}  # type: dict[Symbol, Instrument]
+        self._instruments = {}  # type: dict[Security, Instrument]
         self._client = client
         self._host = host
         self._port = port
@@ -98,7 +100,7 @@ cdef class IBInstrumentProvider:
     #         self.connect()
     #
     #     contract = ib_insync.contract.Future(
-    #         symbol=security.code,
+    #         security=security.security,
     #         lastTradeDateOrContractMonth=security.expiry,
     #         exchange=security.venue.value,
     #         multiplier=security.multiplier,
@@ -108,7 +110,7 @@ cdef class IBInstrumentProvider:
     #     cdef list details = self._client.reqContractDetails(contract=contract)
     #     cdef Future future = self._parse_futures_contract(security, asset_class, details)
     #
-    #     self._instruments[future.symbol] = future
+    #     self._instruments[future.security] = future
     #
     #     return future
     #

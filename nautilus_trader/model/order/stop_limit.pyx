@@ -25,8 +25,8 @@ from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport PassiveOrder
@@ -52,7 +52,7 @@ cdef class StopLimitOrder(PassiveOrder):
         self,
         ClientOrderId cl_ord_id not None,
         StrategyId strategy_id not None,
-        Symbol symbol not None,
+        Security security not None,
         OrderSide order_side,
         Quantity quantity not None,
         Price price not None,
@@ -74,8 +74,8 @@ cdef class StopLimitOrder(PassiveOrder):
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        symbol : Symbol
-            The order symbol.
+        security : Security
+            The order security.
         order_side : OrderSide (Enum)
             The order side (BUY or SELL).
         quantity : Quantity
@@ -120,7 +120,7 @@ cdef class StopLimitOrder(PassiveOrder):
         super().__init__(
             cl_ord_id,
             strategy_id,
-            symbol,
+            security,
             order_side,
             OrderType.STOP_LIMIT,
             quantity,
@@ -178,7 +178,7 @@ cdef class StopLimitOrder(PassiveOrder):
         return StopLimitOrder(
             cl_ord_id=event.cl_ord_id,
             strategy_id=event.strategy_id,
-            symbol=event.symbol,
+            security=event.security,
             order_side=event.order_side,
             quantity=event.quantity,
             price=Price(event.options[PRICE]),

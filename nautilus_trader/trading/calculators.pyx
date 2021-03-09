@@ -22,7 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 
 
 cdef class ExchangeRateCalculator:
@@ -102,11 +102,11 @@ cdef class ExchangeRateCalculator:
         cdef dict exchange_rates = {}
 
         # Build quote table
-        for symbol, quote in calculation_quotes.items():
+        for security, quote in calculation_quotes.items():
             assert isinstance(quote, Decimal), f"quote must be type Decimal, was {type(quote)}"
 
-            # Get symbol codes
-            pieces = symbol.partition('/')
+            # Get security codes
+            pieces = security.partition('/')
             code_lhs = pieces[0]
             code_rhs = pieces[2]
             codes.add(code_lhs)
@@ -122,7 +122,7 @@ cdef class ExchangeRateCalculator:
             exchange_rates[code_rhs][code_rhs] = Decimal(1)
             exchange_rates[code_lhs][code_rhs] = quote
 
-        # Generate possible currency pairs from all symbols
+        # Generate possible currency pairs from all securities
         cdef set code_perms = set(permutations(codes, 2))
 
         # Calculate currency inverses
@@ -230,14 +230,14 @@ cdef class RolloverInterestCalculator:
         """
         return self._rate_data
 
-    cpdef object calc_overnight_rate(self, Symbol symbol, date date):
+    cpdef object calc_overnight_rate(self, Security security, date date):
         """
         Return the rollover interest rate between the given base currency and quote currency.
 
         Parameters
         ----------
-        symbol : Symbol
-            The forex currency symbol for the calculation.
+        security : Security
+            The forex security for the calculation.
         date : date
             The date for the overnight rate.
 
@@ -248,19 +248,19 @@ cdef class RolloverInterestCalculator:
         Raises
         ------
         ValueError
-            If symbol.code length is not in range [6, 7].
+            If security.symbol length is not in range [6, 7].
 
         Notes
         -----
         1% = 0.01 bp
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(date, "timestamp")
-        Condition.in_range_int(len(symbol.code), 6, 7, "len(symbol)")
+        Condition.in_range_int(len(security.symbol), 6, 7, "len(security)")
 
-        cdef str base_currency = symbol.code[:3]
-        cdef str quote_currency = symbol.code[-3:]
+        cdef str base_currency = security.symbol[:3]
+        cdef str quote_currency = security.symbol[-3:]
         cdef str time_monthly = f"{date.year}-{str(date.month).zfill(2)}"
         cdef str time_quarter = f"{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}"
 
@@ -273,6 +273,6 @@ cdef class RolloverInterestCalculator:
             quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_quarter]
 
         if base_data.empty and quote_data.empty:
-            raise RuntimeError(f"Cannot find rollover interest rate for {symbol} on {date}")
+            raise RuntimeError(f"Cannot find rollover interest rate for {security} on {date}")
 
         return Decimal(((<double>base_data['Value'] - <double>quote_data['Value']) / 365) / 100)

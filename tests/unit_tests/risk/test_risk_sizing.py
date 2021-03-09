@@ -23,9 +23,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.risk.sizing import FixedRiskSizer
 from nautilus_trader.risk.sizing import PositionSizer
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import TestStubs
 
-USDJPY = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
+USDJPY = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class PositionSizerTests(unittest.TestCase):
@@ -214,7 +213,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_for_usdjpy_with_commission(self):
         # Arrange
-        sizer = FixedRiskSizer(TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()))
+        sizer = FixedRiskSizer(TestInstrumentProvider.default_fx_ccy("USD/JPY"))
         equity = Money(1_000_000, USD)
 
         # Act

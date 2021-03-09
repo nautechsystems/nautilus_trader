@@ -22,7 +22,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.market cimport MarketOrder
@@ -50,7 +50,7 @@ cdef class EMACross(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
     # Backing fields are necessary
-    cdef Symbol symbol
+    cdef Security security
     cdef BarType bar_type
     cdef object trade_size
     cdef ExponentialMovingAverage fast_ema_period
@@ -58,7 +58,7 @@ cdef class EMACross(TradingStrategy):
 
     def __init__(
         self,
-        Symbol symbol,
+        Security security,
         BarSpecification bar_spec,
         trade_size: Decimal,
         int fast_ema_period,
@@ -70,8 +70,8 @@ cdef class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the strategy.
+        security : Security
+            The security identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -88,8 +88,8 @@ cdef class EMACross(TradingStrategy):
         super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
-        self.symbol = symbol
-        self.bar_type = BarType(symbol, bar_spec)
+        self.security = security
+        self.bar_type = BarType(security, bar_spec)
         self.trade_size = trade_size
 
         # Create the indicators for the strategy
@@ -182,18 +182,18 @@ cdef class EMACross(TradingStrategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
+            if self.portfolio.is_flat(self.security):
                 self.buy()
-            elif self.portfolio.is_net_short(self.symbol):
-                self.flatten_all_positions(self.symbol)
+            elif self.portfolio.is_net_short(self.security):
+                self.flatten_all_positions(self.security)
                 self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
+            if self.portfolio.is_flat(self.security):
                 self.sell()
-            elif self.portfolio.is_net_long(self.symbol):
-                self.flatten_all_positions(self.symbol)
+            elif self.portfolio.is_net_long(self.security):
+                self.flatten_all_positions(self.security)
                 self.sell()
 
     cpdef void buy(self) except *:
@@ -201,7 +201,7 @@ cdef class EMACross(TradingStrategy):
         Users simple buy method (example).
         """
         cdef MarketOrder order = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
         )
@@ -213,7 +213,7 @@ cdef class EMACross(TradingStrategy):
         Users simple sell method (example).
         """
         cdef MarketOrder order = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
         )
@@ -249,8 +249,8 @@ cdef class EMACross(TradingStrategy):
         Actions to be performed when the strategy is stopped.
 
         """
-        self.cancel_all_orders(self.symbol)
-        self.flatten_all_positions(self.symbol)
+        self.cancel_all_orders(self.security)
+        self.flatten_all_positions(self.security)
 
     cpdef void on_reset(self) except *:
         """

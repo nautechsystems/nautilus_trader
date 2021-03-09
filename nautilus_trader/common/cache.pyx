@@ -28,7 +28,7 @@ cdef class IdentifierCache:
         self._cached_trader_ids = ObjectCache(TraderId, TraderId.from_str_c)
         self._cached_account_ids = ObjectCache(AccountId, AccountId.from_str_c)
         self._cached_strategy_ids = ObjectCache(StrategyId, StrategyId.from_str_c)
-        self._cached_symbols = ObjectCache(Symbol, Symbol.from_str_c)
+        self._cached_securities = ObjectCache(Security, Security.from_serializable_str_c)
 
     cpdef TraderId get_trader_id(self, str value):
         """
@@ -97,18 +97,18 @@ cdef class IdentifierCache:
 
         return self._cached_strategy_ids.get(value)
 
-    cpdef Symbol get_symbol(self, str value):
+    cpdef Security get_security(self, str value):
         """
-        Return the cached symbol.
+        Return the cached security.
 
         Parameters
         ----------
         value : str
-            The value to be parsed to a symbol.
+            The value to be parsed to a security.
 
         Returns
         -------
-        Symbol or None
+        Security or None
 
         Raises
         ------
@@ -118,4 +118,4 @@ cdef class IdentifierCache:
         """
         Condition.valid_string(value, "value")
 
-        return self._cached_symbols.get(value)
+        return self._cached_securities.get(value)

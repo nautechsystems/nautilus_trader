@@ -217,7 +217,7 @@ cdef class Trader(Component):
             self._exec_engine.register_strategy(strategy)
 
             order_ids = self._exec_engine.cache.order_ids(
-                symbol=None,
+                security=None,
                 strategy_id=strategy.id,
             )
 

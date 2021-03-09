@@ -39,8 +39,8 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 SIM = Venue("SIM")
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
-GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class LiveExecutionEngineTests(unittest.TestCase):
@@ -133,7 +133,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         self.engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -178,7 +178,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         self.engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -266,7 +266,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
             self.engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
-                AUDUSD_SIM.symbol,
+                AUDUSD_SIM.security,
                 OrderSide.BUY,
                 Quantity(100000),
             )
@@ -310,7 +310,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
             self.engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
-                AUDUSD_SIM.symbol,
+                AUDUSD_SIM.security,
                 OrderSide.BUY,
                 Quantity(100000),
             )
@@ -346,19 +346,19 @@ class LiveExecutionEngineTests(unittest.TestCase):
     #         self.exec_engine.register_strategy(strategy)
     #
     #         order1 = strategy.order_factory.market(
-    #             AUDUSD_SIM.symbol,
+    #             AUDUSD_SIM.security,
     #             OrderSide.BUY,
     #             Quantity(100000),
     #         )
     #
     #         order2 = strategy.order_factory.market(
-    #             AUDUSD_SIM.symbol,
+    #             AUDUSD_SIM.security,
     #             OrderSide.BUY,
     #             Quantity(100000),
     #         )
     #
     #         random = self.random_order_factory.market(
-    #             GBPUSD_SIM.symbol,
+    #             GBPUSD_SIM.security,
     #             OrderSide.BUY,
     #             Quantity(100000),
     #         )

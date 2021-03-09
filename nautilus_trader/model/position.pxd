@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -25,8 +26,8 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -47,8 +48,8 @@ cdef class Position:
     """The client order identifier for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the position.\n\n:returns: `StrategyId`"""
-    cdef readonly Symbol symbol
-    """The positions symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Security security
+    """The positions security identifier.\n\n:returns: `Security`"""
     cdef readonly OrderSide entry
     """The entry direction from open.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly PositionSide side

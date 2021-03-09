@@ -19,7 +19,7 @@ from nautilus_trader.indicators.base.indicator import Indicator
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class IndicatorTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class IndicatorTests(unittest.TestCase):
         # Arrange
         indicator = Indicator([])
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
 
         # Act
         # Assert
@@ -38,7 +38,7 @@ class IndicatorTests(unittest.TestCase):
         # Arrange
         indicator = Indicator([])
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
 
         # Act
         # Assert

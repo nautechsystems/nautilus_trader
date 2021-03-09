@@ -14,13 +14,13 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.objects cimport Price
 
 
 cdef class BidAskMinMax(Indicator):
-    cdef readonly Symbol symbol
-    """The symbol for inbound ticks.\n\n:returns: `Symbol`"""
+    cdef readonly Security security
+    """The security for inbound ticks.\n\n:returns: `Security`"""
     cdef readonly timedelta lookback
     """The look back duration in time.\n\n:returns: `timedelta`"""
     cdef readonly WindowedMinMaxPrices bids

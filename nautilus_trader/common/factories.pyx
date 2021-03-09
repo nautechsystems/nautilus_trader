@@ -22,7 +22,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -122,7 +122,7 @@ cdef class OrderFactory:
 
     cpdef MarketOrder market(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=TimeInForce.GTC,
@@ -132,8 +132,8 @@ cdef class OrderFactory:
 
         Parameters
         ----------
-        symbol : Symbol
-            The orders symbol.
+        security : Security
+            The orders security.
         order_side : OrderSide (Enum)
             The orders side.
         quantity : Quantity
@@ -160,7 +160,7 @@ cdef class OrderFactory:
         return MarketOrder(
             self._id_generator.generate(),
             self.strategy_id,
-            symbol,
+            security,
             order_side,
             quantity,
             time_in_force,
@@ -170,7 +170,7 @@ cdef class OrderFactory:
 
     cpdef LimitOrder limit(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         Price price,
@@ -187,8 +187,8 @@ cdef class OrderFactory:
 
         Parameters
         ----------
-        symbol : Symbol
-            The orders symbol.
+        security : Security
+            The orders security.
         order_side : OrderSide (Enum)
             The orders side.
         quantity : Quantity
@@ -229,7 +229,7 @@ cdef class OrderFactory:
         return LimitOrder(
             self._id_generator.generate(),
             self.strategy_id,
-            symbol,
+            security,
             order_side,
             quantity,
             price=price,
@@ -244,7 +244,7 @@ cdef class OrderFactory:
 
     cpdef StopMarketOrder stop_market(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         Price price,
@@ -259,8 +259,8 @@ cdef class OrderFactory:
 
         Parameters
         ----------
-        symbol : Symbol
-            The orders symbol.
+        security : Security
+            The orders security.
         order_side : OrderSide (Enum)
             The orders side.
         quantity : Quantity
@@ -293,7 +293,7 @@ cdef class OrderFactory:
         return StopMarketOrder(
             self._id_generator.generate(),
             self.strategy_id,
-            symbol,
+            security,
             order_side,
             quantity,
             price=price,
@@ -306,7 +306,7 @@ cdef class OrderFactory:
 
     cpdef StopLimitOrder stop_limit(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         Price price,
@@ -324,8 +324,8 @@ cdef class OrderFactory:
 
         Parameters
         ----------
-        symbol : Symbol
-            The orders symbol.
+        security : Security
+            The orders security.
         order_side : OrderSide (Enum)
             The orders side.
         quantity : Quantity
@@ -368,7 +368,7 @@ cdef class OrderFactory:
         return StopLimitOrder(
             self._id_generator.generate(),
             self.strategy_id,
-            symbol,
+            security,
             order_side,
             quantity,
             price=price,
@@ -443,7 +443,7 @@ cdef class OrderFactory:
                 Condition.true(entry_order.price > take_profit, "entry_order.price > take_profit")
 
         cdef StopMarketOrder stop_loss_order = self.stop_market(
-            entry_order.symbol,
+            entry_order.security,
             Order.opposite_side_c(entry_order.side),
             entry_order.quantity,
             stop_loss,
@@ -453,7 +453,7 @@ cdef class OrderFactory:
         )
 
         cdef LimitOrder take_profit_order = self.limit(
-            entry_order.symbol,
+            entry_order.security,
             Order.opposite_side_c(entry_order.side),
             entry_order.quantity,
             take_profit,

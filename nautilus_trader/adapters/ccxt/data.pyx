@@ -38,7 +38,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -105,10 +105,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self.is_connected = False
 
         # Subscriptions
-        self._subscribed_instruments = set()   # type: set[Symbol]
-        self._subscribed_order_books = {}      # type: dict[Symbol, asyncio.Task]
-        self._subscribed_quote_ticks = {}      # type: dict[Symbol, asyncio.Task]
-        self._subscribed_trade_ticks = {}      # type: dict[Symbol, asyncio.Task]
+        self._subscribed_instruments = set()   # type: set[Security]
+        self._subscribed_order_books = {}      # type: dict[Security, asyncio.Task]
+        self._subscribed_quote_ticks = {}      # type: dict[Security, asyncio.Task]
+        self._subscribed_trade_ticks = {}      # type: dict[Security, asyncio.Task]
         self._subscribed_bars = {}             # type: dict[BarType, asyncio.Task]
 
         # Scheduled tasks
@@ -121,7 +121,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._subscribed_instruments))
@@ -129,11 +129,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     @property
     def subscribed_quote_ticks(self):
         """
-        The quote tick symbols subscribed to.
+        The quote tick securities subscribed to.
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._subscribed_quote_ticks.keys()))
@@ -141,11 +141,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     @property
     def subscribed_trade_ticks(self):
         """
-        The trade tick symbols subscribed to.
+        The trade tick securities subscribed to.
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._subscribed_trade_ticks.keys()))
@@ -265,34 +265,34 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+    cpdef void subscribe_instrument(self, Security security) except *:
         """
-        Subscribe to `Instrument` data for the given symbol.
+        Subscribe to `Instrument` data for the given security.
 
         Parameters
         ----------
-        symbol : Instrument
-            The instrument symbol to subscribe to.
+        security : Security
+            The instrument security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        self._subscribed_instruments.add(symbol)
+        self._subscribed_instruments.add(security)
 
     cpdef void subscribe_order_book(
         self,
-        Symbol symbol,
+        Security security,
         int level,
         int depth=0,
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given symbol.
+        Subscribe to `OrderBook` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The order book symbol to subscribe to.
+        security : Security
+            The order book security to subscribe to.
         level : int
             The order book data level (L1, L2, L3).
         depth : int, optional
@@ -303,63 +303,63 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         if kwargs is None:
             kwargs = {}
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol in self._subscribed_order_books:
-            self._log.warning(f"Already subscribed {symbol.code} <OrderBook> data.")
+        if security in self._subscribed_order_books:
+            self._log.warning(f"Already subscribed {security.symbol} <OrderBook> data.")
             return
 
         task = self._loop.create_task(self._watch_order_book(
-            symbol=symbol,
+            security=security,
             level=level,
             depth=depth,
             kwargs=kwargs,
         ))
-        self._subscribed_order_books[symbol] = task
+        self._subscribed_order_books[security] = task
 
-        self._log.info(f"Subscribed to {symbol.code} <OrderBook> data.")
+        self._log.info(f"Subscribed to {security.symbol} <OrderBook> data.")
 
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_quote_ticks(self, Security security) except *:
         """
-        Subscribe to `QuoteTick` data for the given symbol.
+        Subscribe to `QuoteTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to subscribe to.
+        security : Security
+            The tick security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol in self._subscribed_quote_ticks:
-            self._log.warning(f"Already subscribed {symbol.code} <TradeTick> data.")
+        if security in self._subscribed_quote_ticks:
+            self._log.warning(f"Already subscribed {security.symbol} <TradeTick> data.")
             return
 
-        task = self._loop.create_task(self._watch_quotes(symbol))
-        self._subscribed_quote_ticks[symbol] = task
+        task = self._loop.create_task(self._watch_quotes(security))
+        self._subscribed_quote_ticks[security] = task
 
-        self._log.info(f"Subscribed to {symbol.code} <QuoteTick> data.")
+        self._log.info(f"Subscribed to {security.symbol} <QuoteTick> data.")
 
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_trade_ticks(self, Security security) except *:
         """
-        Subscribe to `TradeTick` data for the given symbol.
+        Subscribe to `TradeTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to subscribe to.
+        security : Security
+            The tick security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol in self._subscribed_trade_ticks:
-            self._log.warning(f"Already subscribed {symbol.code} <TradeTick> data.")
+        if security in self._subscribed_trade_ticks:
+            self._log.warning(f"Already subscribed {security.symbol} <TradeTick> data.")
             return
 
-        task = self._loop.create_task(self._watch_trades(symbol))
-        self._subscribed_trade_ticks[symbol] = task
+        task = self._loop.create_task(self._watch_trades(security))
+        self._subscribed_trade_ticks[security] = task
 
-        self._log.info(f"Subscribed to {symbol.code} <TradeTick> data.")
+        self._log.info(f"Subscribed to {security.symbol} <TradeTick> data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -388,82 +388,82 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
+    cpdef void unsubscribe_instrument(self, Security security) except *:
         """
-        Unsubscribe from `Instrument` data for the given symbol.
+        Unsubscribe from `Instrument` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The instrument symbol to unsubscribe from.
+        security : Security
+            The instrument security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        self._subscribed_instruments.discard(symbol)
+        self._subscribed_instruments.discard(security)
 
-    cpdef void unsubscribe_order_book(self, Symbol symbol) except *:
+    cpdef void unsubscribe_order_book(self, Security security) except *:
         """
-        Unsubscribe from `OrderBook` data for the given symbol.
+        Unsubscribe from `OrderBook` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The order book symbol to unsubscribe from.
+        security : Security
+            The order book security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol not in self._subscribed_order_books:
-            self._log.debug(f"Not subscribed to {symbol.code} <OrderBook> data.")
+        if security not in self._subscribed_order_books:
+            self._log.debug(f"Not subscribed to {security.symbol} <OrderBook> data.")
             return
 
-        task = self._subscribed_order_books.pop(symbol)
+        task = self._subscribed_order_books.pop(security)
         task.cancel()
         self._log.debug(f"Cancelled {task}.")
-        self._log.info(f"Unsubscribed from {symbol.code} <OrderBook> data.")
+        self._log.info(f"Unsubscribed from {security.symbol} <OrderBook> data.")
 
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_quote_ticks(self, Security security) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given symbol.
+        Unsubscribe from `QuoteTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to unsubscribe from.
+        security : Security
+            The tick security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol not in self._subscribed_quote_ticks:
-            self._log.debug(f"Not subscribed to {symbol.code} <QuoteTick> data.")
+        if security not in self._subscribed_quote_ticks:
+            self._log.debug(f"Not subscribed to {security.symbol} <QuoteTick> data.")
             return
 
-        task = self._subscribed_quote_ticks.pop(symbol)
+        task = self._subscribed_quote_ticks.pop(security)
         task.cancel()
         self._log.debug(f"Cancelled {task}.")
-        self._log.info(f"Unsubscribed from {symbol.code} <QuoteTick> data.")
+        self._log.info(f"Unsubscribed from {security.symbol} <QuoteTick> data.")
 
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_trade_ticks(self, Security security) except *:
         """
-        Unsubscribe from `TradeTick` data for the given symbol.
+        Unsubscribe from `TradeTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to unsubscribe from.
+        security : Security
+            The tick security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        if symbol not in self._subscribed_trade_ticks:
-            self._log.debug(f"Not subscribed to {symbol.code} <TradeTick> data.")
+        if security not in self._subscribed_trade_ticks:
+            self._log.debug(f"Not subscribed to {security.symbol} <TradeTick> data.")
             return
 
-        task = self._subscribed_trade_ticks.pop(symbol)
+        task = self._subscribed_trade_ticks.pop(security)
         task.cancel()
         self._log.debug(f"Cancelled {task}.")
-        self._log.info(f"Unsubscribed from {symbol.code} <TradeTick> data.")
+        self._log.info(f"Unsubscribed from {security.symbol} <TradeTick> data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -488,22 +488,22 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
+    cpdef void request_instrument(self, Security security, UUID correlation_id) except *:
         """
-        Request the instrument for the given symbol.
+        Request the instrument for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the request.
+        security : Security
+            The security for the request.
         correlation_id : UUID
             The correlation identifier for the request.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._loop.create_task(self._request_instrument(symbol, correlation_id))
+        self._loop.create_task(self._request_instrument(security, correlation_id))
 
     cpdef void request_instruments(self, UUID correlation_id) except *:
         """
@@ -521,7 +521,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cpdef void request_quote_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -532,8 +532,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol for the request.
+        security : Security
+            The tick security for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -545,7 +545,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             The correlation identifier for the request.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
@@ -554,7 +554,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cpdef void request_trade_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -565,8 +565,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol for the request.
+        security : Security
+            The tick security for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -578,7 +578,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             The correlation identifier for the request.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(correlation_id, "correlation_id")
 
         if to_datetime is not None:
@@ -587,7 +587,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                               f"(will use `limit` of {limit}).")
 
         self._loop.create_task(self._request_trade_ticks(
-            symbol,
+            security,
             from_datetime,
             to_datetime,
             limit,
@@ -650,10 +650,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
-    async def _watch_order_book(self, Symbol symbol, int level, int depth, dict kwargs):
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
+    async def _watch_order_book(self, Security security, int level, int depth, dict kwargs):
+        cdef Instrument instrument = self._instrument_provider.get(security)
         if instrument is None:
-            self._log.error(f"Cannot subscribe to order book (no instrument for {symbol.code}).")
+            self._log.error(f"Cannot subscribe to order book (no instrument for {security.symbol}).")
             return
 
         cdef OrderBook order_book = None
@@ -661,7 +661,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             while True:
                 try:
                     lob = await self._client.watch_order_book(
-                        symbol=symbol.code,
+                        security=security.symbol,
                         limit=None if depth == 0 else depth,
                         params=kwargs,
                     )
@@ -679,7 +679,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
                     if order_book is None:
                         order_book = OrderBook(
-                            symbol,
+                            security,
                             level,
                             depth,
                             instrument.price_precision,
@@ -700,14 +700,14 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     self._log_ccxt_error(ex, self._watch_order_book.__name__)
                     continue
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled `_watch_order_book` for {symbol.code}.")
+            self._log.debug(f"Cancelled `_watch_order_book` for {security.symbol}.")
         except Exception as ex:
             self._log.exception(ex)
 
-    async def _watch_quotes(self, Symbol symbol):
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
+    async def _watch_quotes(self, Security security):
+        cdef Instrument instrument = self._instrument_provider.get(security)
         if instrument is None:
-            self._log.error(f"Cannot subscribe to quote ticks (no instrument for {symbol.code}).")
+            self._log.error(f"Cannot subscribe to quote ticks (no instrument for {security.symbol}).")
             return
 
         # Setup precisions
@@ -725,7 +725,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             while True:
                 try:
-                    lob = await self._client.watch_order_book(symbol.code)
+                    lob = await self._client.watch_order_book(security.symbol)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_quotes.__name__)
                     continue
@@ -766,7 +766,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     timestamp = self._client.milliseconds()
 
                 self._on_quote_tick(
-                    symbol,
+                    security,
                     best_bid[0],
                     best_ask[0],
                     best_bid[1],
@@ -779,13 +779,13 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                 if exiting:
                     break
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled `_watch_ticker` for {symbol.code}.")
+            self._log.debug(f"Cancelled `_watch_ticker` for {security.symbol}.")
         except Exception as ex:
             self._log.exception(ex)
 
     cdef inline void _on_quote_tick(
         self,
-        Symbol symbol,
+        Security security,
         double best_bid,
         double best_ask,
         double best_bid_size,
@@ -795,7 +795,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         int size_precision,
     ) except *:
         cdef QuoteTick tick = QuoteTick(
-            symbol,
+            security,
             Price(best_bid, price_precision),
             Price(best_ask, price_precision),
             Quantity(best_bid_size, size_precision),
@@ -805,10 +805,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._handle_quote_tick(tick)
 
-    async def _watch_trades(self, Symbol symbol):
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
+    async def _watch_trades(self, Security security):
+        cdef Instrument instrument = self._instrument_provider.get(security)
         if instrument is None:
-            self._log.error(f"Cannot subscribe to trade ticks (no instrument for {symbol.code}).")
+            self._log.error(f"Cannot subscribe to trade ticks (no instrument for {security.symbol}).")
             return
 
         cdef int price_precision = instrument.price_precision
@@ -819,7 +819,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             while True:
                 try:
-                    trades = await self._client.watch_trades(symbol.code)
+                    trades = await self._client.watch_trades(security.symbol)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_trades.__name__)
                     continue
@@ -830,7 +830,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
                 trade = trades[0]  # Last trade only
                 self._on_trade_tick(
-                    symbol,
+                    security,
                     trade["price"],
                     trade["amount"],
                     trade["side"],
@@ -844,13 +844,13 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                 if exiting:
                     break
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled `_watch_trades` for {symbol.code}.")
+            self._log.debug(f"Cancelled `_watch_trades` for {security.symbol}.")
         except Exception as ex:
             self._log.exception(ex)
 
     cdef inline void _on_trade_tick(
         self,
-        Symbol symbol,
+        Security security,
         double price,
         double amount,
         str order_side,
@@ -866,7 +866,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             side = OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.BUY
 
         cdef TradeTick tick = TradeTick(
-            symbol,
+            security,
             Price(price, price_precision),
             Quantity(amount, size_precision),
             side,
@@ -877,9 +877,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self._handle_trade_tick(tick)
 
     async def _watch_ohlcv(self, BarType bar_type):
-        cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
+        cdef Instrument instrument = self._instrument_provider.get(bar_type.security)
         if instrument is None:
-            self._log.error(f"Cannot subscribe to bars (no instrument for {bar_type.symbol}).")
+            self._log.error(f"Cannot subscribe to bars (no instrument for {bar_type.security}).")
             return
 
         # Build timeframe
@@ -890,8 +890,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                               f"not currently supported in this version.")
             return
 
-        # Setup symbol constant and precisions
-        cdef Symbol symbol = bar_type.symbol
+        # Setup security constant and precisions
+        cdef Security security = bar_type.security
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
@@ -901,7 +901,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             while True:
                 try:
-                    bars = await self._client.watch_ohlcv(symbol.code, timeframe=timeframe, limit=1)
+                    bars = await self._client.watch_ohlcv(security.symbol, timeframe=timeframe, limit=1)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_ohlcv.__name__)
                     continue
@@ -934,7 +934,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                 if exiting:
                     break
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled `_watch_ohlcv` for {symbol.code}.")
+            self._log.debug(f"Cancelled `_watch_ohlcv` for {security.symbol}.")
         except Exception as ex:
             self._log.exception(ex)
 
@@ -969,13 +969,13 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         await self._instrument_provider.load_all_async()
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
-    async def _request_instrument(self, Symbol symbol, UUID correlation_id):
+    async def _request_instrument(self, Security security, UUID correlation_id):
         await self._load_instruments()
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        cdef Instrument instrument = self._instrument_provider.get(security)
         if instrument is not None:
             self._handle_instruments([instrument], correlation_id)
         else:
-            self._log.error(f"Could not find instrument {symbol.code}.")
+            self._log.error(f"Could not find instrument {security.symbol}.")
 
     async def _request_instruments(self, correlation_id):
         await self._load_instruments()
@@ -985,14 +985,14 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     async def _subscribed_instruments_update(self, delay):
         await self._instrument_provider.load_all_async()
 
-        cdef Symbol symbol
+        cdef Security security
         cdef Instrument instrument
-        for symbol in self._subscribed_instruments:
-            instrument = self._instrument_provider.get(symbol)
+        for security in self._subscribed_instruments:
+            instrument = self._instrument_provider.get(security)
             if instrument is not None:
                 self._handle_instrument(instrument)
             else:
-                self._log.error(f"Could not find instrument {symbol.code}.")
+                self._log.error(f"Could not find instrument {security.symbol}.")
 
         # Reschedule subscribed instruments update
         update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
@@ -1000,15 +1000,15 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     async def _request_trade_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
         UUID correlation_id,
     ):
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        cdef Instrument instrument = self._instrument_provider.get(security)
         if instrument is None:
-            self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
+            self._log.error(f"Cannot request trade ticks (no instrument for {security}).")
             return
 
         if limit == 0:
@@ -1023,7 +1023,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list trades
         try:
             trades = await self._client.fetch_trades(
-                symbol=symbol.code,
+                symbol=security.symbol,
                 since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
@@ -1045,9 +1045,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list ticks = []  # type: list[TradeTick]
         cdef dict trade       # type: dict[str, object]
         for trade in trades:
-            ticks.append(self._parse_trade_tick(symbol, trade, price_precision, size_precision))
+            ticks.append(self._parse_trade_tick(security, trade, price_precision, size_precision))
 
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
+        self._handle_trade_ticks(security, ticks, correlation_id)
 
     async def _request_bars(
         self,
@@ -1057,9 +1057,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ):
-        cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
+        cdef Instrument instrument = self._instrument_provider.get(bar_type.security)
         if instrument is None:
-            self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
+            self._log.error(f"Cannot request bars (no instrument for {bar_type.security}).")
             return
 
         if bar_type.spec.is_time_aggregated():
@@ -1101,7 +1101,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list data
         try:
             data = await self._client.fetch_ohlcv(
-                symbol=bar_type.symbol.code,
+                symbol=bar_type.security.symbol,
                 timeframe=timeframe,
                 since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
@@ -1141,13 +1141,13 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cdef inline TradeTick _parse_trade_tick(
         self,
-        Symbol symbol,
+        Security security,
         dict trade,
         int price_precision,
         int size_precision,
     ):
         return TradeTick(
-            symbol,
+            security,
             Price(trade['price'], price_precision),
             Quantity(trade['amount'], size_precision),
             OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,

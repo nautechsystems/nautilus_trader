@@ -98,10 +98,10 @@ cdef class SubmitOrder(TradingCommand):
         Raises
         ------
         ValueError
-            If venue is not equal to order.symbol.venue.
+            If venue is not equal to order.security.venue.
 
         """
-        Condition.equal(venue, order.symbol.venue, "venue", "order.symbol.venue")
+        Condition.equal(venue, order.security.venue, "venue", "order.security.venue")
         super().__init__(venue, command_id, command_timestamp)
 
         self.trader_id = trader_id
@@ -160,10 +160,10 @@ cdef class SubmitBracketOrder(TradingCommand):
         Raises
         ------
         ValueError
-            If venue is not equal to order.symbol.venue.
+            If venue is not equal to order.security.venue.
 
         """
-        Condition.equal(venue, bracket_order.entry.symbol.venue, "venue", "bracket_order.entry.symbol.venue")
+        Condition.equal(venue, bracket_order.entry.security.venue, "venue", "bracket_order.entry.security.venue")
         super().__init__(venue, command_id, command_timestamp)
 
         self.trader_id = trader_id
