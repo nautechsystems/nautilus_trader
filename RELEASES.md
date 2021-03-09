@@ -6,15 +6,18 @@ with Interactive Brokers and other exchanges, brokerages and trading
 counterparties.
 
 Previously the `Symbol` identifier also included a venue which confused the concept.
-The replacement `Security` identifier is more clearly expressed with a symbol string, a
-primary `Venue`, `AssetClass` and `AssetType` properties.
+The replacement `Security` identifier more clearly expresses the domain with a
+symbol string, a primary `Venue`, `AssetClass` and `AssetType` properties.
 
 ## Breaking Changes
 - All previous serializations.
 - `Security` replaces `Symbol` with expanded properties.
 - `AssetClass.EQUITY` changed to `AssetClass.STOCK`.
+- `from_serializable_string` changed to `from_serializable_str`.
+- `to_serializable_string` changed to `to_serializable_str`.
 
 ## Enhancements
+- Reports now include full security name.
 - Add `AssetType.WARRANT`.
 
 ## Fixes
