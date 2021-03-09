@@ -22,6 +22,8 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -40,7 +42,7 @@ from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -57,32 +59,32 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 class TestStubs:
 
     @staticmethod
-    def symbol_btcusd_bitmex() -> Symbol:
-        return Symbol("BTC/USD", Venue("BITMEX"))
+    def security_btcusd_bitmex() -> Security:
+        return Security("BTC/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
 
     @staticmethod
-    def symbol_ethusd_bitmex() -> Symbol:
-        return Symbol("ETH/USD", Venue("BITMEX"))
+    def security_ethusd_bitmex() -> Security:
+        return Security("ETH/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
 
     @staticmethod
-    def symbol_btcusdt_binance() -> Symbol:
-        return Symbol("BTC/USDT", Venue("BINANCE"))
+    def security_btcusdt_binance() -> Security:
+        return Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
     @staticmethod
-    def symbol_ethusdt_binance() -> Symbol:
-        return Symbol("ETH/USDT", Venue("BINANCE"))
+    def security_ethusdt_binance() -> Security:
+        return Security("ETH/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
     @staticmethod
-    def symbol_audusd() -> Symbol:
-        return Symbol("AUD/USD", Venue("SIM"))
+    def security_audusd() -> Security:
+        return Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
     @staticmethod
-    def symbol_gbpusd() -> Symbol:
-        return Symbol("GBP/USD", Venue("SIM"))
+    def security_gbpusd() -> Security:
+        return Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
     @staticmethod
-    def symbol_usdjpy() -> Symbol:
-        return Symbol("USD/JPY", Venue("SIM"))
+    def security_usdjpy() -> Security:
+        return Security("USD/JPY", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
@@ -106,39 +108,39 @@ class TestStubs:
 
     @staticmethod
     def bartype_audusd_1min_bid() -> BarType:
-        return BarType(TestStubs.symbol_audusd(), TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.security_audusd(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_audusd_1min_ask() -> BarType:
-        return BarType(TestStubs.symbol_audusd(), TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.security_audusd(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1min_bid() -> BarType:
-        return BarType(TestStubs.symbol_gbpusd(), TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.security_gbpusd(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_gbpusd_1min_ask() -> BarType:
-        return BarType(TestStubs.symbol_gbpusd(), TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.security_gbpusd(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1sec_mid() -> BarType:
-        return BarType(TestStubs.symbol_gbpusd(), TestStubs.bar_spec_1sec_mid())
+        return BarType(TestStubs.security_gbpusd(), TestStubs.bar_spec_1sec_mid())
 
     @staticmethod
     def bartype_usdjpy_1min_bid() -> BarType:
-        return BarType(TestStubs.symbol_usdjpy(), TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.security_usdjpy(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_usdjpy_1min_ask() -> BarType:
-        return BarType(TestStubs.symbol_usdjpy(), TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.security_usdjpy(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_btcusdt_binance_1min_bid() -> BarType:
-        return BarType(TestStubs.symbol_btcusdt_binance(), TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.security_btcusdt_binance(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
-        return BarType(TestStubs.symbol_btcusdt_binance(), TestStubs.bar_spec_100tick_last())
+        return BarType(TestStubs.security_btcusdt_binance(), TestStubs.bar_spec_100tick_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -163,9 +165,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def quote_tick_3decimal(symbol=None, bid=None, ask=None) -> QuoteTick:
+    def quote_tick_3decimal(security=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
-            symbol if symbol is not None else TestStubs.symbol_usdjpy(),
+            security if security is not None else TestStubs.security_usdjpy(),
             bid if bid is not None else Price("90.002"),
             ask if ask is not None else Price("90.005"),
             Quantity(1),
@@ -174,9 +176,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def quote_tick_5decimal(symbol=None, bid=None, ask=None) -> QuoteTick:
+    def quote_tick_5decimal(security=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
-            symbol if symbol is not None else TestStubs.symbol_audusd(),
+            security if security is not None else TestStubs.security_audusd(),
             bid if bid is not None else Price("1.00001"),
             ask if ask is not None else Price("1.00003"),
             Quantity(1),
@@ -185,9 +187,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def trade_tick_5decimal(symbol=None, price=None) -> TradeTick:
+    def trade_tick_5decimal(security=None, price=None) -> TradeTick:
         return TradeTick(
-            symbol if symbol is not None else TestStubs.symbol_audusd(),
+            security if security is not None else TestStubs.security_audusd(),
             price if price is not None else Price("1.00001"),
             Quantity(100000),
             OrderSide.BUY,
@@ -284,7 +286,7 @@ class TestStubs:
             execution_id=ExecutionId(order.cl_ord_id.value.replace("O", "E")),
             position_id=position_id,
             strategy_id=strategy_id,
-            symbol=order.symbol,
+            security=order.security,
             order_side=order.side,
             fill_qty=fill_qty,
             cum_qty=Quantity(order.filled_qty + fill_qty),

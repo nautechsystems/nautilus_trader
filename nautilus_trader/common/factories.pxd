@@ -20,8 +20,8 @@ from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -50,7 +50,7 @@ cdef class OrderFactory:
 
     cpdef MarketOrder market(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=*,
@@ -58,7 +58,7 @@ cdef class OrderFactory:
 
     cpdef LimitOrder limit(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         Price price,
@@ -71,7 +71,7 @@ cdef class OrderFactory:
 
     cpdef StopMarketOrder stop_market(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         Price price,
@@ -82,7 +82,7 @@ cdef class OrderFactory:
 
     cpdef StopLimitOrder stop_limit(
         self,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         Quantity quantity,
         Price price,

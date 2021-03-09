@@ -23,7 +23,7 @@ from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -38,7 +38,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
     cdef object _update_instruments_handle
 
     cpdef void _load_instruments(self) except *
-    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *
+    cpdef void _request_instrument(self, Security security, UUID correlation_id) except *
     cpdef void _request_instruments(self, UUID correlation_id) except *
     cpdef void _subscribed_instruments_update(self) except *
     cpdef void _subscribed_instruments_load_and_send(self) except *
@@ -50,8 +50,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ) except *
-    cpdef void _stream_prices(self, Symbol symbol, event: threading.Event) except *
-    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values)
+    cpdef void _stream_prices(self, Security security, event: threading.Event) except *
+    cdef inline QuoteTick _parse_quote_tick(self, Security security, dict values)
     cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type)
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
@@ -61,6 +61,6 @@ cdef class OandaDataClient(LiveMarketDataClient):
     cpdef void _handle_trade_tick_py(self, TradeTick tick) except *
     cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *
     cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *
-    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *
-    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cpdef void _handle_quote_ticks_py(self, Security security, list ticks, UUID correlation_id) except *
+    cpdef void _handle_trade_ticks_py(self, Security security, list ticks, UUID correlation_id) except *
     cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *

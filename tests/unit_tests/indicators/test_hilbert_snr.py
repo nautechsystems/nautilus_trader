@@ -20,7 +20,7 @@ from nautilus_trader.indicators.hilbert_snr import HilbertSignalNoiseRatio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class HilbertSignalNoiseRatioTests(unittest.TestCase):

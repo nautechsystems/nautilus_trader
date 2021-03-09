@@ -97,7 +97,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
 
     def submit_order(self):
         order = self.strategy.order_factory.market(
-            BTCUSDT_BINANCE.symbol,
+            BTCUSDT_BINANCE.security,
             OrderSide.BUY,
             Quantity("1.00000000"),
         )
@@ -106,13 +106,13 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
 
     def test_execute_command(self):
         order = self.strategy.order_factory.market(
-            BTCUSDT_BINANCE.symbol,
+            BTCUSDT_BINANCE.security,
             OrderSide.BUY,
             Quantity("1.00000000"),
         )
 
         command = SubmitOrder(
-            order.symbol.venue,
+            order.security.venue,
             self.trader_id,
             self.account_id,
             self.strategy.id,
@@ -135,7 +135,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         async def run_test():
             def submit_order():
                 order = self.strategy.order_factory.market(
-                    BTCUSDT_BINANCE.symbol,
+                    BTCUSDT_BINANCE.security,
                     OrderSide.BUY,
                     Quantity("1.00000000"),
                 )
@@ -153,7 +153,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         async def run_test():
             for _ in range(10000):
                 order = self.strategy.order_factory.market(
-                    BTCUSDT_BINANCE.symbol,
+                    BTCUSDT_BINANCE.security,
                     OrderSide.BUY,
                     Quantity("1.00000000"),
                 )

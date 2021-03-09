@@ -32,7 +32,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -41,9 +40,8 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-SIM = Venue("SIM")
-USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", SIM))
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class ExecutionClientTests(unittest.TestCase):
@@ -101,7 +99,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_submit_order_raises_exception(self):
         order = self.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
@@ -122,7 +120,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_submit_bracket_order_raises_not_implemented_error(self):
         entry_order = self.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.99995"),
@@ -183,7 +181,7 @@ class ExecutionClientTests(unittest.TestCase):
     def test_handle_event_sends_to_execution_engine(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )

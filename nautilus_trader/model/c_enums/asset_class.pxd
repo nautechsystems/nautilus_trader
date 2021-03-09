@@ -16,12 +16,12 @@
 
 cpdef enum AssetClass:
     UNDEFINED = 0,  # Invalid value
-    CRYPTO = 1,
-    FX = 2,
-    EQUITY = 3,
-    COMMODITY = 4,
-    BOND = 5,
-    INDEX = 6
+    FX = 1,
+    STOCK = 2,
+    COMMODITY = 3,
+    BOND = 4,
+    INDEX = 5,
+    CRYPTO = 6
 
 
 cdef class AssetClassParser:

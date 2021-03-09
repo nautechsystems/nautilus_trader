@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.stubs import TestStubs
 
 BITMEX = Venue("BITMEX")
-AUDUSD = TestStubs.symbol_audusd()
+AUDUSD = TestStubs.security_audusd()
 
 
 class LiveProvidersTests(unittest.TestCase):

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 
 
@@ -23,16 +24,6 @@ cdef class Identifier:
     cdef inline bint _is_subclass(self, type other) except *
 
 
-cdef class Symbol(Identifier):
-    cdef readonly str code
-    """The symbol code.\n\n:returns: `str`"""
-    cdef readonly Venue venue
-    """The symbol venue.\n\n:returns: `Venue`"""
-
-    @staticmethod
-    cdef Symbol from_str_c(str value)
-
-
 cdef class Venue(Identifier):
     pass
 
@@ -41,23 +32,32 @@ cdef class Exchange(Venue):
     pass
 
 
-cdef class Brokerage(Identifier):
-    pass
-
-
-cdef class Security(Symbol):
-    cdef readonly AssetType sec_type
-    """The security asset type.\n\n:returns: `AssetType (Enum)`"""
-    cdef readonly str expiry
-    """The security contracts last trading day or month.\n\n:returns: `str`"""
-    cdef readonly str currency
-    """The underlying currency of the security.\n\n:returns: `str`"""
-    cdef readonly str multiplier
-    """The multiplier identifier of the security.\n\n:returns: `str`"""
+cdef class Security(Identifier):
+    cdef readonly str symbol
+    """The security ticker symbol.\n\n:returns: `str`"""
+    cdef readonly Venue venue
+    """The security trading venue.\n\n:returns: `Venue`"""
+    cdef readonly AssetClass asset_class
+    """The security asset class.\n\n:returns: `AssetClass`"""
+    cdef readonly AssetType asset_type
+    """The security asset type.\n\n:returns: `AssetType`"""
 
     @staticmethod
-    cdef Security from_str_c(str value)
+    cdef Security from_serializable_str_c(str value)
     cpdef str to_serializable_str(self)
+
+
+# cdef class FutureSecurity(Security):
+#     cdef readonly str expiry
+#     """The security contracts last trading day or month.\n\n:returns: `str`"""
+#     cdef readonly str currency
+#     """The underlying currency of the security.\n\n:returns: `str`"""
+#     cdef readonly str multiplier
+#     """The multiplier of the security.\n\n:returns: `int`"""
+#
+#     @staticmethod
+#     cdef Security from_str_c(str value)
+#     cpdef str to_serializable_str(self)
 
 
 cdef class IdTag(Identifier):

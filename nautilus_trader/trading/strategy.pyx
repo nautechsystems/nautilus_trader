@@ -67,8 +67,8 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -134,8 +134,8 @@ cdef class TradingStrategy(Component):
 
         # Indicators
         self._indicators = []              # type: list[Indicator]
-        self._indicators_for_quotes = {}   # type: dict[Symbol, list[Indicator]]
-        self._indicators_for_trades = {}   # type: dict[Symbol, list[Indicator]]
+        self._indicators_for_quotes = {}   # type: dict[Security, list[Indicator]]
+        self._indicators_for_trades = {}   # type: dict[Security, list[Indicator]]
         self._indicators_for_bars = {}     # type: dict[BarType, list[Indicator]]
 
         # Public components
@@ -527,61 +527,61 @@ cdef class TradingStrategy(Component):
 
         self.portfolio = portfolio  # Assigned as PortfolioFacade
 
-    cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
+    cpdef void register_indicator_for_quote_ticks(self, Security security, Indicator indicator) except *:
         """
         Register the given indicator with the strategy to receive quote tick
-        data for the given symbol.
+        data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for tick updates.
+        security : Security
+            The security for tick updates.
         indicator : Indicator
             The indicator to register.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(indicator, "indicator")
 
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        if symbol not in self._indicators_for_quotes:
-            self._indicators_for_quotes[symbol] = []  # type: list[Indicator]
+        if security not in self._indicators_for_quotes:
+            self._indicators_for_quotes[security] = []  # type: list[Indicator]
 
-        if indicator not in self._indicators_for_quotes[symbol]:
-            self._indicators_for_quotes[symbol].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {symbol} quote ticks.")
+        if indicator not in self._indicators_for_quotes[security]:
+            self._indicators_for_quotes[security].append(indicator)
+            self.log.info(f"Registered indicator {indicator} for {security} quote ticks.")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {symbol} quote ticks.")
+            self.log.error(f"Indicator {indicator} already registered for {security} quote ticks.")
 
-    cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *:
+    cpdef void register_indicator_for_trade_ticks(self, Security security, Indicator indicator) except *:
         """
         Register the given indicator with the strategy to receive trade tick
-        data for the given symbol.
+        data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for tick updates.
+        security : Security
+            The security for tick updates.
         indicator : indicator
             The indicator to register.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(indicator, "indicator")
 
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        if symbol not in self._indicators_for_trades:
-            self._indicators_for_trades[symbol] = []  # type: list[Indicator]
+        if security not in self._indicators_for_trades:
+            self._indicators_for_trades[security] = []  # type: list[Indicator]
 
-        if indicator not in self._indicators_for_trades[symbol]:
-            self._indicators_for_trades[symbol].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {symbol} trade ticks.")
+        if indicator not in self._indicators_for_trades[security]:
+            self._indicators_for_trades[security].append(indicator)
+            self.log.info(f"Registered indicator {indicator} for {security} trade ticks.")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {symbol} trade ticks.")
+            self.log.error(f"Indicator {indicator} already registered for {security} trade ticks.")
 
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *:
         """
@@ -747,22 +747,22 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+    cpdef void subscribe_instrument(self, Security security) except *:
         """
-        Subscribe to update `Instrument` data for the given symbol.
+        Subscribe to update `Instrument` data for the given security.
 
         Parameters
         ----------
-        symbol : Instrument
-            The instrument symbol to subscribe to.
+        security : Security
+            The instrument security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
-            provider=symbol.venue.value,
-            data_type=DataType(Instrument, metadata={SYMBOL: symbol}),
+            provider=security.venue.value,
+            data_type=DataType(Instrument, metadata={SECURITY: security}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -772,17 +772,17 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_order_book(
         self,
-        Symbol symbol,
+        Security security,
         int level=2,
         int depth=0,
         int interval=0,
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to streaming `OrderBook` data for the given symbol.
+        Subscribe to streaming `OrderBook` data for the given security.
 
         The `DataEngine` will only maintain one order book stream for each
-        symbol. Because of this the level, depth and kwargs for the stream will
+        security. Because of this the level, depth and kwargs for the stream will
         be as per the last subscription request (this will also affect all
         subscribers).
 
@@ -791,8 +791,8 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        symbol : Symbol
-            The order book symbol to subscribe to.
+        security : Security
+            The order book security to subscribe to.
         level : int
             The order book data level (L1, L2, L3).
         depth : int, optional
@@ -813,15 +813,15 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(self._data_engine, "data_client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.in_range_int(level, 1, 3, "level")
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval, "interval")
 
         cdef Subscribe command = Subscribe(
-            provider=symbol.venue.value,
+            provider=security.venue.value,
             data_type=DataType(OrderBook, metadata={
-                SYMBOL: symbol,
+                SECURITY: security,
                 LEVEL: level,
                 DEPTH: depth,
                 INTERVAL: interval,
@@ -834,22 +834,22 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_quote_ticks(self, Security security) except *:
         """
-        Subscribe to streaming `QuoteTick` data for the given symbol.
+        Subscribe to streaming `QuoteTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to subscribe to.
+        security : Security
+            The tick security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Subscribe command = Subscribe(
-            provider=symbol.venue.value,
-            data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
+            provider=security.venue.value,
+            data_type=DataType(QuoteTick, metadata={SECURITY: security}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -857,22 +857,22 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void subscribe_trade_ticks(self, Security security) except *:
         """
-        Subscribe to streaming `TradeTick` data for the given symbol.
+        Subscribe to streaming `TradeTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to subscribe to.
+        security : Security
+            The tick security to subscribe to.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
-            provider=symbol.venue.value,
-            data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
+            provider=security.venue.value,
+            data_type=DataType(TradeTick, metadata={SECURITY: security}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -894,7 +894,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Subscribe command = Subscribe(
-            provider=bar_type.symbol.venue.value,
+            provider=bar_type.security.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate_c(),
@@ -928,22 +928,22 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
+    cpdef void unsubscribe_instrument(self, Security security) except *:
         """
-        Unsubscribe from update `Instrument` data for the given symbol.
+        Unsubscribe from update `Instrument` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The instrument symbol to unsubscribe from.
+        security : Security
+            The instrument security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=symbol.venue.value,
-            data_type=DataType(Instrument, metadata={SYMBOL: symbol}),
+            provider=security.venue.value,
+            data_type=DataType(Instrument, metadata={SECURITY: security}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -951,28 +951,28 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_order_book(self, Symbol symbol, int interval=0) except *:
+    cpdef void unsubscribe_order_book(self, Security security, int interval=0) except *:
         """
-        Unsubscribe from streaming `OrderBook` data for the given symbol.
+        Unsubscribe from streaming `OrderBook` data for the given security.
 
         The interval must match the previously defined interval if unsubscribing
         from snapshots.
 
         Parameters
         ----------
-        symbol : Symbol
-            The order book symbol to subscribe to.
+        security : Security
+            The order book security to subscribe to.
         interval : int, optional
             The order book snapshot interval in seconds.
 
         """
         Condition.not_none(self._data_engine, "data_client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=symbol.venue.value,
+            provider=security.venue.value,
             data_type=DataType(OrderBook, metadata={
-                SYMBOL: symbol,
+                SECURITY: security,
                 INTERVAL: interval,
             }),
             handler=self.handle_order_book,
@@ -982,22 +982,22 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_quote_ticks(self, Security security) except *:
         """
-        Unsubscribe from streaming `QuoteTick` data for the given symbol.
+        Unsubscribe from streaming `QuoteTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to unsubscribe from.
+        security : Security
+            The tick security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=symbol.venue.value,
-            data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
+            provider=security.venue.value,
+            data_type=DataType(QuoteTick, metadata={SECURITY: security}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -1005,22 +1005,22 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
+    cpdef void unsubscribe_trade_ticks(self, Security security) except *:
         """
-        Unsubscribe from streaming `TradeTick` data for the given symbol.
+        Unsubscribe from streaming `TradeTick` data for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol to unsubscribe from.
+        security : Security
+            The tick security to unsubscribe from.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=symbol.venue.value,
-            data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
+            provider=security.venue.value,
+            data_type=DataType(TradeTick, metadata={SECURITY: security}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -1042,7 +1042,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=bar_type.symbol.venue.value,
+            provider=bar_type.security.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate_c(),
@@ -1080,7 +1080,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void request_quote_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime=None,
         datetime to_datetime=None,
     ) except *:
@@ -1091,8 +1091,8 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol for the request.
+        security : Security
+            The tick security for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -1104,15 +1104,15 @@ cdef class TradingStrategy(Component):
         Always limited to the tick capacity of the `DataEngine` cache.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            provider=symbol.venue.value,
+            provider=security.venue.value,
             data_type=DataType(QuoteTick, metadata={
-                SYMBOL: symbol,
+                SECURITY: security,
                 FROM_DATETIME: from_datetime,
                 TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.tick_capacity,
@@ -1126,7 +1126,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void request_trade_ticks(
         self,
-        Symbol symbol,
+        Security security,
         datetime from_datetime=None,
         datetime to_datetime=None,
     ) except *:
@@ -1137,8 +1137,8 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        symbol : Symbol
-            The tick symbol for the request.
+        security : Security
+            The tick security for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -1150,15 +1150,15 @@ cdef class TradingStrategy(Component):
         Always limited to the tick capacity of the `DataEngine` cache.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            provider=symbol.venue.value,
+            provider=security.venue.value,
             data_type=DataType(TradeTick, metadata={
-                SYMBOL: symbol,
+                SECURITY: security,
                 FROM_DATETIME: from_datetime,
                 TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.tick_capacity,
@@ -1202,7 +1202,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            provider=bar_type.symbol.venue.value,
+            provider=bar_type.security.venue.value,
             data_type=DataType(Bar, metadata={
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: from_datetime,
@@ -1242,14 +1242,14 @@ cdef class TradingStrategy(Component):
             # Null object pattern
             position_id = PositionId.null_c()
 
-        cdef AccountId account_id = self.execution.account_id(order.symbol.venue)
+        cdef AccountId account_id = self.execution.account_id(order.security.venue)
         if account_id is None:
             self.log.error(f"Cannot submit order: "
-                           f"no account registered for {order.symbol.venue}, {order}.")
+                           f"no account registered for {order.security.venue}, {order}.")
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(
-            order.symbol.venue,
+            order.security.venue,
             self.trader_id,
             account_id,
             self.id,
@@ -1278,14 +1278,14 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
-        cdef AccountId account_id = self.execution.account_id(bracket_order.entry.symbol.venue)
+        cdef AccountId account_id = self.execution.account_id(bracket_order.entry.security.venue)
         if account_id is None:
             self.log.error(f"Cannot submit bracket order: "
-                           f"no account registered for {bracket_order.entry.symbol.venue}, {bracket_order}.")
+                           f"no account registered for {bracket_order.entry.security.venue}, {bracket_order}.")
             return  # Cannot send command
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
-            bracket_order.entry.symbol.venue,
+            bracket_order.entry.security.venue,
             self.trader_id,
             account_id,
             self.id,
@@ -1358,7 +1358,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef AmendOrder command = AmendOrder(
-            order.symbol.venue,
+            order.security.venue,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
@@ -1396,7 +1396,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
-            order.symbol.venue,
+            order.security.venue,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
@@ -1407,22 +1407,22 @@ cdef class TradingStrategy(Component):
 
         self._send_exec_cmd(command)
 
-    cpdef void cancel_all_orders(self, Symbol symbol) except *:
+    cpdef void cancel_all_orders(self, Security security) except *:
         """
-        Cancel all orders for this strategy for the given symbol.
+        Cancel all orders for this strategy for the given security.
 
         All working orders in turn will have a `CancelOrder` command created and
         then sent to the `ExecutionEngine`.
 
         Parameters
         ----------
-        symbol : Symbol, optional
-            The symbol for the orders to cancel.
+        security : Security, optional
+            The security for the orders to cancel.
 
         """
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
-        cdef list working_orders = self.execution.orders_working(symbol, self.id)
+        cdef list working_orders = self.execution.orders_working(security, self.id)
 
         if not working_orders:
             self.log.info("No working orders to cancel.")
@@ -1462,14 +1462,14 @@ cdef class TradingStrategy(Component):
 
         # Create flattening order
         cdef MarketOrder order = self.order_factory.market(
-            position.symbol,
+            position.security,
             Order.flatten_side_c(position.side),
             position.quantity,
         )
 
         # Create command
         cdef SubmitOrder command = SubmitOrder(
-            position.symbol.venue,
+            position.security.venue,
             self.trader_id,
             position.account_id,
             self.id,
@@ -1481,23 +1481,23 @@ cdef class TradingStrategy(Component):
 
         self._send_exec_cmd(command)
 
-    cpdef void flatten_all_positions(self, Symbol symbol) except *:
+    cpdef void flatten_all_positions(self, Security security) except *:
         """
-        Flatten all positions for the given symbol for this strategy.
+        Flatten all positions for the given security for this strategy.
 
         All open positions in turn will have a closing `MarketOrder` created and
         then sent to the `ExecutionEngine` via `SubmitOrder` commands.
 
         Parameters
         ----------
-        symbol : Symbol, optional
-            The symbol for the positions to flatten.
+        security : Security, optional
+            The security for the positions to flatten.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
-        cdef list positions_open = self.execution.positions_open(symbol, self.id)
+        cdef list positions_open = self.execution.positions_open(security, self.id)
 
         if not positions_open:
             self.log.info("No open positions to flatten.")
@@ -1583,7 +1583,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(tick, "tick")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(tick.symbol)  # Could be None
+        cdef list indicators = self._indicators_for_quotes.get(tick.security)  # Could be None
         cdef Indicator indicator
         if indicators is not None:
             for indicator in indicators:
@@ -1619,10 +1619,10 @@ cdef class TradingStrategy(Component):
 
         cdef int length = len(ticks)
         cdef QuoteTick first = ticks[0] if length > 0 else None
-        cdef Symbol symbol = first.symbol if first is not None else None
+        cdef Security security = first.security if first is not None else None
 
         if length > 0:
-            self.log.info(f"Received <QuoteTick[{length}]> data for {symbol}.")
+            self.log.info(f"Received <QuoteTick[{length}]> data for {security}.")
         else:
             self.log.warning("Received <QuoteTick[]> data with no ticks.")
 
@@ -1650,7 +1650,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(tick, "tick")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(tick.symbol)  # Could be None
+        cdef list indicators = self._indicators_for_trades.get(tick.security)  # Could be None
         cdef Indicator indicator
         if indicators is not None:
             for indicator in indicators:
@@ -1686,10 +1686,10 @@ cdef class TradingStrategy(Component):
 
         cdef int length = len(ticks)
         cdef TradeTick first = ticks[0] if length > 0 else None
-        cdef Symbol symbol = first.symbol if first is not None else None
+        cdef Security security = first.security if first is not None else None
 
         if length > 0:
-            self.log.info(f"Received <TradeTick[{length}]> data for {symbol}.")
+            self.log.info(f"Received <TradeTick[{length}]> data for {security}.")
         else:
             self.log.warning("Received <TradeTick[]> data with no ticks.")
 

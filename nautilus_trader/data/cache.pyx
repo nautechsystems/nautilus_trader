@@ -31,7 +31,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -64,17 +64,17 @@ cdef class DataCache(DataCacheFacade):
         self._xrate_calculator = ExchangeRateCalculator()
         self._xrate_symbols = {}
 
-        # Capacities (per symbol)
+        # Capacities (per security)
         self.tick_capacity = config.get("tick_capacity", 1000)
         self.bar_capacity = config.get("bar_capacity", 1000)
         Condition.positive_int(self.tick_capacity, "tick_capacity")
         Condition.positive_int(self.bar_capacity, "bar_capacity")
 
         # Cached data
-        self._instruments = {}  # type: dict[Symbol, Instrument]
-        self._quote_ticks = {}  # type: dict[Symbol, list[QuoteTick]]
-        self._trade_ticks = {}  # type: dict[Symbol, list[TradeTick]]
-        self._order_books = {}  # type: dict[Symbol, OrderBook]
+        self._instruments = {}  # type: dict[Security, Instrument]
+        self._quote_ticks = {}  # type: dict[Security, list[QuoteTick]]
+        self._trade_ticks = {}  # type: dict[Security, list[TradeTick]]
+        self._order_books = {}  # type: dict[Security, OrderBook]
         self._bars = {}         # type: dict[BarType, list[Bar]]
 
         self._log.info("Initialized.")
@@ -105,13 +105,13 @@ cdef class DataCache(DataCacheFacade):
             The received instrument to add.
 
         """
-        self._instruments[instrument.symbol] = instrument
+        self._instruments[instrument.security] = instrument
 
         if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
-            self._xrate_symbols[instrument.symbol] = (f"{instrument.base_currency}/"
+            self._xrate_symbols[instrument.security] = (f"{instrument.base_currency}/"
                                                       f"{instrument.quote_currency}")
 
-        self._log.debug(f"Updated instrument {instrument.symbol}")
+        self._log.debug(f"Updated instrument {instrument.security}")
 
     cpdef void add_order_book(self, OrderBook order_book) except *:
         """
@@ -125,7 +125,7 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(order_book, "order_book")
 
-        self._order_books[order_book.symbol] = order_book
+        self._order_books[order_book.security] = order_book
 
     cpdef void add_quote_tick(self, QuoteTick tick) except *:
         """
@@ -139,13 +139,13 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(tick, "tick")
 
-        cdef Symbol symbol = tick.symbol
-        ticks = self._quote_ticks.get(symbol)
+        cdef Security security = tick.security
+        ticks = self._quote_ticks.get(security)
 
         if ticks is None:
-            # The symbol was not registered
+            # The security was not registered
             ticks = deque(maxlen=self.tick_capacity)
-            self._quote_ticks[symbol] = ticks
+            self._quote_ticks[security] = ticks
 
         ticks.appendleft(tick)
 
@@ -161,13 +161,13 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(tick, "tick")
 
-        cdef Symbol symbol = tick.symbol
-        ticks = self._trade_ticks.get(symbol)
+        cdef Security security = tick.security
+        ticks = self._trade_ticks.get(security)
 
         if ticks is None:
-            # The symbol was not registered
+            # The security was not registered
             ticks = deque(maxlen=self.tick_capacity)
-            self._trade_ticks[symbol] = ticks
+            self._trade_ticks[security] = ticks
 
         ticks.appendleft(tick)
 
@@ -209,20 +209,20 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(ticks, "ticks")
 
         cdef int length = len(ticks)
-        cdef Symbol symbol
+        cdef Security security
         if length > 0:
-            symbol = ticks[0].symbol
-            self._log.debug(f"Received <QuoteTick[{length}]> data for {symbol}.")
+            security = ticks[0].security
+            self._log.debug(f"Received <QuoteTick[{length}]> data for {security}.")
         else:
             self._log.debug("Received <QuoteTick[]> data with no ticks.")
             return
 
-        cached_ticks = self._quote_ticks.get(symbol)
+        cached_ticks = self._quote_ticks.get(security)
 
         if cached_ticks is None:
-            # The symbol was not registered
+            # The security was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
-            self._quote_ticks[symbol] = cached_ticks
+            self._quote_ticks[security] = cached_ticks
         elif len(cached_ticks) > 0:
             # Currently the simple solution for multiple consumers requesting
             # ticks at system spool up; is just to add only if the cache is empty.
@@ -246,20 +246,20 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(ticks, "ticks")
 
         cdef int length = len(ticks)
-        cdef Symbol symbol
+        cdef Security security
         if length > 0:
-            symbol = ticks[0].symbol
-            self._log.debug(f"Received <TradeTick[{length}]> data for {symbol}.")
+            security = ticks[0].security
+            self._log.debug(f"Received <TradeTick[{length}]> data for {security}.")
         else:
             self._log.debug("Received <TradeTick[]> data with no ticks.")
             return
 
-        cached_ticks = self._trade_ticks.get(symbol)
+        cached_ticks = self._trade_ticks.get(security)
 
         if cached_ticks is None:
-            # The symbol was not registered
+            # The security was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
-            self._trade_ticks[symbol] = cached_ticks
+            self._trade_ticks[security] = cached_ticks
         elif len(cached_ticks) > 0:
             # Currently the simple solution for multiple consumers requesting
             # ticks at system spool up; is just to add only if the cache is empty.
@@ -287,17 +287,17 @@ cdef class DataCache(DataCacheFacade):
 
         cdef int length = len(bars)
         if length > 0:
-            self._log.debug(f"Received <Bar[{length}]> data for {bar_type.symbol}.")
+            self._log.debug(f"Received <Bar[{length}]> data for {bar_type.security}.")
         else:
             self._log.debug("Received <Bar[]> data with no ticks.")
             return
 
-        cached_bars = self._trade_ticks.get(bar_type.symbol)
+        cached_bars = self._trade_ticks.get(bar_type.security)
 
         if cached_bars is None:
-            # The symbol was not registered
+            # The security was not registered
             cached_bars = deque(maxlen=self.bar_capacity)
-            self._trade_ticks[bar_type.symbol] = cached_bars
+            self._trade_ticks[bar_type.security] = cached_bars
         elif len(cached_bars) > 0:
             # Currently the simple solution for multiple consumers requesting
             # bars at system spool up; is just to add only if the cache is empty.
@@ -310,13 +310,13 @@ cdef class DataCache(DataCacheFacade):
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef list symbols(self):
+    cpdef list securities(self):
         """
-        Return all instrument symbols held by the data cache.
+        Return all instrument securities held by the data cache.
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
         """
         return sorted(list(self._instruments.keys()))
 
@@ -331,41 +331,41 @@ cdef class DataCache(DataCacheFacade):
         """
         return list(self._instruments.values())
 
-    cpdef list quote_ticks(self, Symbol symbol):
+    cpdef list quote_ticks(self, Security security):
         """
-        Return the quote ticks for the given symbol.
+        Return the quote ticks for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the ticks to get.
+        security : Security
+            The security for the ticks to get.
 
         Returns
         -------
         list[QuoteTick]
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        return list(self._quote_ticks.get(symbol, []))
+        return list(self._quote_ticks.get(security, []))
 
-    cpdef list trade_ticks(self, Symbol symbol):
+    cpdef list trade_ticks(self, Security security):
         """
-        Return trade ticks for the given symbol.
+        Return trade ticks for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the ticks to get.
+        security : Security
+            The security for the ticks to get.
 
         Returns
         -------
         list[TradeTick]
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        return list(self._trade_ticks.get(symbol, []))
+        return list(self._trade_ticks.get(security, []))
 
     cpdef list bars(self, BarType bar_type):
         """
@@ -385,32 +385,32 @@ cdef class DataCache(DataCacheFacade):
 
         return list(self._bars.get(bar_type, []))
 
-    cpdef Instrument instrument(self, Symbol symbol):
+    cpdef Instrument instrument(self, Security security):
         """
-        Return the instrument corresponding to the given symbol.
+        Return the instrument corresponding to the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol of the instrument to return.
+        security : Security
+            The security of the instrument to return.
 
         Returns
         -------
         Instrument or None
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        return self._instruments.get(symbol)
+        return self._instruments.get(security)
 
-    cpdef Price price(self, Symbol symbol, PriceType price_type):
+    cpdef Price price(self, Security security, PriceType price_type):
         """
-        Return the price for the given symbol and price type.
+        Return the price for the given security and price type.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the price.
+        security : Security
+            The security for the price.
         price_type : PriceType (Enum)
             The price type for the query.
 
@@ -424,44 +424,44 @@ cdef class DataCache(DataCacheFacade):
             If price_type is UNDEFINED.
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_equal(price_type, PriceType.UNDEFINED, "price_type", "UNDEFINED")
 
         cdef TradeTick trade_tick
         cdef QuoteTick quote_tick
 
         if price_type == PriceType.LAST:
-            trade_tick = self.trade_tick(symbol)
+            trade_tick = self.trade_tick(security)
             return trade_tick.price if trade_tick is not None else None
         else:
-            quote_tick = self.quote_tick(symbol)
+            quote_tick = self.quote_tick(security)
             return quote_tick.extract_price(price_type) if quote_tick is not None else None
 
-    cpdef OrderBook order_book(self, Symbol symbol):
+    cpdef OrderBook order_book(self, Security security):
         """
-        Return the latest order book snapshot for the given symbol.
+        Return the latest order book snapshot for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
+        security : Security
 
         Returns
         -------
         OrderBook or None
 
         """
-        return self._order_books.get(symbol)
+        return self._order_books.get(security)
 
-    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
+    cpdef QuoteTick quote_tick(self, Security security, int index=0):
         """
-        Return the quote tick for the given symbol at the given index.
+        Return the quote tick for the given security at the given index.
 
         Last quote tick if no index specified.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the tick to get.
+        security : Security
+            The security for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -475,9 +475,9 @@ cdef class DataCache(DataCacheFacade):
         Reverse indexed (most recent tick at index 0).
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        ticks = self._quote_ticks.get(symbol)
+        ticks = self._quote_ticks.get(security)
         if not ticks:
             return None
 
@@ -486,16 +486,16 @@ cdef class DataCache(DataCacheFacade):
         except IndexError:
             return None
 
-    cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
+    cpdef TradeTick trade_tick(self, Security security, int index=0):
         """
-        Return the trade tick for the given symbol at the given index
+        Return the trade tick for the given security at the given index
 
         Last trade tick if no index specified.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the tick to get.
+        security : Security
+            The security for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -509,9 +509,9 @@ cdef class DataCache(DataCacheFacade):
         Reverse indexed (most recent tick at index 0).
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        ticks = self._trade_ticks.get(symbol)
+        ticks = self._trade_ticks.get(security)
         if not ticks:
             return None
 
@@ -554,41 +554,41 @@ cdef class DataCache(DataCacheFacade):
         except IndexError:
             return None
 
-    cpdef int quote_tick_count(self, Symbol symbol) except *:
+    cpdef int quote_tick_count(self, Security security) except *:
         """
-        The count of quote ticks for the given symbol.
+        The count of quote ticks for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the ticks.
+        security : Security
+            The security for the ticks.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        return len(self._quote_ticks.get(symbol, []))
+        return len(self._quote_ticks.get(security, []))
 
-    cpdef int trade_tick_count(self, Symbol symbol) except *:
+    cpdef int trade_tick_count(self, Security security) except *:
         """
-        The count of trade ticks for the given symbol.
+        The count of trade ticks for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the ticks.
+        security : Security
+            The security for the ticks.
 
         Returns
         -------
         int
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        return len(self._trade_ticks.get(symbol, []))
+        return len(self._trade_ticks.get(security, []))
 
     cpdef int bar_count(self, BarType bar_type) except *:
         """
@@ -608,60 +608,60 @@ cdef class DataCache(DataCacheFacade):
 
         return len(self._bars.get(bar_type, []))
 
-    cpdef bint has_order_book(self, Symbol symbol) except *:
+    cpdef bint has_order_book(self, Security security) except *:
         """
         Return a value indicating whether the data engine has an order book
-        snapshot for the given symbol.
+        snapshot for the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the order book snapshot.
+        security : Security
+            The security for the order book snapshot.
 
         Returns
         -------
         bool
 
         """
-        return symbol in self._order_books
+        return security in self._order_books
 
-    cpdef bint has_quote_ticks(self, Symbol symbol) except *:
+    cpdef bint has_quote_ticks(self, Security security) except *:
         """
         Return a value indicating whether the data engine has quote ticks for
-        the given symbol.
+        the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the ticks.
+        security : Security
+            The security for the ticks.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        return self.quote_tick_count(symbol) > 0
+        return self.quote_tick_count(security) > 0
 
-    cpdef bint has_trade_ticks(self, Symbol symbol) except *:
+    cpdef bint has_trade_ticks(self, Security security) except *:
         """
         Return a value indicating whether the data engine has trade ticks for
-        the given symbol.
+        the given security.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the ticks.
+        security : Security
+            The security for the ticks.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
 
-        return self.trade_tick_count(symbol) > 0
+        return self.trade_tick_count(security) > 0
 
     cpdef bint has_bars(self, BarType bar_type) except *:
         """
@@ -733,15 +733,15 @@ cdef class DataCache(DataCacheFacade):
         cdef dict bid_quotes = {}
         cdef dict ask_quotes = {}
 
-        cdef Symbol symbol
+        cdef Security security
         cdef str base_quote
-        for symbol, base_quote in self._xrate_symbols.items():
-            if symbol.venue != venue:
+        for security, base_quote in self._xrate_symbols.items():
+            if security.venue != venue:
                 continue
 
-            ticks = self._quote_ticks.get(symbol)
+            ticks = self._quote_ticks.get(security)
             if not ticks:
-                # No quotes for symbol
+                # No quotes for security
                 continue
 
             bid_quotes[base_quote] = ticks[0].bid.as_decimal()
@@ -750,8 +750,8 @@ cdef class DataCache(DataCacheFacade):
         return bid_quotes, ask_quotes
 
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
-        return instrument.asset_class == AssetClass.CRYPTO \
-            and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
+        return instrument.security.asset_class == AssetClass.CRYPTO \
+            and (instrument.security.asset_type == AssetType.SPOT or instrument.security.asset_type == AssetType.SWAP)
 
     cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
-        return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT
+        return instrument.security.asset_class == AssetClass.FX and instrument.security.asset_type == AssetType.SPOT

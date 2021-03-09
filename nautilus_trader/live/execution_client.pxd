@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -45,7 +45,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         ClientOrderId cl_ord_id,
         OrderId order_id,
         ExecutionId execution_id,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         fill_qty: Decimal,
         cum_qty: Decimal,

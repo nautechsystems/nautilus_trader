@@ -13,87 +13,87 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
-from parameterized import parameterized
+import pytest
 
 from nautilus_trader.core.cache import ObjectCache
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 
 
-class ObjectCacheTests(unittest.TestCase):
+class TestObjectCache:
 
     def test_cache_initialization(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.from_str)
+        cache = ObjectCache(Security, Security.from_serializable_str)
 
         # Act
         # Assert
-        self.assertEqual(str, cache.type_key)
-        self.assertEqual(Symbol, cache.type_value)
-        self.assertEqual([], cache.keys())
+        assert str == cache.type_key
+        assert Security == cache.type_value
+        assert [] == cache.keys()
 
-    @parameterized.expand([
-        [None, TypeError],
-        ["", ValueError],
-        [" ", ValueError],
-        ["  ", ValueError],
-        [1234, TypeError],
-    ])
+    @pytest.mark.parametrize(
+        "value,ex",
+        [[None, TypeError],
+         ["", ValueError],
+         [" ", ValueError],
+         ["  ", ValueError],
+         [1234, TypeError]],
+    )
     def test_get_given_none_raises_value_error(self, value, ex):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.from_str)
+        cache = ObjectCache(Security, Security.from_serializable_str)
 
         # Act
         # Assert
-        self.assertRaises(ex, cache.get, value)
+        with pytest.raises(ex):
+            cache.get(value)
 
     def test_get_from_empty_cache(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.from_str)
-        symbol = "AUD/USD.SIM"
+        cache = ObjectCache(Security, Security.from_serializable_str)
+        security = "AUD/USD.SIM,FX,SPOT"
 
         # Act
-        result = cache.get(symbol)
+        result = cache.get(security)
 
         # Assert
-        self.assertEqual(symbol, str(result))
-        self.assertEqual(["AUD/USD.SIM"], cache.keys())
+        assert security == result.to_serializable_str()
+        assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
 
     def test_get_from_cache(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.from_str)
-        symbol = "AUD/USD.SIM"
-        cache.get(symbol)
+        cache = ObjectCache(Security, Security.from_serializable_str)
+        security = "AUD/USD.SIM,FX,SPOT"
+        cache.get(security)
 
         # Act
-        cache.get(symbol)
-        result1 = cache.get(symbol)
-        result2 = cache.get(symbol)
+        cache.get(security)
+        result1 = cache.get(security)
+        result2 = cache.get(security)
 
         # Assert
-        self.assertEqual(symbol, str(result1))
-        self.assertEqual(id(result1), id(result2))
-        self.assertEqual(["AUD/USD.SIM"], cache.keys())
+        assert security == result1.to_serializable_str()
+        assert id(result1) == id(result2)
+        assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
 
     def test_keys_when_cache_empty_returns_empty_list(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.from_str)
+        cache = ObjectCache(Security, Security.from_serializable_str)
 
         # Act
         result = cache.keys()
 
         # Assert
-        self.assertEqual([], result)
+        assert [] == result
 
     def test_clear_cache(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.from_str)
-        symbol = "AUD/USD.SIM"
-        cache.get(symbol)
+        cache = ObjectCache(Security, Security.from_serializable_str)
+        security = "AUD/USD.SIM,FX,SPOT"
+        cache.get(security)
 
         # Act
         cache.clear()
 
         # Assert
-        self.assertEqual([], cache.keys())
+        assert [] == cache.keys()

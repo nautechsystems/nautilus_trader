@@ -20,7 +20,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.market import MarketOrder
@@ -45,7 +45,7 @@ class EMACross(TradingStrategy):
 
     def __init__(
         self,
-        symbol: Symbol,
+        security: Security,
         bar_spec: BarSpecification,
         trade_size: Decimal,
         fast_ema_period: int,
@@ -57,8 +57,8 @@ class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the strategy.
+        security : Security
+            The security identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -75,8 +75,8 @@ class EMACross(TradingStrategy):
         super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
-        self.symbol = symbol
-        self.bar_type = BarType(symbol, bar_spec)
+        self.security = security
+        self.bar_type = BarType(security, bar_spec)
         self.trade_size = trade_size
 
         # Create the indicators for the strategy
@@ -94,9 +94,9 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_order_book(self.symbol, level=2, depth=20, interval=5)  # For debugging
-        # self.subscribe_quote_ticks(self.symbol)  # For debugging
-        # self.subscribe_trade_ticks(self.symbol)  # For debugging
+        # self.subscribe_order_book(self.security, level=2, depth=20, interval=5)  # For debugging
+        # self.subscribe_quote_ticks(self.security)  # For debugging
+        # self.subscribe_trade_ticks(self.security)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -174,18 +174,18 @@ class EMACross(TradingStrategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
+            if self.portfolio.is_flat(self.security):
                 self.buy()
-            elif self.portfolio.is_net_short(self.symbol):
-                self.flatten_all_positions(self.symbol)
+            elif self.portfolio.is_net_short(self.security):
+                self.flatten_all_positions(self.security)
                 self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
+            if self.portfolio.is_flat(self.security):
                 self.sell()
-            elif self.portfolio.is_net_long(self.symbol):
-                self.flatten_all_positions(self.symbol)
+            elif self.portfolio.is_net_long(self.security):
+                self.flatten_all_positions(self.security)
                 self.sell()
 
     def buy(self):
@@ -193,7 +193,7 @@ class EMACross(TradingStrategy):
         Users simple buy method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
             # time_in_force=TimeInForce.FOK,
@@ -206,7 +206,7 @@ class EMACross(TradingStrategy):
         Users simple sell method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
             # time_in_force=TimeInForce.FOK,
@@ -242,14 +242,14 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.symbol)
-        self.flatten_all_positions(self.symbol)
+        self.cancel_all_orders(self.security)
+        self.flatten_all_positions(self.security)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_order_book(self.symbol, interval=5)
-        # self.unsubscribe_quote_ticks(self.symbol)
-        # self.unsubscribe_trade_ticks(self.symbol)
+        # self.unsubscribe_order_book(self.security, interval=5)
+        # self.unsubscribe_quote_ticks(self.security)
+        # self.unsubscribe_trade_ticks(self.security)
 
     def on_reset(self):
         """

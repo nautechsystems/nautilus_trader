@@ -14,14 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 
 
 cdef class SpreadAnalyzer(Indicator):
     cdef object _spreads
 
-    cdef readonly Symbol symbol
-    """The indicators symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Security security
+    """The indicators security.\n\n:returns: `Security`"""
     cdef readonly int capacity
     """The indicators spread capacity.\n\n:returns: `int`"""
     cdef readonly double current

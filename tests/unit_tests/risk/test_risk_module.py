@@ -42,7 +42,7 @@ from nautilus_trader.risk.module import RiskModule
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class RiskModuleBaseTests(unittest.TestCase):
@@ -66,7 +66,7 @@ class RiskModuleBaseTests(unittest.TestCase):
 
     def test_approve_when_not_implemented_raises_exception(self):
         order = self.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )

@@ -15,7 +15,7 @@
 
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -27,22 +27,22 @@ class MyStrategy(TradingStrategy):
     A blank template strategy.
     """
 
-    def __init__(self, symbol: Symbol):
+    def __init__(self, security: Security):
         """
         Initialize a new instance of the `MyStrategy` class.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the strategy.
+        security : Security
+            The security for the strategy.
 
         """
         # The order_id_tag should be unique at the 'trader level', here we are
         # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(order_id_tag=symbol.code.replace('/', ""))
+        super().__init__(order_id_tag=security.security.replace('/', ""))
 
         # Custom strategy variables
-        self.symbol = symbol
+        self.security = security
 
     def on_start(self):
         """Actions to be performed on strategy start."""

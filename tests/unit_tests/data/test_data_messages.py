@@ -21,7 +21,9 @@ from nautilus_trader.data.base import DataType
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
 
@@ -71,7 +73,7 @@ class DataMessageTests(unittest.TestCase):
         request = DataRequest(
             provider=BINANCE.value,
             data_type=DataType(str, metadata={  # str data type is invalid
-                "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
+                "Security": Security("SOMETHING", Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
@@ -84,14 +86,14 @@ class DataMessageTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             "DataRequest("
-            "<str> {'Symbol': Symbol('SOMETHING.RANDOM'), "
+            "<str> {'Security': Security('SOMETHING.RANDOM,UNDEFINED,UNDEFINED'), "
             "'FromDateTime': None, 'ToDateTime': None, 'Limit': 1000})",
             str(request),
         )
         self.assertEqual(
             f"DataRequest("
             f"provider=BINANCE, "
-            f"data_type=<str> {{'Symbol': Symbol('SOMETHING.RANDOM'), "
+            f"data_type=<str> {{'Security': Security('SOMETHING.RANDOM,UNDEFINED,UNDEFINED'), "
             f"'FromDateTime': None, "
             f"'ToDateTime': None, "
             f"'Limit': 1000}}, "
@@ -106,10 +108,11 @@ class DataMessageTests(unittest.TestCase):
         # Act
         correlation_id = self.uuid_factory.generate()
         response_id = self.uuid_factory.generate()
+        security = Security("AUD/USD", IDEALPRO, AssetClass.FX, AssetType.SPOT)
 
         response = DataResponse(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"Symbol": Symbol("AUD/USD", IDEALPRO)}),
+            data_type=DataType(QuoteTick, metadata={"Security": security}),
             data=[],
             correlation_id=correlation_id,
             response_id=response_id,
@@ -117,11 +120,11 @@ class DataMessageTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("DataResponse(<QuoteTick> {'Symbol': Symbol('AUD/USD.IDEALPRO')})", str(response))
+        self.assertEqual("DataResponse(<QuoteTick> {'Security': Security('AUD/USD.IDEALPRO,FX,SPOT')})", str(response))
         self.assertEqual(
             f"DataResponse("
             f"provider=BINANCE, "
-            f"data_type=<QuoteTick> {{'Symbol': Symbol('AUD/USD.IDEALPRO')}}, "
+            f"data_type=<QuoteTick> {{'Security': Security('AUD/USD.IDEALPRO,FX,SPOT')}}, "
             f"correlation_id={correlation_id}, "
             f"id={response_id}, "
             f"timestamp=1970-01-01 00:00:00+00:00)",

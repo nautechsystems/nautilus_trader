@@ -17,8 +17,10 @@ from decimal import Decimal
 import unittest
 
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -31,10 +33,10 @@ class BacktestLoadersTests(unittest.TestCase):
         loader = TestInstrumentProvider()
 
         # Act
-        instrument = loader.default_fx_ccy(Symbol("AUD/USD", Venue("SIM")))
+        instrument = loader.default_fx_ccy("AUD/USD")
 
         # Assert
-        self.assertEqual(Symbol("AUD/USD", Venue("SIM")), instrument.symbol)
+        self.assertEqual(Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT), instrument.security)
         self.assertEqual(5, instrument.price_precision)
         self.assertEqual(Decimal("0.00001"), instrument.tick_size)
         self.assertEqual(Currency(code="USD", precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)
@@ -44,10 +46,10 @@ class BacktestLoadersTests(unittest.TestCase):
         loader = TestInstrumentProvider()
 
         # Act
-        instrument = loader.default_fx_ccy(Symbol("USD/JPY", Venue("SIM")))
+        instrument = loader.default_fx_ccy("USD/JPY", Venue("SIM"))
 
         # Assert
-        self.assertEqual(Symbol("USD/JPY", Venue("SIM")), instrument.symbol)
+        self.assertEqual(Security("USD/JPY", Venue("SIM"), AssetClass.FX, AssetType.SPOT), instrument.security)
         self.assertEqual(3, instrument.price_precision)
         self.assertEqual(Decimal("0.001"), instrument.tick_size)
         self.assertEqual(Currency(code='JPY', precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)

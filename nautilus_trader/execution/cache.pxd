@@ -19,8 +19,8 @@ from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -40,8 +40,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef dict _index_order_strategy
     cdef dict _index_position_strategy
     cdef dict _index_position_orders
-    cdef dict _index_symbol_orders
-    cdef dict _index_symbol_positions
+    cdef dict _index_security_orders
+    cdef dict _index_security_positions
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef set _index_orders
@@ -85,5 +85,5 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef void _cache_venue_account_id(self, AccountId account_id) except *
     cdef void _build_indexes_from_orders(self) except *
     cdef void _build_indexes_from_positions(self) except *
-    cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
-    cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
+    cdef inline set _build_ord_query_filter_set(self, Security security, StrategyId strategy_id)
+    cdef inline set _build_pos_query_filter_set(self, Security security, StrategyId strategy_id)

@@ -52,8 +52,8 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -128,7 +128,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         super().__init__()
 
-        self.symbol_cache = ObjectCache(Symbol, Symbol.from_str_c)
+        self.symbol_cache = ObjectCache(Security, Security.from_serializable_str_c)
 
     cpdef bytes serialize(self, Order order):  # Can be None
         """
@@ -150,7 +150,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef dict package = {
             ID: order.cl_ord_id.value,
             STRATEGY_ID: order.strategy_id.value,
-            SYMBOL: order.symbol.value,
+            SECURITY: order.security.to_serializable_str(),
             ORDER_SIDE: self.convert_snake_to_camel(OrderSideParser.to_str(order.side)),
             ORDER_TYPE: self.convert_snake_to_camel(OrderTypeParser.to_str(order.type)),
             QUANTITY: str(order.quantity),
@@ -206,7 +206,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID])
         cdef StrategyId strategy_id = StrategyId.from_str_c(unpacked[STRATEGY_ID])
-        cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL])
+        cdef Security security = self.symbol_cache.get(unpacked[SECURITY])
         cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
         cdef OrderType order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
         cdef Quantity quantity = Quantity(unpacked[QUANTITY])
@@ -218,7 +218,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return MarketOrder(
                 cl_ord_id=cl_ord_id,
                 strategy_id=strategy_id,
-                symbol=symbol,
+                security=security,
                 order_side=order_side,
                 quantity=quantity,
                 time_in_force=time_in_force,
@@ -234,7 +234,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return LimitOrder(
                 cl_ord_id=cl_ord_id,
                 strategy_id=strategy_id,
-                symbol=symbol,
+                security=security,
                 order_side=order_side,
                 quantity=quantity,
                 price=Price(unpacked[PRICE]),
@@ -251,7 +251,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return StopMarketOrder(
                 cl_ord_id=cl_ord_id,
                 strategy_id=strategy_id,
-                symbol=symbol,
+                security=security,
                 order_side=order_side,
                 quantity=quantity,
                 price=Price(unpacked[PRICE]),
@@ -266,7 +266,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return StopLimitOrder(
                 cl_ord_id=cl_ord_id,
                 strategy_id=strategy_id,
-                symbol=symbol,
+                security=security,
                 order_side=order_side,
                 quantity=quantity,
                 price=Price(unpacked[PRICE]),
@@ -487,7 +487,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[STRATEGY_ID] = event.strategy_id.value
-            package[SYMBOL] = event.symbol.value
+            package[SECURITY] = event.security.to_serializable_str()
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
             package[QUANTITY] = str(event.quantity)
@@ -503,6 +503,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 package[PRICE] = str(event.options[PRICE])
                 package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)  # Can be None
                 package[REDUCE_ONLY] = event.options[REDUCE_ONLY]
+            elif event.order_type == OrderType.STOP_LIMIT:
+                package[PRICE] = str(event.options[PRICE])
+                package[TRIGGER] = str(event.options[TRIGGER])
+                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)  # Can be None
+                package[POST_ONLY] = event.options[POST_ONLY]
+                package[REDUCE_ONLY] = event.options[REDUCE_ONLY]
+                package[HIDDEN] = event.options[HIDDEN]
 
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -555,7 +562,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXECUTION_ID] = event.execution_id.value
             package[POSITION_ID] = event.position_id.value
             package[STRATEGY_ID] = event.strategy_id.value
-            package[SYMBOL] = event.symbol.value
+            package[SECURITY] = event.security.to_serializable_str()
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[FILL_QTY] = str(event.fill_qty)
             package[FILL_PRICE] = str(event.fill_price)
@@ -626,11 +633,18 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 options[PRICE] = Price(unpacked[PRICE])
                 options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
                 options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
+            elif order_type == OrderType.STOP_LIMIT:
+                options[PRICE] = Price(unpacked[PRICE])
+                options[TRIGGER] = Price(unpacked[TRIGGER])
+                options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
+                options[POST_ONLY] = unpacked[POST_ONLY]
+                options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
+                options[HIDDEN] = unpacked[HIDDEN]
 
             return OrderInitialized(
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
+                self.identifier_cache.get_security(unpacked[SECURITY]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 order_type,
                 Quantity(unpacked[QUANTITY]),
@@ -728,7 +742,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ExecutionId(unpacked[EXECUTION_ID]),
                 PositionId(unpacked[POSITION_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
+                self.identifier_cache.get_security(unpacked[SECURITY]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 Quantity(unpacked[FILL_QTY]),
                 Quantity(unpacked[CUM_QTY]),

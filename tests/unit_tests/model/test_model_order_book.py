@@ -27,7 +27,7 @@ class OrderBookTests(unittest.TestCase):
         # Arrange
         # Act
         order_book = OrderBook(
-            symbol=ETHUSDT_BINANCE.symbol,
+            security=ETHUSDT_BINANCE.security,
             level=2,
             depth=25,
             price_precision=2,
@@ -48,7 +48,7 @@ class OrderBookTests(unittest.TestCase):
     def test_apply_snapshot(self):
         # Arrange
         order_book = OrderBook(
-            symbol=ETHUSDT_BINANCE.symbol,
+            security=ETHUSDT_BINANCE.security,
             level=2,
             depth=25,
             price_precision=2,

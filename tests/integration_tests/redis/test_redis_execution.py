@@ -29,7 +29,6 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -47,7 +46,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 # Requirements:
 # - A Redis instance listening on the default port 6379
@@ -97,7 +96,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_add_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -111,7 +110,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_add_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -149,7 +148,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_update_order_for_working_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -171,7 +170,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_update_order_for_completed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -199,7 +198,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_update_position_for_closed_position(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -226,7 +225,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position)
 
         order2 = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -295,7 +294,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_order_when_no_order_in_database_returns_none(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -309,7 +308,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_order_when_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -325,7 +324,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_order_when_limit_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.limit(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -342,7 +341,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_order_when_stop_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -355,6 +354,26 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, result)
+
+    def test_load_order_when_stop_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_limit(
+            AUDUSD_SIM.security,
+            OrderSide.BUY,
+            Quantity(100000),
+            price=Price("1.00000"),
+            trigger=Price("1.00010"),
+        )
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.cl_ord_id)
+
+        # Assert
+        self.assertEqual(order, result)
+        self.assertEqual(order.price, result.price)
+        self.assertEqual(order.trigger, result.trigger)
 
     def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
@@ -369,7 +388,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_order_when_position_in_database_returns_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -422,7 +441,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_orders_cache_when_one_order_in_database(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -446,7 +465,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
         order1 = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -485,7 +504,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def test_flush(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -505,7 +524,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position1)
 
         order2 = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
+            AUDUSD_SIM.security,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -532,11 +551,11 @@ class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", self.venue))
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
-        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(self.usdjpy.security, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(self.usdjpy.security, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         self.engine = BacktestEngine(
             data=data,
@@ -562,7 +581,7 @@ class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
     def test_rerunning_backtest_with_redis_db_builds_correct_index(self):
         # Arrange
         strategy = EMACross(
-            symbol=self.usdjpy.symbol,
+            security=self.usdjpy.security,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
