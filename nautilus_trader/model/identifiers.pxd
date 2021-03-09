@@ -34,31 +34,26 @@ cdef class Exchange(Venue):
 
 cdef class Security(Identifier):
     cdef readonly str symbol
-    """The securities security.\n\n:returns: `str`"""
+    """The security ticker symbol.\n\n:returns: `str`"""
     cdef readonly Venue venue
-    """The securities primary trading venue.\n\n:returns: `Venue`"""
+    """The security trading venue.\n\n:returns: `Venue`"""
     cdef readonly AssetClass asset_class
-    """The securities asset class.\n\n:returns: `AssetClass`"""
+    """The security asset class.\n\n:returns: `AssetClass`"""
     cdef readonly AssetType asset_type
-    """The securities asset type.\n\n:returns: `AssetType`"""
+    """The security asset type.\n\n:returns: `AssetType`"""
 
     @staticmethod
     cdef Security from_serializable_str_c(str value)
     cpdef str to_serializable_str(self)
 
 
-
-
-
-# cdef class Security(Security):
-#     cdef readonly AssetType sec_type
-#     """The security asset type.\n\n:returns: `AssetType (Enum)`"""
+# cdef class FutureSecurity(Security):
 #     cdef readonly str expiry
 #     """The security contracts last trading day or month.\n\n:returns: `str`"""
 #     cdef readonly str currency
 #     """The underlying currency of the security.\n\n:returns: `str`"""
 #     cdef readonly str multiplier
-#     """The multiplier identifier of the security.\n\n:returns: `str`"""
+#     """The multiplier of the security.\n\n:returns: `int`"""
 #
 #     @staticmethod
 #     cdef Security from_str_c(str value)
