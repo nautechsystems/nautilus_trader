@@ -130,24 +130,27 @@ class TestCondition:
         with pytest.raises(TypeError):
             PyCondition.callable_or_none("not_callable", "param")
 
-    def test_callable_or_none_when_arg_is_callable_or_none_does_nothing(self):
+    @pytest.mark.parametrize(
+        "value",
+        [[].append, None],
+    )
+    def test_callable_or_none_when_arg_is_callable_or_none_does_nothing(self, value):
         # Arrange
-        collection = []
-
         # Act
         # Assert: ValueError not raised
-        PyCondition.callable_or_none(collection.append, "param")
-        PyCondition.callable_or_none(None, "param")
+        PyCondition.callable_or_none(value, "param")
 
-    def test_equal_when_args_not_equal_raises_value_error(self):
+    @pytest.mark.parametrize(
+        "id1, id2",
+        [["O-123456", "O-123"],
+         ["O-123456", "P-123456"]],
+    )
+    def test_equal_when_args_not_equal_raises_value_error(self, id1, id2):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            PyCondition.equal("O-123456", "O-123", "order_id1", "order_id2")
-
-        with pytest.raises(ValueError):
-            PyCondition.equal("O-123456", "P-123456", "order_id", "position_id")
+            PyCondition.equal(id1, id2, "id1", "id2")
 
     def test_equal_when_args_are_equal_does_nothing(self):
         # Arrange
@@ -197,12 +200,15 @@ class TestCondition:
         with pytest.raises(TypeError):
             PyCondition.dict_types(value, str, str, "param")
 
-    def test_dict_types_when_contains_correct_types_or_none_does_nothing(self):
+    @pytest.mark.parametrize(
+        "value",
+        [{"key": 1}, {}],
+    )
+    def test_dict_types_when_contains_correct_types_or_none_does_nothing(self, value):
         # Arrange
         # Act
         # Assert: ValueError not raised
-        PyCondition.dict_types({"key": 1}, str, int, "param_name")
-        PyCondition.dict_types({}, str, str, "param_name")
+        PyCondition.dict_types(value, str, int, "param_name")
 
     def test_is_in_when_item_not_in_list_raises_type_error(self):
         # Arrange
