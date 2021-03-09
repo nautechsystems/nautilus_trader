@@ -116,7 +116,7 @@ jobs:
         run: |
           echo "::set-output name=tag_name::v$(poetry version --short)"
           echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
-          echo "::set-output name=body::$(sed -n '/^#/,${p;/^---/q}' RELEASE.md)"
+          echo "::set-output name=body::$(sed -n '/^#/,${p;/^---/q}' RELEASES.md)"
 
       # Create GitHub release
       - name: Create release

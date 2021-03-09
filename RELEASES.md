@@ -1,9 +1,14 @@
 # NautilusTrader 1.108.0 Beta - Release Notes
 
-
+This release executes a major refactoring of `Symbol` and how securities are
+generally identified within the platform. This will allow a smoother integration
+with Interactive Brokers and other exchanges, brokerages and trading
+counterparties.
 
 ## Breaking Changes
-- `AssetClass.EQUITY` becomes `AssetClass.STOCK`.
+- All previous serializations.
+- `Security` replaces `Symbol` with expanded properties.
+- `AssetClass.EQUITY` changed to `AssetClass.STOCK`.
 
 ## Enhancements
 - Add `AssetType.WARRANT`.
