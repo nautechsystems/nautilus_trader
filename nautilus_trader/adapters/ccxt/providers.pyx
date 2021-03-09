@@ -107,7 +107,13 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         cdef Security security
         cdef Instrument instrument
         for k, v in self._client.markets.items():
-            security = Security(k, self.venue, AssetClass.CRYPTO, AssetType.SPOT)
+            asset_type_str = v.get("type")
+            if asset_type_str is not None:
+                asset_type = AssetTypeParser.from_str(asset_type_str.upper())
+            else:
+                asset_type = AssetType.UNDEFINED
+
+            security = Security(k, self.venue, AssetClass.CRYPTO, asset_type)
             instrument = self._parse_instrument(security, v)
             if instrument is None:
                 continue  # Something went wrong in parsing
@@ -168,12 +174,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             raise RuntimeError(f"The {self._client.name} exchange is using "
                                f"SIGNIFICANT_DIGITS precision which is not "
                                f"currently supported in this version.")
-
-        asset_type_str = values.get("type")
-        if asset_type_str is not None:
-            asset_type = AssetTypeParser.from_str(asset_type_str.upper())
-        else:
-            asset_type = AssetType.UNDEFINED
 
         base_currency = values.get("base")
         if base_currency is not None:
