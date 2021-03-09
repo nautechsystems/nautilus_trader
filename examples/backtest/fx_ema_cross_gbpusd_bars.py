@@ -33,7 +33,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
@@ -43,20 +42,19 @@ from tests.test_kit.providers import TestInstrumentProvider
 if __name__ == "__main__":
     # Setup trading instruments
     SIM = Venue("SIM")
-    symbol = Symbol("GBP/USD", SIM)
-    GBPUSD = TestInstrumentProvider.default_fx_ccy(symbol)
+    GBPUSD = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data container
     data = BacktestDataContainer()
     data.add_instrument(GBPUSD)
     data.add_bars(
-        symbol=GBPUSD.symbol,
+        security=GBPUSD.security,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.BID,
         data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
     data.add_bars(
-        symbol=GBPUSD.symbol,
+        security=GBPUSD.security,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.ASK,
         data=TestDataProvider.gbpusd_1min_ask(),  # Stub data from the test kit
@@ -64,7 +62,7 @@ if __name__ == "__main__":
 
     # Instantiate your strategy
     strategy = EMACross(
-        symbol=GBPUSD.symbol,
+        security=GBPUSD.security,
         bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
         fast_ema_period=10,
         slow_ema_period=20,

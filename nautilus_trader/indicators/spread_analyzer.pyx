@@ -18,7 +18,7 @@ from collections import deque
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.tick cimport QuoteTick
 
 
@@ -27,14 +27,14 @@ cdef class SpreadAnalyzer(Indicator):
     Provides various spread analysis metrics.
     """
 
-    def __init__(self, Symbol symbol not None, int capacity):
+    def __init__(self, Security security not None, int capacity):
         """
         Initialize a new instance of the `SpreadAnalyzer` class.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the tick updates.
+        security : Security
+            The security for the tick updates.
         capacity : int
             The max length for the internal `QuoteTick` deque (determines averages).
 
@@ -45,9 +45,9 @@ cdef class SpreadAnalyzer(Indicator):
 
         """
         Condition.positive_int(capacity, "capacity")
-        super().__init__(params=[symbol, capacity])
+        super().__init__(params=[security, capacity])
 
-        self.symbol = symbol
+        self.security = security
         self.capacity = capacity
         self._spreads = deque(maxlen=capacity)
 
@@ -66,11 +66,11 @@ cdef class SpreadAnalyzer(Indicator):
         Raises
         ------
         ValueError
-            If tick.symbol does not equal the analyzers symbol.
+            If tick.security does not equal the analyzers security.
 
         """
         Condition.not_none(tick, "tick")
-        Condition.equal(self.symbol, tick.symbol, "symbol", "tick.symbol")
+        Condition.equal(self.security, tick.security, "security", "tick.security")
 
         # Check initialization
         if not self.initialized:

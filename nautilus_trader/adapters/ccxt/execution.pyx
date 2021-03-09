@@ -46,7 +46,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -207,16 +207,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
-            instrument = self._instrument_provider.get(order.symbol)
+            instrument = self._instrument_provider.get(order.security)
             if instrument is None:
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
-                                f"instrument for {order.symbol} not found.")
+                                f"instrument for {order.security} not found.")
                 continue  # Cannot resolve order
 
             try:
-                response = await self._client.fetch_order(order.id.value, order.symbol.code)
+                response = await self._client.fetch_order(order.id.value, order.security.symbol)
                 trades = await self._client.fetch_my_trades(
-                    symbol=order.symbol.code,
+                    security=order.security.symbol,
                     since=to_unix_time_ms(order.timestamp),
                 )
                 order_trades = [trade for trade in trades if trade["order"] == order.id.value]
@@ -238,7 +238,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     cl_ord_id=order.cl_ord_id,
                     order_id=order.id,
                     execution_id=ExecutionId(str(response["id"])),
-                    symbol=order.symbol,
+                    security=order.security,
                     order_side=order.side,
                     fill_qty=Decimal(f"{trade['amount']:.{instrument.size_precision}}"),
                     cum_qty=cum_qty,
@@ -472,7 +472,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.symbol.code,
+                security=order.security.symbol,
                 type=OrderTypeParser.to_str(order.type).lower(),
                 side=OrderSideParser.to_str(order.side).lower(),
                 amount=str(order.quantity),
@@ -496,7 +496,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot cancel
 
         try:
-            await self._client.cancel_order(order.id.value, order.symbol.code)
+            await self._client.cancel_order(order.id.value, order.security.symbol)
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._cancel_order.__name__)
             return
@@ -616,7 +616,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             cl_ord_id=order.cl_ord_id,
             order_id=order_id,
             execution_id=ExecutionId(event["id"]),
-            symbol=Symbol(event["symbol"], self.venue),
+            security=Security(event["security"], self.venue),
             order_side=OrderSideParser.from_str(event["side"].upper()),
             fill_qty=fill_qty,
             cum_qty=cum_qty,

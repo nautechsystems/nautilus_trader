@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 
@@ -30,5 +30,5 @@ cdef class OandaInstrumentProvider:
 
     cpdef void load_all(self) except *
     cpdef dict get_all(self)
-    cpdef Instrument get(self, Symbol symbol)
+    cpdef Instrument get(self, Security security)
     cdef Instrument _parse_instrument(self, dict values)

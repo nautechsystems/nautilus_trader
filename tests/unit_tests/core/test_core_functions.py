@@ -13,10 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 import numpy as np
-from parameterized import parameterized
+import pytest
 
 from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.core.functions import fast_mean
@@ -27,7 +25,7 @@ from nautilus_trader.core.functions import format_bytes
 from nautilus_trader.core.functions import pad_string
 
 
-class TestFunctionsTests(unittest.TestCase):
+class TestFunctions:
 
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange
@@ -37,7 +35,7 @@ class TestFunctionsTests(unittest.TestCase):
         result = fast_mean(values)
 
         # Assert
-        self.assertEqual(0, result)
+        assert 0 == result
 
     def test_fast_mean_with_values(self):
         # Arrange
@@ -47,8 +45,8 @@ class TestFunctionsTests(unittest.TestCase):
         result = fast_mean(values)
 
         # Assert
-        self.assertEqual(2.75, result)
-        self.assertEqual(2.75, np.mean(values))
+        assert 2.75 == result
+        assert 2.75 == np.mean(values)
 
     def test_fast_mean_iterated_with_empty_list_returns_zero(self):
         # Arrange
@@ -58,7 +56,7 @@ class TestFunctionsTests(unittest.TestCase):
         result = fast_mean_iterated(values, 0.0, 0.0, 6)
 
         # Assert
-        self.assertEqual(0, result)
+        assert 0 == result
 
     def test_fast_mean_iterated_with_values(self):
         # Arrange
@@ -70,8 +68,8 @@ class TestFunctionsTests(unittest.TestCase):
         result2 = fast_mean_iterated(values2, 5.5, np.mean(values2), 5)
 
         # Assert
-        self.assertEqual(np.mean([0.0, 1.1, 2.2]), result1)
-        self.assertAlmostEqual(3.3, result2)
+        assert np.mean([0.0, 1.1, 2.2]) == result1
+        assert pytest.approx(3.3) == result2
 
     def test_std_dev_with_mean(self):
         # Arrange
@@ -83,10 +81,10 @@ class TestFunctionsTests(unittest.TestCase):
         result2 = fast_std_with_mean(values, mean)
 
         # Assert
-        self.assertEqual(np.std(values), result1)
-        self.assertEqual(np.std(values), result2)
-        self.assertAlmostEqual(3.943665807342199, result1)
-        self.assertAlmostEqual(3.943665807342199, result2)
+        assert np.std(values) == result1
+        assert np.std(values) == result2
+        assert 3.943665807342199 == result1
+        assert 3.943665807342199 == result2
 
     def test_basis_points_as_percentage(self):
         # Arrange
@@ -95,22 +93,23 @@ class TestFunctionsTests(unittest.TestCase):
         result2 = basis_points_as_percentage(0.020)
 
         # Assert
-        self.assertEqual(0.0, result1)
-        self.assertAlmostEqual(0.000002, result2)
+        assert 0.0 == result1
+        assert pytest.approx(2.0, 1) == result2
 
-    @parameterized.expand([
-        ["1234", 4, "1234"],
-        ["1234", 5, " 1234"],
-        ["1234", 6, "  1234"],
-        ["1234", 3, "1234"],
-    ])
+    @pytest.mark.parametrize(
+        "original, final_length, expected",
+        [["1234", 4, "1234"],
+         ["1234", 5, " 1234"],
+         ["1234", 6, "  1234"],
+         ["1234", 3, "1234"]],
+    )
     def test_pad_string(self, original, final_length, expected):
         # Arrange
         # Act
         result = pad_string(original, final_length=final_length)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert expected == result
 
     def test_format_bytes(self):
         # Arrange
@@ -123,9 +122,9 @@ class TestFunctionsTests(unittest.TestCase):
         result5 = format_bytes(100000000000000)
 
         # Assert
-        self.assertEqual("1,000.0 bytes", result0)
-        self.assertEqual("97.66 KB", result1)
-        self.assertEqual("9.54 MB", result2)
-        self.assertEqual("953.67 MB", result3)
-        self.assertEqual("9.31 GB", result4)
-        self.assertEqual("90.95 TB", result5)
+        assert "1,000.0 bytes" == result0
+        assert "97.66 KB" == result1
+        assert "9.54 MB" == result2
+        assert "953.67 MB" == result3
+        assert "9.31 GB" == result4
+        assert "90.95 TB" == result5

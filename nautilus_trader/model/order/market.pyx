@@ -28,8 +28,8 @@ from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
 
@@ -56,7 +56,7 @@ cdef class MarketOrder(Order):
         self,
         ClientOrderId cl_ord_id not None,
         StrategyId strategy_id not None,
-        Symbol symbol not None,
+        Security security not None,
         OrderSide order_side,
         Quantity quantity not None,
         TimeInForce time_in_force,
@@ -72,8 +72,8 @@ cdef class MarketOrder(Order):
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        symbol : Symbol
-            The order symbol.
+        security : Security
+            The order security.
         order_side : OrderSide (Enum)
             The order side (BUY or SELL).
         quantity : Quantity
@@ -101,7 +101,7 @@ cdef class MarketOrder(Order):
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
             strategy_id=strategy_id,
-            symbol=symbol,
+            security=security,
             order_side=order_side,
             order_type=OrderType.MARKET,
             quantity=quantity,
@@ -139,7 +139,7 @@ cdef class MarketOrder(Order):
         return MarketOrder(
             cl_ord_id=event.cl_ord_id,
             strategy_id=event.strategy_id,
-            symbol=event.symbol,
+            security=event.security,
             order_side=event.order_side,
             quantity=event.quantity,
             time_in_force=event.time_in_force,
@@ -148,7 +148,7 @@ cdef class MarketOrder(Order):
         )
 
     cdef str status_string_c(self):
-        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.symbol} "
+        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.security} "
                 f"{OrderTypeParser.to_str(self.type)} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}")
 

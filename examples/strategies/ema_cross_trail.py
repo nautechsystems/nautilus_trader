@@ -22,7 +22,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -53,7 +53,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
     def __init__(
         self,
-        symbol: Symbol,
+        security: Security,
         bar_spec: BarSpecification,
         trade_size: Decimal,
         fast_ema_period: int,
@@ -67,8 +67,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the strategy.
+        security : Security
+            The security identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -89,8 +89,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
         super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
-        self.symbol = symbol
-        self.bar_type = BarType(symbol, bar_spec)
+        self.security = security
+        self.bar_type = BarType(security, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
         self.instrument = None  # Initialize in on_start
@@ -107,9 +107,9 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.symbol)
+        self.instrument = self.data.instrument(self.security)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.symbol}")
+            self.log.error(f"Could not find instrument for {self.security}")
             self.stop()
             return
 
@@ -195,7 +195,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
                           f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
 
-        if self.portfolio.is_flat(self.symbol):
+        if self.portfolio.is_flat(self.security):
             if self.fast_ema.value >= self.slow_ema.value:
                 self.entry_buy()
                 self.trailing_stop_sell(bar)
@@ -210,7 +210,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         Users simple buy entry method (example).
         """
         order = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
         )
@@ -222,7 +222,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         Users simple sell entry method (example).
         """
         order = self.order_factory.market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
         )
@@ -241,7 +241,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         price: Decimal = last_bar.high + (self.atr.value * self.trail_atr_multiple)
         order: StopMarketOrder = self.order_factory.stop_market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
             price=Price(price),
@@ -257,7 +257,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         price: Decimal = last_bar.low - (self.atr.value * self.trail_atr_multiple)
         order: StopMarketOrder = self.order_factory.stop_market(
-            symbol=self.symbol,
+            security=self.security,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
             price=Price(price, self.instrument.price_precision),
@@ -279,7 +279,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         if not self.trailing_stop:
             self.log.error("Trailing Stop order was None!")
-            self.flatten_all_positions(self.symbol)
+            self.flatten_all_positions(self.security)
             return
 
         if self.trailing_stop.is_sell:
@@ -329,8 +329,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.symbol)
-        self.flatten_all_positions(self.symbol)
+        self.cancel_all_orders(self.security)
+        self.flatten_all_positions(self.security)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

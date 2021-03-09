@@ -13,15 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 
 
 cdef class OrderBook:
     cdef list _bids
     cdef list _asks
 
-    cdef readonly Symbol symbol
-    """The order book symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Security security
+    """The order book security identifier.\n\n:returns: `Security`"""
     cdef readonly int level
     """The order book data level (L1, L2, L3).\n\n:returns: `int`"""
     cdef readonly int depth

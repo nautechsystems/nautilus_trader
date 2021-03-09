@@ -30,7 +30,7 @@ from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestStubs.symbol_audusd()
+AUDUSD_SIM = TestStubs.security_audusd()
 
 
 class QuoteTickDataWranglerTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.usdjpy_ticks()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
+            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
             data_quotes=tick_data,
             data_bars_bid=None,
             data_bars_ask=None,
@@ -71,7 +71,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
+            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
             data_quotes=None,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
@@ -88,7 +88,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC"), tick_data.iloc[1].name)
         self.assertEqual(Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC"), tick_data.iloc[2].name)
         self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name)
-        self.assertEqual(0, tick_data.iloc[0]["symbol"])
+        self.assertEqual(0, tick_data.iloc[0]["security"])
         self.assertEqual("1", tick_data.iloc[0]["bid_size"])
         self.assertEqual("1", tick_data.iloc[0]["ask_size"])
         self.assertEqual("1", tick_data.iloc[1]["bid_size"])
@@ -102,7 +102,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.audusd_ticks()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd()),
+            instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
             data_quotes=tick_data,
             data_bars_bid=None,
             data_bars_ask=None,
@@ -125,7 +125,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
+            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
             data_quotes=None,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
@@ -162,7 +162,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.ethusdt_trades()
         self.tick_builder = TradeTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
+            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
             data=tick_data,
         )
 
@@ -278,7 +278,7 @@ class TardisQuoteDataWranglerTests(unittest.TestCase):
         self.assertEqual('0.840000', ticks.ask_size[0])
         self.assertEqual('9681.92', ticks.bid[0])
         self.assertEqual('9682.00', ticks.ask[0])
-        self.assertEqual(sorted(ticks.columns), sorted(['symbol', 'ask_size', 'ask', 'bid_size', 'bid']))
+        self.assertEqual(sorted(['ask', 'ask_size', 'bid', 'bid_size', 'security', 'symbol']), sorted(ticks.columns))
 
 
 class TardisTradeDataWranglerTests(unittest.TestCase):

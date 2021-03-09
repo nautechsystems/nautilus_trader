@@ -29,6 +29,8 @@ cdef class AssetTypeParser:
             return "CFD"
         elif value == 6:
             return "OPTION"
+        elif value == 7:
+            return "WARRANT"
         else:
             return "UNDEFINED"
 
@@ -46,6 +48,8 @@ cdef class AssetTypeParser:
             return AssetType.CFD
         elif value == "OPTION":
             return AssetType.OPTION
+        elif value == "WARRANT":
+            return AssetType.WARRANT
         else:
             return AssetType.UNDEFINED
 

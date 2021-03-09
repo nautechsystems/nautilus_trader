@@ -235,7 +235,7 @@ cdef class BacktestEngine:
         for venue in data.venues:
             instruments = []
             for instrument in data.instruments.values():
-                if instrument.symbol.venue == venue:
+                if instrument.security.venue == venue:
                     instruments.append(instrument)
 
             data_client = BacktestMarketDataClient(
@@ -345,7 +345,7 @@ cdef class BacktestEngine:
         # Gather instruments for exchange
         instruments = []
         for instrument in self._data_engine.cache.instruments():
-            if instrument.symbol.venue == venue:
+            if instrument.security.venue == venue:
                 instruments.append(instrument)
 
         # Create exchange
@@ -551,7 +551,7 @@ cdef class BacktestEngine:
         while self._data_producer.has_tick_data:
             tick = self._data_producer.next_tick()
             self._advance_time(tick.timestamp)
-            self._exchanges[tick.symbol.venue].process_tick(tick)
+            self._exchanges[tick.security.venue].process_tick(tick)
             self._data_engine.process(tick)
             self._process_modules(tick.timestamp)
             self.iteration += 1
@@ -655,7 +655,7 @@ cdef class BacktestEngine:
             # Find all positions for exchange venue
             positions = []
             for position in self._exec_engine.cache.positions():
-                if position.symbol.venue == exchange.venue:
+                if position.security.venue == exchange.venue:
                     positions.append(position)
 
             # Calculate statistics

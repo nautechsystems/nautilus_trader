@@ -30,7 +30,7 @@ def contract_details_cl():
     client.connect()
 
     contract = Future(
-        symbol="CL",
+        security="CL",
         lastTradeDateOrContractMonth="20211119",
         exchange="NYMEX",
         currency="USD",

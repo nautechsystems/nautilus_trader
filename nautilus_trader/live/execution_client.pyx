@@ -36,8 +36,8 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -203,7 +203,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         ClientOrderId cl_ord_id,
         OrderId order_id,
         ExecutionId execution_id,
-        Symbol symbol,
+        Security security,
         OrderSide order_side,
         fill_qty: Decimal,
         cum_qty: Decimal,
@@ -214,10 +214,10 @@ cdef class LiveExecutionClient(ExecutionClient):
         LiquiditySide liquidity_side,
         datetime timestamp
     ) except *:
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        cdef Instrument instrument = self._instrument_provider.get(security)
         if instrument is None:
             self._log.error(f"Cannot fill order with {repr(order_id)}, "
-                            f"instrument for {symbol} not found.")
+                            f"instrument for {security} not found.")
             return  # Cannot fill order
 
         # Determine commission
@@ -242,7 +242,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             execution_id,
             PositionId.null_c(),  # Assigned in engine
             StrategyId.null_c(),  # Assigned in engine
-            symbol,
+            security,
             order_side,
             Quantity(fill_qty, instrument.size_precision),
             Quantity(cum_qty, instrument.size_precision),

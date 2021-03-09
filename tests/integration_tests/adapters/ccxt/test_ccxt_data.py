@@ -32,7 +32,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import TradeTick
@@ -44,8 +44,8 @@ from tests.test_kit.stubs import TestStubs
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
-BTCUSDT = Symbol("BTC/USDT", BINANCE)
-ETHUSDT = Symbol("ETH/USDT", BINANCE)
+BTCUSDT = Security("BTC/USDT", BINANCE)
+ETHUSDT = Security("ETH/USDT", BINANCE)
 
 
 # Monkey patch magic mock
@@ -448,7 +448,7 @@ class CCXTDataClientTests(unittest.TestCase):
             request = DataRequest(
                 provider=BINANCE.value,
                 data_type=DataType(TradeTick, metadata={
-                    "Symbol": ETHUSDT,
+                    "Security": ETHUSDT,
                     "FromDateTime": None,
                     "ToDateTime": None,
                     "Limit": 100,
@@ -487,7 +487,7 @@ class CCXTDataClientTests(unittest.TestCase):
             handler = ObjectStorer()
 
             bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-            bar_type = BarType(symbol=ETHUSDT, bar_spec=bar_spec)
+            bar_type = BarType(security=ETHUSDT, bar_spec=bar_spec)
 
             request = DataRequest(
                 provider=BINANCE.value,

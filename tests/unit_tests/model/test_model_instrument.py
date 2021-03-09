@@ -24,15 +24,14 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestInstrumentProvider
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("SIM")))
-USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("SIM")))
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
@@ -156,7 +155,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_commission_for_taker_fx(self):
         # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("IDEALPRO")))
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", Venue("IDEALPRO"))
 
         # Act
         commission = instrument.calculate_commission(
@@ -184,7 +183,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_commission_fx_taker(self):
         # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("IDEALPRO")))
+        instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY", Venue("IDEALPRO"))
 
         # Act
         commission = instrument.calculate_commission(

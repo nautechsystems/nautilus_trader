@@ -66,7 +66,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
@@ -112,10 +112,10 @@ cdef class DataEngine(Component):
         self._correlation_index = {}     # type: dict[UUID, callable]
 
         # Handlers
-        self._instrument_handlers = {}   # type: dict[Symbol, list[callable]]
-        self._order_book_handlers = {}   # type: dict[Symbol, list[callable]]
-        self._quote_tick_handlers = {}   # type: dict[Symbol, list[callable]]
-        self._trade_tick_handlers = {}   # type: dict[Symbol, list[callable]]
+        self._instrument_handlers = {}   # type: dict[Security, list[callable]]
+        self._order_book_handlers = {}   # type: dict[Security, list[callable]]
+        self._quote_tick_handlers = {}   # type: dict[Security, list[callable]]
+        self._trade_tick_handlers = {}   # type: dict[Security, list[callable]]
         self._bar_handlers = {}          # type: dict[BarType, list[callable]]
         self._data_handlers = {}         # type: dict[DataType, list[callable]]
 
@@ -123,7 +123,7 @@ cdef class DataEngine(Component):
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
         # Snapshot providers
-        self._order_book_intervals = {}  # type: dict[(Symbol, int), list[callable]]
+        self._order_book_intervals = {}  # type: dict[(Security, int), list[callable]]
 
         # Public components
         self.portfolio = portfolio
@@ -168,7 +168,7 @@ cdef class DataEngine(Component):
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._instrument_handlers.keys()))
@@ -180,20 +180,20 @@ cdef class DataEngine(Component):
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
-        cdef list interval_symbols = [k[0] for k in self._order_book_intervals.keys()]
-        return sorted(list(self._order_book_handlers.keys()) + interval_symbols)
+        cdef list interval_securities = [k[0] for k in self._order_book_intervals.keys()]
+        return sorted(list(self._order_book_handlers.keys()) + interval_securities)
 
     @property
     def subscribed_quote_ticks(self):
         """
-        The quote tick symbols subscribed to.
+        The quote tick securities subscribed to.
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._quote_tick_handlers.keys()))
@@ -201,11 +201,11 @@ cdef class DataEngine(Component):
     @property
     def subscribed_trade_ticks(self):
         """
-        The trade tick symbols subscribed to.
+        The trade tick securities subscribed to.
 
         Returns
         -------
-        list[Symbol]
+        list[Security]
 
         """
         return sorted(list(self._trade_tick_handlers.keys()))
@@ -446,26 +446,26 @@ cdef class DataEngine(Component):
         if command.data_type.type == Instrument:
             self._handle_subscribe_instrument(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.handler,
             )
         elif command.data_type.type == OrderBook:
             self._handle_subscribe_order_book(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.data_type.metadata,
                 command.handler,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.handler,
             )
         elif command.data_type.type == TradeTick:
             self._handle_subscribe_trade_ticks(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.handler,
             )
         elif command.data_type.type == Bar:
@@ -485,26 +485,26 @@ cdef class DataEngine(Component):
         if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.handler,
             )
         elif command.data_type.type == OrderBook:
             self._handle_unsubscribe_order_book(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.data_type.metadata,
                 command.handler,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.handler,
             )
         elif command.data_type.type == TradeTick:
             self._handle_unsubscribe_trade_ticks(
                 client,
-                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SECURITY),
                 command.handler,
             )
         elif command.data_type.type == Bar:
@@ -523,40 +523,40 @@ cdef class DataEngine(Component):
     cdef inline void _handle_subscribe_instrument(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.callable(handler, "handler")
 
-        if symbol not in self._instrument_handlers:
-            self._instrument_handlers[symbol] = []  # type: list[callable]
-            client.subscribe_instrument(symbol)
-            self._log.info(f"Subscribed to {symbol} <Instrument> data.")
+        if security not in self._instrument_handlers:
+            self._instrument_handlers[security] = []  # type: list[callable]
+            client.subscribe_instrument(security)
+            self._log.info(f"Subscribed to {security} <Instrument> data.")
 
         # Add handler for subscriber
-        if handler not in self._instrument_handlers[symbol]:
-            self._instrument_handlers[symbol].append(handler)
-            self._log.debug(f"Added handler {handler} for {symbol} <Instrument> data.")
+        if handler not in self._instrument_handlers[security]:
+            self._instrument_handlers[security].append(handler)
+            self._log.debug(f"Added handler {handler} for {security} <Instrument> data.")
         else:
-            self._log.warning(f"Handler {handler} already subscribed to {symbol} <Instrument> data.")
+            self._log.warning(f"Handler {handler} already subscribed to {security} <Instrument> data.")
 
     cdef inline void _handle_subscribe_order_book(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         dict metadata,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
         # Always re-subscribe to override previous settings
         client.subscribe_order_book(
-            symbol=symbol,
+            security=security,
             level=metadata.get(LEVEL),
             depth=metadata.get(DEPTH),
             kwargs=metadata.get(KWARGS),
@@ -564,12 +564,12 @@ cdef class DataEngine(Component):
 
         cdef int interval = metadata[INTERVAL]
         if interval > 0:
-            key = (symbol, interval)
+            key = (security, interval)
             if key not in self._order_book_intervals:
                 self._order_book_intervals[key] = []
                 now = self._clock.utc_now()
                 start_time = now - timedelta(seconds=now.second % interval, microseconds=now.microsecond)
-                timer_name = f"OrderBookSnapshot-{symbol}-{interval}"
+                timer_name = f"OrderBookSnapshot-{security}-{interval}"
                 self._clock.set_timer(
                     name=timer_name,
                     interval=timedelta(seconds=interval),
@@ -580,67 +580,67 @@ cdef class DataEngine(Component):
                 self._log.debug(f"Set timer {timer_name}.")
 
             self._order_book_intervals[key].append(handler)
-            self._log.info(f"Subscribed to {symbol} <OrderBook> "
+            self._log.info(f"Subscribed to {security} <OrderBook> "
                            f"{interval} second intervals data.")
             return
 
-        if symbol not in self._order_book_handlers:
+        if security not in self._order_book_handlers:
             # Setup handlers
-            self._order_book_handlers[symbol] = []  # type: list[callable]
-            self._log.info(f"Subscribed to {symbol} <OrderBook> data.")
+            self._order_book_handlers[security] = []  # type: list[callable]
+            self._log.info(f"Subscribed to {security} <OrderBook> data.")
 
         # Add handler for subscriber
-        if handler not in self._order_book_handlers[symbol]:
-            self._order_book_handlers[symbol].append(handler)
-            self._log.debug(f"Added {handler} for {symbol} <OrderBook> data.")
+        if handler not in self._order_book_handlers[security]:
+            self._order_book_handlers[security].append(handler)
+            self._log.debug(f"Added {handler} for {security} <OrderBook> data.")
         else:
-            self._log.warning(f"Handler {handler} already subscribed to {symbol} <OrderBook> data.")
+            self._log.warning(f"Handler {handler} already subscribed to {security} <OrderBook> data.")
 
     cdef inline void _handle_subscribe_quote_ticks(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.callable(handler, "handler")
 
-        if symbol not in self._quote_tick_handlers:
+        if security not in self._quote_tick_handlers:
             # Setup handlers
-            self._quote_tick_handlers[symbol] = []  # type: list[callable]
-            client.subscribe_quote_ticks(symbol)
-            self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
+            self._quote_tick_handlers[security] = []  # type: list[callable]
+            client.subscribe_quote_ticks(security)
+            self._log.info(f"Subscribed to {security} <QuoteTick> data.")
 
         # Add handler for subscriber
-        if handler not in self._quote_tick_handlers[symbol]:
-            self._quote_tick_handlers[symbol].append(handler)
-            self._log.debug(f"Added {handler} for {symbol} <QuoteTick> data.")
+        if handler not in self._quote_tick_handlers[security]:
+            self._quote_tick_handlers[security].append(handler)
+            self._log.debug(f"Added {handler} for {security} <QuoteTick> data.")
         else:
-            self._log.warning(f"Handler {handler} already subscribed to {symbol} <QuoteTick> data.")
+            self._log.warning(f"Handler {handler} already subscribed to {security} <QuoteTick> data.")
 
     cdef inline void _handle_subscribe_trade_ticks(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.callable(handler, "handler")
 
-        if symbol not in self._trade_tick_handlers:
+        if security not in self._trade_tick_handlers:
             # Setup handlers
-            self._trade_tick_handlers[symbol] = []  # type: list[callable]
-            client.subscribe_trade_ticks(symbol)
-            self._log.info(f"Subscribed to {symbol} <TradeTick> data.")
+            self._trade_tick_handlers[security] = []  # type: list[callable]
+            client.subscribe_trade_ticks(security)
+            self._log.info(f"Subscribed to {security} <TradeTick> data.")
 
         # Add handler for subscriber
-        if handler not in self._trade_tick_handlers[symbol]:
-            self._trade_tick_handlers[symbol].append(handler)
-            self._log.debug(f"Added {handler} for {symbol} <TradeTick> data.")
+        if handler not in self._trade_tick_handlers[security]:
+            self._trade_tick_handlers[security].append(handler)
+            self._log.debug(f"Added {handler} for {security} <TradeTick> data.")
         else:
-            self._log.warning(f"Handler {handler} already subscribed to {symbol} <TradeTick> data.")
+            self._log.warning(f"Handler {handler} already subscribed to {security} <TradeTick> data.")
 
     cdef inline void _handle_subscribe_bars(
         self,
@@ -701,137 +701,137 @@ cdef class DataEngine(Component):
     cdef inline void _handle_unsubscribe_instrument(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.callable(handler, "handler")
 
-        if symbol not in self._instrument_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <Instrument> data.")
+        if security not in self._instrument_handlers:
+            self._log.warning(f"Handler {handler} not subscribed to {security} <Instrument> data.")
             return
 
         # Remove subscribers handler
-        if handler in self._instrument_handlers[symbol]:
-            self._instrument_handlers[symbol].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {symbol} <Instrument> data.")
+        if handler in self._instrument_handlers[security]:
+            self._instrument_handlers[security].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {security} <Instrument> data.")
         else:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <Instrument> data.")
+            self._log.warning(f"Handler {handler} not subscribed to {security} <Instrument> data.")
 
-        if not self._instrument_handlers[symbol]:
-            # No more handlers for symbol
-            del self._instrument_handlers[symbol]
-            client.unsubscribe_instrument(symbol)
-            self._log.info(f"Unsubscribed from {symbol} <Instrument> data.")
+        if not self._instrument_handlers[security]:
+            # No more handlers for security
+            del self._instrument_handlers[security]
+            client.unsubscribe_instrument(security)
+            self._log.info(f"Unsubscribed from {security} <Instrument> data.")
 
     cdef inline void _handle_unsubscribe_order_book(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         dict metadata,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
         cdef int interval = metadata.get(INTERVAL)
         if interval > 0:
             # Remove interval subscribers handler
-            key = (symbol, interval)
+            key = (security, interval)
             handlers = self._order_book_intervals.get(key)
             if not handlers:
-                self._log.warning(f"No order book snapshot handlers for {symbol}"
+                self._log.warning(f"No order book snapshot handlers for {security}"
                                   f"at {interval} second intervals.")
                 return
 
             if handler not in handlers:
-                self._log.warning(f"Handler {handler} not subscribed to {symbol} "
+                self._log.warning(f"Handler {handler} not subscribed to {security} "
                                   f"<OrderBook> data at {interval} second intervals.")
                 return
 
             handlers.remove(handler)
             if len(handlers) == 0:
-                timer_name = f"OrderBookSnapshot-{symbol}-{interval}"
+                timer_name = f"OrderBookSnapshot-{security}-{interval}"
                 self._clock.cancel_timer(timer_name)
                 self._log.debug(f"Cancelled timer {timer_name}.")
                 del self._order_book_intervals[key]
-                self._log.info(f"Unsubscribed from {symbol} <OrderBook> "
+                self._log.info(f"Unsubscribed from {security} <OrderBook> "
                                f"{interval} second intervals data.")
             return
 
-        if symbol not in self._order_book_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <OrderBook> data.")
+        if security not in self._order_book_handlers:
+            self._log.warning(f"Handler {handler} not subscribed to {security} <OrderBook> data.")
             return
 
         # Remove subscribers handler
-        if handler in self._order_book_handlers[symbol]:
-            self._order_book_handlers[symbol].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {symbol} <OrderBook> data.")
+        if handler in self._order_book_handlers[security]:
+            self._order_book_handlers[security].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {security} <OrderBook> data.")
         else:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <OrderBook> data.")
+            self._log.warning(f"Handler {handler} not subscribed to {security} <OrderBook> data.")
 
-        if not self._order_book_handlers[symbol]:
-            # No more handlers for symbol
-            del self._order_book_handlers[symbol]
-            client.unsubscribe_order_book(symbol)
-            self._log.info(f"Unsubscribed from {symbol} <OrderBook> data.")
+        if not self._order_book_handlers[security]:
+            # No more handlers for security
+            del self._order_book_handlers[security]
+            client.unsubscribe_order_book(security)
+            self._log.info(f"Unsubscribed from {security} <OrderBook> data.")
 
     cdef inline void _handle_unsubscribe_quote_ticks(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.callable(handler, "handler")
 
-        if symbol not in self._quote_tick_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <QuoteTick> data.")
+        if security not in self._quote_tick_handlers:
+            self._log.warning(f"Handler {handler} not subscribed to {security} <QuoteTick> data.")
             return
 
         # Remove subscribers handler
-        if handler in self._quote_tick_handlers[symbol]:
-            self._quote_tick_handlers[symbol].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {symbol} <QuoteTick> data.")
+        if handler in self._quote_tick_handlers[security]:
+            self._quote_tick_handlers[security].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {security} <QuoteTick> data.")
         else:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <QuoteTick> data.")
+            self._log.warning(f"Handler {handler} not subscribed to {security} <QuoteTick> data.")
 
-        if not self._quote_tick_handlers[symbol]:
-            # No more handlers for symbol
-            del self._quote_tick_handlers[symbol]
-            client.unsubscribe_quote_ticks(symbol)
-            self._log.info(f"Unsubscribed from {symbol} <QuoteTick> data.")
+        if not self._quote_tick_handlers[security]:
+            # No more handlers for security
+            del self._quote_tick_handlers[security]
+            client.unsubscribe_quote_ticks(security)
+            self._log.info(f"Unsubscribed from {security} <QuoteTick> data.")
 
     cdef inline void _handle_unsubscribe_trade_ticks(
         self,
         MarketDataClient client,
-        Symbol symbol,
+        Security security,
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(security, "security")
         Condition.callable(handler, "handler")
 
-        if symbol not in self._trade_tick_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <TradeTick> data.")
+        if security not in self._trade_tick_handlers:
+            self._log.warning(f"Handler {handler} not subscribed to {security} <TradeTick> data.")
             return
 
         # Remove subscribers handler
-        if handler in self._trade_tick_handlers[symbol]:
-            self._trade_tick_handlers[symbol].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {symbol} <TradeTick> data.")
+        if handler in self._trade_tick_handlers[security]:
+            self._trade_tick_handlers[security].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {security} <TradeTick> data.")
         else:
-            self._log.warning(f"Handler {handler} not subscribed to {symbol} <TradeTick> data.")
+            self._log.warning(f"Handler {handler} not subscribed to {security} <TradeTick> data.")
 
-        if not self._trade_tick_handlers[symbol]:
-            # No more handlers for symbol
-            del self._trade_tick_handlers[symbol]
-            client.unsubscribe_trade_ticks(symbol)
-            self._log.info(f"Unsubscribed from {symbol} <TradeTick> data.")
+        if not self._trade_tick_handlers[security]:
+            # No more handlers for security
+            del self._trade_tick_handlers[security]
+            client.unsubscribe_trade_ticks(security)
+            self._log.info(f"Unsubscribed from {security} <TradeTick> data.")
 
     cdef inline void _handle_unsubscribe_bars(
         self,
@@ -911,15 +911,15 @@ cdef class DataEngine(Component):
 
         if request.data_type.type == Instrument:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
-            symbol = request.data_type.metadata.get(SYMBOL)
-            if symbol:
-                client.request_instrument(symbol, request.id)
+            security = request.data_type.metadata.get(SECURITY)
+            if security:
+                client.request_instrument(security, request.id)
             else:
                 client.request_instruments(request.id)
         elif request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
-                request.data_type.metadata.get(SYMBOL),
+                request.data_type.metadata.get(SECURITY),
                 request.data_type.metadata.get(FROM_DATETIME),
                 request.data_type.metadata.get(TO_DATETIME),
                 request.data_type.metadata.get(LIMIT, 0),
@@ -928,7 +928,7 @@ cdef class DataEngine(Component):
         elif request.data_type.type == TradeTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_trade_ticks(
-                request.data_type.metadata.get(SYMBOL),
+                request.data_type.metadata.get(SECURITY),
                 request.data_type.metadata.get(FROM_DATETIME),
                 request.data_type.metadata.get(TO_DATETIME),
                 request.data_type.metadata.get(LIMIT, 0),
@@ -972,7 +972,7 @@ cdef class DataEngine(Component):
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
 
-        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol, [])
+        cdef list instrument_handlers = self._instrument_handlers.get(instrument.security, [])
         for handler in instrument_handlers:
             handler(instrument)
 
@@ -982,24 +982,24 @@ cdef class DataEngine(Component):
         # Send to portfolio as a priority
         self.portfolio.update_tick(tick)
 
-        # Send to all registered tick handlers for that symbol
-        cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol, [])
+        # Send to all registered tick handlers for that security
+        cdef list tick_handlers = self._quote_tick_handlers.get(tick.security, [])
         for handler in tick_handlers:
             handler(tick)
 
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *:
         self.cache.add_trade_tick(tick)
 
-        # Send to all registered tick handlers for that symbol
-        cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol, [])
+        # Send to all registered tick handlers for that security
+        cdef list tick_handlers = self._trade_tick_handlers.get(tick.security, [])
         for handler in tick_handlers:
             handler(tick)
 
     cdef inline void _handle_order_book(self, OrderBook order_book) except *:
         self.cache.add_order_book(order_book)
 
-        # Send to all registered order book handlers for that symbol
-        cdef list order_book_handlers = self._order_book_handlers.get(order_book.symbol, [])
+        # Send to all registered order book handlers for that security
+        cdef list order_book_handlers = self._order_book_handlers.get(order_book.security, [])
         for handler in order_book_handlers:
             handler(order_book)
 
@@ -1114,14 +1114,14 @@ cdef class DataEngine(Component):
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
         cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
-        cdef Symbol symbol = Symbol.from_str_c(pieces[0])
+        cdef Security security = Security.from_serializable_str_c(pieces[0])
         cdef int interval = int(pieces[2])
-        cdef list handlers = self._order_book_intervals.get((symbol, interval))
+        cdef list handlers = self._order_book_intervals.get((security, interval))
         if handlers is None:
             self._log.error("No handlers")
             return
 
-        cdef OrderBook order_book = self.cache.order_book(symbol)
+        cdef OrderBook order_book = self.cache.order_book(security)
         if order_book:
             for handler in handlers:
                 handler(order_book)
@@ -1167,9 +1167,9 @@ cdef class DataEngine(Component):
 
         # Subscribe to required data
         if bar_type.spec.price_type == PriceType.LAST:
-            self._handle_subscribe_trade_ticks(client, bar_type.symbol, aggregator.handle_trade_tick)
+            self._handle_subscribe_trade_ticks(client, bar_type.security, aggregator.handle_trade_tick)
         else:
-            self._handle_subscribe_quote_ticks(client, bar_type.symbol, aggregator.handle_quote_tick)
+            self._handle_subscribe_quote_ticks(client, bar_type.security, aggregator.handle_quote_tick)
 
     cdef inline void _hydrate_aggregator(
         self,
@@ -1188,7 +1188,7 @@ cdef class DataEngine(Component):
         bulk_updater = BulkTimeBarUpdater(aggregator)
 
         metadata = {
-            SYMBOL: bar_type.symbol,
+            SECURITY: bar_type.security,
             FROM_DATETIME: aggregator.get_start_time(),
             TO_DATETIME: None,
         }
@@ -1196,7 +1196,7 @@ cdef class DataEngine(Component):
         # noinspection bulk_updater.receive
         # noinspection PyUnresolvedReferences
         request = DataRequest(
-            provider=bar_type.symbol.venue.value,
+            provider=bar_type.security.venue.value,
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
@@ -1217,9 +1217,9 @@ cdef class DataEngine(Component):
 
         # Unsubscribe from update ticks
         if bar_type.spec.price_type == PriceType.LAST:
-            self._handle_unsubscribe_trade_ticks(client, bar_type.symbol, aggregator.handle_trade_tick)
+            self._handle_unsubscribe_trade_ticks(client, bar_type.security, aggregator.handle_trade_tick)
         else:
-            self._handle_unsubscribe_quote_ticks(client, bar_type.symbol, aggregator.handle_quote_tick)
+            self._handle_unsubscribe_quote_ticks(client, bar_type.security, aggregator.handle_quote_tick)
 
         # Remove from aggregators
         del self._bar_aggregators[bar_type]
@@ -1244,7 +1244,7 @@ cdef class DataEngine(Component):
         # noinspection bar_builder.receive
         # noinspection PyUnresolvedReferences
         self._handle_request_quote_ticks(
-            bar_type.symbol,
+            bar_type.security,
             from_datetime,
             to_datetime,
             ticks_to_order,
