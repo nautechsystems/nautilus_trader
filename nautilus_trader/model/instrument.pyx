@@ -388,95 +388,90 @@ cdef class Instrument:
 
 
 # # TODO: Finish docs
-# cdef class Future(Instrument):
-#     """
-#     Represents a futures contract.
-#     """
-#
-#     def __init__(
-#         self,
-#         Security security not None,
-#         AssetClass asset_class,  # Can be UNDEFINED (0)
-#         int contract_id,
-#         str local_symbol not None,
-#         str trading_class not None,
-#         str market_name not None,
-#         str long_name not None,
-#         str contract_month not None,
-#         str time_zone_id not None,
-#         str trading_hours not None,
-#         str liquid_hours not None,
-#         str last_trade_time not None,
-#         int price_precision,
-#         tick_size not None: Decimal,
-#         Quantity lot_size not None,
-#         datetime timestamp not None,
-#     ):
-#         """
-#         Initialize a new instance of the `Future` class.
-#
-#         Parameters
-#         ----------
-#         security : Security
-#             The security identifier.
-#         asset_class : AssetClass (Enum)
-#             The asset class (can be UNDEFINED).
-#         price_precision : int
-#             The price decimal precision.
-#         tick_size : Decimal
-#             The tick size.
-#         timestamp : datetime
-#             The timestamp the instrument was created/updated at.
-#
-#         Raises
-#         ------
-#         ValueError
-#             If price_precision is negative (< 0).
-#         ValueError
-#             If tick_size is not positive (> 0).
-#         ValueError
-#             If multiplier is not positive (> 0).
-#         ValueError
-#             If lot size is not positive (> 0).
-#
-#         """
-#         super().__init__(
-#             security=security,  # TODO: Refactor
-#             asset_class=asset_class,
-#             asset_type=AssetType.FUTURE,
-#             base_currency=None,  # N/A
-#             quote_currency=Currency.from_str_c(security.currency),
-#             settlement_currency=Currency.from_str_c(security.currency),
-#             is_inverse=False,
-#             price_precision=price_precision,
-#             size_precision=0,
-#             tick_size=tick_size,
-#             multiplier=Decimal(str(security.multiplier)),
-#             leverage=Decimal(1),
-#             lot_size=lot_size,
-#             max_quantity=None,
-#             min_quantity=Quantity(1),
-#             max_notional=None,
-#             min_notional=None,
-#             max_price=None,
-#             min_price=None,
-#             margin_init=Decimal(),
-#             margin_maint=Decimal(),
-#             maker_fee=Decimal(),
-#             taker_fee=Decimal(),
-#             financing={},
-#             timestamp=timestamp,
-#             info={},
-#         )
-#
-#         self.contract_id = contract_id
-#         self.last_trade_date_or_contract_month = security.expiry
-#         self.local_symbol = local_symbol
-#         self.trading_class = trading_class
-#         self.market_name = market_name
-#         self.long_name = long_name
-#         self.contract_month = contract_month
-#         self.time_zone_id = time_zone_id
-#         self.trading_hours = trading_hours
-#         self.liquid_hours = liquid_hours
-#         self.last_trade_time = last_trade_time
+cdef class Future(Instrument):
+    """
+    Represents a futures contract.
+    """
+
+    def __init__(
+        self,
+        Security security not None,
+        int contract_id,
+        str local_symbol not None,
+        str trading_class not None,
+        str market_name not None,
+        str long_name not None,
+        str contract_month not None,
+        str time_zone_id not None,
+        str trading_hours not None,
+        str liquid_hours not None,
+        str last_trade_time not None,
+        int price_precision,
+        tick_size not None: Decimal,
+        Quantity lot_size not None,
+        datetime timestamp not None,
+    ):
+        """
+        Initialize a new instance of the `Future` class.
+
+        Parameters
+        ----------
+        security : Security
+            The security identifier.
+        price_precision : int
+            The price decimal precision.
+        tick_size : Decimal
+            The tick size.
+        timestamp : datetime
+            The timestamp the instrument was created/updated at.
+
+        Raises
+        ------
+        ValueError
+            If price_precision is negative (< 0).
+        ValueError
+            If tick_size is not positive (> 0).
+        ValueError
+            If multiplier is not positive (> 0).
+        ValueError
+            If lot size is not positive (> 0).
+
+        """
+        super().__init__(
+            security=security,
+            base_currency=None,  # N/A
+            quote_currency=security.currency,
+            settlement_currency=security.currency,
+            is_inverse=False,
+            price_precision=price_precision,
+            size_precision=0,
+            tick_size=tick_size,
+            multiplier=Decimal(security.multiplier),
+            leverage=Decimal(1),
+            lot_size=lot_size,
+            max_quantity=None,
+            min_quantity=Quantity(1),
+            max_notional=None,
+            min_notional=None,
+            max_price=None,
+            min_price=None,
+            margin_init=Decimal(),
+            margin_maint=Decimal(),
+            maker_fee=Decimal(),
+            taker_fee=Decimal(),
+            financing={},
+            timestamp=timestamp,
+            info={},
+        )
+
+        self.contract_id = contract_id
+        self.last_trade_date_or_contract_month = security.expiry
+        self.local_symbol = local_symbol
+        self.trading_class = trading_class
+        self.market_name = market_name
+        self.long_name = long_name
+        self.contract_month = contract_month
+        self.time_zone_id = time_zone_id
+        self.trading_hours = trading_hours
+        self.liquid_hours = liquid_hours
+        self.last_trade_time = last_trade_time
