@@ -991,7 +991,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Parameters
         ----------
         security : Security, optional
-            The security query filter.
+            The security identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1015,7 +1015,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Parameters
         ----------
         security : Security, optional
-            The security query filter.
+            The security identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1039,7 +1039,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Parameters
         ----------
         security : Security, optional
-            The security query filter.
+            The security identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1062,7 +1062,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Parameters
         ----------
         security : Security, optional
-            The security query filter.
+            The security identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1085,7 +1085,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Parameters
         ----------
         security : Security, optional
-            The security query filter.
+            The security identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1108,7 +1108,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Parameters
         ----------
         security : Security, optional
-            The security query filter.
+            The security identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 

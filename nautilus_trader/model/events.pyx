@@ -156,7 +156,7 @@ cdef class OrderInitialized(OrderEvent):
         strategy_id : StrategyId
             The strategy identifier associated with the order.
         security : Security
-            The security identifier.
+            The order security identifier.
         order_side : OrderSide (Enum)
             The order side.
         order_type : OrderType (Enum)

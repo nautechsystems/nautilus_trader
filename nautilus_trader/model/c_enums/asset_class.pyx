@@ -29,6 +29,8 @@ cdef class AssetClassParser:
             return "INDEX"
         elif value == 6:
             return "CRYPTO"
+        elif value == 7:
+            return "BETTING"
         else:
             return "UNDEFINED"
 
@@ -46,6 +48,8 @@ cdef class AssetClassParser:
             return AssetClass.INDEX
         elif value == "CRYPTO":
             return AssetClass.CRYPTO
+        elif value == "BETTING":
+            return AssetClass.BETTING
         else:
             return AssetClass.UNDEFINED
 

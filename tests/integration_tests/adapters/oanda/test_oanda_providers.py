@@ -23,6 +23,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from tests import TESTS_PACKAGE_ROOT
@@ -92,7 +93,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
         provider = OandaInstrumentProvider(client=mock_client, account_id="001")
 
-        security = Security("AUD/USD", Venue("OANDA"))
+        security = Security(Symbol("AUD/USD"), Venue("OANDA"), AssetClass.FX, AssetType.SPOT)
 
         # Act
         instrument = provider.get(security)
@@ -111,7 +112,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
         provider = OandaInstrumentProvider(client=mock_client, account_id="001", load_all=True)
 
-        security = Security("AUD/USD", Venue("OANDA"), AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("AUD/USD"), Venue("OANDA"), AssetClass.FX, AssetType.SPOT)
 
         # Act
         instrument = provider.get(security)

@@ -94,7 +94,7 @@ cdef class QuoteTickDataWrangler:
         Parameters
         ----------
         security_indexer : int
-            The security indexer for the built ticks.
+            The security identifier indexer for the built ticks.
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is None then won't shuffle.
@@ -294,7 +294,7 @@ cdef class TradeTickDataWrangler:
         Parameters
         ----------
         security_indexer : int
-            The security indexer for the built ticks.
+            The security identifier indexer for the built ticks.
 
         """
         processed_trades = pd.DataFrame(index=self._data_trades.index)

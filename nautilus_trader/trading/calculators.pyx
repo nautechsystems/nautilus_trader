@@ -53,9 +53,9 @@ cdef class ExchangeRateCalculator:
         price_type : PriceType (Enum)
             The price type for conversion.
         bid_quotes : dict
-            The dictionary of currency pair bid quotes dict[str, Decimal].
+            The dictionary of currency pair bid quotes dict[Symbol, Decimal].
         ask_quotes : dict
-            The dictionary of currency pair ask quotes dict[str, Decimal].
+            The dictionary of currency pair ask quotes dict[Symbol, Decimal].
 
         Returns
         -------
@@ -102,11 +102,11 @@ cdef class ExchangeRateCalculator:
         cdef dict exchange_rates = {}
 
         # Build quote table
-        for security, quote in calculation_quotes.items():
+        for symbol, quote in calculation_quotes.items():
             assert isinstance(quote, Decimal), f"quote must be type Decimal, was {type(quote)}"
 
             # Get security codes
-            pieces = security.partition('/')
+            pieces = symbol.partition('/')
             code_lhs = pieces[0]
             code_rhs = pieces[2]
             codes.add(code_lhs)
@@ -237,7 +237,7 @@ cdef class RolloverInterestCalculator:
         Parameters
         ----------
         security : Security
-            The forex security for the calculation.
+            The forex security identifier for the calculation.
         date : date
             The date for the overnight rate.
 
@@ -257,10 +257,10 @@ cdef class RolloverInterestCalculator:
         """
         Condition.not_none(security, "security")
         Condition.not_none(date, "timestamp")
-        Condition.in_range_int(len(security.symbol), 6, 7, "len(security)")
+        Condition.in_range_int(len(security.symbol.value), 6, 7, "len(security)")
 
-        cdef str base_currency = security.symbol[:3]
-        cdef str quote_currency = security.symbol[-3:]
+        cdef str base_currency = security.symbol.value[:3]
+        cdef str quote_currency = security.symbol.value[-3:]
         cdef str time_monthly = f"{date.year}-{str(date.month).zfill(2)}"
         cdef str time_quarter = f"{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}"
 

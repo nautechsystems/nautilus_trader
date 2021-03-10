@@ -22,12 +22,12 @@ from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 
-BITMEX = Venue("BITMEX")
-BINANCE = Venue("BINANCE")
+BITMEX = Exchange("BITMEX")
+BINANCE = Exchange("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

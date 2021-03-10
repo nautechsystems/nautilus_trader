@@ -535,7 +535,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The security for tick updates.
+            The security identifier for tick updates.
         indicator : Indicator
             The indicator to register.
 
@@ -563,7 +563,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The security for tick updates.
+            The security identifier for tick updates.
         indicator : indicator
             The indicator to register.
 
@@ -754,7 +754,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The instrument security to subscribe to.
+            The instrument security identifier to subscribe to.
 
         """
         Condition.not_none(security, "security")
@@ -792,7 +792,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The order book security to subscribe to.
+            The order book security identifier to subscribe to.
         level : int
             The order book data level (L1, L2, L3).
         depth : int, optional
@@ -841,7 +841,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The tick security to subscribe to.
+            The tick security identifier to subscribe to.
 
         """
         Condition.not_none(security, "security")
@@ -864,7 +864,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The tick security to subscribe to.
+            The tick security identifier to subscribe to.
 
         """
         Condition.not_none(security, "security")
@@ -935,7 +935,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The instrument security to unsubscribe from.
+            The instrument security identifier to unsubscribe from.
 
         """
         Condition.not_none(security, "security")
@@ -961,7 +961,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The order book security to subscribe to.
+            The order book security identifier to subscribe to.
         interval : int, optional
             The order book snapshot interval in seconds.
 
@@ -989,7 +989,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The tick security to unsubscribe from.
+            The tick security identifier to unsubscribe from.
 
         """
         Condition.not_none(security, "security")
@@ -1012,7 +1012,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The tick security to unsubscribe from.
+            The tick security identifier to unsubscribe from.
 
         """
         Condition.not_none(security, "security")
@@ -1092,7 +1092,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -1138,7 +1138,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -1417,7 +1417,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security, optional
-            The security for the orders to cancel.
+            The security identifier for the orders to cancel.
 
         """
         Condition.not_none(self._exec_engine, "self._exec_engine")
@@ -1491,7 +1491,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         security : Security, optional
-            The security for the positions to flatten.
+            The security identifier for the positions to flatten.
 
         """
         Condition.not_none(security, "security")

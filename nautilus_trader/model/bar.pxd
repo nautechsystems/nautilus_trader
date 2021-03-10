@@ -39,11 +39,11 @@ cdef class BarSpecification:
 
 cdef class BarType:
     cdef readonly Security security
-    """The security of the bar type.\n\n:returns: `Security`"""
+    """The security identifier of the bar type.\n\n:returns: `Security`"""
     cdef readonly BarSpecification spec
     """The specification of the bar type.\n\n:returns: `BarSpecification`"""
     cdef readonly bint is_internal_aggregation
-    """If bar aggregation is internal to the platform.\n\n:returns: `bint`"""
+    """If bar aggregation is internal to the platform.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef BarType from_serializable_str_c(str value, bint internal_aggregation=*)

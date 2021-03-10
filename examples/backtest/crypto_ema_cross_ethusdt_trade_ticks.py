@@ -36,8 +36,9 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Money
 from tests.test_kit.providers import TestDataProvider
 
@@ -48,8 +49,15 @@ if __name__ == "__main__":
     print("Loading instruments...")
     instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
 
-    BINANCE = Venue("BINANCE")
-    ETHUSDT_BINANCE = instruments.get(Security("ETH/USDT", BINANCE, AssetClass.CRYPTO, AssetType.SPOT))
+    BINANCE = Exchange("BINANCE")
+    security = Security(
+        symbol=Symbol("ETH/USDT"),
+        venue=BINANCE,
+        asset_class=AssetClass.CRYPTO,
+        asset_type=AssetType.SPOT,
+    )
+
+    ETHUSDT_BINANCE = instruments.get(security)
 
     # Setup data container
     data = BacktestDataContainer()

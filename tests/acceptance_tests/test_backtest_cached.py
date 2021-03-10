@@ -30,6 +30,7 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -264,7 +265,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.venue = Venue("BINANCE")
+        self.venue = Exchange("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
         data = BacktestDataContainer()
         data.add_instrument(self.ethusdt)
@@ -310,7 +311,7 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.venue = Venue("BINANCE")
+        self.venue = Exchange("BINANCE")
         self.instrument = TestInstrumentProvider.btcusdt_binance()
         data = BacktestDataContainer()
         data.add_instrument(self.instrument)

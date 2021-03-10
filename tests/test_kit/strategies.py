@@ -107,7 +107,7 @@ class EMACross(TradingStrategy):
         Parameters
         ----------
         security : Security
-            The security for the strategy.
+            The security identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -122,7 +122,7 @@ class EMACross(TradingStrategy):
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(order_id_tag=security.symbol.replace('/', "") + extra_id_tag)
+        super().__init__(order_id_tag=security.symbol.value.replace('/', "") + extra_id_tag)
 
         # Custom strategy variables
         self.security = security

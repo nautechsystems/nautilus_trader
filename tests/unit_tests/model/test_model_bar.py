@@ -23,7 +23,9 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -110,8 +112,8 @@ class TestBarType:
 
     def test_bar_type_equality(self):
         # Arrange
-        security1 = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
-        security2 = Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security1 = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security2 = Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type1 = BarType(security1, bar_spec)
         bar_type2 = BarType(security1, bar_spec)
@@ -125,7 +127,7 @@ class TestBarType:
 
     def test_bar_type_to_serializable_string(self):
         # Arrange
-        security = Security("AUD/USD", Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(security, bar_spec)
 
@@ -137,7 +139,7 @@ class TestBarType:
 
     def test_bar_type_hash_str_and_repr(self):
         # Arrange
-        security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(security, bar_spec)
 
@@ -160,10 +162,10 @@ class TestBarType:
 
     @pytest.mark.parametrize(
         "value, expected",
-        [["AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", BarType(Security("AUD/USD", Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
-         ["GBP/USD.SIM,FX,SPOT-1000-TICK-MID", BarType(Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
-         ["AAPL.NYSE,STOCK,SPOT-1-HOUR-MID", BarType(Security("AAPL", Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
-         ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
+        [["AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", BarType(Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
+         ["GBP/USD.SIM,FX,SPOT-1000-TICK-MID", BarType(Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
+         ["AAPL.NYSE,STOCK,SPOT-1-HOUR-MID", BarType(Security(Symbol("AAPL"), Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
+         ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
@@ -311,7 +313,7 @@ class TestBarData:
 
     def test_str_repr(self):
         # Arrange
-        security = Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(security, bar_spec)
         bar = Bar(

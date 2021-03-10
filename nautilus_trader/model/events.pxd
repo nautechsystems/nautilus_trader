@@ -157,7 +157,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly Security security
-    """The security identifier.\n\n:returns: `Security`"""
+    """The order security identifier.\n\n:returns: `Security`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly Quantity fill_qty

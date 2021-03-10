@@ -40,4 +40,4 @@ To contribute, the following steps should be followed;
 - Keep PR's small and focused.
 - Reference the related GitHub issue(s) in the PR comment.
 
-Thank you for your interest in _NautilusTrader_!
+Thank you for your interest in NautilusTrader!

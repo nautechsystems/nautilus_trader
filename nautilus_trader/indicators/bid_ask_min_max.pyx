@@ -36,7 +36,7 @@ cdef class BidAskMinMax(Indicator):
         Parameters
         ----------
         security : Security
-            The security for inbound ticks.
+            The security identifier for inbound ticks.
         lookback : timedelta
             The look back duration in time.
 

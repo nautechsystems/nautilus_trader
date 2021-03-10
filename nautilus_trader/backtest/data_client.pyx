@@ -374,7 +374,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -409,7 +409,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
