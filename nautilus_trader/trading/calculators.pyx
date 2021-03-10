@@ -237,7 +237,7 @@ cdef class RolloverInterestCalculator:
         Parameters
         ----------
         security : Security
-            The forex security for the calculation.
+            The forex security identifier for the calculation.
         date : date
             The date for the overnight rate.
 

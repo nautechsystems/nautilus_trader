@@ -53,7 +53,7 @@ cdef class PositionSizer:
         Raises
         ------
         ValueError
-            If instrument security does not equal the currently held instrument security.
+            If instrument does not equal the currently held instrument.
 
         """
         Condition.not_none(instrument, "instrument")

@@ -537,7 +537,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         security : Security
-            The security for the unrealized PnL.
+            The security identifier for the unrealized PnL.
 
         Returns
         -------
@@ -563,7 +563,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         security : Security
-            The security for the market value.
+            The security identifier for the market value.
 
         Returns
         -------
@@ -638,7 +638,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         security : Security
-            The security for the query.
+            The security identifier for the query.
 
         Returns
         -------
@@ -655,7 +655,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         security : Security
-            The security for the query.
+            The security identifier for the query.
 
         Returns
         -------
@@ -675,7 +675,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         security : Security
-            The security for the query.
+            The security identifier for the query.
 
         Returns
         -------
@@ -695,7 +695,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         security : Security, optional
-            The security query filter.
+            The security identifier query filter.
 
         Returns
         -------

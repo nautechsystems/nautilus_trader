@@ -272,7 +272,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The instrument security to subscribe to.
+            The instrument security identifier to subscribe to.
 
         """
         Condition.not_none(security, "security")
@@ -292,7 +292,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The order book security to subscribe to.
+            The order book security identifier to subscribe to.
         level : int
             The order book data level (L1, L2, L3).
         depth : int, optional
@@ -495,7 +495,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The security for the request.
+            The security identifier for the request.
         correlation_id : UUID
             The correlation identifier for the request.
 
@@ -533,7 +533,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -566,7 +566,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional

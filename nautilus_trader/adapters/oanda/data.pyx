@@ -335,7 +335,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The security for the request.
+            The security identifier for the request.
         correlation_id : UUID
             The correlation identifier for the request.
 
@@ -373,7 +373,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -404,7 +404,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional

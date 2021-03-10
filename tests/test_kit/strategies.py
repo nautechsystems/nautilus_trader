@@ -107,7 +107,7 @@ class EMACross(TradingStrategy):
         Parameters
         ----------
         security : Security
-            The security for the strategy.
+            The security identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal

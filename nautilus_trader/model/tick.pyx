@@ -207,7 +207,7 @@ cdef class QuoteTick(Tick):
     @staticmethod
     def from_serializable_str(Security security, str values):
         """
-        Parse a tick from the given security and values string.
+        Parse a tick from the given security identifier and values string.
 
         Parameters
         ----------
@@ -327,7 +327,7 @@ cdef class TradeTick(Tick):
     @staticmethod
     def from_serializable_str(Security security, str values):
         """
-        Parse a tick from the given security and values string.
+        Parse a tick from the given security identifier and values string.
 
         Parameters
         ----------
