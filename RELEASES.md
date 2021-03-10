@@ -1,3 +1,18 @@
+# NautilusTrader 1.109.0 Beta - Release Notes
+
+
+
+## Breaking Changes
+None
+
+## Enhancements
+- Ensure `TestTimer` advances monotonically increase.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.108.0 Beta - Release Notes
 
 This release executes a major refactoring of `Symbol` and how securities are
