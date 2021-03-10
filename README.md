@@ -52,9 +52,9 @@ The value of NautilusTrader here is that this re-implementation step is circumve
 platform was designed from the ground up to hold its own in terms of performance and quality.
 
 Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
-making it a suitable language for implementing a large system such as this. The benefit being
-that a Python native environment can be offered, suitable for professional quantitative traders and
-hedge funds.
+making it a suitable language for building a large system such as this. The benefit being that a
+Python native environment can be offered, suitable for professional quantitative traders and hedge
+funds.
 
 ## Why Python?
 
@@ -226,6 +226,14 @@ and icebergs. Users are invited to open discussion issues to request specific
 order types or features.
 
 ## Integrations
+
+| Logo | ID | Status | Website | Notes |
+|:---:|:---:|:---:|:---:|:---:|
+| ![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true) | ib | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Interactive Brokers](https://interactivebrokers.com) | futures only |
+| ![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true) | oanda | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Oanda](https://oanda.com/) |
+| ![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true) | ccxt-<exchange> | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [CCXT Pro](https://ccxt.pro/) | 27 crypto exchanges |
+| ![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true) | ccxt-binance | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [Binance](https://www.binance.com/) | spot only |
+| ![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true) | ccxt-bitmex | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [BitMEX](https://www.bitmex.com/) | swaps only |
 
 An integration adapter for CCXT Pro is currently under active development.
 The adapter requires the `ccxtpro` package, which in turn requires a license.
