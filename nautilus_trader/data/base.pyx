@@ -72,8 +72,8 @@ cdef class DataType:
 
         Warnings
         --------
-        This class may be used as a key in other hash maps throughout the system,
-        thus the key and value contents of metadata must be themselves hashable.
+        This class may be used as a key in hash maps throughout the system,
+        thus the key and value contents of metadata must themselves be hashable.
 
         Raises
         ------
