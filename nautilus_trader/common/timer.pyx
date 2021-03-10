@@ -243,7 +243,7 @@ cdef class TestTimer(Timer):
     cpdef list advance(self, datetime to_time):
         """
         Advance the test timer forward to the given time, generating a sequence
-        of events. A time event is appended for each time a next event is
+        of events. A ``TimeEvent`` is appended for each time a next event is
         <= the given to_time.
 
         Parameters
@@ -255,8 +255,14 @@ cdef class TestTimer(Timer):
         -------
         list[TimeEvent]
 
+        Raises
+        ------
+        ValueError
+            If to_time is < the timers next event time.
+
         """
         Condition.not_none(to_time, "to_time")
+        Condition.true(to_time >= self.next_time, "to_time was < self.next_time")  # Ensure monotonic
 
         cdef list events = []  # type: list[TimeEvent]
         while not self.expired and to_time >= self.next_time:
