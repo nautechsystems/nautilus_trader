@@ -97,13 +97,13 @@ The documentation for the latest version of the package is available at _readthe
 
 ## Integrations
 
-| Logo | ID | Status | Website |
-|:---:|:---:|:---:|:---:|
-| ![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true) | ib | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Interactive Brokers](https://interactivebrokers.com) |
-| ![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true) | oanda | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Oanda](https://oanda.com/) |
-| ![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true) | ccxt-<exchange> | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [CCXT Pro](https://ccxt.pro/) |
-| ![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true) | ccxt-binance | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [Binance](https://www.binance.com/) |
-| ![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true) | ccxt-bitmex | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [BitMEX](https://www.bitmex.com/) |
+| Logo | ID | Status |
+|:---:|:---:|:---:|
+| [![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true)](https://interactivebrokers.com) | ib | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true)](https://oanda.com/) | oanda | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | ccxt-`exchange_id` | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | ccxt-binance | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
+| [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | ccxt-bitmex | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
 
 An integration adapter for CCXT Pro is currently under active development.
 The adapter requires the `ccxtpro` package, which in turn requires a license.
