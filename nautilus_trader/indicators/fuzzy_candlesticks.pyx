@@ -161,11 +161,11 @@ cdef class FuzzyCandlesticks(Indicator):
         )
 
     cpdef void update_raw(
-            self,
-            double open_price,
-            double high_price,
-            double low_price,
-            double close_price,
+        self,
+        double open_price,
+        double high_price,
+        double low_price,
+        double close_price,
     ):
         """
         Update the indicator with the given raw values.
