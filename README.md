@@ -95,6 +95,32 @@ The documentation for the latest version of the package is available at _readthe
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
 
+## Integrations
+
+| Logo | ID | Status | Website |
+|:---:|:---:|:---:|:---:|
+| ![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true) | ib | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Interactive Brokers](https://interactivebrokers.com) |
+| ![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true) | oanda | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Oanda](https://oanda.com/) |
+| ![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true) | ccxt-<exchange> | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [CCXT Pro](https://ccxt.pro/) |
+| ![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true) | ccxt-binance | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [Binance](https://www.binance.com/) |
+| ![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true) | ccxt-bitmex | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [BitMEX](https://www.bitmex.com/) |
+
+An integration adapter for CCXT Pro is currently under active development.
+The adapter requires the `ccxtpro` package, which in turn requires a license.
+
+See https://ccxt.pro for more information.
+
+Currently there are **beta** versions of integrations for **Binance** and **BitMEX** available
+for early testing. These include advanced order options such as `post_only`, `hidden`
+`reduce_only`, and all the `TimeInForce` options. These integrations will be incrementally
+ added to.
+
+The other exchanges will be available through CCXTs unified API with a more
+limited feature set. The intent here is to specify other data clients for
+arbitrage or market making strategies. Execution clients will be possible if a
+user only requires simple vanilla MARKET and LIMIT orders for trading on those
+exchanges.
+
 ## Installation
 
 The `master` branch will always reflect the code of the latest release version.
@@ -224,32 +250,6 @@ The following order types are available (when possible on an exchange);
 More will be added in due course including `MarketIfTouched`, `LimitIfTouched`
 and icebergs. Users are invited to open discussion issues to request specific
 order types or features.
-
-## Integrations
-
-| Logo | ID | Status | Website | Notes |
-|:---:|:---:|:---:|:---:|:---:|
-| ![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true) | ib | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Interactive Brokers](https://interactivebrokers.com) | futures only |
-| ![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true) | oanda | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [Oanda](https://oanda.com/) |
-| ![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true) | ccxt-<exchange> | ![status](https://img.shields.io/badge/Integration-in_progress-orange) | [CCXT Pro](https://ccxt.pro/) | 27 crypto exchanges |
-| ![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true) | ccxt-binance | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [Binance](https://www.binance.com/) | spot only |
-| ![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true) | ccxt-bitmex | ![status](https://img.shields.io/badge/Integration-testing-yellow) | [BitMEX](https://www.bitmex.com/) | swaps only |
-
-An integration adapter for CCXT Pro is currently under active development.
-The adapter requires the `ccxtpro` package, which in turn requires a license.
-
-See https://ccxt.pro for more information.
-
-Currently there are **beta** versions of integrations for **Binance** and **BitMEX** available
-for early testing. These include advanced order options such as `post_only`, `hidden`
-`reduce_only`, and all the `TimeInForce` options. These integrations will be incrementally
- added to.
-
-The other exchanges will be available through CCXTs unified API with a more
-limited feature set. The intent here is to specify other data clients for
-arbitrage or market making strategies. Execution clients will be possible if a
-user only requires simple vanilla MARKET and LIMIT orders for trading on those
-exchanges.
 
 ## Development
 
