@@ -118,7 +118,7 @@ cdef class SimulatedExchange:
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"{type(self).__name__}({venue})", logger)
 
-        self.venue = venue
+        self.id = venue
         self.oms_type = oms_type
         self.generate_position_ids = generate_position_ids
 
@@ -151,7 +151,7 @@ cdef class SimulatedExchange:
         # Load instruments
         self.instruments = {}
         for instrument in instruments:
-            Condition.equal(instrument.security.venue, self.venue, "instrument.security.venue", "self.venue")
+            Condition.equal(instrument.security.venue, self.id, "instrument.security.venue", "self.id")
             self.instruments[instrument.security] = instrument
             index = len(self._security_indexer) + 1
             self._security_indexer[instrument.security] = index
@@ -171,7 +171,7 @@ cdef class SimulatedExchange:
         self._executions_count = 0
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.venue})"
+        return f"{type(self).__name__}({self.id})"
 
     cpdef dict get_working_orders(self):
         """

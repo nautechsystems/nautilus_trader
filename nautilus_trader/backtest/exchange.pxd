@@ -55,7 +55,7 @@ cdef class SimulatedExchange:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
 
-    cdef readonly Venue venue
+    cdef readonly Venue id
     cdef readonly OMSType oms_type
     cdef readonly bint generate_position_ids
 
