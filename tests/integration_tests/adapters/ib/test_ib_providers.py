@@ -45,7 +45,7 @@ class IBInstrumentProviderTests(unittest.TestCase):
     #     provider.connect()
     #
     #     security = Security(
-    #         security="CL",
+    #         security=Symbol("CL"),
     #         venue=Exchange("NYMEX"),
     #         sec_type=AssetType.FUTURE,
     #         multiplier="1000",

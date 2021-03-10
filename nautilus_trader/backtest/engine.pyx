@@ -655,11 +655,11 @@ cdef class BacktestEngine:
             # Find all positions for exchange venue
             positions = []
             for position in self._exec_engine.cache.positions():
-                if position.security.venue == exchange.venue:
+                if position.security.venue == exchange.id:
                     positions.append(position)
 
             # Calculate statistics
-            account = self._exec_engine.cache.account_for_venue(exchange.venue)
+            account = self._exec_engine.cache.account_for_venue(exchange.id)
             self.analyzer.calculate_statistics(account, positions)
 
             # Present PnL performance stats per asset

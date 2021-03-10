@@ -34,7 +34,7 @@ class MyStrategy(TradingStrategy):
         Parameters
         ----------
         security : Security
-            The security for the strategy.
+            The security identifier for the strategy.
 
         """
         # The order_id_tag should be unique at the 'trader level', here we are

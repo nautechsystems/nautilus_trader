@@ -40,9 +40,11 @@ from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -60,31 +62,31 @@ class TestStubs:
 
     @staticmethod
     def security_btcusd_bitmex() -> Security:
-        return Security("BTC/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
+        return Security(Symbol("BTC/USD"), Exchange("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
 
     @staticmethod
     def security_ethusd_bitmex() -> Security:
-        return Security("ETH/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
+        return Security(Symbol("ETH/USD"), Exchange("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
 
     @staticmethod
     def security_btcusdt_binance() -> Security:
-        return Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        return Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
     @staticmethod
     def security_ethusdt_binance() -> Security:
-        return Security("ETH/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        return Security(Symbol("ETH/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
     @staticmethod
     def security_audusd() -> Security:
-        return Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        return Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
     @staticmethod
     def security_gbpusd() -> Security:
-        return Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        return Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
     @staticmethod
     def security_usdjpy() -> Security:
-        return Security("USD/JPY", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        return Security(Symbol("USD/JPY"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:

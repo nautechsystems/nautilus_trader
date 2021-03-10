@@ -31,10 +31,14 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
@@ -51,8 +55,8 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-BITMEX = Venue("BITMEX")
-BINANCE = Venue("BINANCE")
+BITMEX = Exchange("BITMEX")
+BINANCE = Exchange("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -294,7 +298,7 @@ class DataEngineTests(unittest.TestCase):
         request = DataRequest(
             provider="RANDOM",
             data_type=DataType(QuoteTick, metadata={
-                "Security": Security("SOMETHING", Venue("RANDOM")),
+                "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.OPTION),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
@@ -318,7 +322,7 @@ class DataEngineTests(unittest.TestCase):
         request = DataRequest(
             provider=BINANCE.value,
             data_type=DataType(str, metadata={  # str data type is invalid
-                "Security": Security("SOMETHING", Venue("RANDOM")),
+                "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.OPTION),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
@@ -345,7 +349,7 @@ class DataEngineTests(unittest.TestCase):
         request1 = DataRequest(
             provider=BINANCE.value,
             data_type=DataType(QuoteTick, metadata={  # str data type is invalid
-                "Security": Security("SOMETHING", Venue("RANDOM")),
+                "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.OPTION),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
@@ -358,7 +362,7 @@ class DataEngineTests(unittest.TestCase):
         request2 = DataRequest(
             provider=BINANCE.value,
             data_type=DataType(QuoteTick, metadata={  # str data type is invalid
-                "Security": Security("SOMETHING", Venue("RANDOM")),
+                "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.OPTION),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,

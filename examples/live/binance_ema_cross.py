@@ -29,6 +29,7 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
@@ -80,8 +81,16 @@ config = {
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
+
+security = Security(
+    symbol=Symbol("ETH/USDT"),
+    venue=Exchange("BINANCE"),
+    asset_class=AssetClass.CRYPTO,
+    asset_type=AssetType.SPOT,
+)
+
 strategy = EMACross(
-    security=Security("ETH/USDT", Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
+    security=security,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     fast_ema_period=10,
     slow_ema_period=20,

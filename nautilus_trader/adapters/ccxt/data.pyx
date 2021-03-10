@@ -272,7 +272,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The instrument security to subscribe to.
+            The instrument security identifier to subscribe to.
 
         """
         Condition.not_none(security, "security")
@@ -292,7 +292,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The order book security to subscribe to.
+            The order book security identifier to subscribe to.
         level : int
             The order book data level (L1, L2, L3).
         depth : int, optional
@@ -495,7 +495,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The security for the request.
+            The security identifier for the request.
         correlation_id : UUID
             The correlation identifier for the request.
 
@@ -533,7 +533,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -566,7 +566,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         security : Security
-            The tick security for the request.
+            The tick security identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -661,7 +661,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             while True:
                 try:
                     lob = await self._client.watch_order_book(
-                        security=security.symbol,
+                        symbol=security.symbol.value,
                         limit=None if depth == 0 else depth,
                         params=kwargs,
                     )
@@ -725,7 +725,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             while True:
                 try:
-                    lob = await self._client.watch_order_book(security.symbol)
+                    lob = await self._client.watch_order_book(symbol=security.symbol.value)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_quotes.__name__)
                     continue
@@ -819,7 +819,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             while True:
                 try:
-                    trades = await self._client.watch_trades(security.symbol)
+                    trades = await self._client.watch_trades(symbol=security.symbol.value)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_trades.__name__)
                     continue
@@ -901,7 +901,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             while True:
                 try:
-                    bars = await self._client.watch_ohlcv(security.symbol, timeframe=timeframe, limit=1)
+                    bars = await self._client.watch_ohlcv(
+                        symbol=security.symbol.value,
+                        timeframe=timeframe,
+                        limit=1,
+                    )
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_ohlcv.__name__)
                     continue
@@ -1023,7 +1027,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list trades
         try:
             trades = await self._client.fetch_trades(
-                symbol=security.symbol,
+                symbol=security.symbol.value,
                 since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
@@ -1101,7 +1105,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list data
         try:
             data = await self._client.fetch_ohlcv(
-                symbol=bar_type.security.symbol,
+                symbol=bar_type.security.symbol.value,
                 timeframe=timeframe,
                 since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,

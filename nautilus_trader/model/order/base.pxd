@@ -127,7 +127,7 @@ cdef class PassiveOrder(Order):
     cdef readonly Price price
     """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly LiquiditySide liquidity_side
-    """The order liquidity size.\n\n:returns: `LiquiditySide` (Enum)"""
+    """The order liquidity side.\n\n:returns: `LiquiditySide` (Enum)"""
     cdef readonly datetime expire_time
     """The order expire time (optional).\n\n:returns: `datetime` or `None`"""
 

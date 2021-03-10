@@ -24,8 +24,9 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
 from tests import TESTS_PACKAGE_ROOT
 
@@ -170,7 +171,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         # Assert
         self.assertTrue(len(instruments) > 0)
         self.assertEqual(dict, type(instruments))
-        self.assertEqual(str, type(next(iter(instruments))))
+        self.assertEqual(Symbol, type(next(iter(instruments))))
 
     def test_get_all_when_load_all_is_true_returns_expected_instruments(self):
         # Arrange
@@ -194,7 +195,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         # Assert
         self.assertTrue(len(instruments) > 0)
         self.assertEqual(dict, type(instruments))
-        self.assertEqual(str, type(next(iter(instruments))))
+        self.assertEqual(Symbol, type(next(iter(instruments))))
 
     def test_get_btcusdt_when_not_loaded_returns_none(self):
         # Arrange
@@ -203,7 +204,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
         provider = CCXTInstrumentProvider(client=mock_client)
 
-        security = Security("BTC/USDT", Venue("BINANCE"))
+        security = Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
         # Act
         instrument = provider.get(security)
@@ -228,7 +229,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         provider = CCXTInstrumentProvider(client=mock_client)
         provider.load_all()
 
-        security = Security("BTC/USDT", Venue("BINANCE"))
+        security = Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
         # Act
         instrument = provider.get(security)
