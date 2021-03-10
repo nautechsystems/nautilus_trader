@@ -15,6 +15,7 @@
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.currency cimport Currency
 
 
 cdef class Identifier:
@@ -51,17 +52,17 @@ cdef class Security(Identifier):
     cpdef str to_serializable_str(self)
 
 
-# cdef class FuturesSecurity(Security):
-#     cdef readonly str expiry
-#     """The security contracts last trading day or month.\n\n:returns: `str`"""
-#     cdef readonly str currency
-#     """The underlying currency of the security.\n\n:returns: `str`"""
-#     cdef readonly str multiplier
-#     """The multiplier of the security.\n\n:returns: `int`"""
-#
-#     @staticmethod
-#     cdef Security from_str_c(str value)
-#     cpdef str to_serializable_str(self)
+cdef class FutureSecurity(Security):
+    cdef readonly str expiry
+    """The futures contract last trading day or month.\n\n:returns: `str`"""
+    cdef readonly Currency currency
+    """The futures contract underlying currency.\n\n:returns: `Currency`"""
+    cdef readonly int multiplier
+    """The futures contract multiplier.\n\n:returns: `int`"""
+
+    @staticmethod
+    cdef FutureSecurity from_str_c(str value)
+    cpdef str to_serializable_str(self)
 
 
 cdef class IdTag(Identifier):
