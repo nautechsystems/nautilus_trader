@@ -47,8 +47,6 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport Exchange
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order.base cimport Order
@@ -606,7 +604,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             order = self._engine.cache.order(cl_ord_id)
             if order is None:
-                # If state resolution has done its job this should never happen
+                # If `reconcile_state` has done its job this should never happen
                 self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
                 return
             self._cache_order(order_id, order)
@@ -624,7 +622,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order_id=order_id,
             execution_id=ExecutionId(event["id"]),
             security=order.security,
-            order_side=OrderSideParser.from_str(event["side"].upper()),
+            order_side=order.side,
             fill_qty=fill_qty,
             cum_qty=cum_qty,
             leaves_qty=order.quantity - cum_qty,
