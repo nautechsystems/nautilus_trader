@@ -51,7 +51,8 @@ class TestAssetClass:
          [AssetClass.COMMODITY, "COMMODITY"],
          [AssetClass.BOND, "BOND"],
          [AssetClass.INDEX, "INDEX"],
-         [AssetClass.CRYPTO, "CRYPTO"]],
+         [AssetClass.CRYPTO, "CRYPTO"],
+         [AssetClass.BETTING, "BETTING"]],
     )
     def test_asset_class_to_str(self, enum, expected):
         # Arrange
@@ -70,7 +71,8 @@ class TestAssetClass:
          ["COMMODITY", AssetClass.COMMODITY],
          ["BOND", AssetClass.BOND],
          ["INDEX", AssetClass.INDEX],
-         ["CRYPTO", AssetClass.CRYPTO]],
+         ["CRYPTO", AssetClass.CRYPTO],
+         ["BETTING", AssetClass.BETTING]],
     )
     def test_asset_class_from_str(self, string, expected):
         # Arrange
