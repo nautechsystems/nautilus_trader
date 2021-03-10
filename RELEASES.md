@@ -3,13 +3,14 @@
 
 
 ## Breaking Changes
-None
+- `Security` now takes first class value object `Symbol`.
 
 ## Enhancements
 - Ensure `TestTimer` advances monotonically increase.
+- Add `AssetClass.BETTING`.
 
 ## Fixes
-None
+- Various docstrings.
 
 ---
 
