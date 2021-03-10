@@ -24,6 +24,10 @@ cdef class Identifier:
     cdef inline bint _is_subclass(self, type other) except *
 
 
+cdef class Symbol(Identifier):
+    pass
+
+
 cdef class Venue(Identifier):
     pass
 
@@ -33,8 +37,8 @@ cdef class Exchange(Venue):
 
 
 cdef class Security(Identifier):
-    cdef readonly str symbol
-    """The security ticker symbol.\n\n:returns: `str`"""
+    cdef readonly Symbol symbol
+    """The security ticker symbol.\n\n:returns: `Symbol`"""
     cdef readonly Venue venue
     """The security trading venue.\n\n:returns: `Venue`"""
     cdef readonly AssetClass asset_class
@@ -47,7 +51,7 @@ cdef class Security(Identifier):
     cpdef str to_serializable_str(self)
 
 
-# cdef class FutureSecurity(Security):
+# cdef class FuturesSecurity(Security):
 #     cdef readonly str expiry
 #     """The security contracts last trading day or month.\n\n:returns: `str`"""
 #     cdef readonly str currency

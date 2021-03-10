@@ -36,6 +36,7 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
@@ -45,7 +46,7 @@ from tests.test_kit.mocks import ObjectStorer
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 OANDA = Venue("OANDA")
-AUDUSD = Security("AUD/USD", OANDA, AssetClass.FX, AssetType.SPOT)
+AUDUSD = Security(Symbol("AUD/USD"), OANDA, AssetClass.FX, AssetType.SPOT)
 
 
 class OandaDataClientTests(unittest.TestCase):

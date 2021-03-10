@@ -4,12 +4,14 @@
 
 ## Breaking Changes
 - `Security` now takes first class value object `Symbol`.
-
+- `Security` `asset_class` and `asset_type` no longer optional.
 ## Enhancements
 - Ensure `TestTimer` advances monotonically increase.
 - Add `AssetClass.BETTING`.
 
 ## Fixes
+- `Security` equality and hashing.
+- Incorrect parsing of `symbol` for execution reports.
 - Various docstrings.
 
 ---

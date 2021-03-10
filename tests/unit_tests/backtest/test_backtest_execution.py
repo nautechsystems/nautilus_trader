@@ -35,10 +35,10 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -46,7 +46,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
 
-BINANCE = Venue("BINANCE")
+BINANCE = Exchange("BINANCE")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
@@ -82,7 +82,7 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         self.exchange = SimulatedExchange(
-            venue=Venue("BINANCE"),
+            venue=Exchange("BINANCE"),
             oms_type=OMSType.NETTING,
             generate_position_ids=True,
             is_frozen_account=False,

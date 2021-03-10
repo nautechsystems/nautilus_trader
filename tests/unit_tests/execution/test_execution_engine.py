@@ -30,6 +30,8 @@ from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
@@ -40,6 +42,7 @@ from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -343,7 +346,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            Security("AAPL", Venue("NYSE")),
+            Security(Symbol("AAPL"), Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT),
             OrderSide.BUY,
             Quantity(1000),
         )

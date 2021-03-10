@@ -27,8 +27,9 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import Symbol
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
@@ -79,8 +80,16 @@ config = {
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
+
+security = Security(
+    symbol=Symbol("BTC/USD"),
+    venue=Exchange("BITMEX"),
+    asset_class=AssetClass.CRYPTO,
+    asset_type=AssetType.SWAP,
+)
+
 strategy = EMACrossStopEntryTrail(
-    security=Security("BTC/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP),
+    security=security,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("100"),
     fast_ema_period=10,

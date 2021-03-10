@@ -29,9 +29,9 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -76,7 +76,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         exec_client = MockExecutionClient(
-            venue=Venue("BINANCE"),
+            venue=Exchange("BINANCE"),
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,

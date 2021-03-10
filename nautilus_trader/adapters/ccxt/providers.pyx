@@ -24,8 +24,9 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.identifiers cimport Exchange
 from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -50,7 +51,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
         """
         self._client = client  # Assign first as `load_all` will call it
-        super().__init__(venue=Venue(client.name.upper()), load_all=load_all)
+        super().__init__(venue=Exchange(client.name.upper()), load_all=load_all)
 
     async def load_all_async(self):
         """
@@ -97,7 +98,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         """
         return self._currencies.get(code)
 
-    cdef Instrument get_c(self, str symbol):
+    cdef Instrument get_c(self, Symbol symbol):
         # Provides fast C level access assuming the venue is correct
         return self._instruments.get(symbol)
 
@@ -113,7 +114,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             else:
                 asset_type = AssetType.UNDEFINED
 
-            security = Security(k, self.venue, AssetClass.CRYPTO, asset_type)
+            security = Security(Symbol(k), self.venue, AssetClass.CRYPTO, asset_type)
             instrument = self._parse_instrument(security, v)
             if instrument is None:
                 continue  # Something went wrong in parsing

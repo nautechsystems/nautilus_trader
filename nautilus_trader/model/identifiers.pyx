@@ -67,7 +67,7 @@ cdef class Identifier:
         return self.value >= other.value
 
     def __hash__(self) -> int:
-        return hash((type(self), self.value))
+        return hash(self.value)
 
     def __str__(self) -> str:
         return self.value
@@ -78,6 +78,32 @@ cdef class Identifier:
     cdef inline bint _is_subclass(self, type other) except *:
         cdef type type_self = type(self)
         return issubclass(other, type_self) or issubclass(type_self, other)
+
+
+cdef class Symbol(Identifier):
+    """
+    Represents a valid ticker symbol identifier for a financial market tradeable
+    security.
+
+    The identifier value must be unique for a trading venue.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the `Symbol` class.
+
+        Parameters
+        ----------
+        value : str
+            The ticker symbol identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
+        """
+        super().__init__(value)
 
 
 cdef class Venue(Identifier):
@@ -137,21 +163,27 @@ cdef class Security(Identifier):
     Represents a valid financial market tradeable security identifier.
 
     The symbol and venue combination should uniquely identify the security.
+
+    Warnings
+    --------
+    The specifying a security identifier requires care as all members must match
+    for two securities to be considered equal.
+
     """
 
     def __init__(
         self,
-        str symbol,
+        Symbol symbol,
         Venue venue not None,
-        AssetClass asset_class=AssetClass.UNDEFINED,
-        AssetType asset_type=AssetType.UNDEFINED,
+        AssetClass asset_class,
+        AssetType asset_type,
     ):
         """
         Initialize a new instance of the `Security` class.
 
         Parameters
         ----------
-        symbol : str
+        symbol : Symbol
             The securities ticker symbol.
         venue : Venue
             The securities primary trading venue.
@@ -163,11 +195,14 @@ cdef class Security(Identifier):
         Raises
         ------
         ValueError
-            If symbol is not a valid string.
+            If asset_class is UNDEFINED.
+        ValueError
+            If asset_type is UNDEFINED.
 
         """
-        Condition.valid_string(symbol, "symbol")
-        super().__init__(f"{symbol}.{venue.value}")
+        Condition.not_equal(asset_class, AssetClass.UNDEFINED, "asset_class", "UNDEFINED")
+        Condition.not_equal(asset_type, AssetType.UNDEFINED, "asset_type", "UNDEFINED")
+        super().__init__(f"{symbol.value}.{venue.value}")
 
         self.symbol = symbol
         self.venue = venue
@@ -175,13 +210,12 @@ cdef class Security(Identifier):
         self.asset_type = asset_type
 
     def __eq__(self, Security other) -> bool:
-        return self._is_subclass(type(other)) \
-            and self.value == other.value \
+        return self.value == other.value \
             and self.asset_class == other.asset_class \
             and self.asset_type == other.asset_type
 
     def __hash__(self) -> int:
-        return hash((type(self), self.value, self.asset_type, self.asset_type))
+        return hash((self.value, self.asset_class, self.asset_type))
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}('"
@@ -204,7 +238,7 @@ cdef class Security(Identifier):
             raise ValueError(f"The Security string value was malformed, was {value}")
 
         return Security(
-            symbol=symbol_venue[0],
+            symbol=Symbol(symbol_venue[0]),
             venue=Venue(symbol_venue[2]),
             asset_class=AssetClassParser.from_str(pieces[1]),
             asset_type=AssetTypeParser.from_str(pieces[2]),
@@ -240,7 +274,6 @@ cdef class Security(Identifier):
 
         """
         return f"{self.value},{AssetClassParser.to_str(self.asset_class)},{AssetTypeParser.to_str(self.asset_type)}"
-
 
 
 # cdef class FutureSecurity(Security):

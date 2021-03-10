@@ -21,6 +21,7 @@ from nautilus_trader.indicators.bid_ask_min_max import WindowedMinMaxPrices
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -28,7 +29,7 @@ from nautilus_trader.model.tick import QuoteTick
 
 
 class BidAskMinMaxTests(unittest.TestCase):
-    security = Security("SPY", Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT)
+    security = Security(Symbol("SPY"), Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT)
 
     def test_instantiate(self):
         # Arrange

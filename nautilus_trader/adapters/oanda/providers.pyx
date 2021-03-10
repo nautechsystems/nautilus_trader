@@ -25,6 +25,7 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
@@ -128,7 +129,7 @@ cdef class OandaInstrumentProvider:
             asset_type = AssetType.CFD
 
         cdef Security security = Security(
-            symbol=oanda_name.replace('_', '/', 1),
+            symbol=Symbol(oanda_name.replace('_', '/', 1)),
             venue=self.venue,
             asset_type=asset_type,
             asset_class=asset_class,

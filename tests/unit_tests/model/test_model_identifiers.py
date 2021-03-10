@@ -27,6 +27,7 @@ from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 
@@ -63,9 +64,9 @@ class TestIdentifiers:
 
     def test_equality_of_subclass(self):
         # Arrange
-        id1 = Venue("BINANCE")
+        id1 = Exchange("BINANCE")
         id2 = Exchange("BINANCE")
-        id3 = Security("BINANCE", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)  # Invalid
+        id3 = Security(Symbol("BINANCE"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)  # Invalid
         id4 = IdTag("BINANCE")
 
         # Act
@@ -77,6 +78,7 @@ class TestIdentifiers:
         assert id1 != id3
         assert id2 != id3
         assert id2 != id4
+        assert id4 != id1
 
     def test_comparison(self):
         # Arrange
@@ -226,9 +228,9 @@ class TestSecurityIdentifier:
 
     def test_security_equality(self):
         # Arrange
-        security1 = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
-        security2 = Security("AUD/USD", Venue('IDEALPRO'), AssetClass.FX, AssetType.SPOT)
-        security3 = Security("GBP/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security1 = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security2 = Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
+        security3 = Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
         # Act
         # Assert
@@ -238,7 +240,7 @@ class TestSecurityIdentifier:
 
     def test_security_str(self):
         # Arrange
-        security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
         # Act
         # Assert
@@ -246,7 +248,7 @@ class TestSecurityIdentifier:
 
     def test_security_repr(self):
         # Arrange
-        security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
         # Act
         # Assert
@@ -254,7 +256,7 @@ class TestSecurityIdentifier:
 
     def test_parse_security_from_str(self):
         # Arrange
-        security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
 
         # Act
         result = Security.from_serializable_str(security.to_serializable_str())
