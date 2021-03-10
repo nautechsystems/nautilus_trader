@@ -57,7 +57,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         """
         super().__init__(
-            exchange.venue,
+            exchange.id,
             account_id,
             engine,
             clock,
