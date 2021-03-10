@@ -130,10 +130,11 @@ Index
     :caption: Adapter Reference
     :hidden:
 
+    adapter_reference/ib
+    adapter_reference/oanda
+    adapter_reference/ccxtpro
     adapter_reference/binance
     adapter_reference/bitmex
-    adapter_reference/ccxtpro
-    adapter_reference/oanda
 
 .. toctree::
     :glob:
