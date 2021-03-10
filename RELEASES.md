@@ -1,3 +1,18 @@
+# NautilusTrader 1.110.0 Beta - Release Notes
+
+
+
+## Breaking Changes
+None
+
+## Enhancements
+- Add `FutureSecurity` identifier and `Future` instrument.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.109.0 Beta - Release Notes
 
 The main thrust of this release is to refine and further bed down the changes
