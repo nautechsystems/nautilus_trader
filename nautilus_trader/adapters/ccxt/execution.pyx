@@ -208,16 +208,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
-            instrument = self._instrument_provider.get(order.security)
+            instrument = self._instrument_provider.get(order.security.symbol)
             if instrument is None:
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"instrument for {order.security} not found.")
                 continue  # Cannot resolve order
 
             try:
-                response = await self._client.fetch_order(order.id.value, order.security.symbol)
+                response = await self._client.fetch_order(
+                    id=order.id.value,
+                    symbol=order.security.symbol.value,
+                )
                 trades = await self._client.fetch_my_trades(
-                    security=order.security.symbol,
+                    symbol=order.security.symbol.value,
                     since=to_unix_time_ms(order.timestamp),
                 )
                 order_trades = [trade for trade in trades if trade["order"] == order.id.value]
@@ -473,7 +476,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                security=order.security.symbol,
+                symbol=order.security.symbol.value,
                 type=OrderTypeParser.to_str(order.type).lower(),
                 side=OrderSideParser.to_str(order.side).lower(),
                 amount=str(order.quantity),
@@ -497,7 +500,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot cancel
 
         try:
-            await self._client.cancel_order(order.id.value, order.security.symbol)
+            await self._client.cancel_order(
+                id=order.id.value,
+                symbol=order.security.symbol.value,
+            )
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._cancel_order.__name__)
             return
@@ -617,7 +623,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             cl_ord_id=order.cl_ord_id,
             order_id=order_id,
             execution_id=ExecutionId(event["id"]),
-            security=Security(Symbol(event["symbol"]), self.venue),
+            security=order.security,
             order_side=OrderSideParser.from_str(event["side"].upper()),
             fill_qty=fill_qty,
             cum_qty=cum_qty,
