@@ -99,7 +99,7 @@ cdef class OandaInstrumentProvider:
         Parameters
         ----------
         security : Security
-            The security for the instrument.
+            The security identifier for the instrument.
 
         Returns
         -------

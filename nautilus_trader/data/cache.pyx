@@ -338,7 +338,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the ticks to get.
+            The security identifier for the ticks to get.
 
         Returns
         -------
@@ -356,7 +356,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the ticks to get.
+            The security identifier for the ticks to get.
 
         Returns
         -------
@@ -392,7 +392,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security of the instrument to return.
+            The security identifier of the instrument to return.
 
         Returns
         -------
@@ -410,7 +410,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the price.
+            The security identifier for the price.
         price_type : PriceType (Enum)
             The price type for the query.
 
@@ -461,7 +461,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the tick to get.
+            The security identifier for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -495,7 +495,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the tick to get.
+            The security identifier for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -561,7 +561,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the ticks.
+            The security identifier for the ticks.
 
         Returns
         -------
@@ -579,7 +579,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the ticks.
+            The security identifier for the ticks.
 
         Returns
         -------
@@ -616,7 +616,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the order book snapshot.
+            The security identifier for the order book snapshot.
 
         Returns
         -------
@@ -633,7 +633,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the ticks.
+            The security identifier for the ticks.
 
         Returns
         -------
@@ -652,7 +652,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         security : Security
-            The security for the ticks.
+            The security identifier for the ticks.
 
         Returns
         -------

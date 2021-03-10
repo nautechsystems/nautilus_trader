@@ -77,7 +77,7 @@ cdef class BacktestDataContainer:
         Parameters
         ----------
         security : Security
-            The security for the quote tick data.
+            The security identifier for the quote tick data.
         data : pd.DataFrame
             The quote tick data to add.
 
@@ -103,7 +103,7 @@ cdef class BacktestDataContainer:
         Parameters
         ----------
         security : Security
-            The security for the trade tick data.
+            The security identifier for the trade tick data.
         data : pd.DataFrame
             The trade tick data to add.
 
@@ -132,7 +132,7 @@ cdef class BacktestDataContainer:
         Parameters
         ----------
         security : Security
-            The security for the bar data.
+            The security identifier for the bar data.
         aggregation : BarAggregation (Enum)
             The bar aggregation of the data.
         price_type : PriceType (Enum)

@@ -221,7 +221,7 @@ cdef class Security(Identifier):
         Parameters
         ----------
         value : str
-            The security string value to parse.
+            The security identifier string value to parse.
 
         Returns
         -------

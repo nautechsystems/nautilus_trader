@@ -34,7 +34,7 @@ cdef class SpreadAnalyzer(Indicator):
         Parameters
         ----------
         security : Security
-            The security for the tick updates.
+            The security identifier for the tick updates.
         capacity : int
             The max length for the internal `QuoteTick` deque (determines averages).
 
