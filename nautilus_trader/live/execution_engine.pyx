@@ -94,7 +94,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         Returns
         -------
-        AbstractEventLoop
+        asyncio.AbstractEventLoop
 
         """
         return self._loop
