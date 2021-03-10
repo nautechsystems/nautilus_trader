@@ -25,10 +25,10 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.currency cimport Currency
 
-#from nautilus_trader.model.identifiers cimport Security
+# from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Security
 
-#from nautilus_trader.model.instrument cimport Future
+# from nautilus_trader.model.instrument cimport Future
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.instrument cimport Quantity
 

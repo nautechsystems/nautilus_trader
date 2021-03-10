@@ -109,7 +109,7 @@ cdef class DataCache(DataCacheFacade):
 
         if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
             self._xrate_symbols[instrument.security] = (f"{instrument.base_currency}/"
-                                                      f"{instrument.quote_currency}")
+                                                        f"{instrument.quote_currency}")
 
         self._log.debug(f"Updated instrument {instrument.security}")
 

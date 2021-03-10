@@ -28,6 +28,7 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
@@ -78,8 +79,16 @@ config = {
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
+
+security1 = Security(
+    symbol=Symbol("AUD/USD"),
+    venue=Venue("OANDA"),
+    asset_class=AssetClass.FX,
+    asset_type=AssetType.SPOT,
+)
+
 strategy1 = EMACross(
-    security=Security("AUD/USD", Venue("OANDA"), AssetClass.FX, AssetType.SPOT),
+    security=security1,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,
@@ -87,8 +96,17 @@ strategy1 = EMACross(
     order_id_tag="001",
 )
 
+# ------------------------------------------------------------------------------
+
+security2 = Security(
+    symbol=Symbol("EUR/USD"),
+    venue=Venue("OANDA"),
+    asset_class=AssetClass.FX,
+    asset_type=AssetType.SPOT,
+)
+
 strategy2 = EMACross(
-    security=Security("EUR/USD", Venue("OANDA"), AssetClass.FX, AssetType.SPOT),
+    security=security2,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,
@@ -96,8 +114,17 @@ strategy2 = EMACross(
     order_id_tag="002",
 )
 
+# ------------------------------------------------------------------------------
+
+security3 = Security(
+    symbol=Symbol("GBP/USD"),
+    venue=Venue("OANDA"),
+    asset_class=AssetClass.FX,
+    asset_type=AssetType.SPOT,
+)
+
 strategy3 = EMACross(
-    security=Security("GBP/USD", Venue("OANDA"), AssetClass.FX, AssetType.SPOT),
+    security=security3,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,

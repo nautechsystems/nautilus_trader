@@ -15,6 +15,7 @@
 
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 
@@ -42,7 +43,7 @@ cdef class InstrumentProvider:
         self.count = 0
 
         self._currencies = {}   # type: dict[str, Currency]
-        self._instruments = {}  # type: dict[str, Instrument]
+        self._instruments = {}  # type: dict[Symbol, Instrument]
 
         if load_all:
             self.load_all()
@@ -79,6 +80,6 @@ cdef class InstrumentProvider:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef Instrument get_c(self, str symbol):
+    cdef Instrument get_c(self, Symbol symbol):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

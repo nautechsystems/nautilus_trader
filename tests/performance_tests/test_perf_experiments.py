@@ -19,12 +19,15 @@ from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD = Security("AUDUSD", Venue("IDEALPRO"))
+AUDUSD = Security(Symbol("AUDUSD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
 MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
 
 

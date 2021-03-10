@@ -23,11 +23,13 @@ from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
 
-BINANCE = Venue("BINANCE")
+BINANCE = Exchange("BINANCE")
 IDEALPRO = Venue("IDEALPRO")
 
 
@@ -73,7 +75,7 @@ class DataMessageTests(unittest.TestCase):
         request = DataRequest(
             provider=BINANCE.value,
             data_type=DataType(str, metadata={  # str data type is invalid
-                "Security": Security("SOMETHING", Venue("RANDOM")),
+                "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.OPTION),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
@@ -86,14 +88,14 @@ class DataMessageTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             "DataRequest("
-            "<str> {'Security': Security('SOMETHING.RANDOM,UNDEFINED,UNDEFINED'), "
+            "<str> {'Security': Security('SOMETHING.RANDOM,BETTING,OPTION'), "
             "'FromDateTime': None, 'ToDateTime': None, 'Limit': 1000})",
             str(request),
         )
         self.assertEqual(
             f"DataRequest("
             f"provider=BINANCE, "
-            f"data_type=<str> {{'Security': Security('SOMETHING.RANDOM,UNDEFINED,UNDEFINED'), "
+            f"data_type=<str> {{'Security': Security('SOMETHING.RANDOM,BETTING,OPTION'), "
             f"'FromDateTime': None, "
             f"'ToDateTime': None, "
             f"'Limit': 1000}}, "
@@ -108,7 +110,7 @@ class DataMessageTests(unittest.TestCase):
         # Act
         correlation_id = self.uuid_factory.generate()
         response_id = self.uuid_factory.generate()
-        security = Security("AUD/USD", IDEALPRO, AssetClass.FX, AssetType.SPOT)
+        security = Security(Symbol("AUD/USD"), IDEALPRO, AssetClass.FX, AssetType.SPOT)
 
         response = DataResponse(
             provider=BINANCE.value,

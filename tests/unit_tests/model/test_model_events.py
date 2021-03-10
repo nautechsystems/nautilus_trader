@@ -36,12 +36,13 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -77,7 +78,7 @@ class TestEvents:
         event = OrderInitialized(
             cl_ord_id=ClientOrderId("O-2020872378423"),
             strategy_id=StrategyId("SCALPER", "001"),
-            security=Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
+            security=Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
             quantity=Quantity("0.561000"),
@@ -257,7 +258,7 @@ class TestEvents:
             execution_id=ExecutionId("1"),
             position_id=PositionId("2"),
             strategy_id=StrategyId("SCALPER", "001"),
-            security=Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
+            security=Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
             order_side=OrderSide.BUY,
             fill_qty=Quantity("0.561000"),
             cum_qty=Quantity("0.561000"),

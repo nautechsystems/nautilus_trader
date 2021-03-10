@@ -16,6 +16,11 @@
 import unittest
 
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.performance import PerformanceHarness
@@ -27,6 +32,14 @@ AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 
 
 class ObjectTests:
+
+    @staticmethod
+    def make_symbol():
+        Symbol("AUD/USD")
+
+    @staticmethod
+    def make_security():
+        Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
 
     @staticmethod
     def security_to_str():
@@ -58,6 +71,16 @@ class ObjectTests:
 
 
 class ObjectPerformanceTests(unittest.TestCase):
+
+    @staticmethod
+    def test_make_symbol():
+        PerformanceHarness.profile_function(ObjectTests.make_symbol, 100000, 1)
+        # ~0.0ms / ~0.4μs / 400ns minimum of 100,000 runs @ 1 iteration each run.
+
+    @staticmethod
+    def test_make_security():
+        PerformanceHarness.profile_function(ObjectTests.make_security, 100000, 1)
+        # ~0.0ms / ~1.3μs / 1251ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_security_to_str():

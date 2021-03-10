@@ -48,6 +48,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -1433,7 +1434,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.subscribe_instrument(AUDUSD_SIM.security)
 
         # Assert
-        expected_security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        expected_security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         self.assertEqual([expected_security], self.data_engine.subscribed_instruments)
         self.assertEqual(1, self.data_engine.command_count)
 
@@ -1476,7 +1477,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.subscribe_quote_ticks(AUDUSD_SIM.security)
 
         # Assert
-        expected_security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        expected_security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         self.assertEqual([expected_security], self.data_engine.subscribed_quote_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 
@@ -1519,7 +1520,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.subscribe_trade_ticks(AUDUSD_SIM.security)
 
         # Assert
-        expected_security = Security("AUD/USD", Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        expected_security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
         self.assertEqual([expected_security], self.data_engine.subscribed_trade_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 

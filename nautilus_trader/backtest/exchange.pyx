@@ -422,12 +422,12 @@ cdef class SimulatedExchange:
     cdef inline dict _build_current_bid_rates(self):
         cdef Security security
         cdef QuoteTick tick
-        return {security.symbol: price.as_decimal() for security, price in self._market_bids.items()}
+        return {security.symbol.value: price.as_decimal() for security, price in self._market_bids.items()}
 
     cdef inline dict _build_current_ask_rates(self):
         cdef Security security
         cdef QuoteTick tick
-        return {security.symbol: price.as_decimal() for security, price in self._market_asks.items()}
+        return {security.symbol.value: price.as_decimal() for security, price in self._market_asks.items()}
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 

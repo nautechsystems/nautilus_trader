@@ -30,7 +30,9 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Money
@@ -102,8 +104,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
+        security = Security(
+            symbol=Symbol("BTC/USDT"),
+            venue=Exchange("BINANCE"),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SPOT,
+        )
+
         return Instrument(
-            security=Security("BTC/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
+            security=security,
             base_currency=BTC,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -138,8 +147,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
+        security = Security(
+            symbol=Symbol("ETH/USDT"),
+            venue=Exchange("BINANCE"),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SPOT,
+        )
+
         return Instrument(
-            security=Security("ETH/USDT", Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
+            security=security,
             base_currency=ETH,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -179,8 +195,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
+        security = Security(
+            symbol=Symbol("XBT/USD"),
+            venue=Exchange("BITMEX"),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
+        )
+
         return Instrument(
-            security=Security("XBT/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP),
+            security=security,
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -220,8 +243,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
+        security = Security(
+            symbol=Symbol("ETH/USD"),
+            venue=Exchange("BITMEX"),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
+        )
+
         return Instrument(
-            security=Security("ETH/USD", Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP),
+            security=security,
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -275,7 +305,12 @@ class TestInstrumentProvider:
         PyCondition.valid_string(symbol, "symbol")
         PyCondition.in_range_int(len(symbol), 6, 7, "len(symbol)")
 
-        security = Security(symbol, venue, AssetClass.FX, AssetType.SPOT)
+        security = Security(
+            symbol=Symbol(symbol),
+            venue=venue,
+            asset_class=AssetClass.FX,
+            asset_type=AssetType.SPOT,
+        )
 
         base_currency = symbol[:3]
         quote_currency = symbol[-3:]

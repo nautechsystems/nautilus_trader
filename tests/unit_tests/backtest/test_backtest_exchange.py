@@ -41,6 +41,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -1761,7 +1762,7 @@ class BitmexExchangeTests(unittest.TestCase):
         )
 
         self.exchange = SimulatedExchange(
-            venue=Venue("BITMEX"),
+            venue=Exchange("BITMEX"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             is_frozen_account=False,
