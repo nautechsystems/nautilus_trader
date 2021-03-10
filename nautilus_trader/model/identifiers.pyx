@@ -166,7 +166,7 @@ cdef class Security(Identifier):
 
     Warnings
     --------
-    The specifying a security identifier requires care as all members must match
+    Specifying a security identifier requires care as all members must match
     for two securities to be considered equal.
 
     """
@@ -187,9 +187,9 @@ cdef class Security(Identifier):
             The securities ticker symbol.
         venue : Venue
             The securities primary trading venue.
-        asset_class : AssetClass, optional
+        asset_class : AssetClass (Enum)
             The securities asset class.
-        asset_type : AssetType, optional
+        asset_type : AssetType (Enum)
             The securities asset type.
 
         Raises

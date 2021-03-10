@@ -42,9 +42,9 @@ cdef class Security(Identifier):
     cdef readonly Venue venue
     """The security trading venue.\n\n:returns: `Venue`"""
     cdef readonly AssetClass asset_class
-    """The security asset class.\n\n:returns: `AssetClass`"""
+    """The security asset class.\n\n:returns: `AssetClass` (Enum)"""
     cdef readonly AssetType asset_type
-    """The security asset type.\n\n:returns: `AssetType`"""
+    """The security asset type.\n\n:returns: `AssetType` (Enum)"""
 
     @staticmethod
     cdef Security from_serializable_str_c(str value)
