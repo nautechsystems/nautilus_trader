@@ -4,24 +4,6 @@ Bitmex Integration
 .. automodule:: nautilus_trader.adapters.bitmex
 
 
-Factory
--------
-
-.. automodule:: nautilus_trader.adapters.bitmex.factory
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
-Providers
----------
-
-.. automodule:: nautilus_trader.adapters.ccxt.providers
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Data
 ----
 
@@ -35,6 +17,24 @@ Execution
 ---------
 
 .. automodule:: nautilus_trader.adapters.bitmex.execution
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Factory
+-------
+
+.. automodule:: nautilus_trader.adapters.bitmex.factory
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Providers
+---------
+
+.. automodule:: nautilus_trader.adapters.ccxt.providers
    :show-inheritance:
    :inherited-members:
    :members:

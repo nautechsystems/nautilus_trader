@@ -4,24 +4,6 @@ CCXT Pro Integration
 .. automodule:: nautilus_trader.adapters.ccxt
 
 
-Factory
--------
-
-.. automodule:: nautilus_trader.adapters.ccxt.factory
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
-Providers
----------
-
-.. automodule:: nautilus_trader.adapters.ccxt.providers
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Data
 ----
 
@@ -35,6 +17,24 @@ Execution
 ---------
 
 .. automodule:: nautilus_trader.adapters.ccxt.execution
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Factory
+-------
+
+.. automodule:: nautilus_trader.adapters.ccxt.factory
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Providers
+---------
+
+.. automodule:: nautilus_trader.adapters.ccxt.providers
    :show-inheritance:
    :inherited-members:
    :members:
