@@ -1,17 +1,22 @@
 # NautilusTrader 1.109.0 Beta - Release Notes
 
+The main thrust of this release is to refine and further bed down the changes
+to the identifier model via `Security`, and fix some bugs.
 
+Errors in the CCXT clients caused by the last release have been addressed.
 
 ## Breaking Changes
 - `Security` now takes first class value object `Symbol`.
 - `Security` `asset_class` and `asset_type` no longer optional.
+- `SimulatedExchange.venue` changed to `SimulatedExchange.id`.
+
 ## Enhancements
 - Ensure `TestTimer` advances monotonically increase.
 - Add `AssetClass.BETTING`.
 
 ## Fixes
+- CCXT data and execution clients regarding `security` vs `symbol` naming.
 - `Security` equality and hashing.
-- Incorrect parsing of `symbol` for execution reports.
 - Various docstrings.
 
 ---
