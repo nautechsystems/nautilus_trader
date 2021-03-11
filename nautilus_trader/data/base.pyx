@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.constants cimport *  # str constants only
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -24,85 +23,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-
-
-cdef class Data:
-    """
-    Provides a generic data wrapper which includes data type information.
-    """
-
-    def __init__(self, DataType data_type not None, data not None):
-        """
-        Initialize a new instance of the `Data` class.
-
-        Parameters
-        ----------
-        data_type : DataType
-            The data type.
-        data : object
-            The data object to wrap.
-
-        Raises
-        ------
-        ValueError
-            If type(data) is not of type data_type.type.
-
-        """
-        Condition.type(data, data_type.type, "data")
-
-        self.data_type = data_type
-        self.data = data
-
-
-cdef class DataType:
-    """
-    Represents a data type including its metadata.
-    """
-
-    def __init__(self, type data_type not None, dict metadata=None):
-        """
-        Initialize a new instance of the `DataType` class.
-
-        Parameters
-        ----------
-        data_type : type
-            The PyObject type of the data.
-        metadata : dict
-            The data types metadata.
-
-        Warnings
-        --------
-        This class may be used as a key in hash maps throughout the system,
-        thus the key and value contents of metadata must themselves be hashable.
-
-        Raises
-        ------
-        TypeError
-            If metadata contains a key or value which is not hashable.
-
-        """
-        if metadata is None:
-            metadata = {}
-
-        self._metadata_key = frozenset(metadata.items())
-        self._hash = hash(self._metadata_key)  # Assign hash for improved time complexity
-        self.type = data_type
-        self.metadata = metadata
-
-    def __eq__(self, DataType other) -> bool:
-        return self.type == other.type and self.metadata == other.metadata
-
-    def __ne__(self, DataType other) -> bool:
-        return self.type != other.type or self.metadata != other.metadata
-
-    def __hash__(self) -> int:
-        return self._hash
-
-    def __str__(self) -> str:
-        return f"<{self.type.__name__}> {self.metadata}"
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
 
 
 cdef class DataCacheFacade:

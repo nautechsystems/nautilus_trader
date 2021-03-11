@@ -20,7 +20,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
-from nautilus_trader.data.base import DataType
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataCommand
 from nautilus_trader.data.messages import DataRequest
@@ -31,6 +30,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation

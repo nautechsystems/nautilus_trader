@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.base cimport DataType
+from nautilus_trader.model.data cimport DataType
 
 
 cdef class DataCommand(Command):

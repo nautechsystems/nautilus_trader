@@ -19,10 +19,10 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
@@ -58,7 +58,7 @@ cdef class DataClient:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, DataType data_type, data) except *
+    cdef void _handle_data(self, DataType data_type, data, datetime timestamp=*) except *
     cdef void _handle_data_response(self, DataType data_type, data, UUID correlation_id) except *
 
 

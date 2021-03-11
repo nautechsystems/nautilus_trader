@@ -27,23 +27,6 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class Data:
-    cdef readonly DataType data_type
-    """The data type for the data.\n\n:returns: `DataType`"""
-    cdef readonly object data
-    """The data.\n\n:returns: `object`"""
-
-
-cdef class DataType:
-    cdef frozenset _metadata_key
-    cdef int _hash
-
-    cdef readonly type type
-    """The type of the data.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The data types metadata.\n\n:returns: `set[str, object]`"""
-
-
 cdef class DataCacheFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa

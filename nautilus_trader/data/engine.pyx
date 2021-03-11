@@ -51,8 +51,6 @@ from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
 from nautilus_trader.data.aggregation cimport VolumeBarAggregator
-from nautilus_trader.data.base cimport Data
-from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
@@ -66,6 +64,8 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook

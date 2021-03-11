@@ -20,8 +20,6 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
-from nautilus_trader.data.base cimport Data
-from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
@@ -32,6 +30,8 @@ from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook

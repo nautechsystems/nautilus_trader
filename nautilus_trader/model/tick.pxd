@@ -13,23 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Tick:
+cdef class Tick(Data):
     cdef readonly Security security
     """The ticks security identifier.\n\n:returns: `Security`"""
-    cdef readonly datetime timestamp
-    """The ticks timestamp (UTC).\n\n:returns: `datetime`"""
-    cdef readonly double unix_timestamp
-    """The ticks Unix timestamp (seconds).\n\n:returns: `double`"""
 
 
 cdef class QuoteTick(Tick):

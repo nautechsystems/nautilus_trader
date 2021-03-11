@@ -18,11 +18,11 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.base import DataType
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue

@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.tick import QuoteTick
@@ -111,19 +113,19 @@ class MyStrategy(TradingStrategy):
         """
         pass
 
-    def on_data(self, data):
+    def on_data(self, data: GenericData):
         """
         Actions to be performed when the strategy is running and receives a data object.
 
         Parameters
         ----------
-        data : object
-            The data object received.
+        data : GenericData
+            The data received.
 
         """
         pass
 
-    def on_event(self, event):
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 

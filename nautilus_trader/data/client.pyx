@@ -29,12 +29,11 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
@@ -127,16 +126,18 @@ cdef class DataClient:
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    def _handle_data_py(self, DataType data_type, data):
-        self._engine.process(Data(data_type, data))
+    def _handle_data_py(self, DataType data_type, data, datetime timestamp=None):
+        self._handle_data(data_type, data, timestamp)
 
     def _handle_data_response_py(self, DataType data_type, data, UUID correlation_id):
         self._handle_data_response(data_type, data, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, DataType data_type, data) except *:
-        self._engine.process(Data(data_type, data))
+    cdef void _handle_data(self, DataType data_type, data, datetime timestamp=None) except *:
+        if timestamp is None:
+            timestamp = self._clock.utc_now()
+        self._engine.process(GenericData(data_type, data, timestamp))
 
     cdef void _handle_data_response(self, DataType data_type, data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(

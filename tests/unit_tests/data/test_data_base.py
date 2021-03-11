@@ -15,13 +15,14 @@
 
 import unittest
 
-from nautilus_trader.data.base import Data
 from nautilus_trader.data.base import DataCacheFacade
-from nautilus_trader.data.base import DataType
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 SIM = Venue("SIM")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
@@ -69,11 +70,12 @@ class DataTypeTests(unittest.TestCase):
         # Arrange
         # Act
         data_type = DataType(str, {"type": "NEWS_WIRE"})
-        data = Data(data_type, "Some News Headline")
+        data = GenericData(data_type, "Some News Headline", UNIX_EPOCH)
 
         # Assert
         self.assertEqual(data_type, data.data_type)
         self.assertEqual("Some News Headline", data.data)
+        self.assertEqual(UNIX_EPOCH, data.timestamp)
 
 
 class DataCacheFacadeTests(unittest.TestCase):
