@@ -16,12 +16,12 @@
 from decimal import Decimal
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.data.base cimport Data
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
@@ -220,13 +220,13 @@ cdef class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    cpdef void on_data(self, Data data) except *:
+    cpdef void on_data(self, GenericData data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 
         Parameters
         ----------
-        data : Data
+        data : GenericData
             The data received.
 
         """

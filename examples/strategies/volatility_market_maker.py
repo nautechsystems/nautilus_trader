@@ -16,10 +16,12 @@
 from decimal import Decimal
 from typing import Union
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
@@ -233,19 +235,19 @@ class VolatilityMarketMaker(TradingStrategy):
         self.sell_order = order
         self.submit_order(order)
 
-    def on_data(self, data):
+    def on_data(self, data: GenericData):
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : object
+        data : GenericData
             The data object received.
 
         """
         pass
 
-    def on_event(self, event):
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 

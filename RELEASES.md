@@ -3,9 +3,13 @@
 
 
 ## Breaking Changes
-None
+- `Data` becomes an abstract base class with `timestamp` and `unix_timestamp`
+  properties.
+- `Data` and `DataType` moved to `model.data`.
+- `on_data` methods now take `GenericData`.
 
 ## Enhancements
+- Add `GenericData`.
 - Add `FutureSecurity` identifier and `Future` instrument.
 
 ## Fixes

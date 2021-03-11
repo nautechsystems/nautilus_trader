@@ -19,7 +19,6 @@ import inspect
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID
-from nautilus_trader.data.base import DataType
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
@@ -27,6 +26,7 @@ from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId

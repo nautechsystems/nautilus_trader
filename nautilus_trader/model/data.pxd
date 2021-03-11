@@ -13,24 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.order.base cimport Order
+from cpython.datetime cimport datetime
 
 
-cdef class RiskModule:
-    """
-    The abstract base class for all risk modules.
+cdef class Data:
+    cdef readonly datetime timestamp
+    """The timestamp (UTC).\n\n:returns: `datetime`"""
+    cdef readonly double unix_timestamp
+    """The Unix timestamp (seconds).\n\n:returns: `double`"""
 
-    This class should not be used directly, but through its concrete subclasses.
-    """
 
-    def __init__(self):
-        """
-        Initialize a new instance of the `RiskModule` class.
-        """
+cdef class GenericData(Data):
+    cdef readonly DataType data_type
+    """The data type for the data.\n\n:returns: `DataType`"""
+    cdef readonly object data
+    """The data.\n\n:returns: `object`"""
 
-    def __str__(self) -> str:
-        return f"{type(self).__name__}"
 
-    cpdef void approve(self, Order order) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+cdef class DataType:
+    cdef frozenset _metadata_key
+    cdef int _hash
+
+    cdef readonly type type
+    """The type of the data.\n\n:returns: `type`"""
+    cdef readonly dict metadata
+    """The data types metadata.\n\n:returns: `set[str, object]`"""

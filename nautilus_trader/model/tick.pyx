@@ -23,13 +23,14 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Tick:
+cdef class Tick(Data):
     """
     The abstract base class for all ticks.
 
@@ -55,30 +56,15 @@ cdef class Tick:
             The ticks Unix timestamp (seconds).
 
         """
+        super().__init__(timestamp, unix_timestamp)
+
         self.security = security
-        self.timestamp = timestamp
-        self.unix_timestamp = unix_timestamp
 
     def __eq__(self, Tick other) -> bool:
-        return self.unix_timestamp == other.unix_timestamp
+        return self.security == other.security and self.timestamp == other.timestamp
 
     def __ne__(self, Tick other) -> bool:
-        return self.unix_timestamp != other.unix_timestamp
-
-    def __lt__(self, Tick other) -> bool:
-        return self.unix_timestamp < other.unix_timestamp
-
-    def __le__(self, Tick other) -> bool:
-        return self.unix_timestamp <= other.unix_timestamp
-
-    def __gt__(self, Tick other) -> bool:
-        return self.unix_timestamp > other.unix_timestamp
-
-    def __ge__(self, Tick other) -> bool:
-        return self.unix_timestamp >= other.unix_timestamp
-
-    def __hash__(self) -> int:
-        return hash((self.security, self.timestamp))
+        return not self == other
 
 
 cdef class QuoteTick(Tick):
@@ -118,9 +104,6 @@ cdef class QuoteTick(Tick):
             captured from `timestamp.timestamp()`.
 
         """
-        if unix_timestamp == 0:
-            unix_timestamp = timestamp.timestamp()
-
         super().__init__(security, timestamp, unix_timestamp)
 
         self.bid = bid

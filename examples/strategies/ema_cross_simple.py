@@ -15,10 +15,12 @@
 
 from decimal import Decimal
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.instrument import Instrument
@@ -214,19 +216,19 @@ class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    def on_data(self, data):
+    def on_data(self, data: GenericData):
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : object
-            The data object received.
+        data : GenericData
+            The data received.
 
         """
         pass
 
-    def on_event(self, event):
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 
