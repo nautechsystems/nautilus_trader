@@ -1,8 +1,8 @@
 # NautilusTrader 1.110.0 Beta - Release Notes
 
 This release applies one more major change to the identifier API. `Security` has
-been renamed to `InstrumentId` for greater clarity and to group the concept of
-an instrument with its identifier.
+been renamed to `InstrumentId` for greater clarity that the object is an identifier
+and to group the concept of an instrument with its identifier.
 
 Data objects in the framework have been further abstracted to prepare for the
 handling of custom data in backtests.
@@ -10,6 +10,8 @@ handling of custom data in backtests.
 A `RiskEngine` base class has also been scaffolded.
 
 ## Breaking Changes
+- `Security` renamed to `InstrumentId`.
+- `Instrument.security` renamed to `Instrument.id`.
 - `Data` becomes an abstract base class with `timestamp` and `unix_timestamp`
   properties.
 - `Data` and `DataType` moved to `model.data`.
@@ -17,7 +19,7 @@ A `RiskEngine` base class has also been scaffolded.
 
 ## Enhancements
 - Add `GenericData`.
-- Add `FutureSecurity` identifier and `Future` instrument.
+- Add `FutureInstrumentId` identifier and `Future` instrument.
 
 ## Fixes
 None
@@ -27,13 +29,13 @@ None
 # NautilusTrader 1.109.0 Beta - Release Notes
 
 The main thrust of this release is to refine and further bed down the changes
-to the identifier model via `Security`, and fix some bugs.
+to the identifier model via `InstrumentId`, and fix some bugs.
 
 Errors in the CCXT clients caused by the last release have been addressed.
 
 ## Breaking Changes
-- `Security` now takes first class value object `Symbol`.
-- `Security` `asset_class` and `asset_type` no longer optional.
+- `InstrumentId` now takes first class value object `Symbol`.
+- `InstrumentId` `asset_class` and `asset_type` no longer optional.
 - `SimulatedExchange.venue` changed to `SimulatedExchange.id`.
 
 ## Enhancements
@@ -41,8 +43,8 @@ Errors in the CCXT clients caused by the last release have been addressed.
 - Add `AssetClass.BETTING`.
 
 ## Fixes
-- CCXT data and execution clients regarding `security` vs `symbol` naming.
-- `Security` equality and hashing.
+- CCXT data and execution clients regarding `instrument_id` vs `symbol` naming.
+- `InstrumentId` equality and hashing.
 - Various docstrings.
 
 ---
@@ -55,18 +57,18 @@ with Interactive Brokers and other exchanges, brokerages and trading
 counterparties.
 
 Previously the `Symbol` identifier also included a venue which confused the concept.
-The replacement `Security` identifier more clearly expresses the domain with a
+The replacement `InstrumentId` identifier more clearly expresses the domain with a
 symbol string, a primary `Venue`, `AssetClass` and `AssetType` properties.
 
 ## Breaking Changes
 - All previous serializations.
-- `Security` replaces `Symbol` with expanded properties.
+- `InstrumentId` replaces `Symbol` with expanded properties.
 - `AssetClass.EQUITY` changed to `AssetClass.STOCK`.
 - `from_serializable_string` changed to `from_serializable_str`.
 - `to_serializable_string` changed to `to_serializable_str`.
 
 ## Enhancements
-- Reports now include full security name.
+- Reports now include full instrument_id name.
 - Add `AssetType.WARRANT`.
 
 ## Fixes
@@ -133,7 +135,7 @@ integration, and begin adding platform capabilities to support this effort.
 - Add the `Future` instrument type.
 - Add the `StopLimitOrder` order type.
 - Add the `Data` and `DataType` types to support custom data handling.
-- Add the `Security` identifier types initial implementation to support extending the platforms capabilities.
+- Add the `InstrumentId` identifier types initial implementation to support extending the platforms capabilities.
 
 ## Fixes
 - `BracketOrder` correctness.
