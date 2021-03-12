@@ -104,7 +104,7 @@ class TestRiskEngine:
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -140,7 +140,7 @@ class TestRiskEngine:
         self.exec_engine.register_strategy(strategy)
 
         entry = strategy.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -181,7 +181,7 @@ class TestRiskEngine:
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -219,7 +219,7 @@ class TestRiskEngine:
         self.exec_engine.register_strategy(strategy)
 
         entry = strategy.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )

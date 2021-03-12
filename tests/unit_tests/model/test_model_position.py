@@ -83,7 +83,7 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -134,7 +134,7 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -178,7 +178,7 @@ class PositionTests(unittest.TestCase):
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -220,7 +220,7 @@ class PositionTests(unittest.TestCase):
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -272,7 +272,7 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(150000),
         )
@@ -294,7 +294,7 @@ class PositionTests(unittest.TestCase):
             ExecutionId("E2"),
             PositionId("T123456"),
             StrategyId("S", "001"),
-            order.security,
+            order.instrument_id,
             OrderSide.SELL,
             order.quantity,
             order.quantity,
@@ -339,13 +339,13 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -405,13 +405,13 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -468,19 +468,19 @@ class PositionTests(unittest.TestCase):
     def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order3 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(200000),
         )
@@ -540,31 +540,31 @@ class PositionTests(unittest.TestCase):
 
         # Arrange
         order1 = self.order_factory.market(
-            ETHUSDT_BINANCE.security,
+            ETHUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity(12),
         )
 
         order2 = self.order_factory.market(
-            ETHUSDT_BINANCE.security,
+            ETHUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity(17),
         )
 
         order3 = self.order_factory.market(
-            ETHUSDT_BINANCE.security,
+            ETHUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity(9),
         )
 
         order4 = self.order_factory.market(
-            ETHUSDT_BINANCE.security,
+            ETHUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity(4),
         )
 
         order5 = self.order_factory.market(
-            ETHUSDT_BINANCE.security,
+            ETHUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity(3),
         )
@@ -634,31 +634,31 @@ class PositionTests(unittest.TestCase):
     def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
         order1 = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity("12.000000"),
         )
 
         order2 = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity("17.000000"),
         )
 
         order3 = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity("9.000000"),
         )
 
         order4 = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity("3.000000"),
         )
 
         order5 = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity("4.000000"),
         )
@@ -728,7 +728,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_when_given_position_side_flat_returns_zero(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity(12),
         )
@@ -752,7 +752,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_long_position_win(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity(12),
         )
@@ -785,7 +785,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_long_position_loss(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity(12),
         )
@@ -818,7 +818,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_short_position_winning(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity("10.150000"),
         )
@@ -851,7 +851,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_short_position_loss(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity("10"),
         )
@@ -884,7 +884,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_inverse1(self):
         # Arrange
         order = self.order_factory.market(
-            XBTUSD_BITMEX.security,
+            XBTUSD_BITMEX.id,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -916,7 +916,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_inverse2(self):
         # Arrange
         order = self.order_factory.market(
-            ETHUSD_BITMEX.security,
+            ETHUSD_BITMEX.id,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -939,13 +939,13 @@ class PositionTests(unittest.TestCase):
     def test_calculate_unrealized_pnl_for_long(self):
         # Arrange
         order1 = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity("2.000000"),
         )
 
         order2 = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity("2.000000"),
         )
@@ -981,7 +981,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_unrealized_pnl_for_short(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity("5.912000"),
         )
@@ -1008,7 +1008,7 @@ class PositionTests(unittest.TestCase):
     # def test_calculate_unrealized_pnl_for_long_inverse(self):
     #     # Arrange
     #     order = self.order_factory.market(
-    #         XBTUSD_BITMEX.security,
+    #         XBTUSD_BITMEX.id,
     #         OrderSide.BUY,
     #         Quantity(100000),
     #     )
@@ -1035,7 +1035,7 @@ class PositionTests(unittest.TestCase):
     # def test_calculate_unrealized_pnl_for_short_inverse(self):
     #     # Arrange
     #     order = self.order_factory.market(
-    #         XBTUSD_BITMEX.security,
+    #         XBTUSD_BITMEX.id,
     #         OrderSide.SELL,
     #         Quantity(1250000),
     #     )

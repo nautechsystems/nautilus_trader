@@ -37,10 +37,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef BacktestDataContainer _data
     cdef object _quote_tick_data
     cdef object _trade_tick_data
-    cdef dict _security_index
+    cdef dict _instrument_index
     cdef bint _is_connected
 
-    cdef unsigned short[:] _quote_securities
+    cdef unsigned short[:] _quote_instruments
     cdef str[:] _quote_bids
     cdef str[:] _quote_asks
     cdef str[:] _quote_bid_sizes
@@ -50,7 +50,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef int _quote_index_last
     cdef QuoteTick _next_quote_tick
 
-    cdef unsigned short[:] _trade_securities
+    cdef unsigned short[:] _trade_instruments
     cdef str[:] _trade_prices
     cdef str[:] _trade_sizes
     cdef str[:] _trade_match_ids

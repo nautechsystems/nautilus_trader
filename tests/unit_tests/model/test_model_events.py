@@ -16,8 +16,6 @@
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -37,9 +35,9 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -78,7 +76,7 @@ class TestEvents:
         event = OrderInitialized(
             cl_ord_id=ClientOrderId("O-2020872378423"),
             strategy_id=StrategyId("SCALPER", "001"),
-            security=Security(Symbol("BTC/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
+            instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
             quantity=Quantity("0.561000"),
@@ -258,7 +256,7 @@ class TestEvents:
             execution_id=ExecutionId("1"),
             position_id=PositionId("2"),
             strategy_id=StrategyId("SCALPER", "001"),
-            security=Security(Symbol("BTC/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT),
+            instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             order_side=OrderSide.BUY,
             fill_qty=Quantity("0.561000"),
             cum_qty=Quantity("0.561000"),
@@ -276,11 +274,11 @@ class TestEvents:
         # Act
         assert (f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                 f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                f"security=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
+                f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                 f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                 f"commission=12.20000000 USDT, event_id={uuid})" == str(event))
         assert (f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                 f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                f"security=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
+                f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                 f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                 f"commission=12.20000000 USDT, event_id={uuid})" == repr(event))

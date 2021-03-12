@@ -13,10 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
-from nautilus_trader.model.currency cimport Currency
-
 
 cdef class Identifier:
     cdef readonly str value
@@ -31,31 +27,14 @@ cdef class Venue(Identifier):
     pass
 
 
-cdef class Security(Identifier):
+cdef class InstrumentId(Identifier):
     cdef readonly Symbol symbol
-    """The security ticker symbol.\n\n:returns: `Symbol`"""
+    """The instrument ticker symbol.\n\n:returns: `Symbol`"""
     cdef readonly Venue venue
-    """The security trading venue.\n\n:returns: `Venue`"""
-    cdef readonly AssetClass asset_class
-    """The security asset class.\n\n:returns: `AssetClass` (Enum)"""
-    cdef readonly AssetType asset_type
-    """The security asset type.\n\n:returns: `AssetType` (Enum)"""
+    """The instrument trading venue.\n\n:returns: `Venue`"""
 
     @staticmethod
-    cdef Security from_serializable_str_c(str value)
-    cpdef str to_serializable_str(self)
-
-
-cdef class FutureSecurity(Security):
-    cdef readonly str expiry
-    """The futures contract last trading day or month.\n\n:returns: `str`"""
-    cdef readonly Currency currency
-    """The futures contract underlying currency.\n\n:returns: `Currency`"""
-    cdef readonly int multiplier
-    """The futures contract multiplier.\n\n:returns: `int`"""
-
-    @staticmethod
-    cdef FutureSecurity from_str_c(str value)
+    cdef InstrumentId from_serializable_str_c(str value)
     cpdef str to_serializable_str(self)
 
 

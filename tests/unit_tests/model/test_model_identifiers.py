@@ -15,18 +15,14 @@
 
 import pytest
 
-from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import FutureSecurity
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import Identifier
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Issuer
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -67,7 +63,7 @@ class TestIdentifiers:
         # Arrange
         id1 = Venue("BINANCE")
         id2 = Venue("BINANCE")
-        id3 = Security(Symbol("BINANCE"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)  # Invalid
+        id3 = InstrumentId(Symbol("BINANCE"), Venue("BINANCE"))  # Invalid
         id4 = IdTag("BINANCE")
 
         # Act
@@ -225,154 +221,42 @@ class TestIdentifiers:
         assert "NULL" == order_id.value
 
 
-class TestSecurityIdentifier:
+class TestInstrumentId:
 
-    def test_security_equality(self):
+    def test_instrument_id_equality(self):
         # Arrange
-        security1 = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
-        security2 = Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
-        security3 = Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        instrument_id1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        instrument_id2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
+        instrument_id3 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
 
         # Act
         # Assert
-        assert security1 == security1
-        assert security1 != security2
-        assert security1 != security3
+        assert instrument_id1 == instrument_id1
+        assert instrument_id1 != instrument_id2
+        assert instrument_id1 != instrument_id3
 
-    def test_security_str(self):
+    def test_instrument_id_str(self):
         # Arrange
-        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
         # Act
         # Assert
-        assert "AUD/USD.SIM" == str(security)
+        assert "AUD/USD.SIM" == str(instrument_id)
 
-    def test_security_repr(self):
+    def test_instrument_id_repr(self):
         # Arrange
-        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
         # Act
         # Assert
-        assert "Security('AUD/USD.SIM,FX,SPOT')" == repr(security)
+        assert "InstrumentId('AUD/USD.SIM')" == repr(instrument_id)
 
-    def test_parse_security_from_str(self):
+    def test_parse_instrument_id_from_str(self):
         # Arrange
-        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
         # Act
-        result = Security.from_serializable_str(security.to_serializable_str())
+        result = InstrumentId.from_serializable_str(instrument_id.to_serializable_str())
 
         # Assert
-        assert security == result
-
-
-class TestFutureSecurityIdentifier:
-
-    def test_future_security_instantiation(self):
-        # Arrange
-        security = FutureSecurity(
-            symbol=Symbol("DAX"),
-            exchange=Venue("DTB"),
-            asset_class=AssetClass.INDEX,
-            expiry="201609",
-            currency=Currency.from_str("EUR"),
-            multiplier=5,
-        )
-
-        # Act
-        # Assert
-        assert Symbol("DAX") == security.symbol
-        assert Venue("DTB") == security.venue
-        assert AssetClass.INDEX == security.asset_class
-        assert AssetType.FUTURE == security.asset_type
-        assert "201609" == security.expiry
-        assert Currency.from_str("EUR") == security.currency
-        assert 5 == security.multiplier
-
-    def test_future_security_str(self):
-        # Arrange
-        security = FutureSecurity(
-            symbol=Symbol("DAX"),
-            exchange=Venue("DTB"),
-            asset_class=AssetClass.INDEX,
-            expiry="201609",
-            currency=Currency.from_str("EUR"),
-            multiplier=5,
-        )
-
-        # Act
-        # Assert
-        assert "DAX.DTB" == str(security)
-
-    def test_future_security_repr(self):
-        # Arrange
-        security = FutureSecurity(
-            symbol=Symbol("DAX"),
-            exchange=Venue("DTB"),
-            asset_class=AssetClass.INDEX,
-            expiry="201609",
-            currency=Currency.from_str("EUR"),
-            multiplier=5,
-        )
-
-        # Act
-        # Assert
-        assert "FutureSecurity('DAX.DTB,INDEX,201609,EUR,5')" == repr(security)
-
-    def test_security_equality(self):
-        # Arrange
-        security1 = FutureSecurity(
-            symbol=Symbol("DAX"),
-            exchange=Venue("DTB"),
-            asset_class=AssetClass.INDEX,
-            expiry="201609",
-            currency=Currency.from_str("EUR"),
-            multiplier=5,
-        )
-
-        security2 = FutureSecurity(
-            symbol=Symbol("DAX"),
-            exchange=Venue("DTB"),
-            asset_class=AssetClass.INDEX,
-            expiry="201610",
-            currency=Currency.from_str("EUR"),
-            multiplier=5,
-        )
-
-        # Act
-        # Assert
-        assert security1 == security1
-        assert security1 != security2
-
-    def test_parse_security_from_str_with_all_fields(self):
-        # Arrange
-        security = FutureSecurity(
-            symbol=Symbol("DAX"),
-            exchange=Venue("DTB"),
-            asset_class=AssetClass.INDEX,
-            expiry="201609",
-            currency=Currency.from_str("EUR"),
-            multiplier=5,
-        )
-
-        # Act
-        result = FutureSecurity.from_str(security.to_serializable_str())
-
-        # Assert
-        assert security == result
-
-    def test_parse_security_from_str_with_some_fields(self):
-        # Arrange
-        security = FutureSecurity(
-            symbol=Symbol("DAX"),
-            exchange=Venue("DTB"),
-            asset_class=AssetClass.INDEX,
-        )
-
-        print(security.to_serializable_str())
-
-        # Act
-        result = FutureSecurity.from_str(security.to_serializable_str())
-
-        # Assert
-        assert security == result
+        assert instrument_id == result

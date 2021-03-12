@@ -16,15 +16,15 @@
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Tick(Data):
-    cdef readonly Security security
-    """The ticks security identifier.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId instrument_id
+    """The ticks instrument identifier.\n\n:returns: `InstrumentId`"""
 
 
 cdef class QuoteTick(Tick):
@@ -41,7 +41,7 @@ cdef class QuoteTick(Tick):
     cpdef Quantity extract_volume(self, PriceType price_type)
 
     @staticmethod
-    cdef QuoteTick from_serializable_str_c(Security security, str values)
+    cdef QuoteTick from_serializable_str_c(InstrumentId instrument_id, str values)
     cpdef str to_serializable_str(self)
 
 
@@ -56,5 +56,5 @@ cdef class TradeTick(Tick):
     """The ticks trade match identifier.\n\n:returns: `TradeMatchId`"""
 
     @staticmethod
-    cdef TradeTick from_serializable_str_c(Security security, str values)
+    cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values)
     cpdef str to_serializable_str(self)

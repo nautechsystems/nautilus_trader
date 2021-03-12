@@ -18,7 +18,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
@@ -32,7 +32,7 @@ cdef class DataCacheFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef list securities(self):
+    cpdef list instrument_ids(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -40,11 +40,11 @@ cdef class DataCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list quote_ticks(self, Security security):
+    cpdef list quote_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list trade_ticks(self, Security security):
+    cpdef list trade_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -52,23 +52,23 @@ cdef class DataCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Instrument instrument(self, Security security):
+    cpdef Instrument instrument(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Price price(self, Security security, PriceType price_type):
+    cpdef Price price(self, InstrumentId instrument_id, PriceType price_type):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef OrderBook order_book(self, Security security):
+    cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef QuoteTick quote_tick(self, Security security, int index=0):
+    cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef TradeTick trade_tick(self, Security security, int index=0):
+    cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -76,11 +76,11 @@ cdef class DataCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int quote_tick_count(self, Security security) except *:
+    cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int trade_tick_count(self, Security security) except *:
+    cpdef int trade_tick_count(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -88,15 +88,15 @@ cdef class DataCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint has_order_book(self, Security security) except *:
+    cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint has_quote_ticks(self, Security security) except *:
+    cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint has_trade_ticks(self, Security security) except *:
+    cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

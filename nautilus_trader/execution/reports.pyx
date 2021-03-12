@@ -42,7 +42,7 @@ cdef class ExecutionStateReport:
             The order states for the venue.
         order_filled : dict[OrderId, OrderEvent]
             The order fill info for the venue.
-        position_states : dict[Security, Decimal]
+        position_states : dict[InstrumentId, Decimal]
             The position states for the venue.
 
         """

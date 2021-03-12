@@ -16,9 +16,7 @@
 import unittest
 
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -27,7 +25,7 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestStubs.security_audusd()
+AUDUSD_SIM = TestStubs.audusd_id()
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 
 
@@ -38,11 +36,11 @@ class ObjectTests:
         Symbol("AUD/USD")
 
     @staticmethod
-    def make_security():
-        Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
+    def make_instrument_id():
+        InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
 
     @staticmethod
-    def security_to_str():
+    def instrument_id_to_str():
         str(AUDUSD_SIM)
 
     @staticmethod
@@ -78,13 +76,13 @@ class ObjectPerformanceTests(unittest.TestCase):
         # ~0.0ms / ~0.4μs / 400ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
-    def test_make_security():
-        PerformanceHarness.profile_function(ObjectTests.make_security, 100000, 1)
+    def test_make_instrument_id():
+        PerformanceHarness.profile_function(ObjectTests.make_instrument_id, 100000, 1)
         # ~0.0ms / ~1.3μs / 1251ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
-    def test_security_to_str():
-        PerformanceHarness.profile_function(ObjectTests.security_to_str, 100000, 1)
+    def test_instrument_id_to_str():
+        PerformanceHarness.profile_function(ObjectTests.instrument_id_to_str, 100000, 1)
         # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod

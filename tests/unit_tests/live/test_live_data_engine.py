@@ -26,9 +26,7 @@ from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
@@ -121,7 +119,7 @@ class LiveDataEngineTests(unittest.TestCase):
         request = DataRequest(
             provider="RANDOM",
             data_type=DataType(QuoteTick, metadata={
-                "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.SPOT),
+                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
@@ -266,7 +264,7 @@ class LiveDataEngineTests(unittest.TestCase):
             request = DataRequest(
                 provider="RANDOM",
                 data_type=DataType(QuoteTick, metadata={
-                    "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.OPTION),
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                     "FromDateTime": None,
                     "ToDateTime": None,
                     "Limit": 1000,

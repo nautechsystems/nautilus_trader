@@ -14,20 +14,27 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+
 from cpython.datetime cimport datetime
 
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Instrument:
-    cdef readonly Security security
-    """The security identifier of the instrument.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId id
+    """The instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly AssetClass asset_class
+    """The asset class of the instrument.\n\n:returns: `AssetClass`"""
+    cdef readonly AssetType asset_type
+    """The asset type of the instrument.\n\n:returns: `AssetType`"""
     cdef readonly Currency base_currency
     """The base currency of the instrument.\n\n:returns: `Currency` or `None`"""
     cdef readonly Currency quote_currency

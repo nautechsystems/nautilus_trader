@@ -244,13 +244,13 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(1),
@@ -268,13 +268,13 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(1),
             side=OrderSide.BUY,
@@ -292,13 +292,13 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(1),
@@ -307,7 +307,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(1),
@@ -316,7 +316,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(1),
@@ -341,13 +341,13 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(1),
             side=OrderSide.BUY,
@@ -356,7 +356,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00002"),
             size=Quantity(1),
             side=OrderSide.BUY,
@@ -365,7 +365,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00000"),
             size=Quantity(1),
             side=OrderSide.BUY,
@@ -390,9 +390,9 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
@@ -400,7 +400,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
-        wrangler.pre_process(security_indexer=0)
+        wrangler.pre_process(instrument_indexer=0)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -421,7 +421,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         bar_store = ObjectStorer()
         handler = bar_store.store
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BINANCE.security, bar_spec)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = TradeTickDataWrangler(
@@ -452,13 +452,13 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(3000),
@@ -476,13 +476,13 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(1),
             side=OrderSide.BUY,
@@ -500,13 +500,13 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(3000),
@@ -515,7 +515,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(4000),
@@ -524,7 +524,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(3000),
@@ -549,13 +549,13 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(3000),
             side=OrderSide.BUY,
@@ -564,7 +564,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00002"),
             size=Quantity(4000),
             side=OrderSide.BUY,
@@ -573,7 +573,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00000"),
             size=Quantity(3000),
             side=OrderSide.BUY,
@@ -598,13 +598,13 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(2000),
@@ -613,7 +613,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(3000),
@@ -622,7 +622,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(25000),
@@ -657,13 +657,13 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(2000),
             side=OrderSide.BUY,
@@ -672,7 +672,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00002"),
             size=Quantity(3000),
             side=OrderSide.BUY,
@@ -681,7 +681,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("1.00000"),
             size=Quantity(25000),
             side=OrderSide.BUY,
@@ -716,9 +716,9 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
@@ -726,7 +726,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
-        wrangler.pre_process(security_indexer=0)
+        wrangler.pre_process(instrument_indexer=0)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -747,7 +747,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         bar_store = ObjectStorer()
         handler = bar_store.store
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BINANCE.security, bar_spec)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = TradeTickDataWrangler(
@@ -778,13 +778,13 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(3000),
@@ -803,13 +803,13 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("15000.00"),
             size=Quantity("3.5"),
             side=OrderSide.BUY,
@@ -828,13 +828,13 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(20000),
@@ -843,7 +843,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(60000),
@@ -852,7 +852,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(30500),
@@ -878,13 +878,13 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("20.00001"),
             size=Quantity("3000.00"),
             side=OrderSide.BUY,
@@ -893,7 +893,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("20.00002"),
             size=Quantity("4000.00"),
             side=OrderSide.BUY,
@@ -902,7 +902,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             price=Price("20.00000"),
             size=Quantity("5000.00"),
             side=OrderSide.BUY,
@@ -933,9 +933,9 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(1000, BarAggregation.VALUE, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
@@ -943,7 +943,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
-        wrangler.pre_process(security_indexer=0)
+        wrangler.pre_process(instrument_indexer=0)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -964,7 +964,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         bar_store = ObjectStorer()
         handler = bar_store.store
         bar_spec = BarSpecification(10000, BarAggregation.VALUE, PriceType.LAST)
-        bar_type = BarType(ETHUSDT_BINANCE.security, bar_spec)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = TradeTickDataWrangler(
@@ -996,9 +996,9 @@ class TimeBarAggregatorTests(unittest.TestCase):
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
 
         # Act
         # Assert
@@ -1023,8 +1023,8 @@ class TimeBarAggregatorTests(unittest.TestCase):
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
-        bar_type = BarType(security, bar_spec)
+        instrument_id = TestStubs.audusd_id()
+        bar_type = BarType(instrument_id, bar_spec)
 
         # Act
         aggregator = TimeBarAggregator(bar_type, handler, True, clock, TestLogger(clock))
@@ -1037,15 +1037,15 @@ class TimeBarAggregatorTests(unittest.TestCase):
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        security = TestStubs.security_audusd()
+        instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         aggregator = TimeBarAggregator(bar_type, handler, True, TestClock(), TestLogger(clock))
 
         stop_time = UNIX_EPOCH + timedelta(minutes=2)
 
         tick1 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(1),
@@ -1054,7 +1054,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(1),
@@ -1063,7 +1063,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            security=AUDUSD_SIM.security,
+            instrument_id=AUDUSD_SIM.id,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(1),
@@ -1103,9 +1103,9 @@ class BulkTickBarBuilderTests(unittest.TestCase):
 
         bar_store = ObjectStorer()
         handler = bar_store.store_2
-        security = TestStubs.security_usdjpy()
+        instrument_id = TestStubs.usdjpy_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
 
         clock = TestClock()
         logger = TestLogger(clock)

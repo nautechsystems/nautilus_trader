@@ -32,7 +32,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
@@ -93,16 +93,16 @@ cdef class DataEngine(Component):
     cdef inline void _execute_command(self, DataCommand command) except *
     cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *
     cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
-    cdef inline void _handle_subscribe_instrument(self, MarketDataClient client, Security security, handler: callable) except *
-    cdef inline void _handle_subscribe_order_book(self, MarketDataClient client, Security security, dict metadata, handler: callable) except *
-    cdef inline void _handle_subscribe_quote_ticks(self, MarketDataClient client, Security security, handler: callable) except *
-    cdef inline void _handle_subscribe_trade_ticks(self, MarketDataClient client, Security security, handler: callable) except *
+    cdef inline void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
+    cdef inline void _handle_subscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, handler: callable) except *  # noqa
+    cdef inline void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
+    cdef inline void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef inline void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type, handler: callable) except *
     cdef inline void _handle_subscribe_data(self, DataClient client, DataType data_type, handler: callable) except *
-    cdef inline void _handle_unsubscribe_instrument(self, MarketDataClient client, Security security, handler: callable) except *
-    cdef inline void _handle_unsubscribe_order_book(self, MarketDataClient client, Security security, dict metadata, handler: callable) except *
-    cdef inline void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, Security security, handler: callable) except *
-    cdef inline void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, Security security, handler: callable) except *
+    cdef inline void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
+    cdef inline void _handle_unsubscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, handler: callable) except *  # noqa
+    cdef inline void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
+    cdef inline void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef inline void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type, handler: callable) except *
     cdef inline void _handle_unsubscribe_data(self, DataClient client, DataType data_type, handler: callable) except *
     cdef inline void _handle_request(self, DataRequest request) except *

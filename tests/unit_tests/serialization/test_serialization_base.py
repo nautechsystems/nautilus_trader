@@ -56,7 +56,7 @@ class SerializationBaseTests(unittest.TestCase):
         )
 
         order = order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )

@@ -31,12 +31,10 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -50,23 +48,17 @@ if __name__ == "__main__":
     instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
 
     BINANCE = Venue("BINANCE")
-    security = Security(
-        symbol=Symbol("ETH/USDT"),
-        venue=BINANCE,
-        asset_class=AssetClass.CRYPTO,
-        asset_type=AssetType.SPOT,
-    )
-
-    ETHUSDT_BINANCE = instruments.get(security)
+    instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
+    ETHUSDT_BINANCE = instruments.get(instrument_id)
 
     # Setup data container
     data = BacktestDataContainer()
     data.add_instrument(ETHUSDT_BINANCE)
-    data.add_trade_ticks(ETHUSDT_BINANCE.security, TestDataProvider.ethusdt_trades())
+    data.add_trade_ticks(ETHUSDT_BINANCE.id, TestDataProvider.ethusdt_trades())
 
     # Instantiate your strategy
     strategy = EMACross(
-        security=ETHUSDT_BINANCE.security,
+        instrument_id=ETHUSDT_BINANCE.id,
         bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
         fast_ema_period=10,
         slow_ema_period=20,

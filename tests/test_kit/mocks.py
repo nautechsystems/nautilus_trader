@@ -29,8 +29,8 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.order.base import Order
@@ -141,7 +141,7 @@ class MockStrategy(TradingStrategy):
 
         if self.ema1.value > self.ema2.value:
             buy_order = self.order_factory.market(
-                self.bar_type.security,
+                self.bar_type.instrument_id,
                 OrderSide.BUY,
                 100000,
             )
@@ -150,7 +150,7 @@ class MockStrategy(TradingStrategy):
             self.position_id = buy_order.cl_ord_id
         elif self.ema1.value < self.ema2.value:
             sell_order = self.order_factory.market(
-                self.bar_type.security,
+                self.bar_type.instrument_id,
                 OrderSide.SELL,
                 100000,
             )
@@ -306,16 +306,16 @@ class MockMarketDataClient(MarketDataClient):
     def subscribe(self, data_type: DataType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def subscribe_instrument(self, security: Security) -> None:
+    def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def subscribe_order_book(self, security, level, depth=0, kwargs=None) -> None:
+    def subscribe_order_book(self, instrument_id, level, depth=0, kwargs=None) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def subscribe_quote_ticks(self, security: Security) -> None:
+    def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def subscribe_trade_ticks(self, security: Security) -> None:
+    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def subscribe_bars(self, bar_type: BarType) -> None:
@@ -324,19 +324,19 @@ class MockMarketDataClient(MarketDataClient):
     def unsubscribe(self, data_type: DataType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_quote_ticks(self, security: Security) -> None:
+    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_trade_ticks(self, security: Security) -> None:
+    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def unsubscribe_bars(self, bar_type: BarType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_instrument(self, security: Security) -> None:
+    def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_order_book(self, security: Security) -> None:
+    def unsubscribe_order_book(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 # -- REQUESTS --------------------------------------------------------------------------------------
@@ -344,7 +344,7 @@ class MockMarketDataClient(MarketDataClient):
     def request(self, datatype: DataType, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def request_instrument(self, security: Security, correlation_id: UUID) -> None:
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def request_instruments(self, correlation_id: UUID) -> None:
@@ -352,7 +352,7 @@ class MockMarketDataClient(MarketDataClient):
 
     def request_quote_ticks(
         self,
-        security: Security,
+        instrument_id: InstrumentId,
         from_datetime: datetime,
         to_datetime: datetime,
         limit: int,
@@ -362,7 +362,7 @@ class MockMarketDataClient(MarketDataClient):
 
     def request_trade_ticks(
         self,
-        security: Security,
+        instrument_id: InstrumentId,
         from_datetime: datetime,
         to_datetime: datetime,
         limit: int,

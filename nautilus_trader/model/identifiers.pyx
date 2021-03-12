@@ -14,10 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
-from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 
 
 cdef str _NULL_ID = "NULL"
@@ -79,7 +75,7 @@ cdef class Identifier:
 cdef class Symbol(Identifier):
     """
     Represents a valid ticker symbol identifier for a financial market tradeable
-    security.
+    instrument.
 
     The identifier value must be unique for a trading venue.
     """
@@ -105,7 +101,7 @@ cdef class Symbol(Identifier):
 cdef class Venue(Identifier):
     """
     Represents a valid trading venue identifier for a financial market tradeable
-    security.
+    instrument.
 
     The identifier value must be unique at the fund level.
     """
@@ -128,108 +124,60 @@ cdef class Venue(Identifier):
         super().__init__(name)
 
 
-cdef class Security(Identifier):
+cdef class InstrumentId(Identifier):
     """
-    Represents a valid financial market tradeable security identifier.
+    Represents a valid instrument identifier.
 
-    The symbol and venue combination should uniquely identify the security.
-
-    Warnings
-    --------
-    Specifying a security identifier requires care as all members must match
-    for two securities to be considered equal.
-
+    The symbol and venue combination should uniquely identify the instrument.
     """
 
-    def __init__(
-        self,
-        Symbol symbol,
-        Venue venue not None,
-        AssetClass asset_class,
-        AssetType asset_type,
-    ):
+    def __init__(self not None, Symbol symbol, Venue venue not None):
         """
-        Initialize a new instance of the `Security` class.
+        Initialize a new instance of the `InstrumentId` class.
 
         Parameters
         ----------
         symbol : Symbol
-            The securities ticker symbol.
+            The instruments ticker symbol.
         venue : Venue
-            The securities primary trading venue.
-        asset_class : AssetClass (Enum)
-            The securities asset class.
-        asset_type : AssetType (Enum)
-            The securities asset type.
-
-        Raises
-        ------
-        ValueError
-            If asset_class is UNDEFINED.
-        ValueError
-            If asset_type is UNDEFINED.
+            The instruments trading venue.
 
         """
-        Condition.not_equal(asset_class, AssetClass.UNDEFINED, "asset_class", "UNDEFINED")
-        Condition.not_equal(asset_type, AssetType.UNDEFINED, "asset_type", "UNDEFINED")
         super().__init__(f"{symbol.value}.{venue.value}")
 
         self.symbol = symbol
         self.venue = venue
-        self.asset_class = asset_class
-        self.asset_type = asset_type
-
-    def __eq__(self, Security other) -> bool:
-        return self.value == other.value \
-            and self.asset_class == other.asset_class \
-            and self.asset_type == other.asset_type
-
-    def __hash__(self) -> int:
-        return hash((self.value, self.asset_class, self.asset_type))
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.to_serializable_str()}')"
 
     @staticmethod
-    cdef Security from_serializable_str_c(str value):
+    cdef InstrumentId from_serializable_str_c(str value):
         Condition.valid_string(value, "value")
 
-        cdef list pieces = value.split(',', maxsplit=2)
+        cdef tuple pieces = value.partition('.')
 
         if len(pieces) != 3:
-            raise ValueError(f"The Security string value was malformed, was {value}")
+            raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        cdef tuple symbol_venue = pieces[0].partition('.')
-
-        if len(symbol_venue) != 3:
-            raise ValueError(f"The Security string value was malformed, was {value}")
-
-        return Security(
-            symbol=Symbol(symbol_venue[0]),
-            venue=Venue(symbol_venue[2]),
-            asset_class=AssetClassParser.from_str(pieces[1]),
-            asset_type=AssetTypeParser.from_str(pieces[2]),
-        )
+        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[2]))
 
     @staticmethod
-    def from_serializable_str(value: str) -> Security:
+    def from_serializable_str(value: str) -> InstrumentId:
         """
-        Return a security parsed from the given string value. Must be correctly
-        formatted including a single period and two commas.
+        Return an instrument identifier parsed from the given string value.
+        Must be correctly formatted including a single period and two commas.
 
-        Example: "AUD/USD.IDEALPRO,FX,SPOT".
+        Example: "AUD/USD.IDEALPRO".
 
         Parameters
         ----------
         value : str
-            The security identifier string value to parse.
+            The instrument identifier string value to parse.
 
         Returns
         -------
-        Security
+        InstrumentId
 
         """
-        return Security.from_serializable_str_c(value)
+        return InstrumentId.from_serializable_str_c(value)
 
     cpdef str to_serializable_str(self):
         """
@@ -240,144 +188,7 @@ cdef class Security(Identifier):
         str
 
         """
-        return (f"{self.value},"
-                f"{AssetClassParser.to_str(self.asset_class)},"
-                f"{AssetTypeParser.to_str(self.asset_type)}")
-
-
-cdef class FutureSecurity(Security):
-    """
-    Represents a valid futures contract security identifier.
-    """
-
-    def __init__(
-        self,
-        Symbol symbol,
-        Venue exchange not None,
-        AssetClass asset_class,
-        str expiry=None,
-        Currency currency=None,
-        int multiplier=0,
-    ):
-        """
-        Initialize a new instance of the `Security` class.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The securities ticker symbol.
-        exchange : Venue
-            The securities primary exchange.
-        asset_class : AssetClass (Enum)
-            The securities asset class.
-        expiry : str
-            The futures contract expiry identifier.
-        currency : Currency
-            The futures contract currency.
-        multiplier : int
-            The futures contract multiplier.
-
-        Raises
-        ------
-        ValueError
-            If asset_class is UNDEFINED.
-
-        """
-        if expiry is None:
-            expiry = ""
-        Condition.not_equal(asset_class, AssetClass.UNDEFINED, "asset_class", "UNDEFINED")
-        super().__init__(symbol, exchange, asset_class, AssetType.FUTURE)
-
-        self.expiry = expiry
-        self.currency = currency
-        self.multiplier = multiplier
-
-    def __eq__(self, Security other) -> bool:
-        return isinstance(other, FutureSecurity) \
-            and self.value == other.value \
-            and self.asset_class == other.asset_class \
-            and self.asset_type == other.asset_type \
-            and self.expiry == other.expiry \
-            and self.currency == other.currency \
-            and self.multiplier == other.multiplier
-
-    def __ne__(self, Security other) -> bool:
-        return not self == other
-
-    def __hash__(self) -> int:
-        return hash((
-            self.value,
-            self.asset_class,
-            self.asset_type,
-            self.expiry,
-            self.currency,
-            self.multiplier,
-        ))
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.to_serializable_str()}')"
-
-    @staticmethod
-    cdef FutureSecurity from_str_c(str value):
-        Condition.valid_string(value, "value")
-
-        cdef list pieces = value.split(',', maxsplit=4)
-
-        if len(pieces) != 5:
-            raise ValueError(f"The FutureSecurity string value was malformed, was {value}")
-
-        cdef tuple symbol_venue = pieces[0].partition('.')
-
-        if len(symbol_venue) != 3:
-            raise ValueError(f"The FutureSecurity string value was malformed, was {value}")
-
-        cdef str expiry_str = pieces[2]
-        cdef str currency_str = pieces[3]
-        cdef str multiplier_str = pieces[4]
-
-        return FutureSecurity(
-            symbol=Symbol(symbol_venue[0]),
-            exchange=Venue(symbol_venue[2]),
-            asset_class=AssetClassParser.from_str(pieces[1]),
-            expiry=expiry_str,
-            currency=Currency.from_str_c(currency_str) if currency_str is not None else None,
-            multiplier=int(multiplier_str) if multiplier_str is not None else 0,
-        )
-
-    @staticmethod
-    def from_str(value: str) -> FutureSecurity:
-        """
-        Return a future security parsed from the given string value. Must be
-        correctly formatted including a single period and four commas.
-
-        Example: "DAX.DTB,INDEX,201609,EUR,5".
-
-        Parameters
-        ----------
-        value : str
-            The future security string value to parse.
-
-        Returns
-        -------
-        FutureSecurity
-
-        """
-        return FutureSecurity.from_str_c(value)
-
-    cpdef str to_serializable_str(self):
-        """
-        Return a serializable string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return (f"{self.value},"
-                f"{AssetClassParser.to_str(self.asset_class)},"
-                f"{self.expiry},"
-                f"{self.currency},"
-                f"{self.multiplier}")
+        return self.value
 
 
 cdef class IdTag(Identifier):
