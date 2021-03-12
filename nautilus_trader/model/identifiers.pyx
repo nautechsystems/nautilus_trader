@@ -49,7 +49,7 @@ cdef class Identifier:
         self.value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return self._is_subclass(type(other)) and self.value == other.value
+        return isinstance(other, type(self)) and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
         return not self == other
@@ -74,10 +74,6 @@ cdef class Identifier:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
-
-    cdef inline bint _is_subclass(self, type other) except *:
-        cdef type type_self = type(self)
-        return issubclass(other, type_self) or issubclass(type_self, other)
 
 
 cdef class Symbol(Identifier):
@@ -122,32 +118,6 @@ cdef class Venue(Identifier):
         ----------
         name : str
             The venue name identifier value.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-
-        """
-        super().__init__(name)
-
-
-cdef class Exchange(Venue):
-    """
-    Represents a valid exchange identifier which financial market securities are
-    traded on.
-
-    The identifier value must be unique at the fund level.
-    """
-
-    def __init__(self, str name):
-        """
-        Initialize a new instance of the `Exchange` class.
-
-        Parameters
-        ----------
-        name : str
-            The exchange name identifier value.
 
         Raises
         ------
@@ -283,7 +253,7 @@ cdef class FutureSecurity(Security):
     def __init__(
         self,
         Symbol symbol,
-        Exchange exchange not None,
+        Venue exchange not None,
         AssetClass asset_class,
         str expiry=None,
         Currency currency=None,
@@ -296,7 +266,7 @@ cdef class FutureSecurity(Security):
         ----------
         symbol : Symbol
             The securities ticker symbol.
-        exchange : Exchange
+        exchange : Venue
             The securities primary exchange.
         asset_class : AssetClass (Enum)
             The securities asset class.
@@ -367,7 +337,7 @@ cdef class FutureSecurity(Security):
 
         return FutureSecurity(
             symbol=Symbol(symbol_venue[0]),
-            exchange=Exchange(symbol_venue[2]),
+            exchange=Venue(symbol_venue[2]),
             asset_class=AssetClassParser.from_str(pieces[1]),
             expiry=expiry_str,
             currency=Currency.from_str_c(currency_str) if currency_str is not None else None,

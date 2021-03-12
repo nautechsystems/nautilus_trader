@@ -36,9 +36,9 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit.providers import TestDataProvider
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     print("Loading instruments...")
     instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
 
-    BINANCE = Exchange("BINANCE")
+    BINANCE = Venue("BINANCE")
     security = Security(
         symbol=Symbol("ETH/USDT"),
         venue=BINANCE,

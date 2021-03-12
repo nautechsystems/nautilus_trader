@@ -44,9 +44,9 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport Exchange
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order.base cimport Order
@@ -92,7 +92,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
-            Exchange(client.name.upper()),
+            Venue(client.name.upper()),
             account_id,
             engine,
             instrument_provider,

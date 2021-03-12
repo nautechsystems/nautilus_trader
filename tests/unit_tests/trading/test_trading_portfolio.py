@@ -28,7 +28,6 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -46,8 +45,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 SIM = Venue("SIM")
-BINANCE = Exchange("BINANCE")
-BITMEX = Exchange("BITMEX")
+BINANCE = Venue("BINANCE")
+BITMEX = Venue("BITMEX")
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", leverage=Decimal("50"))
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", leverage=Decimal("50"))

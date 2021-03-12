@@ -24,9 +24,9 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Exchange
 from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -51,7 +51,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
         """
         self._client = client  # Assign first as `load_all` will call it
-        super().__init__(venue=Exchange(client.name.upper()), load_all=load_all)
+        super().__init__(venue=Venue(client.name.upper()), load_all=load_all)
 
     async def load_all_async(self):
         """

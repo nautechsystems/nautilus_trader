@@ -1,7 +1,11 @@
 # NautilusTrader 1.110.0 Beta - Release Notes
 
-The main thrust of this release is to generalize the representation and handling
-of data objects in the platform.
+This release applies one more major change to the identifier API. `Security` has
+been renamed to `InstrumentId` for greater clarity and to group the concept of
+an instrument with its identifier.
+
+Data objects in the framework have been further abstracted to prepare for the
+handling of custom data in backtests.
 
 A `RiskEngine` base class has also been scaffolded.
 

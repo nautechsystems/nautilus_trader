@@ -34,10 +34,10 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
@@ -46,7 +46,7 @@ from tests.test_kit.stubs import TestStubs
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
-BINANCE = Exchange("BINANCE")
+BINANCE = Venue("BINANCE")
 BTCUSDT = Security(Symbol("BTC/USDT"), BINANCE, AssetClass.CRYPTO, AssetType.SPOT)
 ETHUSDT = Security(Symbol("ETH/USDT"), BINANCE, AssetClass.CRYPTO, AssetType.SPOT)
 

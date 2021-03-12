@@ -30,7 +30,6 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -106,7 +105,7 @@ class TestInstrumentProvider:
         """
         security = Security(
             symbol=Symbol("BTC/USDT"),
-            venue=Exchange("BINANCE"),
+            venue=Venue("BINANCE"),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SPOT,
         )
@@ -149,7 +148,7 @@ class TestInstrumentProvider:
         """
         security = Security(
             symbol=Symbol("ETH/USDT"),
-            venue=Exchange("BINANCE"),
+            venue=Venue("BINANCE"),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SPOT,
         )
@@ -197,7 +196,7 @@ class TestInstrumentProvider:
         """
         security = Security(
             symbol=Symbol("XBT/USD"),
-            venue=Exchange("BITMEX"),
+            venue=Venue("BITMEX"),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
         )
@@ -245,7 +244,7 @@ class TestInstrumentProvider:
         """
         security = Security(
             symbol=Symbol("ETH/USD"),
-            venue=Exchange("BITMEX"),
+            venue=Venue("BITMEX"),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
         )

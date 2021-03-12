@@ -36,7 +36,6 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -55,8 +54,8 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-BITMEX = Exchange("BITMEX")
-BINANCE = Exchange("BINANCE")
+BITMEX = Venue("BITMEX")
+BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
