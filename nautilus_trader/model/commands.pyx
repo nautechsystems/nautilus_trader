@@ -109,6 +109,11 @@ cdef class SubmitOrder(TradingCommand):
         self.strategy_id = strategy_id
         self.position_id = position_id
         self.order = order
+        self.approved = False
+
+    cdef void approve(self) except *:
+        # C-only access for approving the sending of the order.
+        self.approved = True
 
     def __repr__(self) -> str:
         cdef str position_id_str = '' if self.position_id.is_null() else f"position_id={self.position_id.value}, "
@@ -170,6 +175,11 @@ cdef class SubmitBracketOrder(TradingCommand):
         self.account_id = account_id
         self.strategy_id = strategy_id
         self.bracket_order = bracket_order
+        self.approved = False
+
+    cdef void approve(self) except *:
+        # C-only access for approving the sending of the order.
+        self.approved = True
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("

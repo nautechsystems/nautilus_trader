@@ -13,9 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.component cimport Component
+from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.trading.portfolio cimport Portfolio
 
 
-cdef class RiskModule:
+cdef class RiskEngine(Component):
+    cdef Portfolio _portfolio
+    cdef ExecutionEngine _exec_engine
 
-    cpdef void approve(self, Order order) except *
+    cdef readonly bint block_all_orders
+
+    cpdef void set_block_all_orders(self, bint value=*) except *
+    cpdef void approve_order(self, SubmitOrder command) except *
+    cpdef void approve_bracket(self, SubmitBracketOrder command) except *
+    cdef list _check_submit_order_risk(self, SubmitOrder command)
+    cdef list _check_submit_bracket_order_risk(self, SubmitBracketOrder command)
+    cdef void _deny_order(self, Order order, str reason) except *

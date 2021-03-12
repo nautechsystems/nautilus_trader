@@ -114,6 +114,7 @@ cdef class ExecutionEngine(Component):
             clock=clock,
         )
         self._portfolio = portfolio
+        self._risk_engine = None
 
         self.trader_id = database.trader_id
         self.cache = ExecutionCache(database, logger)
@@ -282,6 +283,21 @@ cdef class ExecutionEngine(Component):
         strategy.register_portfolio(self._portfolio)
         self._strategies[strategy.id] = strategy
         self._log.info(f"Registered {strategy}.")
+
+    cpdef void register_risk_engine(self, RiskEngine engine) except *:
+        """
+        Register the given risk engine with the execution engine.
+
+        Parameters
+        ----------
+        engine : RiskEngine
+            The risk engine to register.
+
+        """
+        Condition.not_none(engine, "engine")
+
+        self._risk_engine = engine
+        self._log.info(f"Registered {engine}.")
 
     cpdef void deregister_client(self, ExecutionClient client) except *:
         """

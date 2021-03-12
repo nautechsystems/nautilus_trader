@@ -1,6 +1,9 @@
 # NautilusTrader 1.110.0 Beta - Release Notes
 
+The main thrust of this release is to generalize the representation and handling
+of data objects in the platform.
 
+A `RiskEngine` base class has also been scaffolded.
 
 ## Breaking Changes
 - `Data` becomes an abstract base class with `timestamp` and `unix_timestamp`
