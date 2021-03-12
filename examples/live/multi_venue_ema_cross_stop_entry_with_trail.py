@@ -28,9 +28,9 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
@@ -91,7 +91,7 @@ config = {
 
 security1 = Security(
     symbol=Symbol("ETH/USDT"),
-    venue=Exchange("BINANCE"),
+    venue=Venue("BINANCE"),
     asset_class=AssetClass.CRYPTO,
     asset_type=AssetType.SPOT,
 )
@@ -109,7 +109,7 @@ strategy1 = EMACross(
 
 security2 = Security(
     symbol=Symbol("BTC/USD"),
-    venue=Exchange("BITMEX"),
+    venue=Venue("BITMEX"),
     asset_class=AssetClass.CRYPTO,
     asset_type=AssetType.SWAP,
 )

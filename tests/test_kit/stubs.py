@@ -40,7 +40,6 @@ from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Security
@@ -62,19 +61,19 @@ class TestStubs:
 
     @staticmethod
     def security_btcusd_bitmex() -> Security:
-        return Security(Symbol("BTC/USD"), Exchange("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
+        return Security(Symbol("BTC/USD"), Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
 
     @staticmethod
     def security_ethusd_bitmex() -> Security:
-        return Security(Symbol("ETH/USD"), Exchange("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
+        return Security(Symbol("ETH/USD"), Venue("BITMEX"), AssetClass.CRYPTO, AssetType.SWAP)
 
     @staticmethod
     def security_btcusdt_binance() -> Security:
-        return Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        return Security(Symbol("BTC/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
     @staticmethod
     def security_ethusdt_binance() -> Security:
-        return Security(Symbol("ETH/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        return Security(Symbol("ETH/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
     @staticmethod
     def security_audusd() -> Security:

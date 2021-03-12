@@ -22,18 +22,12 @@ cdef class Identifier:
     cdef readonly str value
     """The identifier value.\n\n:returns: `str`"""
 
-    cdef inline bint _is_subclass(self, type other) except *
-
 
 cdef class Symbol(Identifier):
     pass
 
 
 cdef class Venue(Identifier):
-    pass
-
-
-cdef class Exchange(Venue):
     pass
 
 

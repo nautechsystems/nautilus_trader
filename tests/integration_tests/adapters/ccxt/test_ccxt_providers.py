@@ -24,9 +24,9 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from tests import TESTS_PACKAGE_ROOT
 
@@ -204,7 +204,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
         provider = CCXTInstrumentProvider(client=mock_client)
 
-        security = Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        security = Security(Symbol("BTC/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
         # Act
         instrument = provider.get(security)
@@ -229,7 +229,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         provider = CCXTInstrumentProvider(client=mock_client)
         provider.load_all()
 
-        security = Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        security = Security(Symbol("BTC/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
 
         # Act
         instrument = provider.get(security)

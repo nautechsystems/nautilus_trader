@@ -28,16 +28,16 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
-BITMEX = Exchange("BITMEX")
+BITMEX = Venue("BITMEX")
 BTCUSDT = Security(Symbol("BTC/USD"), BITMEX, AssetClass.CRYPTO, AssetType.SWAP)
 ETHUSDT = Security(Symbol("ETH/USD"), BITMEX, AssetClass.CRYPTO, AssetType.SWAP)
 

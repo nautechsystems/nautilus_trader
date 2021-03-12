@@ -20,7 +20,6 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import FutureSecurity
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import Identifier
@@ -66,9 +65,9 @@ class TestIdentifiers:
 
     def test_equality_of_subclass(self):
         # Arrange
-        id1 = Exchange("BINANCE")
-        id2 = Exchange("BINANCE")
-        id3 = Security(Symbol("BINANCE"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)  # Invalid
+        id1 = Venue("BINANCE")
+        id2 = Venue("BINANCE")
+        id3 = Security(Symbol("BINANCE"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)  # Invalid
         id4 = IdTag("BINANCE")
 
         # Act
@@ -273,7 +272,7 @@ class TestFutureSecurityIdentifier:
         # Arrange
         security = FutureSecurity(
             symbol=Symbol("DAX"),
-            exchange=Exchange("DTB"),
+            exchange=Venue("DTB"),
             asset_class=AssetClass.INDEX,
             expiry="201609",
             currency=Currency.from_str("EUR"),
@@ -283,7 +282,7 @@ class TestFutureSecurityIdentifier:
         # Act
         # Assert
         assert Symbol("DAX") == security.symbol
-        assert Exchange("DTB") == security.venue
+        assert Venue("DTB") == security.venue
         assert AssetClass.INDEX == security.asset_class
         assert AssetType.FUTURE == security.asset_type
         assert "201609" == security.expiry
@@ -294,7 +293,7 @@ class TestFutureSecurityIdentifier:
         # Arrange
         security = FutureSecurity(
             symbol=Symbol("DAX"),
-            exchange=Exchange("DTB"),
+            exchange=Venue("DTB"),
             asset_class=AssetClass.INDEX,
             expiry="201609",
             currency=Currency.from_str("EUR"),
@@ -309,7 +308,7 @@ class TestFutureSecurityIdentifier:
         # Arrange
         security = FutureSecurity(
             symbol=Symbol("DAX"),
-            exchange=Exchange("DTB"),
+            exchange=Venue("DTB"),
             asset_class=AssetClass.INDEX,
             expiry="201609",
             currency=Currency.from_str("EUR"),
@@ -324,7 +323,7 @@ class TestFutureSecurityIdentifier:
         # Arrange
         security1 = FutureSecurity(
             symbol=Symbol("DAX"),
-            exchange=Exchange("DTB"),
+            exchange=Venue("DTB"),
             asset_class=AssetClass.INDEX,
             expiry="201609",
             currency=Currency.from_str("EUR"),
@@ -333,7 +332,7 @@ class TestFutureSecurityIdentifier:
 
         security2 = FutureSecurity(
             symbol=Symbol("DAX"),
-            exchange=Exchange("DTB"),
+            exchange=Venue("DTB"),
             asset_class=AssetClass.INDEX,
             expiry="201610",
             currency=Currency.from_str("EUR"),
@@ -349,7 +348,7 @@ class TestFutureSecurityIdentifier:
         # Arrange
         security = FutureSecurity(
             symbol=Symbol("DAX"),
-            exchange=Exchange("DTB"),
+            exchange=Venue("DTB"),
             asset_class=AssetClass.INDEX,
             expiry="201609",
             currency=Currency.from_str("EUR"),
@@ -366,7 +365,7 @@ class TestFutureSecurityIdentifier:
         # Arrange
         security = FutureSecurity(
             symbol=Symbol("DAX"),
-            exchange=Exchange("DTB"),
+            exchange=Venue("DTB"),
             asset_class=AssetClass.INDEX,
         )
 

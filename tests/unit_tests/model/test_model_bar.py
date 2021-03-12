@@ -23,7 +23,6 @@ from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -165,7 +164,7 @@ class TestBarType:
         [["AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", BarType(Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
          ["GBP/USD.SIM,FX,SPOT-1000-TICK-MID", BarType(Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
          ["AAPL.NYSE,STOCK,SPOT-1-HOUR-MID", BarType(Security(Symbol("AAPL"), Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
-         ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
+         ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security(Symbol("BTC/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange

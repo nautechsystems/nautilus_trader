@@ -17,10 +17,10 @@ import asyncio
 import unittest
 
 from nautilus_trader.live.providers import InstrumentProvider
-from nautilus_trader.model.identifiers import Exchange
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.stubs import TestStubs
 
-BITMEX = Exchange("BITMEX")
+BITMEX = Venue("BITMEX")
 AUDUSD = TestStubs.security_audusd()
 
 
