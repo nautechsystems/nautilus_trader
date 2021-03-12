@@ -59,6 +59,8 @@ cdef class Tick(Data):
         super().__init__(timestamp, unix_timestamp)
 
         self.instrument_id = instrument_id
+        self.symbol = instrument_id.symbol
+        self.venue = instrument_id.venue
 
     def __eq__(self, Tick other) -> bool:
         return self.instrument_id == other.instrument_id and self.timestamp == other.timestamp

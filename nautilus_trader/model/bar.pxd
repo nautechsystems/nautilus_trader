@@ -18,6 +18,8 @@ from cpython.datetime cimport datetime
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -39,9 +41,13 @@ cdef class BarSpecification:
 
 cdef class BarType:
     cdef readonly InstrumentId instrument_id
-    """The instrument identifier of the bar type.\n\n:returns: `InstrumentId`"""
+    """The bar type instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The bar type symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The bar type venue.\n\n:returns: `Venue`"""
     cdef readonly BarSpecification spec
-    """The specification of the bar type.\n\n:returns: `BarSpecification`"""
+    """The bar type specification.\n\n:returns: `BarSpecification`"""
     cdef readonly bint is_internal_aggregation
     """If bar aggregation is internal to the platform.\n\n:returns: `bool`"""
 

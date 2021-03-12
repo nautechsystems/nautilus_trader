@@ -112,7 +112,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue,
+            order.venue,
             self.trader_id,
             self.account_id,
             self.strategy.id,

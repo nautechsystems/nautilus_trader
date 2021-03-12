@@ -38,7 +38,7 @@ cdef class AccountState(Event):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly list balances
-    """The currency account balances.\n\n:returns: `list[Money]`"""
+    """The account balances.\n\n:returns: `list[Money]`"""
     cdef readonly list balances_free
     """The account balances free for trading.\n\n:returns: `list[Money]`"""
     cdef readonly list balances_locked

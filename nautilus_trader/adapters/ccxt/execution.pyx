@@ -206,7 +206,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
-            instrument = self._instrument_provider.get(order.instrument_id.symbol)
+            instrument = self._instrument_provider.get(order.symbol)
             if instrument is None:
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"instrument for {order.instrument_id} not found.")
@@ -215,10 +215,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             try:
                 response = await self._client.fetch_order(
                     id=order.id.value,
-                    symbol=order.instrument_id.symbol.value,
+                    symbol=order.symbol.value,
                 )
                 trades = await self._client.fetch_my_trades(
-                    symbol=order.instrument_id.symbol.value,
+                    symbol=order.symbol.value,
                     since=to_unix_time_ms(order.timestamp),
                 )
                 order_trades = [trade for trade in trades if trade["order"] == order.id.value]
@@ -474,7 +474,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.instrument_id.symbol.value,
+                symbol=order.symbol.value,
                 type=OrderTypeParser.to_str(order.type).lower(),
                 side=OrderSideParser.to_str(order.side).lower(),
                 amount=str(order.quantity),
@@ -500,7 +500,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             await self._client.cancel_order(
                 id=order.id.value,
-                symbol=order.instrument_id.symbol.value,
+                symbol=order.symbol.value,
             )
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._cancel_order.__name__)

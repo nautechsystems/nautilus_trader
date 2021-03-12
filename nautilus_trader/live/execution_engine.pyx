@@ -153,8 +153,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Build order state map
         cdef Order order
         for order in open_orders:
-            if order.instrument_id.venue in venue_orders:
-                venue_orders[order.instrument_id.venue].append(order)
+            if order.venue in venue_orders:
+                venue_orders[order.venue].append(order)
             else:
                 self._log.error(f"Cannot resolve state. No registered"
                                 f"execution client for active {order}.")
@@ -179,11 +179,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
             resolved = True
             for order in open_orders:
-                target_state = venue_reports[order.instrument_id.venue].order_states.get(order.id, 0)
+                target_state = venue_reports[order.venue].order_states.get(order.id, 0)
                 if order.state_c() != target_state:
                     resolved = False  # Incorrect state
                 if target_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
-                    filled_qty = venue_reports[order.instrument_id.venue].order_filled[order.id]
+                    filled_qty = venue_reports[order.venue].order_filled[order.id]
                     if order.filled_qty != filled_qty:
                         resolved = False  # Incorrect filled quantity
             if resolved:

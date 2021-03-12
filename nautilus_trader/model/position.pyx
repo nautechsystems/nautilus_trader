@@ -59,9 +59,11 @@ cdef class Position:
         self.account_id = event.account_id
         self.from_order = event.cl_ord_id
         self.strategy_id = event.strategy_id
+        self.instrument_id = event.instrument_id
 
         # Properties
-        self.instrument_id = event.instrument_id
+        self.symbol = event.instrument_id.symbol
+        self.venue = event.instrument_id.venue
         self.entry = event.order_side
         self.side = Position.side_from_order_side(event.order_side)
         self.relative_quantity = Decimal()  # Initialized in apply()

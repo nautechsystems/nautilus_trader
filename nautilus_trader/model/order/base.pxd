@@ -42,6 +42,8 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -65,6 +67,10 @@ cdef class Order:
     """The orders last execution identifier.\n\n:returns: `ExecutionId` or None"""
     cdef readonly InstrumentId instrument_id
     """The order instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The order symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The order venue.\n\n:returns: `Venue`"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly OrderType type

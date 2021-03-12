@@ -1196,7 +1196,7 @@ cdef class DataEngine(Component):
         # noinspection bulk_updater.receive
         # noinspection PyUnresolvedReferences
         request = DataRequest(
-            provider=bar_type.instrument_id.venue.value,
+            provider=bar_type.venue.value,
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),

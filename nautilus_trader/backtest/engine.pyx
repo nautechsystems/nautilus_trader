@@ -551,7 +551,7 @@ cdef class BacktestEngine:
         while self._data_producer.has_tick_data:
             tick = self._data_producer.next_tick()
             self._advance_time(tick.timestamp)
-            self._exchanges[tick.instrument_id.venue].process_tick(tick)
+            self._exchanges[tick.venue].process_tick(tick)
             self._data_engine.process(tick)
             self._process_modules(tick.timestamp)
             self.iteration += 1
@@ -655,7 +655,7 @@ cdef class BacktestEngine:
             # Find all positions for exchange venue
             positions = []
             for position in self._exec_engine.cache.positions():
-                if position.instrument_id.venue == exchange.id:
+                if position.venue == exchange.id:
                     positions.append(position)
 
             # Calculate statistics

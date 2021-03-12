@@ -73,6 +73,8 @@ cdef class OrderBook:
         self._asks = asks
 
         self.instrument_id = instrument_id
+        self.symbol = instrument_id.symbol
+        self.venue = instrument_id.venue
         self.level = level
         self.depth = depth
         self.price_precision = price_precision
