@@ -701,7 +701,7 @@ cdef class ExecutionEngine(Component):
             return
 
         # Check for open positions
-        positions_open = self.cache.positions_open(security=fill.security)
+        positions_open = self.cache.positions_open(instrument_id=fill.instrument_id)
         if len(positions_open) == 0:
             # Assign new identifier to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
@@ -766,7 +766,7 @@ cdef class ExecutionEngine(Component):
             fill.execution_id,
             fill.position_id,
             fill.strategy_id,
-            fill.security,
+            fill.instrument_id,
             fill.order_side,
             position.quantity,                       # Fill original position quantity remaining
             Quantity(fill.cum_qty - difference),     # Adjust cumulative qty by difference
@@ -802,7 +802,7 @@ cdef class ExecutionEngine(Component):
             fill.execution_id,
             position_id_flip,
             fill.strategy_id,
-            fill.security,
+            fill.instrument_id,
             fill.order_side,
             difference,  # Fill difference from original as above
             fill.cum_qty,
@@ -865,7 +865,7 @@ cdef class ExecutionEngine(Component):
         # For the internal position identifier generator
         cdef list positions = self.cache.positions()
 
-        # Count positions per security
+        # Count positions per instrument_id
         cdef dict counts = {}  # type: dict[StrategyId, int]
         cdef int count
         cdef Position position

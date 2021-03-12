@@ -24,11 +24,9 @@ from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
@@ -89,15 +87,13 @@ config = {
 # custom options into the configuration file or even use another configuration
 # file.
 
-security1 = Security(
+instrument1 = InstrumentId(
     symbol=Symbol("ETH/USDT"),
     venue=Venue("BINANCE"),
-    asset_class=AssetClass.CRYPTO,
-    asset_type=AssetType.SPOT,
 )
 
 strategy1 = EMACross(
-    security=security1,
+    instrument_id=instrument1,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("0.02"),
     fast_ema_period=10,
@@ -107,15 +103,13 @@ strategy1 = EMACross(
 
 # ------------------------------------------------------------------------------
 
-security2 = Security(
+instrument2 = InstrumentId(
     symbol=Symbol("BTC/USD"),
     venue=Venue("BITMEX"),
-    asset_class=AssetClass.CRYPTO,
-    asset_type=AssetType.SWAP,
 )
 
 strategy2 = EMACrossStopEntryTrail(
-    security=security2,
+    instrument_id=instrument,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("100"),
     fast_ema_period=10,

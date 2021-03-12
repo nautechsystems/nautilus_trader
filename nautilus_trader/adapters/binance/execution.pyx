@@ -115,7 +115,7 @@ cdef class BinanceExecutionClient(CCXTExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.security.symbol.value,
+                symbol=order.instrument_id.symbol.value,
                 type=order_type,
                 side=OrderSideParser.to_str(order.side),
                 amount=str(order.quantity),

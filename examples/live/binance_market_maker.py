@@ -23,11 +23,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative im
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
@@ -82,15 +80,13 @@ config = {
 # custom options into the configuration file or even use another configuration
 # file.
 
-security = Security(
+instrument_id = InstrumentId(
     symbol=Symbol("ETH/USDT"),
     venue=Venue("BINANCE"),
-    asset_class=AssetClass.CRYPTO,
-    asset_type=AssetType.SPOT,
 )
 
 strategy = VolatilityMarketMaker(
-    security=security,
+    instrument_id=instrument_id,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("0.05"),
     atr_period=20,

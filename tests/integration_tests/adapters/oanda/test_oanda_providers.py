@@ -22,7 +22,7 @@ from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
@@ -80,7 +80,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         # Assert
         self.assertTrue(len(instruments) > 0)
         self.assertEqual(dict, type(instruments))
-        self.assertEqual(Security, type(next(iter(instruments))))
+        self.assertEqual(InstrumentId, type(next(iter(instruments))))
 
     def test_get_audusd_when_not_loaded_returns_none(self):
         # Arrange
@@ -93,10 +93,10 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
         provider = OandaInstrumentProvider(client=mock_client, account_id="001")
 
-        security = Security(Symbol("AUD/USD"), Venue("OANDA"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("OANDA"))
 
         # Act
-        instrument = provider.get(security)
+        instrument = provider.get(instrument_id)
 
         # Assert
         self.assertIsNone(instrument)
@@ -112,15 +112,15 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
         provider = OandaInstrumentProvider(client=mock_client, account_id="001", load_all=True)
 
-        security = Security(Symbol("AUD/USD"), Venue("OANDA"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("OANDA"))
 
         # Act
-        instrument = provider.get(security)
+        instrument = provider.get(instrument_id)
 
         # Assert
         self.assertEqual(Instrument, type(instrument))
-        self.assertEqual(AssetClass.FX, instrument.security.asset_class)
-        self.assertEqual(AssetType.SPOT, instrument.security.asset_type)
+        self.assertEqual(AssetClass.FX, instrument.asset_class)
+        self.assertEqual(AssetType.SPOT, instrument.asset_type)
         self.assertEqual(AUD, instrument.base_currency)
         self.assertEqual(USD, instrument.quote_currency)
         self.assertEqual(USD, instrument.settlement_currency)

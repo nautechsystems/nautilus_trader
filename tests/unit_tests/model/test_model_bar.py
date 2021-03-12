@@ -19,11 +19,9 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -31,8 +29,8 @@ from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestStubs.security_audusd()
-GBPUSD_SIM = TestStubs.security_gbpusd()
+AUDUSD_SIM = TestStubs.audusd_id()
+GBPUSD_SIM = TestStubs.gbpusd_id()
 
 
 class TestBarSpecification:
@@ -111,12 +109,12 @@ class TestBarType:
 
     def test_bar_type_equality(self):
         # Arrange
-        security1 = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
-        security2 = Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        instrument_id1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        instrument_id2 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type1 = BarType(security1, bar_spec)
-        bar_type2 = BarType(security1, bar_spec)
-        bar_type3 = BarType(security2, bar_spec)
+        bar_type1 = BarType(instrument_id1, bar_spec)
+        bar_type2 = BarType(instrument_id1, bar_spec)
+        bar_type3 = BarType(instrument_id2, bar_spec)
 
         # Act
         # Assert
@@ -126,21 +124,21 @@ class TestBarType:
 
     def test_bar_type_to_serializable_string(self):
         # Arrange
-        security = Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
 
         # Act
         result = bar_type.to_serializable_str()
 
         # Assert
-        assert "AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID" == result
+        assert "AUD/USD.IDEALPRO-1-MINUTE-BID" == result
 
     def test_bar_type_hash_str_and_repr(self):
         # Arrange
-        security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
 
         # Act
         # Assert
@@ -161,10 +159,10 @@ class TestBarType:
 
     @pytest.mark.parametrize(
         "value, expected",
-        [["AUD/USD.IDEALPRO,FX,SPOT-1-MINUTE-BID", BarType(Security(Symbol("AUD/USD"), Venue("IDEALPRO"), AssetClass.FX, AssetType.SPOT), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
-         ["GBP/USD.SIM,FX,SPOT-1000-TICK-MID", BarType(Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
-         ["AAPL.NYSE,STOCK,SPOT-1-HOUR-MID", BarType(Security(Symbol("AAPL"), Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
-         ["BTC/USDT.BINANCE,CRYPTO,SPOT-100-TICK-LAST", BarType(Security(Symbol("BTC/USDT"), Venue("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
+        [["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
+         ["GBP/USD.SIM-1000-TICK-MID", BarType(InstrumentId(Symbol("GBP/USD"), Venue("SIM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
+         ["AAPL.NYSE-1-HOUR-MID", BarType(InstrumentId(Symbol("AAPL"), Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
+         ["BTC/USDT.BINANCE-100-TICK-LAST", BarType(InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
     )
     def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
@@ -312,9 +310,9 @@ class TestBarData:
 
     def test_str_repr(self):
         # Arrange
-        security = Security(Symbol("GBP/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type = BarType(security, bar_spec)
+        bar_type = BarType(instrument_id, bar_spec)
         bar = Bar(
             Price("1.00001"),
             Price("1.00004"),

@@ -24,9 +24,9 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -55,8 +55,8 @@ cdef class OrderEvent(Event):
 
 
 cdef class OrderInitialized(OrderEvent):
-    cdef readonly Security security
-    """The order security identifier.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId instrument_id
+    """The order instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly OrderSide order_side
@@ -156,8 +156,8 @@ cdef class OrderFilled(OrderEvent):
     """The position identifier associated with the event.\n\n:returns: `PositionId`"""
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
-    cdef readonly Security security
-    """The order security identifier.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId instrument_id
+    """The order instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly Quantity fill_qty

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -32,5 +32,5 @@ cdef class InstrumentProvider:
     cpdef void load_all(self) except *
     cpdef dict get_all(self)
     cpdef Currency currency(self, str code)
-    cpdef Instrument get(self, Security security)
+    cpdef Instrument get(self, InstrumentId instrument_id)
     cdef Instrument get_c(self, Symbol symbol)

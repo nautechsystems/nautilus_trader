@@ -84,56 +84,56 @@ class DataCacheFacadeTests(unittest.TestCase):
         # Fixture Setup
         self.facade = DataCacheFacade()
 
-    def test_securities_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.securities)
+    def test_instrument_ids_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.instrument_ids)
 
     def test_instruments_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.instruments)
 
     def test_quote_ticks_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.quote_ticks, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.quote_ticks, AUDUSD_SIM.id)
 
     def test_trade_ticks_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.trade_ticks, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.trade_ticks, AUDUSD_SIM.id)
 
     def test_bars_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.bars, TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_instrument_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.instrument, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.instrument, AUDUSD_SIM.id)
 
     def test_price_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.price, AUDUSD_SIM.security, PriceType.MID)
+        self.assertRaises(NotImplementedError, self.facade.price, AUDUSD_SIM.id, PriceType.MID)
 
     def test_order_book_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.order_book, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.order_book, AUDUSD_SIM.id)
 
     def test_quote_tick_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.quote_tick, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.quote_tick, AUDUSD_SIM.id)
 
     def test_trade_tick_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.trade_tick, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.trade_tick, AUDUSD_SIM.id)
 
     def test_bar_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.bar, TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_quote_tick_count_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.quote_tick_count, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.quote_tick_count, AUDUSD_SIM.id)
 
     def test_trade_tick_count_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.trade_tick_count, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.trade_tick_count, AUDUSD_SIM.id)
 
     def test_bar_count_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.bar_count, TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_has_order_book_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.has_order_book, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.has_order_book, AUDUSD_SIM.id)
 
     def test_has_quote_ticks_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.has_quote_ticks, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.has_quote_ticks, AUDUSD_SIM.id)
 
     def test_has_trade_ticks_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.has_trade_ticks, AUDUSD_SIM.security)
+        self.assertRaises(NotImplementedError, self.facade.has_trade_ticks, AUDUSD_SIM.id)
 
     def test_has_bars_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.has_bars, TestStubs.bartype_gbpusd_1sec_mid())

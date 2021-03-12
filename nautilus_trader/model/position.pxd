@@ -25,8 +25,8 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -48,8 +48,8 @@ cdef class Position:
     """The client order identifier for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the position.\n\n:returns: `StrategyId`"""
-    cdef readonly Security security
-    """The positions security identifier.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId instrument_id
+    """The positions instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide entry
     """The entry direction from open.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly PositionSide side

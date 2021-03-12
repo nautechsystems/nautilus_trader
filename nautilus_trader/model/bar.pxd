@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -38,8 +38,8 @@ cdef class BarSpecification:
 
 
 cdef class BarType:
-    cdef readonly Security security
-    """The security identifier of the bar type.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId instrument_id
+    """The instrument identifier of the bar type.\n\n:returns: `InstrumentId`"""
     cdef readonly BarSpecification spec
     """The specification of the bar type.\n\n:returns: `BarSpecification`"""
     cdef readonly bint is_internal_aggregation

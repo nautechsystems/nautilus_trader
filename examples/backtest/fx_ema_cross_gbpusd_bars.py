@@ -48,13 +48,13 @@ if __name__ == "__main__":
     data = BacktestDataContainer()
     data.add_instrument(GBPUSD)
     data.add_bars(
-        security=GBPUSD.security,
+        instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.BID,
         data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
     data.add_bars(
-        security=GBPUSD.security,
+        instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.ASK,
         data=TestDataProvider.gbpusd_1min_ask(),  # Stub data from the test kit
@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
     # Instantiate your strategy
     strategy = EMACross(
-        security=GBPUSD.security,
+        instrument_id=GBPUSD.id,
         bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
         fast_ema_period=10,
         slow_ema_period=20,

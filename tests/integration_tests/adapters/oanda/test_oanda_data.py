@@ -31,11 +31,9 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -46,7 +44,7 @@ from tests.test_kit.mocks import ObjectStorer
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 OANDA = Venue("OANDA")
-AUDUSD = Security(Symbol("AUD/USD"), OANDA, AssetClass.FX, AssetType.SPOT)
+AUDUSD = InstrumentId(Symbol("AUD/USD"), OANDA)
 
 
 class OandaDataClientTests(unittest.TestCase):
@@ -182,7 +180,7 @@ class OandaDataClientTests(unittest.TestCase):
     def test_subscribe_bars(self):
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
-        bar_type = BarType(security=AUDUSD, bar_spec=bar_spec)
+        bar_type = BarType(instrument_id=AUDUSD, bar_spec=bar_spec)
 
         # Act
         self.client.subscribe_bars(bar_type)
@@ -224,7 +222,7 @@ class OandaDataClientTests(unittest.TestCase):
     def test_unsubscribe_bars(self):
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
-        bar_type = BarType(security=AUDUSD, bar_spec=bar_spec)
+        bar_type = BarType(instrument_id=AUDUSD, bar_spec=bar_spec)
 
         # Act
         self.client.unsubscribe_bars(bar_type)
@@ -289,7 +287,7 @@ class OandaDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
-            bar_type = BarType(security=AUDUSD, bar_spec=bar_spec)
+            bar_type = BarType(instrument_id=AUDUSD, bar_spec=bar_spec)
 
             request = DataRequest(
                 provider=OANDA.value,

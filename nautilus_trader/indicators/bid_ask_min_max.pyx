@@ -18,7 +18,7 @@ from cpython.datetime cimport timedelta
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport is_datetime_utc
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick cimport QuoteTick
 
@@ -29,21 +29,21 @@ cdef class BidAskMinMax(Indicator):
     computation of the min/max values of the bid/ask prices within the window.
     """
 
-    def __init__(self, Security security not None, timedelta lookback not None):
+    def __init__(self, InstrumentId instrument_id not None, timedelta lookback not None):
         """
         Initialize a new instance of the `BidAskMinMax` class.
 
         Parameters
         ----------
-        security : Security
-            The security identifier for inbound ticks.
+        instrument_id : InstrumentId
+            The instrument identifier for inbound ticks.
         lookback : timedelta
             The look back duration in time.
 
         """
         super().__init__(params=[lookback])
 
-        self.security = security
+        self.instrument_id = instrument_id
         self.lookback = lookback
 
         # Set up the bid/ask windows

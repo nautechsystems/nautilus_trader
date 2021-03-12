@@ -33,9 +33,9 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -86,7 +86,7 @@ cdef class SimulatedExchange:
     cdef dict _child_orders
     cdef dict _oco_orders
     cdef dict _position_oco_orders
-    cdef dict _security_indexer
+    cdef dict _instrument_indexer
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
     cdef int _executions_count
@@ -111,8 +111,8 @@ cdef class SimulatedExchange:
 
     cpdef void adjust_account(self, Money adjustment) except *
 
-    cdef inline Price get_current_bid(self, Security security)
-    cdef inline Price get_current_ask(self, Security security)
+    cdef inline Price get_current_bid(self, InstrumentId instrument_id)
+    cdef inline Price get_current_ask(self, InstrumentId instrument_id)
     cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
     cdef inline dict _build_current_bid_rates(self)
     cdef inline dict _build_current_ask_rates(self)
@@ -120,8 +120,8 @@ cdef class SimulatedExchange:
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline object _get_tick_sizes(self)
-    cdef inline PositionId _generate_position_id(self, Security security)
-    cdef inline OrderId _generate_order_id(self, Security security)
+    cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
+    cdef inline OrderId _generate_order_id(self, InstrumentId instrument_id)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
     cdef inline void _submit_order(self, Order order) except *
@@ -153,8 +153,8 @@ cdef class SimulatedExchange:
     cdef inline bint _is_stop_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *
     cdef inline Price _fill_price_maker(self, OrderSide side, Price bid, Price ask)
-    cdef inline Price _fill_price_taker(self, Security security, OrderSide side, Price bid, Price ask)
-    cdef inline Price _fill_price_stop(self, Security security, OrderSide side, Price stop)
+    cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Price bid, Price ask)
+    cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop)
 
 # --------------------------------------------------------------------------------------------------
 

@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -57,7 +57,7 @@ cdef class OandaInstrumentProvider:
         """
         self.venue = Venue("OANDA")
         self.count = 0
-        self._instruments = {}  # type: dict[Security, Instrument]
+        self._instruments = {}  # type: dict[InstrumentId, Instrument]
         self._client = client
         self._account_id = account_id
 
@@ -76,7 +76,7 @@ cdef class OandaInstrumentProvider:
         cdef Instrument instrument
         for values in instruments:
             instrument = self._parse_instrument(values)
-            self._instruments[instrument.security] = instrument
+            self._instruments[instrument.id] = instrument
 
         self.count = len(self._instruments)
 
@@ -88,39 +88,39 @@ cdef class OandaInstrumentProvider:
 
         Returns
         -------
-        dict[Security, Instrument]
+        dict[InstrumentId, Instrument]
 
         """
         return self._instruments.copy()
 
-    cpdef Instrument get(self, Security security):
+    cpdef Instrument get(self, InstrumentId instrument_id):
         """
-        Return the instrument for the given security (if found).
+        Return the instrument for the given instrument identifier (if found).
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the instrument.
+        instrument_id : InstrumentId
+            The instrument identifier for the instrument.
 
         Returns
         -------
         Instrument or None
 
         """
-        return self._instruments.get(security)
+        return self._instruments.get(instrument_id)
 
     cdef Instrument _parse_instrument(self, dict values):
         cdef str oanda_name = values["name"]
         cdef str oanda_type = values["type"]
-        cdef list security_pieces = values["name"].split('_', maxsplit=1)
+        cdef list instrument_id_pieces = values["name"].split('_', maxsplit=1)
 
         cdef Currency base_currency = None
-        cdef Currency quote_currency = Currency(security_pieces[1], 2, CurrencyType.FIAT)
+        cdef Currency quote_currency = Currency(instrument_id_pieces[1], 2, CurrencyType.FIAT)
 
         if oanda_type == "CURRENCY":
             asset_class = AssetClass.FX
             asset_type = AssetType.SPOT
-            base_currency = Currency(security_pieces[0], 2, CurrencyType.FIAT)
+            base_currency = Currency(instrument_id_pieces[0], 2, CurrencyType.FIAT)
         elif oanda_type == "METAL":
             asset_class = AssetClass.COMMODITY
             asset_type = AssetType.SPOT
@@ -128,11 +128,9 @@ cdef class OandaInstrumentProvider:
             asset_class = AssetClassParser.from_str(values["tags"][0]["name"])
             asset_type = AssetType.CFD
 
-        cdef Security security = Security(
+        cdef InstrumentId instrument_id = InstrumentId(
             symbol=Symbol(oanda_name.replace('_', '/', 1)),
             venue=self.venue,
-            asset_type=asset_type,
-            asset_class=asset_class,
         )
 
         cdef int price_precision = int(values["displayPrecision"])
@@ -145,7 +143,9 @@ cdef class OandaInstrumentProvider:
         taker_fee: Decimal = Decimal("0.00025")
 
         return Instrument(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=asset_class,
+            asset_type=asset_type,
             base_currency=base_currency,
             quote_currency=quote_currency,
             settlement_currency=quote_currency,

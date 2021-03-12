@@ -27,9 +27,9 @@ from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order.base cimport Order
@@ -75,8 +75,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_order_strategy = {}       # type: dict[ClientOrderId, StrategyId]
         self._index_position_strategy = {}    # type: dict[PositionId, StrategyId]
         self._index_position_orders = {}      # type: dict[PositionId, set[ClientOrderId]]
-        self._index_security_orders = {}      # type: dict[Security, set[ClientOrderId]]
-        self._index_security_positions = {}   # type: dict[Security, set[PositionId]]
+        self._index_instrument_orders = {}      # type: dict[InstrumentId, set[ClientOrderId]]
+        self._index_instrument_positions = {}   # type: dict[InstrumentId, set[PositionId]]
         self._index_strategy_orders = {}      # type: dict[StrategyId, set[ClientOrderId]]
         self._index_strategy_positions = {}   # type: dict[StrategyId, set[PositionId]]
         self._index_orders = set()            # type: set[ClientOrderId]
@@ -158,7 +158,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             True if checks pass, else False.
 
         """
-        cdef Security security
+        cdef InstrumentId instrument_id
         cdef Venue venue
         cdef AccountId account_id
         cdef Account account
@@ -266,17 +266,17 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
-        for security, cl_ord_ids in self._index_security_orders.items():
+        for instrument_id, cl_ord_ids in self._index_instrument_orders.items():
             for cl_ord_id in cl_ord_ids:
                 if cl_ord_id not in self._cached_orders:
-                    self._log.error(f"{failure} in _index_security_orders: "
-                                    f"{repr(security)} not found in self._cached_orders")
+                    self._log.error(f"{failure} in _index_instrument_orders: "
+                                    f"{repr(instrument_id)} not found in self._cached_orders")
                     error_count += 1
 
-        for security, position_ids in self._index_security_positions.items():
-            if security not in self._index_security_orders:
-                self._log.error(f"{failure} in _index_security_positions: "
-                                f"{repr(security)} not found in self._index_security_orders")
+        for instrument_id, position_ids in self._index_instrument_positions.items():
+            if instrument_id not in self._index_instrument_orders:
+                self._log.error(f"{failure} in _index_instrument_positions: "
+                                f"{repr(instrument_id)} not found in self._index_instrument_orders")
                 error_count += 1
 
         for strategy_id, cl_ord_ids in self._index_strategy_orders.items():
@@ -412,8 +412,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
         self._index_position_orders.clear()
-        self._index_security_orders.clear()
-        self._index_security_positions.clear()
+        self._index_instrument_orders.clear()
+        self._index_instrument_positions.clear()
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
         self._index_orders.clear()
@@ -465,10 +465,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             if order.strategy_id.not_null():
                 self._index_order_strategy[cl_ord_id] = order.strategy_id
 
-            # 4: Build _index_security_orders -> {Security, {ClientOrderId}}
-            if order.security not in self._index_security_orders:
-                self._index_security_orders[order.security] = set()
-            self._index_security_orders[order.security].add(cl_ord_id)
+            # 4: Build _index_instrument_orders -> {InstrumentId, {ClientOrderId}}
+            if order.instrument_id not in self._index_instrument_orders:
+                self._index_instrument_orders[order.instrument_id] = set()
+            self._index_instrument_orders[order.instrument_id].add(cl_ord_id)
 
             # 5: Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
             if order.strategy_id not in self._index_strategy_orders:
@@ -506,10 +506,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             for cl_ord_id in position.cl_ord_ids_c():
                 index_position_orders.add(cl_ord_id)
 
-            # 3: Build _index_security_positions -> {Security, {PositionId}}
-            if position.security not in self._index_security_positions:
-                self._index_security_positions[position.security] = set()
-            self._index_security_positions[position.security].add(position_id)
+            # 3: Build _index_instrument_positions -> {InstrumentId, {PositionId}}
+            if position.instrument_id not in self._index_instrument_positions:
+                self._index_instrument_positions[position.instrument_id] = set()
+            self._index_instrument_positions[position.instrument_id].add(position_id)
 
             # 4: Build _index_strategy_positions -> {StrategyId, {PositionId}}
             if position.strategy_id.not_null() and position.strategy_id not in self._index_strategy_positions:
@@ -665,11 +665,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_orders.add(order.cl_ord_id)
         self._index_order_strategy[order.cl_ord_id] = order.strategy_id
 
-        # Index: Security -> Set[ClientOrderId]
-        if order.security not in self._index_security_orders:
-            self._index_security_orders[order.security] = {order.cl_ord_id}
+        # Index: InstrumentId -> Set[ClientOrderId]
+        if order.instrument_id not in self._index_instrument_orders:
+            self._index_instrument_orders[order.instrument_id] = {order.cl_ord_id}
         else:
-            self._index_security_orders[order.security].add(order.cl_ord_id)
+            self._index_instrument_orders[order.instrument_id].add(order.cl_ord_id)
 
         # Index: StrategyId -> Set[ClientOrderId]
         if order.strategy_id not in self._index_strategy_orders:
@@ -765,11 +765,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         self.add_position_id(position.id, position.from_order, position.strategy_id)
 
-        # Index: Security -> Set[PositionId]
-        if position.security not in self._index_security_positions:
-            self._index_security_positions[position.security] = {position.id}
+        # Index: InstrumentId -> Set[PositionId]
+        if position.instrument_id not in self._index_instrument_positions:
+            self._index_instrument_positions[position.instrument_id] = {position.id}
         else:
-            self._index_security_positions[position.security].add(position.id)
+            self._index_instrument_positions[position.instrument_id].add(position.id)
 
         self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id}).")
 
@@ -956,12 +956,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cdef inline set _build_ord_query_filter_set(self, Security security, StrategyId strategy_id):
+    cdef inline set _build_ord_query_filter_set(self, InstrumentId instrument_id, StrategyId strategy_id):
         cdef set query = None
 
         # Build potential query set
-        if security is not None:
-            query = self._index_security_orders.get(security, set())
+        if instrument_id is not None:
+            query = self._index_instrument_orders.get(instrument_id, set())
         if strategy_id is not None:
             if query is None:
                 query = self._index_strategy_orders.get(strategy_id, set())
@@ -970,12 +970,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cdef inline set _build_pos_query_filter_set(self, Security security, StrategyId strategy_id):
+    cdef inline set _build_pos_query_filter_set(self, InstrumentId instrument_id, StrategyId strategy_id):
         cdef set query = None
 
         # Build potential query set
-        if security is not None:
-            query = self._index_security_positions.get(security, set())
+        if instrument_id is not None:
+            query = self._index_instrument_positions.get(instrument_id, set())
         if strategy_id is not None:
             if query is None:
                 query = self._index_strategy_positions.get(strategy_id, set())
@@ -984,14 +984,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cpdef set order_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all client order identifiers with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1000,22 +1000,22 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(security, strategy_id)
+        cdef set query = self._build_ord_query_filter_set(instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders
         else:
             return self._index_orders.intersection(query)
 
-    cpdef set order_working_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set order_working_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all working client order identifiers with the given query
         filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1024,22 +1024,22 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(security, strategy_id)
+        cdef set query = self._build_ord_query_filter_set(instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders_working
         else:
             return self._index_orders_working.intersection(query)
 
-    cpdef set order_completed_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set order_completed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all completed client order identifiers with the given query
         filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1048,21 +1048,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(security, strategy_id)
+        cdef set query = self._build_ord_query_filter_set(instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders_completed
         else:
             return self._index_orders_completed.intersection(query)
 
-    cpdef set position_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set position_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all position identifiers with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1071,21 +1071,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(security, strategy_id)
+        cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions
         else:
             return self._index_positions.intersection(query)
 
-    cpdef set position_open_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set position_open_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all open position identifiers with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1094,21 +1094,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(security, strategy_id)
+        cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
 
         if not query:
             return self._index_positions_open
         else:
             return self._index_positions_open.intersection(query)
 
-    cpdef set position_closed_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set position_closed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all closed position identifiers with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1117,7 +1117,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(security, strategy_id)
+        cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions_closed
@@ -1181,14 +1181,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             return None
         return order.id
 
-    cpdef list orders(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list orders(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all orders with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1197,7 +1197,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_ids(security, strategy_id)
+        cdef set cl_ord_ids = self.order_ids(instrument_id, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders
@@ -1208,14 +1208,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return orders
 
-    cpdef list orders_working(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list orders_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all working orders with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1224,7 +1224,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_working_ids(security, strategy_id)
+        cdef set cl_ord_ids = self.order_working_ids(instrument_id, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders_working
@@ -1235,14 +1235,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return orders_working
 
-    cpdef list orders_completed(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list orders_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all completed orders with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1251,7 +1251,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_completed_ids(security, strategy_id)
+        cdef set cl_ord_ids = self.order_completed_ids(instrument_id, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders_completed
@@ -1301,14 +1301,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._index_order_position.get(cl_ord_id)
 
-    cpdef list positions(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list positions(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all positions with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1317,7 +1317,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Position]
 
         """
-        cdef set position_ids = self.position_ids(security, strategy_id)
+        cdef set position_ids = self.position_ids(instrument_id, strategy_id)
 
         cdef PositionId position_id
         cdef list positions
@@ -1328,23 +1328,23 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return positions
 
-    cpdef list positions_open(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list positions_open(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all open positions with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
         list[Position]
 
         """
-        cdef set position_ids = self.position_open_ids(security, strategy_id)
+        cdef set position_ids = self.position_open_ids(instrument_id, strategy_id)
 
         cdef PositionId position_id
         cdef list positions
@@ -1355,23 +1355,23 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return positions
 
-    cpdef list positions_closed(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list positions_closed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all closed positions with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
         list[Position]
 
         """
-        cdef set position_ids = self.position_closed_ids(security, strategy_id)
+        cdef set position_ids = self.position_closed_ids(instrument_id, strategy_id)
 
         cdef PositionId position_id
         cdef list positions
@@ -1439,59 +1439,59 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return cl_ord_id in self._index_orders_completed
 
-    cpdef int orders_total_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_total_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
         Return the total count of orders with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
         int
 
         """
-        return len(self.order_ids(security, strategy_id))
+        return len(self.order_ids(instrument_id, strategy_id))
 
-    cpdef int orders_working_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_working_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
         Return the count of working orders with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
         int
 
         """
-        return len(self.order_working_ids(security, strategy_id))
+        return len(self.order_working_ids(instrument_id, strategy_id))
 
-    cpdef int orders_completed_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_completed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
         Return the count of completed orders with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
-            The strategy_id query filter.
+            The strategy identifier query filter.
 
         Returns
         -------
         int
 
         """
-        return len(self.order_completed_ids(security, strategy_id))
+        return len(self.order_completed_ids(instrument_id, strategy_id))
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
@@ -1550,14 +1550,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return position_id in self._index_positions_closed
 
-    cpdef int positions_total_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_total_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
         Return the total count of positions with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1566,16 +1566,16 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.position_ids(security, strategy_id))
+        return len(self.position_ids(instrument_id, strategy_id))
 
-    cpdef int positions_open_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_open_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
         Return the count of open positions with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1584,16 +1584,16 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.position_open_ids(security, strategy_id))
+        return len(self.position_open_ids(instrument_id, strategy_id))
 
-    cpdef int positions_closed_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_closed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
         Return the count of closed positions with the given query filters.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
         strategy_id : StrategyId, optional
             The strategy identifier query filter.
 
@@ -1602,7 +1602,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.position_closed_ids(security, strategy_id))
+        return len(self.position_closed_ids(instrument_id, strategy_id))
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 

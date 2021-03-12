@@ -18,11 +18,13 @@ from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -33,7 +35,9 @@ cdef class Instrument:
 
     def __init__(
         self,
-        Security security not None,
+        InstrumentId instrument_id not None,
+        AssetClass asset_class,
+        AssetType asset_type,
         Currency base_currency,  # Can be None
         Currency quote_currency not None,
         Currency settlement_currency not None,
@@ -63,8 +67,12 @@ cdef class Instrument:
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the instrument.
+        instrument_id : InstrumentId
+            The instrument identifier for the instrument.
+        asset_class : AssetClass
+            The instrument asset class.
+        asset_type : AssetType
+            The instrument asset type.
         base_currency : Currency, optional
             The base currency. Not applicable for all asset classes.
         quote_currency : Currency
@@ -115,6 +123,10 @@ cdef class Instrument:
         Raises
         ------
         ValueError
+            If asset_class is UNDEFINED.
+        ValueError
+            If asset_type is UNDEFINED.
+        ValueError
             If price_precision is negative (< 0).
         ValueError
             If size_precision is negative (< 0).
@@ -140,6 +152,8 @@ cdef class Instrument:
             If min_price is negative (< 0).
 
         """
+        Condition.not_equal(asset_class, AssetClass.UNDEFINED, "asset_class", "UNDEFINED")
+        Condition.not_equal(asset_type, AssetType.UNDEFINED, "asset_type", "UNDEFINED")
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
         Condition.type(tick_size, Decimal, "tick_size")
@@ -170,7 +184,9 @@ cdef class Instrument:
         if info is None:
             info = {}
 
-        self.security = security
+        self.id = instrument_id
+        self.asset_class = asset_class
+        self.asset_type = asset_type
         self.base_currency = base_currency  # Can be None
         self.quote_currency = quote_currency
         # Currently not handling quanto settlement
@@ -209,16 +225,16 @@ cdef class Instrument:
         return settlement_currency != base_currency and settlement_currency != quote_currency
 
     def __eq__(self, Instrument other) -> bool:
-        return self.security.value == other.security.value
+        return self.id.value == other.id.value
 
     def __ne__(self, Instrument other) -> bool:
-        return self.security.value != other.security.value
+        return self.id.value != other.id.value
 
     def __hash__(self) -> int:
-        return hash(self.security.value)
+        return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.security.value}')"
+        return f"{type(self).__name__}('{self.id.value}')"
 
     cpdef Money market_value(self, Quantity quantity, close_price: Decimal):
         """
@@ -319,7 +335,7 @@ cdef class Instrument:
         quantity : Quantity
             The currency position quantity.
         last : Price
-            The position securities last price.
+            The position instruments last price.
 
         Returns
         -------
@@ -395,7 +411,8 @@ cdef class Future(Instrument):
 
     def __init__(
         self,
-        Security security not None,
+        InstrumentId instrument_id not None,
+        AssetClass asset_class,
         int contract_id,
         str local_symbol not None,
         str trading_class not None,
@@ -416,8 +433,10 @@ cdef class Future(Instrument):
 
         Parameters
         ----------
-        security : Security
-            The security identifier.
+        instrument_id : InstrumentId
+            The instrument identifier.
+        asset_class : AssetClass
+            The instrument asset class.
         price_precision : int
             The price decimal precision.
         tick_size : Decimal
@@ -427,6 +446,8 @@ cdef class Future(Instrument):
 
         Raises
         ------
+        ValueError
+            If asset_class is UNDEFINED.
         ValueError
             If price_precision is negative (< 0).
         ValueError
@@ -438,15 +459,17 @@ cdef class Future(Instrument):
 
         """
         super().__init__(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=asset_class,
+            asset_type=AssetType.FUTURE,
             base_currency=None,  # N/A
-            quote_currency=security.currency,
-            settlement_currency=security.currency,
+            quote_currency=instrument_id.currency,
+            settlement_currency=instrument_id.currency,
             is_inverse=False,
             price_precision=price_precision,
             size_precision=0,
             tick_size=tick_size,
-            multiplier=Decimal(security.multiplier),
+            multiplier=Decimal(instrument_id.multiplier),
             leverage=Decimal(1),
             lot_size=lot_size,
             max_quantity=None,
@@ -465,7 +488,7 @@ cdef class Future(Instrument):
         )
 
         self.contract_id = contract_id
-        self.last_trade_date_or_contract_month = security.expiry
+        self.last_trade_date_or_contract_month = instrument_id.expiry
         self.local_symbol = local_symbol
         self.trading_class = trading_class
         self.market_name = market_name

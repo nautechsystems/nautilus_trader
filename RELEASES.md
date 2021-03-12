@@ -1,7 +1,7 @@
 # NautilusTrader 1.110.0 Beta - Release Notes
 
 This release applies one more major change to the identifier API. `Security` has
-been renamed to `InstrumentId` for greater clarity that the object is an identifier
+been renamed to `InstrumentId` for greater clarity that the object is an identifier,
 and to group the concept of an instrument with its identifier.
 
 Data objects in the framework have been further abstracted to prepare for the
@@ -19,7 +19,7 @@ A `RiskEngine` base class has also been scaffolded.
 
 ## Enhancements
 - Add `GenericData`.
-- Add `FutureInstrumentId` identifier and `Future` instrument.
+- Add `Future` instrument.
 
 ## Fixes
 None
@@ -57,12 +57,12 @@ with Interactive Brokers and other exchanges, brokerages and trading
 counterparties.
 
 Previously the `Symbol` identifier also included a venue which confused the concept.
-The replacement `InstrumentId` identifier more clearly expresses the domain with a
+The replacement `Security` identifier more clearly expresses the domain with a
 symbol string, a primary `Venue`, `AssetClass` and `AssetType` properties.
 
 ## Breaking Changes
 - All previous serializations.
-- `InstrumentId` replaces `Symbol` with expanded properties.
+- `Security` replaces `Symbol` with expanded properties.
 - `AssetClass.EQUITY` changed to `AssetClass.STOCK`.
 - `from_serializable_string` changed to `from_serializable_str`.
 - `to_serializable_string` changed to `to_serializable_str`.

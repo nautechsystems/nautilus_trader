@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 
@@ -24,9 +24,9 @@ cdef class IdentifierCache:
     cdef ObjectCache _cached_trader_ids
     cdef ObjectCache _cached_account_ids
     cdef ObjectCache _cached_strategy_ids
-    cdef ObjectCache _cached_securities
+    cdef ObjectCache _cached_instrument_ids
 
     cpdef TraderId get_trader_id(self, str value)
     cpdef AccountId get_account_id(self, str value)
     cpdef StrategyId get_strategy_id(self, str value)
-    cpdef Security get_security(self, str value)
+    cpdef InstrumentId get_instrument_id(self, str value)

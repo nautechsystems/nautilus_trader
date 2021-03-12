@@ -30,7 +30,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
@@ -103,15 +103,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
-        security = Security(
+        instrument_id = InstrumentId(
             symbol=Symbol("BTC/USDT"),
             venue=Venue("BINANCE"),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SPOT,
         )
 
         return Instrument(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SPOT,
             base_currency=BTC,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -146,15 +146,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
-        security = Security(
+        instrument_id = InstrumentId(
             symbol=Symbol("ETH/USDT"),
             venue=Venue("BINANCE"),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SPOT,
         )
 
         return Instrument(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SPOT,
             base_currency=ETH,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -194,15 +194,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
-        security = Security(
+        instrument_id = InstrumentId(
             symbol=Symbol("XBT/USD"),
             venue=Venue("BITMEX"),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
         )
 
         return Instrument(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -242,15 +242,15 @@ class TestInstrumentProvider:
         Instrument
 
         """
-        security = Security(
+        instrument_id = InstrumentId(
             symbol=Symbol("ETH/USD"),
             venue=Venue("BITMEX"),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
         )
 
         return Instrument(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -278,7 +278,7 @@ class TestInstrumentProvider:
     @staticmethod
     def default_fx_ccy(symbol: str, venue: Venue=None, leverage: Decimal=Decimal("50")) -> Instrument:
         """
-        Return a default FX currency pair instrument from the given security.
+        Return a default FX currency pair instrument from the given instrument_id.
 
         Parameters
         ----------
@@ -296,7 +296,7 @@ class TestInstrumentProvider:
         Raises
         ------
         ValueError
-            If the security.security length is not in range [6, 7].
+            If the instrument_id.instrument_id length is not in range [6, 7].
 
         """
         if venue is None:
@@ -304,11 +304,9 @@ class TestInstrumentProvider:
         PyCondition.valid_string(symbol, "symbol")
         PyCondition.in_range_int(len(symbol), 6, 7, "len(symbol)")
 
-        security = Security(
+        instrument_id = InstrumentId(
             symbol=Symbol(symbol),
             venue=venue,
-            asset_class=AssetClass.FX,
-            asset_type=AssetType.SPOT,
         )
 
         base_currency = symbol[:3]
@@ -321,7 +319,9 @@ class TestInstrumentProvider:
             price_precision = 5
 
         return Instrument(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=AssetClass.FX,
+            asset_type=AssetType.SPOT,
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             settlement_currency=Currency.from_str(quote_currency),

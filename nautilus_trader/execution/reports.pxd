@@ -27,4 +27,4 @@ cdef class ExecutionStateReport:
     cdef readonly dict order_filled
     """The order fill info for the venue.\n\n:returns: `dict[OrderId, OrderEvent]`"""
     cdef readonly dict position_states
-    """The position states for the venue.\n\n:returns: `dict[Security, Decimal]`"""
+    """The position states for the venue.\n\n:returns: `dict[InstrumentId, Decimal]`"""

@@ -98,8 +98,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
         data.check_integrity()
         self._data = data
 
-        cdef int security_counter = 0
-        self._security_index = {}
+        cdef int instrument_counter = 0
+        self._instrument_index = {}
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
@@ -115,58 +115,58 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef double ts_total = self._clock.unix_time()
         cdef double ts
         for instrument in data.instruments.values():
-            security = instrument.security
-            self._log.info(f"Preparing {security} data...")
+            instrument_id = instrument.id
+            self._log.info(f"Preparing {instrument_id} data...")
 
-            self._security_index[security_counter] = security
+            self._instrument_index[instrument_counter] = instrument_id
 
             execution_resolution = None
 
             # Process quote tick data
             # -----------------------
-            if data.has_quote_data(security):
+            if data.has_quote_data(instrument_id):
                 ts = self._clock.unix_time()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
-                    data_quotes=self._data.quote_ticks.get(security),
-                    data_bars_bid=self._data.bars_bid.get(security),
-                    data_bars_ask=self._data.bars_ask.get(security),
+                    data_quotes=self._data.quote_ticks.get(instrument_id),
+                    data_bars_bid=self._data.bars_bid.get(instrument_id),
+                    data_bars_ask=self._data.bars_ask.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
-                quote_wrangler.pre_process(security_counter)
+                quote_wrangler.pre_process(instrument_counter)
                 quote_tick_frames.append(quote_wrangler.processed_data)
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
-                self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {security} quote tick rows in "
+                self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
                                f"{self._clock.unix_time() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
             # -----------------------
-            if data.has_trade_data(security):
+            if data.has_trade_data(instrument_id):
                 ts = self._clock.unix_time()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
-                    data=self._data.trade_ticks.get(security),
+                    data=self._data.trade_ticks.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
-                trade_wrangler.pre_process(security_counter)
+                trade_wrangler.pre_process(instrument_counter)
                 trade_tick_frames.append(trade_wrangler.processed_data)
 
                 execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
-                self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {security} trade tick rows in "
+                self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
                                f"{self._clock.unix_time() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
             if execution_resolution is None:
-                self._log.warning(f"No execution level data for {security}.")
+                self._log.warning(f"No execution level data for {instrument_id}.")
 
-            # Increment counter for indexing the next security
-            security_counter += 1
+            # Increment counter for indexing the next instrument_id
+            instrument_counter += 1
 
-            self.execution_resolutions.append(f"{security}={execution_resolution}")
+            self.execution_resolutions.append(f"{instrument_id}={execution_resolution}")
 
         # Merge and sort all ticks
         self._log.info(f"Merging tick data streams...")
@@ -198,7 +198,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 self.max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
         # Initialize backing fields
-        self._quote_securities = None
+        self._quote_instruments = None
         self._quote_bids = None
         self._quote_asks = None
         self._quote_bid_sizes = None
@@ -208,7 +208,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._quote_index_last = 0
         self._next_quote_tick = None
 
-        self._trade_securities = None
+        self._trade_instruments = None
         self._trade_prices = None
         self._trade_sizes = None
         self._trade_match_ids = None
@@ -266,7 +266,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # See slice_dataframe function comments on why [:] isn't used
             quote_ticks_slice = slice_dataframe(self._quote_tick_data, start + time_buffer, stop)
 
-            self._quote_securities = quote_ticks_slice["security"].to_numpy(dtype=np.ushort)
+            self._quote_instruments = quote_ticks_slice["instrument_id"].to_numpy(dtype=np.ushort)
             self._quote_bids = quote_ticks_slice["bid"].values
             self._quote_asks = quote_ticks_slice["ask"].values
             self._quote_bid_sizes = quote_ticks_slice["bid_size"].values
@@ -274,7 +274,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_timestamps = np.asarray([<datetime>dt for dt in quote_ticks_slice.index])
 
             # Calculate cumulative data size
-            total_size += get_size_of(self._quote_securities)
+            total_size += get_size_of(self._quote_instruments)
             total_size += get_size_of(self._quote_bids)
             total_size += get_size_of(self._quote_asks)
             total_size += get_size_of(self._quote_bid_sizes)
@@ -293,7 +293,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # See slice_dataframe function comments on why [:] isn't used
             trade_ticks_slice = slice_dataframe(self._trade_tick_data, start, stop)
 
-            self._trade_securities = trade_ticks_slice["security"].to_numpy(dtype=np.ushort)
+            self._trade_instruments = trade_ticks_slice["instrument_id"].to_numpy(dtype=np.ushort)
             self._trade_prices = trade_ticks_slice["price"].values
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
@@ -301,7 +301,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_timestamps = np.asarray([<datetime>dt for dt in trade_ticks_slice.index])
 
             # Calculate cumulative data size
-            total_size += get_size_of(self._trade_securities)
+            total_size += get_size_of(self._trade_instruments)
             total_size += get_size_of(self._trade_prices)
             total_size += get_size_of(self._trade_sizes)
             total_size += get_size_of(self._trade_match_ids)
@@ -327,7 +327,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         self._log.info(f"Resetting...")
 
-        self._quote_securities = None
+        self._quote_instruments = None
         self._quote_bids = None
         self._quote_asks = None
         self._quote_bid_sizes = None
@@ -336,7 +336,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._quote_index = 0
         self._quote_index_last = len(self._quote_tick_data) - 1
 
-        self._trade_securities = None
+        self._trade_instruments = None
         self._trade_prices = None
         self._trade_sizes = None
         self._trade_match_ids = None
@@ -395,7 +395,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
     cdef inline QuoteTick _generate_quote_tick(self, int index):
         return QuoteTick(
-            self._security_index[self._quote_securities[index]],
+            self._instrument_index[self._quote_instruments[index]],
             Price(self._quote_bids[index]),
             Price(self._quote_asks[index]),
             Quantity(self._quote_bid_sizes[index]),
@@ -405,7 +405,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
     cdef inline TradeTick _generate_trade_tick(self, int index):
         return TradeTick(
-            self._security_index[self._trade_securities[index]],
+            self._instrument_index[self._trade_instruments[index]],
             Price(self._trade_prices[index]),
             Quantity(self._trade_sizes[index]),
             OrderSideParser.from_str(self._trade_sides[index]),
