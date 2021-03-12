@@ -123,6 +123,8 @@ cdef class Order:
         self.account_id = None        # Can be None
         self.execution_id = None      # Can be None
         self.instrument_id = event.instrument_id
+        self.symbol = event.instrument_id.symbol
+        self.venue = event.instrument_id.venue
         self.side = event.order_side
         self.type = event.order_type
         self.quantity = event.quantity

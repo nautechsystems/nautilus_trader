@@ -511,7 +511,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("=================================================================")
     logger.info(f" NAUTILUS TRADER - Algorithmic Trading Platform")
     logger.info(f" by Nautech Systems Pty Ltd.")
-    logger.info(f" Copyright (C) 2015-2020. All rights reserved.")
+    logger.info(f" Copyright (C) 2015-2021. All rights reserved.")
     logger.info("=================================================================")
     logger.info("                                                                 ")
     logger.info("                            .......                              ")

@@ -893,7 +893,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Subscribe command = Subscribe(
-            provider=bar_type.instrument_id.venue.value,
+            provider=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate_c(),
@@ -1041,7 +1041,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=bar_type.instrument_id.venue.value,
+            provider=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate_c(),
@@ -1201,7 +1201,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            provider=bar_type.instrument_id.venue.value,
+            provider=bar_type.venue.value,
             data_type=DataType(Bar, metadata={
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: from_datetime,
@@ -1241,14 +1241,14 @@ cdef class TradingStrategy(Component):
             # Null object pattern
             position_id = PositionId.null_c()
 
-        cdef AccountId account_id = self.execution.account_id(order.instrument_id.venue)
+        cdef AccountId account_id = self.execution.account_id(order.venue)
         if account_id is None:
             self.log.error(f"Cannot submit order: "
-                           f"no account registered for {order.instrument_id.venue}, {order}.")
+                           f"no account registered for {order.venue}, {order}.")
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(
-            order.instrument_id.venue,
+            order.venue,
             self.trader_id,
             account_id,
             self.id,
@@ -1357,7 +1357,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef AmendOrder command = AmendOrder(
-            order.instrument_id.venue,
+            order.venue,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
@@ -1395,7 +1395,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
-            order.instrument_id.venue,
+            order.venue,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
@@ -1468,7 +1468,7 @@ cdef class TradingStrategy(Component):
 
         # Create command
         cdef SubmitOrder command = SubmitOrder(
-            position.instrument_id.venue,
+            position.venue,
             self.trader_id,
             position.account_id,
             self.id,

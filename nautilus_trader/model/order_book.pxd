@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class OrderBook:
@@ -22,6 +24,10 @@ cdef class OrderBook:
 
     cdef readonly InstrumentId instrument_id
     """The order book instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The order book symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The order book venue.\n\n:returns: `Venue`"""
     cdef readonly int level
     """The order book data level (L1, L2, L3).\n\n:returns: `int`"""
     cdef readonly int depth

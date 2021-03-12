@@ -198,9 +198,9 @@ cdef class Portfolio(PortfolioFacade):
         cdef int working_count = 0
         for order in orders:
             if order.is_passive_c() and order.is_working_c():
-                orders_working = self._orders_working.get(order.instrument_id.venue, set())
+                orders_working = self._orders_working.get(order.venue, set())
                 orders_working.add(order)
-                self._orders_working[order.instrument_id.venue] = orders_working
+                self._orders_working[order.venue] = orders_working
                 self._log.debug(f"Added working {order}")
                 working_count += 1
 
@@ -237,16 +237,16 @@ cdef class Portfolio(PortfolioFacade):
         cdef int closed_count = 0
         for position in positions:
             if position.is_open_c():
-                positions_open = self._positions_open.get(position.instrument_id.venue, set())
+                positions_open = self._positions_open.get(position.venue, set())
                 positions_open.add(position)
-                self._positions_open[position.instrument_id.venue] = positions_open
+                self._positions_open[position.venue] = positions_open
                 self._update_net_position(position.instrument_id, positions_open)
                 self._log.debug(f"Added {position}")
                 open_count += 1
             elif position.is_closed_c():
-                positions_closed = self._positions_closed.get(position.instrument_id.venue, set())
+                positions_closed = self._positions_closed.get(position.venue, set())
                 positions_closed.add(position)
-                self._positions_closed[position.instrument_id.venue] = positions_closed
+                self._positions_closed[position.venue] = positions_closed
                 closed_count += 1
 
         cdef Venue venue
@@ -296,7 +296,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(order, "order")
 
-        cdef Venue venue = order.instrument_id.venue
+        cdef Venue venue = order.venue
 
         cdef set orders_working = self._orders_working.get(venue, set())
         if order.is_working_c():
@@ -736,7 +736,7 @@ cdef class Portfolio(PortfolioFacade):
         return {position.instrument_id for position in positions_open}
 
     cdef inline void _handle_position_opened(self, PositionOpened event) except *:
-        cdef Venue venue = event.position.instrument_id.venue
+        cdef Venue venue = event.position.venue
         cdef Position position = event.position
 
         # Add to positions open
@@ -747,11 +747,11 @@ cdef class Portfolio(PortfolioFacade):
         self._update_net_position(event.position.instrument_id, positions_open)
 
     cdef inline void _handle_position_changed(self, PositionChanged event) except *:
-        cdef Venue venue = event.position.instrument_id.venue
+        cdef Venue venue = event.position.venue
         self._update_net_position(event.position.instrument_id, self._positions_open.get(venue, set()))
 
     cdef inline void _handle_position_closed(self, PositionClosed event) except *:
-        cdef Venue venue = event.position.instrument_id.venue
+        cdef Venue venue = event.position.venue
         cdef Position position = event.position
 
         # Remove from positions open if found
