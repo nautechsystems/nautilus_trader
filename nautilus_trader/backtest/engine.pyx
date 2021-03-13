@@ -235,7 +235,7 @@ cdef class BacktestEngine:
         for venue in data.venues:
             instruments = []
             for instrument in data.instruments.values():
-                if instrument.id.venue == venue:
+                if instrument.venue == venue:
                     instruments.append(instrument)
 
             data_client = BacktestMarketDataClient(
@@ -345,7 +345,7 @@ cdef class BacktestEngine:
         # Gather instruments for exchange
         instruments = []
         for instrument in self._data_engine.cache.instruments():
-            if instrument.id.venue == venue:
+            if instrument.venue == venue:
                 instruments.append(instrument)
 
         # Create exchange

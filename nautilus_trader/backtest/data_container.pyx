@@ -61,7 +61,7 @@ cdef class BacktestDataContainer:
         """
         Condition.not_none(instrument, "instrument")
 
-        self.venues.add(instrument.id.venue)
+        self.venues.add(instrument.venue)
         self.instruments[instrument.id] = instrument
         self.instruments = dict(sorted(self.instruments.items()))
 

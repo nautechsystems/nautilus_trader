@@ -968,7 +968,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side):
         if account.default_currency is not None:
             return self._data.get_xrate(
-                venue=instrument.id.venue,
+                venue=instrument.venue,
                 from_currency=instrument.settlement_currency,
                 to_currency=account.default_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,

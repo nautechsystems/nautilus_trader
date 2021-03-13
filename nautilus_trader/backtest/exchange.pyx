@@ -151,7 +151,7 @@ cdef class SimulatedExchange:
         # Load instruments
         self.instruments = {}
         for instrument in instruments:
-            Condition.equal(instrument.id.venue, self.id, "instrument.id.venue", "self.id")
+            Condition.equal(instrument.venue, self.id, "instrument.venue", "self.id")
             self.instruments[instrument.id] = instrument
             index = len(self._instrument_indexer) + 1
             self._instrument_indexer[instrument.id] = index

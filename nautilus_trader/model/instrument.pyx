@@ -185,6 +185,8 @@ cdef class Instrument:
             info = {}
 
         self.id = instrument_id
+        self.symbol = instrument_id.symbol
+        self.venue = instrument_id.venue
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.base_currency = base_currency  # Can be None
@@ -413,6 +415,8 @@ cdef class Future(Instrument):
         self,
         InstrumentId instrument_id not None,
         AssetClass asset_class,
+        Currency currency not None,
+        str expiry not None,
         int contract_id,
         str local_symbol not None,
         str trading_class not None,
@@ -423,6 +427,7 @@ cdef class Future(Instrument):
         str trading_hours not None,
         str liquid_hours not None,
         str last_trade_time not None,
+        int multiplier,
         int price_precision,
         tick_size not None: Decimal,
         Quantity lot_size not None,
@@ -436,7 +441,9 @@ cdef class Future(Instrument):
         instrument_id : InstrumentId
             The instrument identifier.
         asset_class : AssetClass
-            The instrument asset class.
+            The futures contract asset class.
+        currency : Currency
+            The futures contract currency.
         price_precision : int
             The price decimal precision.
         tick_size : Decimal
@@ -449,27 +456,28 @@ cdef class Future(Instrument):
         ValueError
             If asset_class is UNDEFINED.
         ValueError
+            If multiplier is not positive (> 0).
+        ValueError
             If price_precision is negative (< 0).
         ValueError
             If tick_size is not positive (> 0).
         ValueError
-            If multiplier is not positive (> 0).
-        ValueError
             If lot size is not positive (> 0).
 
         """
+        Condition.positive_int(multiplier, "multiplier")
         super().__init__(
             instrument_id=instrument_id,
             asset_class=asset_class,
             asset_type=AssetType.FUTURE,
             base_currency=None,  # N/A
-            quote_currency=instrument_id.currency,
-            settlement_currency=instrument_id.currency,
+            quote_currency=currency,
+            settlement_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
-            size_precision=0,
+            size_precision=0,  # No fractional contracts
             tick_size=tick_size,
-            multiplier=Decimal(instrument_id.multiplier),
+            multiplier=Decimal(multiplier),
             leverage=Decimal(1),
             lot_size=lot_size,
             max_quantity=None,
@@ -488,7 +496,7 @@ cdef class Future(Instrument):
         )
 
         self.contract_id = contract_id
-        self.last_trade_date_or_contract_month = instrument_id.expiry
+        self.last_trade_date_or_contract_month = expiry
         self.local_symbol = local_symbol
         self.trading_class = trading_class
         self.market_name = market_name

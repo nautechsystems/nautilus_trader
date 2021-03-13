@@ -23,6 +23,8 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -31,6 +33,10 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Instrument:
     cdef readonly InstrumentId id
     """The instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The instrument symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The instrument venue.\n\n:returns: `Venue`"""
     cdef readonly AssetClass asset_class
     """The asset class of the instrument.\n\n:returns: `AssetClass`"""
     cdef readonly AssetType asset_type
