@@ -30,8 +30,8 @@ from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
@@ -115,7 +115,7 @@ cdef class DataEngine(Component):
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
-    cdef inline void _handle_custom_data(self, Data data) except *
+    cdef inline void _handle_custom_data(self, GenericData data) except *
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 

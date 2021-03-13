@@ -23,6 +23,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
@@ -58,8 +59,8 @@ cdef class DataClient:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, DataType data_type, data, datetime timestamp=*) except *
-    cdef void _handle_data_response(self, DataType data_type, data, UUID correlation_id) except *
+    cdef void _handle_data(self, GenericData data) except *
+    cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):

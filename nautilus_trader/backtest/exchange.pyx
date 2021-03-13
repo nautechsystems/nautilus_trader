@@ -61,6 +61,7 @@ from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
@@ -232,7 +233,7 @@ cdef class SimulatedExchange:
         Parameters
         ----------
         tick : Tick
-            The tick data to process with (`QuoteTick` or `TradeTick`).
+            The tick to process.
 
         """
         Condition.not_none(tick, "tick")
@@ -249,7 +250,7 @@ cdef class SimulatedExchange:
             ask = tick.ask
             self._market_bids[instrument_id] = bid
             self._market_asks[instrument_id] = ask
-        else:  # TradeTick
+        elif isinstance(tick, TradeTick):
             if tick.side == OrderSide.SELL:  # TAKER hit the bid
                 bid = tick.price
                 ask = self._market_asks.get(instrument_id)
@@ -263,6 +264,8 @@ cdef class SimulatedExchange:
                     bid = ask  # Initialize bid
                 self._market_asks[instrument_id] = ask
             # tick.side must be BUY or SELL (condition checked in TradeTick)
+        else:
+            raise RuntimeError("not market data")  # Design-time error
 
         cdef PassiveOrder order
         for order in self._working_orders.copy().values():  # Copy dict for safe loop
@@ -289,6 +292,10 @@ cdef class SimulatedExchange:
             The time to advance to.
 
         """
+        Condition.not_none(now, "now")
+
+        self._clock.set_time(now)
+
         # Iterate through modules
         cdef SimulationModule module
         for module in self.modules:
