@@ -67,15 +67,15 @@ cdef class DataType:
         metadata : dict
             The data types metadata.
 
-        Warnings
-        --------
-        This class may be used as a key in hash maps throughout the system, thus
-        the key and value contents of metadata must themselves be hashable.
-
         Raises
         ------
         TypeError
             If metadata contains a key or value which is not hashable.
+
+        Warnings
+        --------
+        This class may be used as a key in hash maps throughout the system, thus
+        the key and value contents of metadata must themselves be hashable.
 
         """
         if metadata is None:
