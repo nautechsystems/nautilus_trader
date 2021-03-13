@@ -1,8 +1,9 @@
 from nautilus_trader.model.orderbook.ladder import Ladder
 
 cdef class Orderbook:
-    cdef Ladder bids
-    cdef Ladder asks
+    pass
+    # cdef Ladder bids
+    # cdef Ladder asks
 #     default_on = "volume"
 #     exchange_order_ids: bool = Field(default=False, description="Do we receive order_ids from the exchange")
 #     bids: Optional[Ladder] = None

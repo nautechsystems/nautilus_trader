@@ -1,20 +1,21 @@
 from nautilus_trader.model.c_enums.order_side import OrderSide
 
-from nautilus_trader.model.orderbook.level import Level, Order
+from nautilus_trader.model.orderbook.level import Order, L2Level
+
 
 # ---- L2 Tests ----- #
 
 
 def test_init():
-    level = Level(orders=[Order(price=10, volume=100, side=OrderSide.BUY)])
+    level = L2Level(orders=[Order(price=10, volume=100, side=OrderSide.BUY)])
     assert len(level.orders) == 1
 
 
 def test_update():
-    level = Level(orders=[Order(price=10, volume=100, side=OrderSide.BUY)])
-    assert level.volume ==100
+    level = L2Level(orders=[Order(price=10, volume=100, side=OrderSide.BUY)])
+    assert level.volume() == 100
     level.update(volume=50)
-    assert level.volume == 50
+    assert level.volume() == 50
 
 
 # ---- L3 Tests ----- #

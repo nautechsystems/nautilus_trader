@@ -9,9 +9,15 @@ logger = logging.getLogger(__name__)
 
 cdef class Ladder:
     cdef list levels
-    cdef boolean reverse
+    cdef bint reverse
     cdef dict price_levels
     cdef dict order_id_prices
+
+    def __init__(self, levels, reverse):
+        self.levels = levels
+        self.reverse = reverse
+        self.price_levels = dict()
+        self.order_id_prices = dict()
 
     cpdef add(self, order: Order):
         if order.price in self.prices:
@@ -23,11 +29,11 @@ cdef class Ladder:
             self.price_levels[level.price] = level
         self.order_id_prices[order.order_id] = order.price
 
-    cpdef update(self, ):
-        raise NotImplemented
+    # cpdef update(self):
+    #     raise NotImplemented
 
-    cpdef delete(self):
-        raise NotImplemented
+    # cpdef delete(self):
+    #     raise NotImplemented
 
     @property
     def prices(self):
@@ -58,11 +64,9 @@ cdef class Ladder:
             for order in level.iter_orders():
                 yield order
 
-
 #TODO Cython subclassing is slow ??
 cdef class L2Ladder(Ladder):
-
-    def update(self, level: Level):
+    cpdef update(self, level: Level):
         """
         Update a level.
 
@@ -79,7 +83,7 @@ cdef class L2Ladder(Ladder):
             price_idx = tuple(self.prices).index(level.price)
             self.levels[price_idx].update(volume=level.volume)
 
-    def delete(self, price: float):
+    cpdef delete(self, price: float):
         prices = tuple(self.prices)
         if price not in prices:
             logger.warning(f"Price {price} not in prices: {prices}")
@@ -87,10 +91,9 @@ cdef class L2Ladder(Ladder):
         price_idx = tuple(self.prices).index(price)
         return self.levels.pop(price_idx)
 
-
 cdef class L3Ladder(Ladder):
 
-    def update(self, *_, order: Order, order_update_drops_priority: bool = False):
+    cpdef update(self, order: Order, order_update_drops_priority: bool = False):
         assert not order_update_drops_priority, "order_update_drops_priority not implemented yet"
         if order.order_id not in self.order_id_prices:
             return self.insert(order=order)
@@ -107,13 +110,13 @@ cdef class L3Ladder(Ladder):
                 self.delete(order_id=order.order_id)
                 self.insert(order=order)
             else:
-                self.delete(order=order)
+                self.delete(order_id=order.id)
                 self.insert(order=order)
 
-    cpdef delete(self, str order_id):
-        price_idx = tuple(self.prices).index(order.price)
-        deleted_orders = self.levels[price_idx].delete(order=order)
-        for del_order in deleted_orders:
-            del self.order_id_prices[del_order.order_id]
-        self._delete_level_by_price(price=order.price, only_if_empty=True)
-        return deleted_orders
+    # cpdef delete(self, str order_id):
+    #     price_idx = tuple(self.prices).index(order.price)
+    #     deleted_orders = self.levels[price_idx].delete(order=order)
+    #     for del_order in deleted_orders:
+    #         del self.order_id_prices[del_order.order_id]
+    #     self._delete_level_by_price(price=order.price, only_if_empty=True)
+    #     return deleted_orders
