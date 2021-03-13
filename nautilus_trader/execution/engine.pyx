@@ -445,6 +445,31 @@ cdef class ExecutionEngine(Component):
         """
         self.cache.flush_db()
 
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _set_position_id_counts(self) except *:
+        # For the internal position identifier generator
+        cdef list positions = self.cache.positions()
+
+        # Count positions per instrument_id
+        cdef dict counts = {}  # type: dict[StrategyId, int]
+        cdef int count
+        cdef Position position
+        for position in positions:
+            count = counts.get(position.strategy_id, 0)
+            count += 1
+            # noinspection PyUnresolvedReferences
+            counts[position.strategy_id] = count
+
+        # Reset position identifier generator
+        self._pos_id_generator.reset()
+
+        # Set counts
+        cdef StrategyId strategy_id
+        for strategy_id, count in counts.items():
+            self._pos_id_generator.set_count(strategy_id, count)
+            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
+
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, TradingCommand command) except *:
@@ -858,28 +883,3 @@ cdef class ExecutionEngine(Component):
             return  # Cannot send to strategy
 
         strategy.handle_event_c(event)
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef inline void _set_position_id_counts(self) except *:
-        # For the internal position identifier generator
-        cdef list positions = self.cache.positions()
-
-        # Count positions per instrument_id
-        cdef dict counts = {}  # type: dict[StrategyId, int]
-        cdef int count
-        cdef Position position
-        for position in positions:
-            count = counts.get(position.strategy_id, 0)
-            count += 1
-            # noinspection PyUnresolvedReferences
-            counts[position.strategy_id] = count
-
-        # Reset position identifier generator
-        self._pos_id_generator.reset()
-
-        # Set counts
-        cdef StrategyId strategy_id
-        for strategy_id, count in counts.items():
-            self._pos_id_generator.set_count(strategy_id, count)
-            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
