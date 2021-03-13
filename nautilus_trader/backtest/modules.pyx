@@ -95,6 +95,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
         """
         super().__init__()
+
         self._calculator = RolloverInterestCalculator(data=rate_data)
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
