@@ -1,8 +1,7 @@
-import pytest
 from nautilus_trader.model.c_enums.order_side import OrderSide
 
-from nautilus_trader.model.orderbook.ladder import Ladder
-from nautilus_trader.model.orderbook.level import Level
+from nautilus_trader.model.orderbook.ladder import L2Ladder
+from nautilus_trader.model.orderbook.level import L2Level
 from nautilus_trader.model.orderbook.order import Order
 
 
@@ -10,7 +9,7 @@ from nautilus_trader.model.orderbook.order import Order
 
 
 def test_init():
-    ladder = Ladder()
+    ladder = L2Ladder(levels=[], reverse=False)
     assert ladder
 
 
@@ -20,27 +19,28 @@ def test_insert():
         Order(price=100, volume=1, side=OrderSide.BUY),
         Order(price=105, volume=20, side=OrderSide.BUY),
     ]
-    ladder = Ladder.from_orders(orders=orders)
-    ladder.insert(order=Order(price=100, volume=10, side=OrderSide.BUY))
-    ladder.insert(order=Order(price=101, volume=5, side=OrderSide.BUY))
-    ladder.insert(order=Order(price=101, volume=5, side=OrderSide.BUY))
+    ladder = L2Ladder(levels=[], reverse=False)
+    for order in orders:
+        ladder.add(level=L2Level(orders=[order]))
+    ladder.add(order=Order(price=100, volume=10, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101, volume=5, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101, volume=5, side=OrderSide.BUY))
 
     expected = [
-        Level(orders=[Order(price=100, volume=21, side=OrderSide.BUY)]),
-        Level(orders=[Order(price=101, volume=10, side=OrderSide.BUY)]),
-        Level(orders=[Order(price=105, volume=20, side=OrderSide.BUY)]),
+        L2Level(orders=[Order(price=100, volume=21, side=OrderSide.BUY)]),
+        L2Level(orders=[Order(price=101, volume=10, side=OrderSide.BUY)]),
+        L2Level(orders=[Order(price=105, volume=20, side=OrderSide.BUY)]),
     ]
     assert all([(r.price, r.volume) == (e.price, e.volume) for r, e in zip(ladder.levels, expected)])
 
-
-@pytest.mark.skip
-def test_delete_order():
-    l = Ladder.from_orders(
-        [Order(price=100, volume=10, side=OrderSide.BUY, order_id="1"),
-         Order(price=100, volume=5, side=OrderSide.BUY, order_id="2")]
-    )
-    # TODO ladder.delete order - do we need this?
-    l.delete(order=Order(price=100, volume=1, side=OrderSide.BUY))
+# @pytest.mark.skip
+# def test_delete_order():
+#     l = Ladder.from_orders(
+#         [Order(price=100, volume=10, side=OrderSide.BUY, order_id="1"),
+#          Order(price=100, volume=5, side=OrderSide.BUY, order_id="2")]
+#     )
+#     # TODO ladder.delete order - do we need this?
+#     l.delete(order=Order(price=100, volume=1, side=OrderSide.BUY))
 
 # ---- L3 Tests ----- #
 
