@@ -82,7 +82,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = ExponentialMovingAverage(10, PriceType.MID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -95,7 +95,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = ExponentialMovingAverage(10)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_trade_tick(tick)

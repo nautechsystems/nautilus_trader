@@ -13,25 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-
-# from nautilus_trader.model.identifiers cimport Security
-# from nautilus_trader.model.instrument cimport Future
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instrument cimport Future
 from nautilus_trader.model.instrument cimport Instrument
 
-
-cdef class IBInstrumentProvider:
-    cdef dict _instruments
-    cdef object _client
-    cdef str _host
-    cdef str _port
-    cdef int _client_id
-
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
-
-    cpdef void connect(self)
-    # cpdef Future load_future(self, Security security, AssetClass asset_class=*)
-    # cpdef Instrument get(self, Security security)
-    # cdef inline int _tick_size_to_precision(self, double tick_size) except *
-    # cdef Future _parse_futures_contract(self, Security security, AssetClass asset_class, list details_list)
+# cdef class IBInstrumentProvider:
+#     cdef dict _instruments
+#     cdef object _client
+#     cdef str _host
+#     cdef str _port
+#     cdef int _client_id
+#
+#     cdef readonly int count
+#     """The count of instruments held by the provider.\n\n:returns: `int`"""
+#
+#     cpdef void connect(self)
+#     cpdef Future load_future(self, InstrumentId instrument_id)
+#     cpdef Instrument get(self, InstrumentId instrument_id)
+#     cdef inline int _tick_size_to_precision(self, double tick_size) except *
+#     cdef Future _parse_futures_contract(self, InstrumentId instrument_id, list details_list)

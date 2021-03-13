@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -27,22 +29,22 @@ class MyStrategy(TradingStrategy):
     A blank template strategy.
     """
 
-    def __init__(self, security: Security):
+    def __init__(self, instrument_id: InstrumentId):
         """
         Initialize a new instance of the `MyStrategy` class.
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the strategy.
+        instrument_id : InstrumentId
+            The instrument identifier for the strategy.
 
         """
         # The order_id_tag should be unique at the 'trader level', here we are
         # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(order_id_tag=security.security.replace('/', ""))
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace('/', ""))
 
         # Custom strategy variables
-        self.security = security
+        self.instrument_id = instrument_id
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -111,19 +113,19 @@ class MyStrategy(TradingStrategy):
         """
         pass
 
-    def on_data(self, data):
+    def on_data(self, data: GenericData):
         """
         Actions to be performed when the strategy is running and receives a data object.
 
         Parameters
         ----------
-        data : object
-            The data object received.
+        data : GenericData
+            The data received.
 
         """
         pass
 
-    def on_event(self, event):
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 

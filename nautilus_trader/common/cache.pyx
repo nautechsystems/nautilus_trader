@@ -28,7 +28,7 @@ cdef class IdentifierCache:
         self._cached_trader_ids = ObjectCache(TraderId, TraderId.from_str_c)
         self._cached_account_ids = ObjectCache(AccountId, AccountId.from_str_c)
         self._cached_strategy_ids = ObjectCache(StrategyId, StrategyId.from_str_c)
-        self._cached_securities = ObjectCache(Security, Security.from_serializable_str_c)
+        self._cached_instrument_ids = ObjectCache(InstrumentId, InstrumentId.from_serializable_str_c)
 
     cpdef TraderId get_trader_id(self, str value):
         """
@@ -97,18 +97,18 @@ cdef class IdentifierCache:
 
         return self._cached_strategy_ids.get(value)
 
-    cpdef Security get_security(self, str value):
+    cpdef InstrumentId get_instrument_id(self, str value):
         """
-        Return the cached security.
+        Return the cached instrument identifier.
 
         Parameters
         ----------
         value : str
-            The value to be parsed to a security.
+            The value to be parsed to an instrument identifier.
 
         Returns
         -------
-        Security or None
+        InstrumentId or None
 
         Raises
         ------
@@ -118,4 +118,4 @@ cdef class IdentifierCache:
         """
         Condition.valid_string(value, "value")
 
-        return self._cached_securities.get(value)
+        return self._cached_instrument_ids.get(value)

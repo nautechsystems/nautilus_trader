@@ -21,15 +21,12 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.base import DataType
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Exchange
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
@@ -37,8 +34,8 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-BITMEX = Exchange("BITMEX")
-BINANCE = Exchange("BINANCE")
+BITMEX = Venue("BITMEX")
+BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -122,7 +119,7 @@ class LiveDataEngineTests(unittest.TestCase):
         request = DataRequest(
             provider="RANDOM",
             data_type=DataType(QuoteTick, metadata={
-                "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.SPOT),
+                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
@@ -267,7 +264,7 @@ class LiveDataEngineTests(unittest.TestCase):
             request = DataRequest(
                 provider="RANDOM",
                 data_type=DataType(QuoteTick, metadata={
-                    "Security": Security(Symbol("SOMETHING"), Venue("RANDOM"), AssetClass.BETTING, AssetType.OPTION),
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                     "FromDateTime": None,
                     "ToDateTime": None,
                     "Limit": 1000,

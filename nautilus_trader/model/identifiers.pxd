@@ -13,15 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
-
 
 cdef class Identifier:
     cdef readonly str value
     """The identifier value.\n\n:returns: `str`"""
-
-    cdef inline bint _is_subclass(self, type other) except *
 
 
 cdef class Symbol(Identifier):
@@ -32,36 +27,15 @@ cdef class Venue(Identifier):
     pass
 
 
-cdef class Exchange(Venue):
-    pass
-
-
-cdef class Security(Identifier):
+cdef class InstrumentId(Identifier):
     cdef readonly Symbol symbol
-    """The security ticker symbol.\n\n:returns: `Symbol`"""
+    """The instrument ticker symbol.\n\n:returns: `Symbol`"""
     cdef readonly Venue venue
-    """The security trading venue.\n\n:returns: `Venue`"""
-    cdef readonly AssetClass asset_class
-    """The security asset class.\n\n:returns: `AssetClass`"""
-    cdef readonly AssetType asset_type
-    """The security asset type.\n\n:returns: `AssetType`"""
+    """The instrument trading venue.\n\n:returns: `Venue`"""
 
     @staticmethod
-    cdef Security from_serializable_str_c(str value)
+    cdef InstrumentId from_serializable_str_c(str value)
     cpdef str to_serializable_str(self)
-
-
-# cdef class FuturesSecurity(Security):
-#     cdef readonly str expiry
-#     """The security contracts last trading day or month.\n\n:returns: `str`"""
-#     cdef readonly str currency
-#     """The underlying currency of the security.\n\n:returns: `str`"""
-#     cdef readonly str multiplier
-#     """The multiplier of the security.\n\n:returns: `int`"""
-#
-#     @staticmethod
-#     cdef Security from_str_c(str value)
-#     cpdef str to_serializable_str(self)
 
 
 cdef class IdTag(Identifier):

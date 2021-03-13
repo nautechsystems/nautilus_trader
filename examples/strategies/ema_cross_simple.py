@@ -15,12 +15,14 @@
 
 from decimal import Decimal
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.market import MarketOrder
@@ -45,7 +47,7 @@ class EMACross(TradingStrategy):
 
     def __init__(
         self,
-        security: Security,
+        instrument_id: InstrumentId,
         bar_spec: BarSpecification,
         trade_size: Decimal,
         fast_ema_period: int,
@@ -57,8 +59,8 @@ class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the strategy.
+        instrument_id : InstrumentId
+            The instrument identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -75,8 +77,8 @@ class EMACross(TradingStrategy):
         super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
-        self.security = security
-        self.bar_type = BarType(security, bar_spec)
+        self.instrument_id = instrument_id
+        self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
         # Create the indicators for the strategy
@@ -94,9 +96,9 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_order_book(self.security, level=2, depth=20, interval=5)  # For debugging
-        # self.subscribe_quote_ticks(self.security)  # For debugging
-        # self.subscribe_trade_ticks(self.security)  # For debugging
+        # self.subscribe_order_book(self.instrument_id, level=2, depth=20, interval=5)  # For debugging
+        # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
+        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -174,18 +176,18 @@ class EMACross(TradingStrategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.security):
+            if self.portfolio.is_flat(self.instrument_id):
                 self.buy()
-            elif self.portfolio.is_net_short(self.security):
-                self.flatten_all_positions(self.security)
+            elif self.portfolio.is_net_short(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
                 self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.security):
+            if self.portfolio.is_flat(self.instrument_id):
                 self.sell()
-            elif self.portfolio.is_net_long(self.security):
-                self.flatten_all_positions(self.security)
+            elif self.portfolio.is_net_long(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
                 self.sell()
 
     def buy(self):
@@ -193,7 +195,7 @@ class EMACross(TradingStrategy):
         Users simple buy method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
             # time_in_force=TimeInForce.FOK,
@@ -206,7 +208,7 @@ class EMACross(TradingStrategy):
         Users simple sell method (example).
         """
         order: MarketOrder = self.order_factory.market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
             # time_in_force=TimeInForce.FOK,
@@ -214,19 +216,19 @@ class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    def on_data(self, data):
+    def on_data(self, data: GenericData):
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : object
-            The data object received.
+        data : GenericData
+            The data received.
 
         """
         pass
 
-    def on_event(self, event):
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -242,14 +244,14 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.security)
-        self.flatten_all_positions(self.security)
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_order_book(self.security, interval=5)
-        # self.unsubscribe_quote_ticks(self.security)
-        # self.unsubscribe_trade_ticks(self.security)
+        # self.unsubscribe_order_book(self.instrument_id, interval=5)
+        # self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """

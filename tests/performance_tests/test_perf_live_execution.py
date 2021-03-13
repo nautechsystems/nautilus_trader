@@ -29,9 +29,9 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -76,7 +76,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         exec_client = MockExecutionClient(
-            venue=Exchange("BINANCE"),
+            venue=Venue("BINANCE"),
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -97,7 +97,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
 
     def submit_order(self):
         order = self.strategy.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity("1.00000000"),
         )
@@ -106,13 +106,13 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
 
     def test_execute_command(self):
         order = self.strategy.order_factory.market(
-            BTCUSDT_BINANCE.security,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity("1.00000000"),
         )
 
         command = SubmitOrder(
-            order.security.venue,
+            order.venue,
             self.trader_id,
             self.account_id,
             self.strategy.id,
@@ -135,7 +135,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         async def run_test():
             def submit_order():
                 order = self.strategy.order_factory.market(
-                    BTCUSDT_BINANCE.security,
+                    BTCUSDT_BINANCE.id,
                     OrderSide.BUY,
                     Quantity("1.00000000"),
                 )
@@ -153,7 +153,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         async def run_test():
             for _ in range(10000):
                 order = self.strategy.order_factory.market(
-                    BTCUSDT_BINANCE.security,
+                    BTCUSDT_BINANCE.id,
                     OrderSide.BUY,
                     Quantity("1.00000000"),
                 )

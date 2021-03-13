@@ -68,7 +68,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = AdaptiveMovingAverage(10, 2, 30, PriceType.MID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -81,7 +81,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = AdaptiveMovingAverage(10, 2, 30)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_trade_tick(tick)

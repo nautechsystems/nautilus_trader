@@ -98,10 +98,10 @@ cdef class SubmitOrder(TradingCommand):
         Raises
         ------
         ValueError
-            If venue is not equal to order.security.venue.
+            If venue is not equal to order.venue.
 
         """
-        Condition.equal(venue, order.security.venue, "venue", "order.security.venue")
+        Condition.equal(venue, order.venue, "venue", "order.venue")
         super().__init__(venue, command_id, command_timestamp)
 
         self.trader_id = trader_id
@@ -109,6 +109,11 @@ cdef class SubmitOrder(TradingCommand):
         self.strategy_id = strategy_id
         self.position_id = position_id
         self.order = order
+        self.approved = False
+
+    cdef void approve(self) except *:
+        # C-only access for approving the sending of the order.
+        self.approved = True
 
     def __repr__(self) -> str:
         cdef str position_id_str = '' if self.position_id.is_null() else f"position_id={self.position_id.value}, "
@@ -119,7 +124,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"cl_ord_id={self.order.cl_ord_id.value}, "
                 f"{position_id_str}"
                 f"strategy_id={self.strategy_id.value}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")
 
 
 cdef class SubmitBracketOrder(TradingCommand):
@@ -160,16 +165,21 @@ cdef class SubmitBracketOrder(TradingCommand):
         Raises
         ------
         ValueError
-            If venue is not equal to order.security.venue.
+            If venue is not equal to order.venue.
 
         """
-        Condition.equal(venue, bracket_order.entry.security.venue, "venue", "bracket_order.entry.security.venue")
+        Condition.equal(venue, bracket_order.entry.venue, "venue", "bracket_order.entry.venue")
         super().__init__(venue, command_id, command_timestamp)
 
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
         self.bracket_order = bracket_order
+        self.approved = False
+
+    cdef void approve(self) except *:
+        # C-only access for approving the sending of the order.
+        self.approved = True
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -178,7 +188,7 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
                 f"entry_cl_ord_id={self.bracket_order.entry.cl_ord_id.value}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")
 
 
 cdef class AmendOrder(TradingCommand):
@@ -241,7 +251,7 @@ cdef class AmendOrder(TradingCommand):
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")
 
 
 cdef class CancelOrder(TradingCommand):
@@ -294,4 +304,4 @@ cdef class CancelOrder(TradingCommand):
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"order_id={self.order_id.value}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")

@@ -29,7 +29,7 @@ from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-USDJPY_SIM = TestStubs.security_usdjpy()
+USDJPY_SIM = TestStubs.usdjpy_id()
 
 
 class BacktestEngineTests(unittest.TestCase):
@@ -39,8 +39,8 @@ class BacktestEngineTests(unittest.TestCase):
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.security, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
-        data.add_bars(usdjpy.security, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
+        data.add_bars(usdjpy.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
+        data.add_bars(usdjpy.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
         self.engine = BacktestEngine(
             data=data,

@@ -26,7 +26,7 @@ using the Python ecosystem - within a highly performant and robust Python native
 
 The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular
 adapters. Thus the platform can handle high-frequency trading operations for any asset classes
-including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
+including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
 ## Features
 
@@ -52,9 +52,9 @@ The value of NautilusTrader here is that this re-implementation step is circumve
 platform was designed from the ground up to hold its own in terms of performance and quality.
 
 Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
-making it a suitable language for implementing a large system such as this. The benefit being
-that a Python native environment can be offered, suitable for professional quantitative traders and
-hedge funds.
+making it a suitable language for building a large system such as this. The benefit being that a
+Python native environment can be offered, suitable for professional quantitative traders and hedge
+funds.
 
 ## Why Python?
 
@@ -94,6 +94,32 @@ The documentation for the latest version of the package is available at _readthe
 > https://nautilus-trader.readthedocs.io
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
+
+## Integrations
+
+| Logo | ID | Status |
+|:---:|:---:|:---:|
+| [![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true)](https://interactivebrokers.com) | ib | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true)](https://oanda.com/) | oanda | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | ccxt-`exchange_id` | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | ccxt-binance | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
+| [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | ccxt-bitmex | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
+
+An integration adapter for CCXT Pro is currently under active development.
+The adapter requires the `ccxtpro` package, which in turn requires a license.
+
+See https://ccxt.pro for more information.
+
+Currently there are **beta** versions of integrations for **Binance** and **BitMEX** available
+for early testing. These include advanced order options such as `post_only`, `hidden`
+`reduce_only`, and all the `TimeInForce` options. These integrations will be incrementally
+ added to.
+
+The other exchanges will be available through CCXTs unified API with a more
+limited feature set. The intent here is to specify other data clients for
+arbitrage or market making strategies. Execution clients will be possible if a
+user only requires simple vanilla MARKET and LIMIT orders for trading on those
+exchanges.
 
 ## Installation
 
@@ -224,24 +250,6 @@ The following order types are available (when possible on an exchange);
 More will be added in due course including `MarketIfTouched`, `LimitIfTouched`
 and icebergs. Users are invited to open discussion issues to request specific
 order types or features.
-
-## Integrations
-
-An integration adapter for CCXT Pro is currently under active development.
-The adapter requires the `ccxtpro` package, which in turn requires a license.
-
-See https://ccxt.pro for more information.
-
-Currently there are **beta** versions of integrations for **Binance** and **BitMEX** available
-for early testing. These include advanced order options such as `post_only`, `hidden`
-`reduce_only`, and all the `TimeInForce` options. These integrations will be incrementally
- added to.
-
-The other exchanges will be available through CCXTs unified API with a more
-limited feature set. The intent here is to specify other data clients for
-arbitrage or market making strategies. Execution clients will be possible if a
-user only requires simple vanilla MARKET and LIMIT orders for trading on those
-exchanges.
 
 ## Development
 

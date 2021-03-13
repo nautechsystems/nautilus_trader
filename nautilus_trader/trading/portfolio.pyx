@@ -40,7 +40,7 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -78,27 +78,27 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money unrealized_pnl(self, Security security):
+    cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money market_value(self, Security security):
+    cpdef Money market_value(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef object net_position(self, Security security):
+    cpdef object net_position(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_net_long(self, Security security) except *:
+    cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_net_short(self, Security security) except *:
+    cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_flat(self, Security security) except *:
+    cpdef bint is_flat(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -131,13 +131,13 @@ cdef class Portfolio(PortfolioFacade):
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._data = None  # Initialized when cache registered
 
-        self._ticks = {}             # type: dict[Security: QuoteTick]
+        self._ticks = {}             # type: dict[InstrumentId: QuoteTick]
         self._accounts = {}          # type: dict[Venue: Account]
         self._orders_working = {}    # type: dict[Venue: set[Order]]
         self._positions_open = {}    # type: dict[Venue: set[Position]]
         self._positions_closed = {}  # type: dict[Venue: set[Position]]
-        self._unrealized_pnls = {}   # type: dict[Security: Money]
-        self._net_positions = {}     # type: dict[Security: Decimal]
+        self._unrealized_pnls = {}   # type: dict[InstrumentId: Money]
+        self._net_positions = {}     # type: dict[InstrumentId: Decimal]
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -198,9 +198,9 @@ cdef class Portfolio(PortfolioFacade):
         cdef int working_count = 0
         for order in orders:
             if order.is_passive_c() and order.is_working_c():
-                orders_working = self._orders_working.get(order.security.venue, set())
+                orders_working = self._orders_working.get(order.venue, set())
                 orders_working.add(order)
-                self._orders_working[order.security.venue] = orders_working
+                self._orders_working[order.venue] = orders_working
                 self._log.debug(f"Added working {order}")
                 working_count += 1
 
@@ -237,24 +237,24 @@ cdef class Portfolio(PortfolioFacade):
         cdef int closed_count = 0
         for position in positions:
             if position.is_open_c():
-                positions_open = self._positions_open.get(position.security.venue, set())
+                positions_open = self._positions_open.get(position.venue, set())
                 positions_open.add(position)
-                self._positions_open[position.security.venue] = positions_open
-                self._update_net_position(position.security, positions_open)
+                self._positions_open[position.venue] = positions_open
+                self._update_net_position(position.instrument_id, positions_open)
                 self._log.debug(f"Added {position}")
                 open_count += 1
             elif position.is_closed_c():
-                positions_closed = self._positions_closed.get(position.security.venue, set())
+                positions_closed = self._positions_closed.get(position.venue, set())
                 positions_closed.add(position)
-                self._positions_closed[position.security.venue] = positions_closed
+                self._positions_closed[position.venue] = positions_closed
                 closed_count += 1
 
         cdef Venue venue
-        cdef Security security
+        cdef InstrumentId instrument_id
         for venue in self._positions_open.keys():
             self._update_maint_margin(venue)
-            for security in self._securities_open_for_venue(venue):
-                self._unrealized_pnls[security] = self._calculate_unrealized_pnl(security)
+            for instrument_id in self._instruments_open_for_venue(venue):
+                self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
 
         self._log.info(
             f"Initialized {open_count} open position{'' if open_count == 1 else 's'}.",
@@ -277,12 +277,12 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(tick, "tick")
 
-        cdef QuoteTick last = self._ticks.get(tick.security)
-        self._ticks[tick.security] = tick
+        cdef QuoteTick last = self._ticks.get(tick.instrument_id)
+        self._ticks[tick.instrument_id] = tick
 
         if last is not None and (tick.bid != last.bid or tick.ask != last.ask):
             # Clear cached unrealized PnLs
-            self._unrealized_pnls[tick.security] = None
+            self._unrealized_pnls[tick.instrument_id] = None
 
     cpdef void update_order(self, Order order) except *:
         """
@@ -296,7 +296,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(order, "order")
 
-        cdef Venue venue = order.security.venue
+        cdef Venue venue = order.venue
 
         cdef set orders_working = self._orders_working.get(venue, set())
         if order.is_working_c():
@@ -329,9 +329,9 @@ cdef class Portfolio(PortfolioFacade):
 
         self._log.debug(f"Updated {event.position}.")
 
-        cdef Security security = event.position.security
-        self._update_maint_margin(security.venue)
-        self._unrealized_pnls[security] = self._calculate_unrealized_pnl(security)
+        cdef InstrumentId instrument_id = event.position.instrument_id
+        self._update_maint_margin(instrument_id.venue)
+        self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
 
     cpdef void reset(self) except *:
         """
@@ -439,22 +439,22 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(venue, "venue")
 
-        cdef set securities = self._securities_open_for_venue(venue)
-        if not securities:
+        cdef set instrument_ids = self._instruments_open_for_venue(venue)
+        if not instrument_ids:
             return {}  # Nothing to calculate
 
         cdef dict unrealized_pnls = {}  # type: dict[Currency, Decimal]
 
-        cdef Security security
+        cdef InstrumentId instrument_id
         cdef Money pnl
-        for security in securities:
-            pnl = self._unrealized_pnls.get(security)
+        for instrument_id in instrument_ids:
+            pnl = self._unrealized_pnls.get(instrument_id)
             if pnl is not None:
                 # PnL already calculated
                 unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
-                continue  # To next security
+                continue  # To next instrument_id
             # Calculate PnL
-            pnl = self._calculate_unrealized_pnl(security)
+            pnl = self._calculate_unrealized_pnl(instrument_id)
             if pnl is None:
                 return None  # Error already logged in `_calculate_unrealized_pnl`
             unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
@@ -494,16 +494,16 @@ cdef class Portfolio(PortfolioFacade):
         cdef Instrument instrument
         cdef Price last
         for position in positions_open:
-            instrument = self._data.instrument(position.security)
+            instrument = self._data.instrument(position.instrument_id)
             if instrument is None:
                 self._log.error(f"Cannot calculate market value "
-                                f"(no instrument for {position.security}).")
+                                f"(no instrument for {position.instrument_id}).")
                 return None  # Cannot calculate
 
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(f"Cannot calculate market value "
-                                f"(no prices for {position.security}).")
+                                f"(no prices for {position.instrument_id}).")
                 continue  # Cannot calculate
 
             xrate = self._calculate_xrate(
@@ -530,62 +530,62 @@ cdef class Portfolio(PortfolioFacade):
 
         return {k: Money(v, k) for k, v in market_values.items()}
 
-    cpdef Money unrealized_pnl(self, Security security):
+    cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
         """
-        Return the unrealized PnL for the given security (if found).
+        Return the unrealized PnL for the given instrument_id (if found).
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the unrealized PnL.
+        instrument_id : InstrumentId
+            The instrument identifier for the unrealized PnL.
 
         Returns
         -------
         Money or None
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(self._data, "self._data")
 
-        cdef Money pnl = self._unrealized_pnls.get(security)
+        cdef Money pnl = self._unrealized_pnls.get(instrument_id)
         if pnl is not None:
             return pnl
 
-        pnl = self._calculate_unrealized_pnl(security)
-        self._unrealized_pnls[security] = pnl
+        pnl = self._calculate_unrealized_pnl(instrument_id)
+        self._unrealized_pnls[instrument_id] = pnl
 
         return pnl
 
-    cpdef Money market_value(self, Security security):
+    cpdef Money market_value(self, InstrumentId instrument_id):
         """
-        Return the market value for the given security (if found).
+        Return the market value for the given instrument_id (if found).
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the market value.
+        instrument_id : InstrumentId
+            The instrument identifier for the market value.
 
         Returns
         -------
         Money or None
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(self._data, "self._data")
 
-        cdef Account account = self._accounts.get(security.venue)
+        cdef Account account = self._accounts.get(instrument_id.venue)
         if account is None:
             self._log.error(f"Cannot calculate market value "
-                            f"(no account registered for {security.venue}).")
+                            f"(no account registered for {instrument_id.venue}).")
             return None  # Cannot calculate
 
-        cdef instrument = self._data.instrument(security)
+        cdef instrument = self._data.instrument(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot calculate market value "
-                            f"(no instrument for {security}).")
+                            f"(no instrument for {instrument_id}).")
             return None  # Cannot calculate
 
-        cdef set positions_open = self._positions_open.get(security.venue)
+        cdef set positions_open = self._positions_open.get(instrument_id.venue)
         if not positions_open:
             return Money(0, instrument.quote_currency)
 
@@ -600,13 +600,13 @@ cdef class Portfolio(PortfolioFacade):
         cdef Position position
         cdef Price last
         for position in positions_open:
-            if position.security != security:
+            if position.instrument_id != instrument_id:
                 continue
 
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(f"Cannot calculate market value "
-                                f"(no prices for {position.security}).")
+                                f"(no prices for {position.instrument_id}).")
                 continue  # Cannot calculate
 
             xrate = self._calculate_xrate(
@@ -630,32 +630,32 @@ cdef class Portfolio(PortfolioFacade):
         else:
             return Money(market_value, instrument.settlement_currency)
 
-    cpdef object net_position(self, Security security):
+    cpdef object net_position(self, InstrumentId instrument_id):
         """
-        Return the net relative position for the given security. If no positions
-        for security then will return `Decimal('0')`.
+        Return the net relative position for the given instrument_id. If no positions
+        for instrument_id then will return `Decimal('0')`.
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the query.
+        instrument_id : InstrumentId
+            The instrument identifier for the query.
 
         Returns
         -------
         Decimal
 
         """
-        return self._net_position(security)
+        return self._net_position(instrument_id)
 
-    cpdef bint is_net_long(self, Security security) except *:
+    cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net long the given
-        security.
+        instrument_id.
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the query.
+        instrument_id : InstrumentId
+            The instrument identifier for the query.
 
         Returns
         -------
@@ -663,19 +663,19 @@ cdef class Portfolio(PortfolioFacade):
             True if net long, else False.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
-        return self._net_position(security) > 0
+        return self._net_position(instrument_id) > 0
 
-    cpdef bint is_net_short(self, Security security) except *:
+    cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net short the given
-        security.
+        instrument_id.
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the query.
+        instrument_id : InstrumentId
+            The instrument identifier for the query.
 
         Returns
         -------
@@ -683,19 +683,19 @@ cdef class Portfolio(PortfolioFacade):
             True if net short, else False.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
-        return self._net_position(security) < 0
+        return self._net_position(instrument_id) < 0
 
-    cpdef bint is_flat(self, Security security) except *:
+    cpdef bint is_flat(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is flat for the given
-        security.
+        instrument_id.
 
         Parameters
         ----------
-        security : Security, optional
-            The security identifier query filter.
+        instrument_id : InstrumentId, optional
+            The instrument identifier query filter.
 
         Returns
         -------
@@ -703,9 +703,9 @@ cdef class Portfolio(PortfolioFacade):
             True if net flat, else False.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
-        return self._net_position(security) == 0
+        return self._net_position(instrument_id) == 0
 
     cpdef bint is_completely_flat(self) except *:
         """
@@ -714,7 +714,7 @@ cdef class Portfolio(PortfolioFacade):
         Returns
         -------
         bool
-            True if net flat across all securities, else False.
+            True if net flat across all instruments, else False.
 
         """
         for net_position in self._net_positions.values():
@@ -725,18 +725,18 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline object _net_position(self, Security security):
-        return self._net_positions.get(security, Decimal(0))
+    cdef inline object _net_position(self, InstrumentId instrument_id):
+        return self._net_positions.get(instrument_id, Decimal(0))
 
-    cdef inline set _securities_open_for_venue(self, Venue venue):
+    cdef inline set _instruments_open_for_venue(self, Venue venue):
         cdef Position position
         cdef set positions_open = self._positions_open.get(venue)
         if positions_open is None:
             return set()
-        return {position.security for position in positions_open}
+        return {position.instrument_id for position in positions_open}
 
     cdef inline void _handle_position_opened(self, PositionOpened event) except *:
-        cdef Venue venue = event.position.security.venue
+        cdef Venue venue = event.position.venue
         cdef Position position = event.position
 
         # Add to positions open
@@ -744,14 +744,14 @@ cdef class Portfolio(PortfolioFacade):
         positions_open.add(position)
         self._positions_open[venue] = positions_open
 
-        self._update_net_position(event.position.security, positions_open)
+        self._update_net_position(event.position.instrument_id, positions_open)
 
     cdef inline void _handle_position_changed(self, PositionChanged event) except *:
-        cdef Venue venue = event.position.security.venue
-        self._update_net_position(event.position.security, self._positions_open.get(venue, set()))
+        cdef Venue venue = event.position.venue
+        self._update_net_position(event.position.instrument_id, self._positions_open.get(venue, set()))
 
     cdef inline void _handle_position_closed(self, PositionClosed event) except *:
-        cdef Venue venue = event.position.security.venue
+        cdef Venue venue = event.position.venue
         cdef Position position = event.position
 
         # Remove from positions open if found
@@ -764,17 +764,17 @@ cdef class Portfolio(PortfolioFacade):
         positions_closed.add(position)
         self._positions_closed[venue] = positions_closed
 
-        self._update_net_position(event.position.security, positions_open)
+        self._update_net_position(event.position.instrument_id, positions_open)
 
-    cdef inline void _update_net_position(self, Security security, set positions_open) except *:
+    cdef inline void _update_net_position(self, InstrumentId instrument_id, set positions_open) except *:
         net_position = Decimal()
         for position in positions_open:
-            if position.security == security:
+            if position.instrument_id == instrument_id:
                 net_position += position.relative_quantity
 
-        self._net_positions[security] = net_position
-        self._update_maint_margin(security.venue)
-        self._log.info(f"{security} net_position={net_position}")
+        self._net_positions[instrument_id] = net_position
+        self._update_maint_margin(instrument_id.venue)
+        self._log.info(f"{instrument_id} net_position={net_position}")
 
     cdef inline void _update_initial_margin(self, Venue venue) except *:
         cdef Account account = self._accounts.get(venue)
@@ -793,10 +793,10 @@ cdef class Portfolio(PortfolioFacade):
         cdef Instrument instrument
         cdef Currency currency
         for order in working_orders:
-            instrument = self._data.instrument(order.security)
+            instrument = self._data.instrument(order.instrument_id)
             if instrument is None:
                 self._log.error(f"Cannot calculate initial margin "
-                                f"(no instrument for {order.security}).")
+                                f"(no instrument for {order.instrument_id}).")
                 continue  # Cannot calculate
 
             if instrument.leverage == 1:
@@ -855,10 +855,10 @@ cdef class Portfolio(PortfolioFacade):
         cdef Price last
         cdef Currency currency
         for position in open_positions:
-            instrument = self._data.instrument(position.security)
+            instrument = self._data.instrument(position.instrument_id)
             if instrument is None:
                 self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(no instrument for {position.security}).")
+                                f"(no instrument for {position.instrument_id}).")
                 continue  # Cannot calculate
 
             if instrument.leverage == 1:
@@ -867,7 +867,7 @@ cdef class Portfolio(PortfolioFacade):
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(no prices for {position.security}).")
+                                f"(no prices for {position.instrument_id}).")
                 continue  # Cannot calculate
 
             # Calculate margin
@@ -906,17 +906,17 @@ cdef class Portfolio(PortfolioFacade):
 
             self._log.info(f"{venue} maint_margin={total_margin_money}")
 
-    cdef Money _calculate_unrealized_pnl(self, Security security):
-        cdef Account account = self._accounts.get(security.venue)
+    cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id):
+        cdef Account account = self._accounts.get(instrument_id.venue)
         if account is None:
             self._log.error(f"Cannot calculate unrealized PnL "
-                            f"(no account registered for {security.venue}).")
+                            f"(no account registered for {instrument_id.venue}).")
             return None  # Cannot calculate
 
-        cdef Instrument instrument = self._data.instrument(security)
+        cdef Instrument instrument = self._data.instrument(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot calculate unrealized PnL "
-                            f"(no instrument for {security}).")
+                            f"(no instrument for {instrument_id}).")
             return None  # Cannot calculate
 
         cdef Currency currency
@@ -925,7 +925,7 @@ cdef class Portfolio(PortfolioFacade):
         else:
             currency = instrument.settlement_currency
 
-        cdef set positions_open = self._positions_open.get(security.venue)
+        cdef set positions_open = self._positions_open.get(instrument_id.venue)
         if positions_open is None:
             if account.default_currency is not None:
                 return Money(0, account.default_currency)
@@ -937,12 +937,12 @@ cdef class Portfolio(PortfolioFacade):
         cdef Position position
         cdef Price last
         for position in positions_open:
-            if position.security != security:
+            if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate
 
             last = self._get_last_price(position)
             if last is None:
-                self._log.error(f"Cannot calculate unrealized PnL (no prices for {security}).")
+                self._log.error(f"Cannot calculate unrealized PnL (no prices for {instrument_id}).")
                 return None  # Cannot calculate
 
             pnl = position.unrealized_pnl(last)
@@ -968,7 +968,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side):
         if account.default_currency is not None:
             return self._data.get_xrate(
-                venue=instrument.security.venue,
+                venue=instrument.venue,
                 from_currency=instrument.settlement_currency,
                 to_currency=account.default_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
@@ -977,7 +977,7 @@ cdef class Portfolio(PortfolioFacade):
         return Decimal(1)  # No conversion needed
 
     cdef inline Price _get_last_price(self, Position position):
-        cdef QuoteTick quote_tick = self._data.quote_tick(position.security)
+        cdef QuoteTick quote_tick = self._data.quote_tick(position.instrument_id)
         if quote_tick is not None:
             if position.side == PositionSide.LONG:
                 return quote_tick.bid
@@ -987,5 +987,5 @@ cdef class Portfolio(PortfolioFacade):
                 raise RuntimeError(f"invalid PositionSide, "
                                    f"was {PositionSideParser.to_str(position.side)}")
 
-        cdef TradeTick trade_tick = self._data.trade_tick(position.security)
+        cdef TradeTick trade_tick = self._data.trade_tick(position.instrument_id)
         return trade_tick.price if trade_tick is not None else None

@@ -69,7 +69,7 @@ class TestFunctions:
 
         # Assert
         assert np.mean([0.0, 1.1, 2.2]) == result1
-        assert pytest.approx(3.3) == result2
+        assert 3.3000000000000003 == result2
 
     def test_std_dev_with_mean(self):
         # Arrange
@@ -94,7 +94,7 @@ class TestFunctions:
 
         # Assert
         assert 0.0 == result1
-        assert pytest.approx(2.0, 1) == result2
+        assert 2.0000000000000003e-06 == result2
 
     @pytest.mark.parametrize(
         "original, final_length, expected",

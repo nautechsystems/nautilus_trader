@@ -15,14 +15,16 @@
 
 from decimal import Decimal
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -53,7 +55,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
     def __init__(
         self,
-        security: Security,
+        instrument_id: InstrumentId,
         bar_spec: BarSpecification,
         trade_size: Decimal,
         fast_ema_period: int,
@@ -67,8 +69,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the strategy.
+        instrument_id : InstrumentId
+            The instrument identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -89,8 +91,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
         super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
-        self.security = security
-        self.bar_type = BarType(security, bar_spec)
+        self.instrument_id = instrument_id
+        self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
         self.instrument = None  # Initialize in on_start
@@ -107,9 +109,9 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.security)
+        self.instrument = self.data.instrument(self.instrument_id)
         if self.instrument is None:
-            self.log.error(f"Could not find instrument for {self.security}")
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
             self.stop()
             return
 
@@ -195,7 +197,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
                           f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
 
-        if self.portfolio.is_flat(self.security):
+        if self.portfolio.is_flat(self.instrument_id):
             if self.fast_ema.value >= self.slow_ema.value:
                 self.entry_buy()
                 self.trailing_stop_sell(bar)
@@ -210,7 +212,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         Users simple buy entry method (example).
         """
         order = self.order_factory.market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
         )
@@ -222,7 +224,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         Users simple sell entry method (example).
         """
         order = self.order_factory.market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
         )
@@ -241,7 +243,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         price: Decimal = last_bar.high + (self.atr.value * self.trail_atr_multiple)
         order: StopMarketOrder = self.order_factory.stop_market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
             price=Price(price),
@@ -257,7 +259,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         price: Decimal = last_bar.low - (self.atr.value * self.trail_atr_multiple)
         order: StopMarketOrder = self.order_factory.stop_market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
             price=Price(price, self.instrument.price_precision),
@@ -279,7 +281,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         if not self.trailing_stop:
             self.log.error("Trailing Stop order was None!")
-            self.flatten_all_positions(self.security)
+            self.flatten_all_positions(self.instrument_id)
             return
 
         if self.trailing_stop.is_sell:
@@ -293,19 +295,19 @@ class EMACrossWithTrailingStop(TradingStrategy):
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_buy(last_bar)
 
-    def on_data(self, data):
+    def on_data(self, data: GenericData):
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : object
-            The data object received.
+        data : GenericData
+            The data received.
 
         """
         pass
 
-    def on_event(self, event):
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -329,8 +331,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.security)
-        self.flatten_all_positions(self.security)
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

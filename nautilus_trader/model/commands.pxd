@@ -43,6 +43,10 @@ cdef class SubmitOrder(TradingCommand):
     """The position identifier associated with the command.\n\n:returns: `PositionId`"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
+    cdef readonly bint approved
+    """If the order has been risk approved.\n\n:returns: `bool`"""
+
+    cdef void approve(self) except *
 
 
 cdef class SubmitBracketOrder(TradingCommand):
@@ -54,6 +58,10 @@ cdef class SubmitBracketOrder(TradingCommand):
     """The strategy identifier associated with the command.\n\n:returns: `StrategyId`"""
     cdef readonly BracketOrder bracket_order
     """The bracket order to submit.\n\n:returns: `BracketOrder`"""
+    cdef readonly bint approved
+    """If the bracket order has been risk approved.\n\n:returns: `bool`"""
+
+    cdef void approve(self) except *
 
 
 cdef class CancelOrder(TradingCommand):

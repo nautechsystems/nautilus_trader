@@ -18,8 +18,8 @@
 from nautilus_trader.model.bar cimport Bar  # noqa
 from nautilus_trader.model.bar cimport BarSpecification  # noqa
 from nautilus_trader.model.bar cimport BarType  # noqa
+from nautilus_trader.model.identifiers cimport InstrumentId  # noqa
 from nautilus_trader.model.identifiers cimport PositionId  # noqa
-from nautilus_trader.model.identifiers cimport Security  # noqa
 from nautilus_trader.model.tick cimport QuoteTick  # noqa
 from nautilus_trader.model.tick cimport Tick  # noqa
 from nautilus_trader.model.tick cimport TradeTick  # noqa
