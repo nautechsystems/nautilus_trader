@@ -163,7 +163,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if execution_resolution is None:
                 self._log.warning(f"No execution level data for {instrument_id}.")
 
-            # Increment counter for indexing the next instrument_id
+            # Increment counter for indexing the next instrument
             instrument_counter += 1
 
             self.execution_resolutions.append(f"{instrument_id}={execution_resolution}")
