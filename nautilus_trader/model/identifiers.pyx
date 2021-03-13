@@ -163,7 +163,7 @@ cdef class InstrumentId(Identifier):
     def from_serializable_str(value: str) -> InstrumentId:
         """
         Return an instrument identifier parsed from the given string value.
-        Must be correctly formatted including a single period and two commas.
+        Must be correctly formatted including a single period.
 
         Example: "AUD/USD.IDEALPRO".
 
@@ -269,7 +269,7 @@ cdef class TraderId(Identifier):
         Return a trader identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
 
-        Its is expected a trader identifier  is the abbreviated name of the
+        It is expected a trader identifier is the abbreviated name of the
         trader with an order identifier tag number separated by a hyphen.
 
         Example: "TESTER-001".
@@ -351,7 +351,7 @@ cdef class StrategyId(Identifier):
 
         Must be correctly formatted with two valid strings either side of a hyphen.
         Is is expected a strategy identifier is the class name of the strategy with
-        an order_id tag number separated by a hyphen.
+        an order identifier tag number separated by a hyphen.
 
         Example: "EMACross-001".
 
