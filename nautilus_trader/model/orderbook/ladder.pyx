@@ -1,13 +1,11 @@
 import logging
 from bisect import bisect
-from typing import List
 
 from nautilus_trader.model.orderbook.level import L2Level
-from nautilus_trader.model.orderbook.order import Order
 
 logger = logging.getLogger(__name__)
 
-cdef class LadderMixin:
+cdef class Ladder:
     cdef list levels
     cdef bint reverse
     cdef dict price_levels
@@ -19,11 +17,14 @@ cdef class LadderMixin:
         self.price_levels = dict()
         self.order_id_prices = dict()
 
-    # cpdef update(self):
-    #     raise NotImplemented
+    cpdef add(self):
+        raise NotImplemented
 
-    # cpdef delete(self):
-    #     raise NotImplemented
+    cpdef update(self):
+        raise NotImplemented
+
+    cpdef delete(self):
+        raise NotImplemented
 
     @property
     def prices(self):
@@ -56,7 +57,6 @@ cdef class LadderMixin:
 
 #TODO Cython subclassing is slow ??
 cdef class L2Ladder(LadderMixin):
-
     cpdef add(self, level: L2Level):
         order = level.orders[0]
         if order.price in self.prices:
@@ -115,10 +115,10 @@ cdef class L2Ladder(LadderMixin):
 #                 self.delete(order_id=order.id)
 #                 self.insert(order=order)
 
-    # cpdef delete(self, str order_id):
-    #     price_idx = tuple(self.prices).index(order.price)
-    #     deleted_orders = self.levels[price_idx].delete(order=order)
-    #     for del_order in deleted_orders:
-    #         del self.order_id_prices[del_order.order_id]
-    #     self._delete_level_by_price(price=order.price, only_if_empty=True)
-    #     return deleted_orders
+# cpdef delete(self, str order_id):
+#     price_idx = tuple(self.prices).index(order.price)
+#     deleted_orders = self.levels[price_idx].delete(order=order)
+#     for del_order in deleted_orders:
+#         del self.order_id_prices[del_order.order_id]
+#     self._delete_level_by_price(price=order.price, only_if_empty=True)
+#     return deleted_orders

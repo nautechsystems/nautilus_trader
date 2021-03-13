@@ -7,11 +7,9 @@ cdef class L2Level:
     cpdef void delete(self, float volume)
     cpdef double volume(self)
 
-    #TODO - How to do cython properties?
-
-    # @property
-    # cdef inline double volume(self):
-    #     return sum([order.volume for order in self.orders])
+    @property
+    cdef inline double volume(self):
+        return sum([order.volume for order in self.orders])
     #
     # @property
     # cdef inline double exposure(self):
