@@ -18,9 +18,19 @@ from cpython.datetime cimport datetime
 
 cdef class Data:
     cdef readonly datetime timestamp
-    """The timestamp (UTC).\n\n:returns: `datetime`"""
+    """The data timestamp (UTC).\n\n:returns: `datetime`"""
     cdef readonly double unix_timestamp
-    """The Unix timestamp (seconds).\n\n:returns: `double`"""
+    """The data Unix timestamp (seconds).\n\n:returns: `double`"""
+
+
+cdef class DataType:
+    cdef frozenset _key
+    cdef int _hash
+
+    cdef readonly type type
+    """The PyObject type of the data.\n\n:returns: `type`"""
+    cdef readonly dict metadata
+    """The data types metadata.\n\n:returns: `set[str, object]`"""
 
 
 cdef class GenericData(Data):
@@ -28,13 +38,3 @@ cdef class GenericData(Data):
     """The data type for the data.\n\n:returns: `DataType`"""
     cdef readonly object data
     """The data.\n\n:returns: `object`"""
-
-
-cdef class DataType:
-    cdef frozenset _metadata_key
-    cdef int _hash
-
-    cdef readonly type type
-    """The type of the data.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The data types metadata.\n\n:returns: `set[str, object]`"""
