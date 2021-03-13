@@ -25,7 +25,7 @@ cpdef enum MessageType:
     DOCUMENT = 3,
     EVENT = 4,
     REQUEST = 5,
-    RESPONSE = 6
+    RESPONSE = 6,
 
 
 cpdef str message_type_to_str(int value)

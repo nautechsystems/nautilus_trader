@@ -22,7 +22,7 @@ cpdef enum AssetClass:
     BOND = 4,
     INDEX = 5,
     CRYPTO = 6,
-    BETTING = 7
+    BETTING = 7,
 
 
 cdef class AssetClassParser:

@@ -18,7 +18,7 @@ cpdef enum PositionSide:
     UNDEFINED = 0,  # Invalid value
     FLAT = 1,
     LONG = 2,
-    SHORT = 3
+    SHORT = 3,
 
 
 cdef class PositionSideParser:

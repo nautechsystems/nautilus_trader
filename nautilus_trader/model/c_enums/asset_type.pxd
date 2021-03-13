@@ -22,7 +22,7 @@ cpdef enum AssetType:
     FORWARD = 4,
     CFD = 5,
     OPTION = 6,
-    WARRANT = 7
+    WARRANT = 7,
 
 
 cdef class AssetTypeParser:
