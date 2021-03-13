@@ -18,7 +18,7 @@ from decimal import Decimal
 
 import ccxt
 
-from nautilus_trader.live.providers cimport InstrumentProvider
+from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
@@ -50,8 +50,15 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             If all instruments should be loaded at instantiation.
 
         """
-        self._client = client  # Assign here as `super().__init__` will call it
-        super().__init__(venue=Venue(client.name.upper()), load_all=load_all)
+        super().__init__()
+
+        self._client = client
+        self._currencies = {}  # type: dict[str, Currency]
+
+        self.venue = Venue(client.name.upper())
+
+        if load_all:
+            self.load_all()
 
     async def load_all_async(self):
         """
@@ -69,19 +76,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         self._load_currencies()
         self._load_instruments()
 
-    cpdef dict get_all(self):
-        """
-        Return all loaded instruments.
-
-        If no instruments loaded, will return an empty dict.
-
-        Returns
-        -------
-        dict[InstrumentId, Instrument]
-
-        """
-        return self._instruments.copy()
-
     cpdef Currency currency(self, str code):
         """
         Return the currency with the given code (if found).
@@ -98,10 +92,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         """
         return self._currencies.get(code)
 
-    cdef Instrument get_c(self, Symbol symbol):
-        # Provides fast C level access assuming the venue is correct
-        return self._instruments.get(symbol)
-
     cdef void _load_instruments(self) except *:
         cdef str k
         cdef dict v
@@ -113,9 +103,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             if instrument is None:
                 continue  # Something went wrong in parsing
 
-            self._instruments[instrument_id.symbol] = instrument
-
-        self.count = len(self._instruments)
+            self._instruments[instrument_id] = instrument
 
     cdef void _load_currencies(self) except *:
         cdef int precision_mode = self._client.precisionMode

@@ -96,7 +96,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("OANDA"))
 
         # Act
-        instrument = provider.get(instrument_id)
+        instrument = provider.find(instrument_id)
 
         # Assert
         self.assertIsNone(instrument)
@@ -115,7 +115,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("OANDA"))
 
         # Act
-        instrument = provider.get(instrument_id)
+        instrument = provider.find(instrument_id)
 
         # Assert
         self.assertEqual(Instrument, type(instrument))

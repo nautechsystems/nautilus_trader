@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     BINANCE = Venue("BINANCE")
     instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
-    ETHUSDT_BINANCE = instruments.get(instrument_id)
+    ETHUSDT_BINANCE = instruments.find(instrument_id)
 
     # Setup data container
     data = BacktestDataContainer()

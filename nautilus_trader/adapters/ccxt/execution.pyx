@@ -25,13 +25,13 @@ from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_unix_time_ms
 from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.execution.reports cimport ExecutionStateReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.live.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -206,7 +206,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
-            instrument = self._instrument_provider.get(order.symbol)
+            instrument = self._instrument_provider.find_c(order.symbol)
             if instrument is None:
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"instrument for {order.instrument_id} not found.")
