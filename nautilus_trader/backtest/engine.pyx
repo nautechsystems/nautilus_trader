@@ -45,6 +45,7 @@ from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
@@ -69,7 +70,7 @@ cdef class BacktestEngine:
         list strategies=None,
         int tick_capacity=1000,
         int bar_capacity=1000,
-        bint use_tick_cache=False,
+        bint use_data_cache=False,
         str exec_db_type not None="in-memory",
         bint exec_db_flush=True,
         bint bypass_logging=False,
@@ -96,7 +97,7 @@ cdef class BacktestEngine:
             The length for the data engines internal ticks deque (> 0).
         bar_capacity : int, optional
             The length for the data engines internal bars deque (> 0).
-        use_tick_cache : bool, optional
+        use_data_cache : bool, optional
             If use cache for DataProducer (increased performance with repeated backtests on same data).
         exec_db_type : str, optional
             The type for the execution cache (can be the default 'in-memory' or redis).
@@ -228,7 +229,7 @@ cdef class BacktestEngine:
             logger=self._test_logger,
         )
 
-        if use_tick_cache:
+        if use_data_cache:
             self._data_producer = CachedProducer(self._data_producer)
 
         # Create data client per venue
@@ -546,14 +547,15 @@ cdef class BacktestEngine:
         self._exec_engine.start()
         self.trader.start()
 
-        cdef Tick tick
+        cdef Data data
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        while self._data_producer.has_tick_data:
-            tick = self._data_producer.next_tick()
-            self._advance_time(tick.timestamp)
-            self._exchanges[tick.venue].process_tick(tick)
-            self._data_engine.process(tick)
-            self._process_modules(tick.timestamp)
+        while self._data_producer.has_data:
+            data = self._data_producer.next()
+            self._advance_time(data.timestamp)
+            if isinstance(data, Tick):
+                self._exchanges[data.venue].process_tick(data)
+            self._data_engine.process(data)
+            self._process_modules(data.timestamp)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -575,9 +577,8 @@ cdef class BacktestEngine:
         self._test_clock.set_time(now)
 
     cdef inline void _process_modules(self, datetime now) except *:
-        cdef Venue venue
         cdef SimulatedExchange exchange
-        for venue, exchange in self._exchanges.items():
+        for exchange in self._exchanges.values():
             exchange.process_modules(now)
 
     cdef inline void _log_header(
