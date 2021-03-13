@@ -1,3 +1,19 @@
+# NautilusTrader 1.111.0 Beta - Release Notes
+
+
+
+## Breaking Changes
+None
+
+## Enhancements
+- Add details `dict` to `instrument_id` related requests to cover IB futures
+  contracts.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.110.0 Beta - Release Notes
 
 This release applies one more major change to the identifier API. `Security` has
