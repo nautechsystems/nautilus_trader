@@ -532,12 +532,12 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
         """
-        Return the unrealized PnL for the given instrument_id (if found).
+        Return the unrealized PnL for the given instrument identifier (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the unrealized PnL.
+            The instrument for the unrealized PnL.
 
         Returns
         -------
@@ -558,12 +558,12 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef Money market_value(self, InstrumentId instrument_id):
         """
-        Return the market value for the given instrument_id (if found).
+        Return the market value for the given instrument identifier (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the market value.
+            The instrument for the market value.
 
         Returns
         -------
@@ -632,13 +632,13 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
-        Return the net relative position for the given instrument_id. If no positions
+        Return the net relative position for the given instrument identifier. If no positions
         for instrument_id then will return `Decimal('0')`.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the query.
+            The instrument for the query.
 
         Returns
         -------
@@ -650,12 +650,12 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net long the given
-        instrument_id.
+        instrument identifier.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the query.
+            The instrument for the query.
 
         Returns
         -------
@@ -670,12 +670,12 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net short the given
-        instrument_id.
+        instrument identifier.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the query.
+            The instrument for the query.
 
         Returns
         -------
@@ -690,12 +690,12 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_flat(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is flat for the given
-        instrument_id.
+        instrument identifier.
 
         Parameters
         ----------
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument query filter.
 
         Returns
         -------
