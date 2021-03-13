@@ -57,7 +57,7 @@ cdef class PositionSizer:
 
         """
         Condition.not_none(instrument, "instrument")
-        Condition.equal(self.instrument.security, instrument.security, "instrument.security", "instrument.security")
+        Condition.equal(self.instrument.id, instrument.id, "instrument.id", "instrument.id")
 
         self.instrument = instrument
 

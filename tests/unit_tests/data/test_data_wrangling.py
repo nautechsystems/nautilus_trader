@@ -30,7 +30,7 @@ from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestStubs.security_audusd()
+AUDUSD_SIM = TestStubs.audusd_id()
 
 
 class QuoteTickDataWranglerTests(unittest.TestCase):
@@ -88,7 +88,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC"), tick_data.iloc[1].name)
         self.assertEqual(Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC"), tick_data.iloc[2].name)
         self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name)
-        self.assertEqual(0, tick_data.iloc[0]["security"])
+        self.assertEqual(0, tick_data.iloc[0]["instrument_id"])
         self.assertEqual("1", tick_data.iloc[0]["bid_size"])
         self.assertEqual("1", tick_data.iloc[0]["ask_size"])
         self.assertEqual("1", tick_data.iloc[1]["bid_size"])
@@ -278,7 +278,7 @@ class TardisQuoteDataWranglerTests(unittest.TestCase):
         self.assertEqual('0.840000', ticks.ask_size[0])
         self.assertEqual('9681.92', ticks.bid[0])
         self.assertEqual('9682.00', ticks.ask[0])
-        self.assertEqual(sorted(['ask', 'ask_size', 'bid', 'bid_size', 'security', 'symbol']), sorted(ticks.columns))
+        self.assertEqual(sorted(['ask', 'ask_size', 'bid', 'bid_size', 'instrument_id', 'symbol']), sorted(ticks.columns))
 
 
 class TardisTradeDataWranglerTests(unittest.TestCase):

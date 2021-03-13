@@ -48,13 +48,13 @@ if __name__ == "__main__":
     data = BacktestDataContainer()
     data.add_instrument(AUDUSD)
     data.add_quote_ticks(
-        security=AUDUSD.security,
+        instrument_id=AUDUSD.id,
         data=TestDataProvider.audusd_ticks(),  # Stub data from the test kit
     )
 
     # Instantiate your strategy
     strategy = EMACross(
-        security=AUDUSD.security,
+        instrument_id=AUDUSD.id,
         bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
         fast_ema_period=10,
         slow_ema_period=20,

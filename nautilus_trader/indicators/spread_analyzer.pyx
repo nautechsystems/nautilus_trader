@@ -18,7 +18,7 @@ from collections import deque
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.tick cimport QuoteTick
 
 
@@ -27,14 +27,14 @@ cdef class SpreadAnalyzer(Indicator):
     Provides various spread analysis metrics.
     """
 
-    def __init__(self, Security security not None, int capacity):
+    def __init__(self, InstrumentId instrument_id not None, int capacity):
         """
         Initialize a new instance of the `SpreadAnalyzer` class.
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the tick updates.
+        instrument_id : InstrumentId
+            The instrument identifier for the tick updates.
         capacity : int
             The max length for the internal `QuoteTick` deque (determines averages).
 
@@ -45,9 +45,9 @@ cdef class SpreadAnalyzer(Indicator):
 
         """
         Condition.positive_int(capacity, "capacity")
-        super().__init__(params=[security, capacity])
+        super().__init__(params=[instrument_id, capacity])
 
-        self.security = security
+        self.instrument_id = instrument_id
         self.capacity = capacity
         self._spreads = deque(maxlen=capacity)
 
@@ -66,11 +66,11 @@ cdef class SpreadAnalyzer(Indicator):
         Raises
         ------
         ValueError
-            If tick.security does not equal the analyzers security.
+            If tick.instrument_id does not equal the analyzers instrument_id.
 
         """
         Condition.not_none(tick, "tick")
-        Condition.equal(self.security, tick.security, "security", "tick.security")
+        Condition.equal(self.instrument_id, tick.instrument_id, "instrument_id", "tick.instrument_id")
 
         # Check initialization
         if not self.initialized:

@@ -16,14 +16,16 @@
 from decimal import Decimal
 from typing import Union
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -47,7 +49,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
     def __init__(
         self,
-        security: Security,
+        instrument_id: InstrumentId,
         bar_spec: BarSpecification,
         trade_size: Decimal,
         atr_period: int,
@@ -59,8 +61,8 @@ class VolatilityMarketMaker(TradingStrategy):
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the strategy.
+        instrument_id : InstrumentId
+            The instrument identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -77,8 +79,8 @@ class VolatilityMarketMaker(TradingStrategy):
         super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
-        self.security = security
-        self.bar_type = BarType(security, bar_spec)
+        self.instrument_id = instrument_id
+        self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple
         self.instrument = None       # Request on start instead
@@ -93,7 +95,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.security)
+        self.instrument = self.data.instrument(self.instrument_id)
         self.price_precision = self.instrument.price_precision
 
         # Register the indicators for updating
@@ -104,9 +106,9 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        self.subscribe_quote_ticks(self.security)
-        # self.subscribe_order_book(self.security, level=2, depth=5, interval=5)  # For debugging
-        # self.subscribe_trade_ticks(self.security)  # For debugging
+        self.subscribe_quote_ticks(self.instrument_id)
+        # self.subscribe_order_book(self.instrument_id, level=2, depth=5, interval=5)  # For debugging
+        # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -182,7 +184,7 @@ class VolatilityMarketMaker(TradingStrategy):
                           f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
 
-        last: QuoteTick = self.data.quote_tick(self.security)
+        last: QuoteTick = self.data.quote_tick(self.instrument_id)
         if last is None:
             self.log.error("No quotes yet.")
             return
@@ -203,7 +205,7 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
             price=Price(price, self.price_precision),
@@ -221,7 +223,7 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         price: Decimal = last.ask + (self.atr.value * self.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
             price=Price(price, self.price_precision),
@@ -233,19 +235,19 @@ class VolatilityMarketMaker(TradingStrategy):
         self.sell_order = order
         self.submit_order(order)
 
-    def on_data(self, data):
+    def on_data(self, data: GenericData):
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : object
+        data : GenericData
             The data object received.
 
         """
         pass
 
-    def on_event(self, event):
+    def on_event(self, event: Event):
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -255,7 +257,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The event received.
 
         """
-        last: QuoteTick = self.data.quote_tick(self.security)
+        last: QuoteTick = self.data.quote_tick(self.instrument_id)
         if last is None:
             self.log.error("No quotes yet.")
             return
@@ -273,14 +275,14 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.security)
-        self.flatten_all_positions(self.security)
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.security)
-        # self.unsubscribe_order_book(self.security, interval=5)
-        # self.unsubscribe_trade_ticks(self.security)
+        self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_order_book(self.instrument_id, interval=5)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
         """

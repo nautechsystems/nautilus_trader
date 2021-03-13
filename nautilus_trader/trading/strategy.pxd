@@ -21,8 +21,6 @@ from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.data.base cimport Data
-from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.cache cimport DataCacheFacade
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
@@ -33,9 +31,11 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.commands cimport TradingCommand
+from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instrument cimport Instrument
@@ -97,7 +97,7 @@ cdef class TradingStrategy(Component):
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *
-    cpdef void on_data(self, Data data) except *
+    cpdef void on_data(self, GenericData data) except *
     cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
@@ -112,8 +112,8 @@ cdef class TradingStrategy(Component):
     cpdef void register_data_engine(self, DataEngine engine) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *
     cpdef void register_portfolio(self, Portfolio portfolio) except *
-    cpdef void register_indicator_for_quote_ticks(self, Security security, Indicator indicator) except *
-    cpdef void register_indicator_for_trade_ticks(self, Security security, Indicator indicator) except *
+    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
+    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
 
 # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
@@ -124,23 +124,23 @@ cdef class TradingStrategy(Component):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, str provider, DataType data_type) except *
-    cpdef void subscribe_instrument(self, Security security) except *
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void subscribe_order_book(
         self,
-        Security security,
+        InstrumentId instrument_id,
         int level=*,
         int depth=*,
         int interval=*,
         dict kwargs=*,
     ) except *
-    cpdef void subscribe_quote_ticks(self, Security security) except *
-    cpdef void subscribe_trade_ticks(self, Security security) except *
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_data(self, str provider, DataType data_type) except *
-    cpdef void unsubscribe_instrument(self, Security security) except *
-    cpdef void unsubscribe_order_book(self, Security security, int interval=*) except *
-    cpdef void unsubscribe_quote_ticks(self, Security security) except *
-    cpdef void unsubscribe_trade_ticks(self, Security security) except *
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=*) except *
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
 
 # -- REQUESTS --------------------------------------------------------------------------------------
@@ -148,13 +148,13 @@ cdef class TradingStrategy(Component):
     cpdef void request_data(self, str provider, DataType data_type) except *
     cpdef void request_quote_ticks(
         self,
-        Security security,
+        InstrumentId instrument_id,
         datetime from_datetime=*,
         datetime to_datetime=*,
     ) except *
     cpdef void request_trade_ticks(
         self,
-        Security security,
+        InstrumentId instrument_id,
         datetime from_datetime=*,
         datetime to_datetime=*,
     ) except *
@@ -171,9 +171,9 @@ cdef class TradingStrategy(Component):
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
     cpdef void amend_order(self, PassiveOrder order, Quantity quantity=*, Price price=*) except *
     cpdef void cancel_order(self, Order order) except *
-    cpdef void cancel_all_orders(self, Security security) except *
+    cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *
     cpdef void flatten_position(self, Position position) except *
-    cpdef void flatten_all_positions(self, Security security) except *
+    cpdef void flatten_all_positions(self, InstrumentId instrument_id) except *
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 
@@ -185,7 +185,7 @@ cdef class TradingStrategy(Component):
     cpdef void handle_trade_ticks(self, list ticks) except *
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
-    cpdef void handle_data(self, Data data) except *
+    cpdef void handle_data(self, GenericData data) except *
     cpdef void handle_event(self, Event event) except *
 
     cdef void handle_event_c(self, Event event) except *

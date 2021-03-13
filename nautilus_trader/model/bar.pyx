@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -190,12 +190,12 @@ cdef class BarSpecification:
 
 cdef class BarType:
     """
-    Represents a bar type being the security and bar specification of bar data.
+    Represents a bar type being the instrument identifier and bar specification of bar data.
     """
 
     def __init__(
         self,
-        Security security not None,
+        InstrumentId instrument_id not None,
         BarSpecification bar_spec not None,
         internal_aggregation=True,
     ):
@@ -204,8 +204,8 @@ cdef class BarType:
 
         Parameters
         ----------
-        security : Security
-            The bar types security.
+        instrument_id : InstrumentId
+            The bar types instrument identifier.
         bar_spec : BarSpecification
             The bar types specification.
         internal_aggregation : bool
@@ -220,12 +220,14 @@ cdef class BarType:
         internally aggregated.
 
         """
-        self.security = security
+        self.instrument_id = instrument_id
+        self.symbol = instrument_id.symbol
+        self.venue = instrument_id.venue
         self.spec = bar_spec
         self.is_internal_aggregation = internal_aggregation
 
     def __eq__(self, BarType other) -> bool:
-        return self.security == other.security \
+        return self.instrument_id == other.instrument_id \
             and self.spec == other.spec \
             and self.is_internal_aggregation == other.is_internal_aggregation
 
@@ -233,10 +235,10 @@ cdef class BarType:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash((self.security, self.spec))
+        return hash((self.instrument_id, self.spec))
 
     def __str__(self) -> str:
-        return f"{self.security}-{self.spec}"
+        return f"{self.instrument_id}-{self.spec}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self}, internal_aggregation={self.is_internal_aggregation})"
@@ -250,14 +252,14 @@ cdef class BarType:
         if len(pieces) != 4:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
-        cdef Security security = Security.from_serializable_str_c(pieces[0])
+        cdef InstrumentId instrument_id = InstrumentId.from_serializable_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
             BarAggregationParser.from_str(pieces[2]),
             PriceTypeParser.from_str(pieces[3]),
         )
 
-        return BarType(security, bar_spec, internal_aggregation)
+        return BarType(instrument_id, bar_spec, internal_aggregation)
 
     @staticmethod
     def from_serializable_str(str value, bint internal_aggregation=False) -> BarType:
@@ -292,7 +294,7 @@ cdef class BarType:
         str
 
         """
-        return f"{self.security.to_serializable_str()}-{self.spec}"
+        return f"{self.instrument_id.to_serializable_str()}-{self.spec}"
 
 
 cdef class Bar:

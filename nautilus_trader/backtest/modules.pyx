@@ -26,7 +26,7 @@ from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -139,24 +139,24 @@ cdef class FXRolloverInterestModule(SimulationModule):
         cdef Instrument instrument
         cdef Price bid
         cdef Price ask
-        cdef dict mid_prices = {}  # type: dict[Security, Decimal]
+        cdef dict mid_prices = {}  # type: dict[InstrumentId, Decimal]
         cdef Currency currency
         for position in open_positions:
-            instrument = self._exchange.instruments[position.security]
-            if instrument.security.asset_class != AssetClass.FX:
+            instrument = self._exchange.instruments[position.instrument_id]
+            if instrument.asset_class != AssetClass.FX:
                 continue  # Only applicable to FX
 
-            mid: Decimal = mid_prices.get(instrument.security)
+            mid: Decimal = mid_prices.get(instrument.id)
             if mid is None:
-                bid = self._exchange.get_current_bid(instrument.security)
-                ask = self._exchange.get_current_ask(instrument.security)
+                bid = self._exchange.get_current_bid(instrument.id)
+                ask = self._exchange.get_current_ask(instrument.id)
                 if bid is None or ask is None:
                     raise RuntimeError("Cannot apply rollover interest, no market prices")
                 mid: Decimal = (bid + ask) / 2
-                mid_prices[instrument.security] = mid
+                mid_prices[instrument.id] = mid
 
             interest_rate = self._calculator.calc_overnight_rate(
-                position.security,
+                position.instrument_id,
                 timestamp,
             )
 

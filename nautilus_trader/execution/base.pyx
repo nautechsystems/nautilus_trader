@@ -15,8 +15,8 @@
 
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.account cimport Account
@@ -47,27 +47,27 @@ cdef class ExecutionCacheFacade:
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cpdef set order_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set order_working_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set order_working_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set order_completed_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set order_completed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set position_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set position_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set position_open_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set position_open_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set position_closed_ids(self, Security security=None, StrategyId strategy_id=None):
+    cpdef set position_closed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -89,15 +89,15 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list orders(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list orders(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list orders_working(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list orders_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list orders_completed(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list orders_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -113,15 +113,15 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int orders_total_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_total_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int orders_working_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_working_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int orders_completed_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_completed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -135,15 +135,15 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list positions(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list positions(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list positions_open(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list positions_open(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef list positions_closed(self, Security security=None, StrategyId strategy_id=None):
+    cpdef list positions_closed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -159,15 +159,15 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int positions_total_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_total_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int positions_open_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_open_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int positions_closed_count(self, Security security=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_closed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

@@ -27,7 +27,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 
@@ -42,12 +42,12 @@ cdef class BacktestDataContainer:
         Initialize a new instance of the `BacktestDataContainer` class.
         """
         self.venues = set()    # type: set[Venue]
-        self.securities = set()   # type: set[Instrument]
-        self.instruments = {}  # type: dict[Security, Instrument]
-        self.quote_ticks = {}  # type: dict[Security, pd.DataFrame]
-        self.trade_ticks = {}  # type: dict[Security, pd.DataFrame]
-        self.bars_bid = {}     # type: dict[Security, dict[BarAggregation, pd.DataFrame]]
-        self.bars_ask = {}     # type: dict[Security, dict[BarAggregation, pd.DataFrame]]
+        self.instrument_ids = set()   # type: set[InstrumentId]
+        self.instruments = {}  # type: dict[InstrumentId, Instrument]
+        self.quote_ticks = {}  # type: dict[InstrumentId, pd.DataFrame]
+        self.trade_ticks = {}  # type: dict[InstrumentId, pd.DataFrame]
+        self.bars_bid = {}     # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self.bars_ask = {}     # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
@@ -61,11 +61,11 @@ cdef class BacktestDataContainer:
         """
         Condition.not_none(instrument, "instrument")
 
-        self.venues.add(instrument.security.venue)
-        self.instruments[instrument.security] = instrument
+        self.venues.add(instrument.venue)
+        self.instruments[instrument.id] = instrument
         self.instruments = dict(sorted(self.instruments.items()))
 
-    cpdef void add_quote_ticks(self, Security security, data: pd.DataFrame) except *:
+    cpdef void add_quote_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) except *:
         """
         Add the quote tick data to the container.
 
@@ -76,21 +76,21 @@ cdef class BacktestDataContainer:
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the quote tick data.
+        instrument_id : InstrumentId
+            The instrument identifier for the quote tick data.
         data : pd.DataFrame
             The quote tick data to add.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
 
-        self.securities.add(security)
-        self.quote_ticks[security] = data
+        self.instrument_ids.add(instrument_id)
+        self.quote_ticks[instrument_id] = data
         self.quote_ticks = dict(sorted(self.quote_ticks.items()))
 
-    cpdef void add_trade_ticks(self, Security security, data: pd.DataFrame) except *:
+    cpdef void add_trade_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) except *:
         """
         Add the trade tick data to the container.
 
@@ -102,8 +102,8 @@ cdef class BacktestDataContainer:
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the trade tick data.
+        instrument_id : InstrumentId
+            The instrument identifier for the trade tick data.
         data : pd.DataFrame
             The trade tick data to add.
 
@@ -111,17 +111,17 @@ cdef class BacktestDataContainer:
         -------
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
 
-        self.securities.add(security)
-        self.trade_ticks[security] = data
+        self.instrument_ids.add(instrument_id)
+        self.trade_ticks[instrument_id] = data
         self.trade_ticks = dict(sorted(self.trade_ticks.items()))
 
     cpdef void add_bars(
         self,
-        Security security,
+        InstrumentId instrument_id,
         BarAggregation aggregation,
         PriceType price_type,
         data: pd.DataFrame
@@ -131,8 +131,8 @@ cdef class BacktestDataContainer:
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the bar data.
+        instrument_id : InstrumentId
+            The instrument identifier for the bar data.
         aggregation : BarAggregation (Enum)
             The bar aggregation of the data.
         price_type : PriceType (Enum)
@@ -141,25 +141,25 @@ cdef class BacktestDataContainer:
             The bar data to add.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
         Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
 
-        self.securities.add(security)
+        self.instrument_ids.add(instrument_id)
 
         if price_type == PriceType.BID:
-            if security not in self.bars_bid:
-                self.bars_bid[security] = {}
+            if instrument_id not in self.bars_bid:
+                self.bars_bid[instrument_id] = {}
                 self.bars_bid = dict(sorted(self.bars_bid.items()))
-            self.bars_bid[security][aggregation] = data
-            self.bars_bid[security] = dict(sorted(self.bars_bid[security].items()))
+            self.bars_bid[instrument_id][aggregation] = data
+            self.bars_bid[instrument_id] = dict(sorted(self.bars_bid[instrument_id].items()))
 
         if price_type == PriceType.ASK:
-            if security not in self.bars_ask:
-                self.bars_ask[security] = {}
+            if instrument_id not in self.bars_ask:
+                self.bars_ask[instrument_id] = {}
                 self.bars_ask = dict(sorted(self.bars_ask.items()))
-            self.bars_ask[security][aggregation] = data
-            self.bars_ask[security] = dict(sorted(self.bars_ask[security].items()))
+            self.bars_ask[instrument_id][aggregation] = data
+            self.bars_ask[instrument_id] = dict(sorted(self.bars_ask[instrument_id].items()))
 
     cpdef void check_integrity(self) except *:
         """
@@ -171,14 +171,14 @@ cdef class BacktestDataContainer:
             If any integrity check fails.
 
         """
-        # Check there is the needed instrument for each data security
-        for security in self.securities:
-            Condition.true(security in self.instruments, f"security not in self.instruments")
+        # Check there is the needed instrument for each data instrument_id
+        for instrument_id in self.instrument_ids:
+            Condition.true(instrument_id in self.instruments, f"instrument_id not in self.instruments")
 
-        # Check that all bar DataFrames for each security are of the same shape and index
+        # Check that all bar DataFrames for each instrument_id are of the same shape and index
         cdef dict shapes = {}  # type: dict[BarAggregation, tuple]
         cdef dict indexs = {}  # type: dict[BarAggregation, DatetimeIndex]
-        for security, data in self.bars_bid.items():
+        for instrument_id, data in self.bars_bid.items():
             for aggregation, dataframe in data.items():
                 if aggregation not in shapes:
                     shapes[aggregation] = dataframe.shape
@@ -188,48 +188,48 @@ cdef class BacktestDataContainer:
                     raise RuntimeError(f"{dataframe} bid ask shape is not equal")
                 if not all(dataframe.index == indexs[aggregation]):
                     raise RuntimeError(f"{dataframe} bid ask index is not equal")
-        for security, data in self.bars_ask.items():
+        for instrument_id, data in self.bars_ask.items():
             for aggregation, dataframe in data.items():
                 if dataframe.shape != shapes[aggregation]:
                     raise RuntimeError(f"{dataframe} bid ask shape is not equal")
                 if not all(dataframe.index == indexs[aggregation]):
                     raise RuntimeError(f"{dataframe} bid ask index is not equal")
 
-    cpdef bint has_quote_data(self, Security security) except *:
+    cpdef bint has_quote_data(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the container has quote data for the
-        given security.
+        given instrument_id.
 
         Parameters
         ----------
-        security : Security
-            The query security.
+        instrument_id : InstrumentId
+            The query instrument identifier.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(security, "security")
-        return security in self.quote_ticks or security in self.bars_bid
+        Condition.not_none(instrument_id, "instrument_id")
+        return instrument_id in self.quote_ticks or instrument_id in self.bars_bid
 
-    cpdef bint has_trade_data(self, Security security) except *:
+    cpdef bint has_trade_data(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the container has trade data for the
-        given security.
+        given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The query security.
+        instrument_id : InstrumentId
+            The query instrument identifier.
 
         Returns
         -------
         bool
 
         """
-        Condition.not_none(security, "security")
-        return security in self.trade_ticks
+        Condition.not_none(instrument_id, "instrument_id")
+        return instrument_id in self.trade_ticks
 
     cpdef long total_data_size(self):
         """

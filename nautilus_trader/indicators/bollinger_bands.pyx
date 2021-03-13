@@ -31,7 +31,7 @@ cdef class BollingerBands(Indicator):
     """
     A Bollinger Band® is a technical analysis tool defined by a set of
     trend lines plotted two standard deviations (positively and negatively) away
-    from a simple moving average (SMA) of a security's price, but which can be
+    from a simple moving average (SMA) of a instrument_id's price, but which can be
     adjusted to user preferences.
     """
 

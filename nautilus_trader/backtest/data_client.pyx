@@ -26,7 +26,7 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
 
@@ -69,12 +69,12 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         for instrument in instruments:
             # Check the instrument is for the correct client
             Condition.equal(
-                instrument.security.venue.value,
+                instrument.venue.value,
                 self.name,
-                "instrument.security.venue.value",
+                "instrument.venue.value",
                 "self.name",
             )
-            self._instruments[instrument.security] = instrument
+            self._instruments[instrument.id] = instrument
 
         self.is_connected = False
 
@@ -121,38 +121,38 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_instrument(self, Security security) except *:
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `Instrument` data for the given security.
+        Subscribe to `Instrument` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The instrument security to subscribe to.
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to instrument for {security} (not connected).")
+            self._log.error(f"Cannot subscribe to instrument for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
 
     cpdef void subscribe_order_book(
         self,
-        Security security,
+        InstrumentId instrument_id,
         int level,
         int depth=0,
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given security.
+        Subscribe to `OrderBook` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The order book security to subscribe to.
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
         level : int
             The order book data level (L1, L2, L3).
         depth : int, optional
@@ -161,46 +161,46 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             The keyword arguments for exchange specific parameters.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to order book for {security} (not connected).")
+            self._log.error(f"Cannot subscribe to order book for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
 
-    cpdef void subscribe_quote_ticks(self, Security security) except *:
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `QuoteTick` data for the given security.
+        Subscribe to `QuoteTick` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The tick security to subscribe to.
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to quote ticks for {security} (not connected).")
+            self._log.error(f"Cannot subscribe to quote ticks for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
 
-    cpdef void subscribe_trade_ticks(self, Security security) except *:
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `TradeTick` data for the given security.
+        Subscribe to `TradeTick` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The tick security to subscribe to.
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to trade ticks for {security} (not connected).")
+            self._log.error(f"Cannot subscribe to trade ticks for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
@@ -224,74 +224,74 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._log.error(f"Cannot subscribe to externally aggregated bars "
                         f"(backtesting only supports internal aggregation at this stage).")
 
-    cpdef void unsubscribe_instrument(self, Security security) except *:
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `Instrument` data for the given security.
+        Unsubscribe from `Instrument` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The instrument security to unsubscribe from.
+        instrument_id : InstrumentId
+            The instrument to unsubscribe from.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from instrument for {security} (not connected).")
+            self._log.error(f"Cannot unsubscribe from instrument for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_order_book(self, Security security) except *:
+    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given security.
+        Unsubscribe from `OrderBook` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The order book security to unsubscribe from.
+        instrument_id : InstrumentId
+            The order book instrument to unsubscribe from.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from order book for {security} (not connected).")
+            self._log.error(f"Cannot unsubscribe from order book for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_quote_ticks(self, Security security) except *:
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given security.
+        Unsubscribe from `QuoteTick` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The tick security to unsubscribe from.
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from quote ticks for {security} (not connected).")
+            self._log.error(f"Cannot unsubscribe from quote ticks for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_trade_ticks(self, Security security) except *:
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `TradeTick` data for the given security.
+        Unsubscribe from `TradeTick` data for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The tick security to unsubscribe from.
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from trade ticks for {security} (not connected).")
+            self._log.error(f"Cannot unsubscribe from trade ticks for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
@@ -319,29 +319,29 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, Security security, UUID correlation_id) except *:
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
         """
-        Request the instrument for the given security.
+        Request the instrument for the given instrument identifier.
 
         Parameters
         ----------
-        security : Security
-            The security for the request.
+        instrument_id : InstrumentId
+            The instrument identifier for the request.
         correlation_id : UUID
             The correlation identifier for the request.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot request instrument for {security} (not connected).")
+            self._log.error(f"Cannot request instrument for {instrument_id} (not connected).")
             return
 
-        cdef Instrument instrument = self._instruments.get(security)
+        cdef Instrument instrument = self._instruments.get(instrument_id)
 
         if instrument is None:
-            self._log.warning(f"No instrument found for {security}.")
+            self._log.warning(f"No instrument found for {instrument_id}.")
             return
 
         self._handle_instruments([instrument], correlation_id)
@@ -362,7 +362,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void request_quote_ticks(
         self,
-        Security security,
+        InstrumentId instrument_id,
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
@@ -373,8 +373,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         Parameters
         ----------
-        security : Security
-            The tick security identifier for the request.
+        instrument_id : InstrumentId
+            The tick instrument identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -386,18 +386,18 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             The correlation identifier for the request.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot request quote ticks for {security} (not connected).")
+            self._log.error(f"Cannot request quote ticks for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest
 
     cpdef void request_trade_ticks(
         self,
-        Security security,
+        InstrumentId instrument_id,
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
@@ -408,8 +408,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         Parameters
         ----------
-        security : Security
-            The tick security identifier for the request.
+        instrument_id : InstrumentId
+            The tick instrument identifier for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -421,12 +421,12 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             The correlation identifier for the request.
 
         """
-        Condition.not_none(security, "security")
+        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot request trade ticks for {security} (not connected).")
+            self._log.error(f"Cannot request trade ticks for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest

@@ -44,11 +44,9 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport Exchange
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order.base cimport Order
@@ -94,7 +92,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
-            Exchange(client.name.upper()),
+            Venue(client.name.upper()),
             account_id,
             engine,
             instrument_provider,
@@ -208,19 +206,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
                                 f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
-            instrument = self._instrument_provider.get(order.security.symbol)
+            instrument = self._instrument_provider.get(order.symbol)
             if instrument is None:
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
-                                f"instrument for {order.security} not found.")
+                                f"instrument for {order.instrument_id} not found.")
                 continue  # Cannot resolve order
 
             try:
                 response = await self._client.fetch_order(
                     id=order.id.value,
-                    symbol=order.security.symbol.value,
+                    symbol=order.symbol.value,
                 )
                 trades = await self._client.fetch_my_trades(
-                    symbol=order.security.symbol.value,
+                    symbol=order.symbol.value,
                     since=to_unix_time_ms(order.timestamp),
                 )
                 order_trades = [trade for trade in trades if trade["order"] == order.id.value]
@@ -242,7 +240,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     cl_ord_id=order.cl_ord_id,
                     order_id=order.id,
                     execution_id=ExecutionId(str(response["id"])),
-                    security=order.security,
+                    instrument_id=order.instrument_id,
                     order_side=order.side,
                     fill_qty=Decimal(f"{trade['amount']:.{instrument.size_precision}}"),
                     cum_qty=cum_qty,
@@ -476,7 +474,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.security.symbol.value,
+                symbol=order.symbol.value,
                 type=OrderTypeParser.to_str(order.type).lower(),
                 side=OrderSideParser.to_str(order.side).lower(),
                 amount=str(order.quantity),
@@ -502,7 +500,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             await self._client.cancel_order(
                 id=order.id.value,
-                symbol=order.security.symbol.value,
+                symbol=order.symbol.value,
             )
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._cancel_order.__name__)
@@ -606,7 +604,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             order = self._engine.cache.order(cl_ord_id)
             if order is None:
-                # If state resolution has done its job this should never happen
+                # If `reconcile_state` has done its job this should never happen
                 self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
                 return
             self._cache_order(order_id, order)
@@ -623,8 +621,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             cl_ord_id=order.cl_ord_id,
             order_id=order_id,
             execution_id=ExecutionId(event["id"]),
-            security=order.security,
-            order_side=OrderSideParser.from_str(event["side"].upper()),
+            instrument_id=order.instrument_id,
+            order_side=order.side,
             fill_qty=fill_qty,
             cum_qty=cum_qty,
             leaves_qty=order.quantity - cum_qty,

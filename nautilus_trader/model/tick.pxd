@@ -13,53 +13,54 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TradeMatchId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Tick:
-    cdef readonly Security security
-    """The ticks security identifier.\n\n:returns: `Security`"""
-    cdef readonly datetime timestamp
-    """The ticks timestamp (UTC).\n\n:returns: `datetime`"""
-    cdef readonly double unix_timestamp
-    """The ticks Unix timestamp (seconds).\n\n:returns: `double`"""
+cdef class Tick(Data):
+    cdef readonly InstrumentId instrument_id
+    """The tick instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The tick symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The tick venue.\n\n:returns: `Venue`"""
 
 
 cdef class QuoteTick(Tick):
     cdef readonly Price bid
-    """The ticks best quoted bid price.\n\n:returns: `Price`"""
+    """The tick top of book bid price.\n\n:returns: `Price`"""
     cdef readonly Price ask
-    """The ticks best quoted ask price.\n\n:returns: `Price`"""
+    """The tick top of book ask price.\n\n:returns: `Price`"""
     cdef readonly Quantity bid_size
-    """The ticks quoted bid size.\n\n:returns: `Quantity`"""
+    """The tick top of book bid size.\n\n:returns: `Quantity`"""
     cdef readonly Quantity ask_size
-    """The ticks quoted ask size.\n\n:returns: `Quantity`"""
+    """The tick top of book ask size.\n\n:returns: `Quantity`"""
 
     cpdef Price extract_price(self, PriceType price_type)
     cpdef Quantity extract_volume(self, PriceType price_type)
 
     @staticmethod
-    cdef QuoteTick from_serializable_str_c(Security security, str values)
+    cdef QuoteTick from_serializable_str_c(InstrumentId instrument_id, str values)
     cpdef str to_serializable_str(self)
 
 
 cdef class TradeTick(Tick):
     cdef readonly Price price
-    """The ticks traded price.\n\n:returns: `Price`"""
+    """The tick traded price.\n\n:returns: `Price`"""
     cdef readonly Quantity size
-    """The ticks traded size.\n\n:returns: `Quantity`"""
+    """The tick traded size.\n\n:returns: `Quantity`"""
     cdef readonly OrderSide side
-    """ The ticks traded side.\n\n:returns: `OrderSide` (Enum)"""
+    """ The tick traded side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly TradeMatchId match_id
-    """The ticks trade match identifier.\n\n:returns: `TradeMatchId`"""
+    """The tick trade match identifier.\n\n:returns: `TradeMatchId`"""
 
     @staticmethod
-    cdef TradeTick from_serializable_str_c(Security security, str values)
+    cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values)
     cpdef str to_serializable_str(self)

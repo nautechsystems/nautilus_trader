@@ -30,23 +30,21 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
-from nautilus_trader.data.base import Data
-from nautilus_trader.data.base import DataType
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import Security
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -140,7 +138,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
 
-        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_SIM.security))  # Prepare market
+        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_SIM.id))  # Prepare market
 
         self.data_engine.start()
         self.exec_engine.start()
@@ -307,7 +305,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy = TradingStrategy("000")
 
         # Act
-        strategy.on_data(Data(DataType(str), "DATA"))
+        strategy.on_data(GenericData(DataType(str), "DATA", UNIX_EPOCH))
 
         # Assert
         self.assertTrue(True)  # Exception not raised
@@ -609,7 +607,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         # Assert
@@ -627,7 +625,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         # Assert
@@ -666,7 +664,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, strategy.handle_data, Data(DataType(str), "SOME_DATA"))
+        self.assertRaises(RuntimeError, strategy.handle_data, GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH))
 
     def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self):
         # Arrange
@@ -876,9 +874,9 @@ class TradingStrategyTests(unittest.TestCase):
         ema2 = ExponentialMovingAverage(10, price_type=PriceType.MID)
 
         # Act
-        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.security, ema1)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.security, ema2)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.security, ema2)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema1)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema2)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema2)
 
         self.assertEqual(2, len(strategy.registered_indicators))
         self.assertIn(ema1, strategy.registered_indicators)
@@ -897,9 +895,9 @@ class TradingStrategyTests(unittest.TestCase):
         ema2 = ExponentialMovingAverage(10)
 
         # Act
-        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.security, ema1)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.security, ema2)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.security, ema2)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema1)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema2)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema2)
 
         self.assertEqual(2, len(strategy.registered_indicators))
         self.assertIn(ema1, strategy.registered_indicators)
@@ -940,9 +938,9 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
         # Act
-        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.security, ema)
-        strategy.register_indicator_for_quote_ticks(GBPUSD_SIM.security, ema)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.security, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
+        strategy.register_indicator_for_quote_ticks(GBPUSD_SIM.id, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
         strategy.register_indicator_for_bars(bar_type, ema)
 
         self.assertEqual(1, len(strategy.registered_indicators))
@@ -958,9 +956,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.security, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_quote_tick(tick)
@@ -1028,7 +1026,7 @@ class TradingStrategyTests(unittest.TestCase):
             self.logger,
         )
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_quote_tick(tick)
@@ -1048,7 +1046,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.start()
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_quote_tick(tick)
@@ -1067,7 +1065,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.security, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
 
         # Act
         strategy.handle_quote_ticks([])
@@ -1085,9 +1083,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.security, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_quote_ticks([tick])
@@ -1104,7 +1102,7 @@ class TradingStrategyTests(unittest.TestCase):
             self.logger,
         )
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_trade_tick(tick)
@@ -1124,7 +1122,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.start()
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_trade_tick(tick)
@@ -1143,9 +1141,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.security, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_trade_tick(tick)
@@ -1164,9 +1162,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.security, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         strategy.handle_trade_ticks([tick])
@@ -1184,7 +1182,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.security, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.id, ema)
 
         # Act
         strategy.handle_trade_ticks([])
@@ -1300,7 +1298,7 @@ class TradingStrategyTests(unittest.TestCase):
             self.logger,
         )
 
-        data = Data(DataType(str), "SOME_DATA")
+        data = GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH)
 
         # Act
         strategy.handle_data(data)
@@ -1319,7 +1317,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.start()
 
-        data = Data(DataType(str), "SOME_DATA")
+        data = GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH)
 
         # Act
         strategy.handle_data(data)
@@ -1431,11 +1429,11 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.subscribe_instrument(AUDUSD_SIM.security)
+        strategy.subscribe_instrument(AUDUSD_SIM.id)
 
         # Assert
-        expected_security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
-        self.assertEqual([expected_security], self.data_engine.subscribed_instruments)
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        self.assertEqual([expected_instrument], self.data_engine.subscribed_instruments)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_instrument(self):
@@ -1451,10 +1449,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        strategy.subscribe_instrument(AUDUSD_SIM.security)
+        strategy.subscribe_instrument(AUDUSD_SIM.id)
 
         # Act
-        strategy.unsubscribe_instrument(AUDUSD_SIM.security)
+        strategy.unsubscribe_instrument(AUDUSD_SIM.id)
 
         # Assert
         self.assertEqual([], self.data_engine.subscribed_instruments)
@@ -1474,11 +1472,11 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.subscribe_quote_ticks(AUDUSD_SIM.security)
+        strategy.subscribe_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
-        expected_security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
-        self.assertEqual([expected_security], self.data_engine.subscribed_quote_ticks)
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        self.assertEqual([expected_instrument], self.data_engine.subscribed_quote_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_quote_ticks(self):
@@ -1494,10 +1492,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        strategy.subscribe_quote_ticks(AUDUSD_SIM.security)
+        strategy.subscribe_quote_ticks(AUDUSD_SIM.id)
 
         # Act
-        strategy.unsubscribe_quote_ticks(AUDUSD_SIM.security)
+        strategy.unsubscribe_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
         self.assertEqual([], self.data_engine.subscribed_quote_ticks)
@@ -1517,11 +1515,11 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.subscribe_trade_ticks(AUDUSD_SIM.security)
+        strategy.subscribe_trade_ticks(AUDUSD_SIM.id)
 
         # Assert
-        expected_security = Security(Symbol("AUD/USD"), Venue("SIM"), AssetClass.FX, AssetType.SPOT)
-        self.assertEqual([expected_security], self.data_engine.subscribed_trade_ticks)
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        self.assertEqual([expected_instrument], self.data_engine.subscribed_trade_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_trade_ticks(self):
@@ -1537,10 +1535,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        strategy.subscribe_trade_ticks(AUDUSD_SIM.security)
+        strategy.subscribe_trade_ticks(AUDUSD_SIM.id)
 
         # Act
-        strategy.unsubscribe_trade_ticks(AUDUSD_SIM.security)
+        strategy.unsubscribe_trade_ticks(AUDUSD_SIM.id)
 
         # Assert
         self.assertEqual([], self.data_engine.subscribed_trade_ticks)
@@ -1623,7 +1621,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.request_quote_ticks(AUDUSD_SIM.security)
+        strategy.request_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
         self.assertEqual(1, self.data_engine.request_count)
@@ -1642,7 +1640,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.request_trade_ticks(AUDUSD_SIM.security)
+        strategy.request_trade_ticks(AUDUSD_SIM.id)
 
         # Assert
         self.assertEqual(1, self.data_engine.request_count)
@@ -1699,7 +1697,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1726,7 +1724,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         entry = strategy.order_factory.stop_market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("90.100"),
@@ -1760,7 +1758,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.stop_market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.006"),
@@ -1792,7 +1790,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.limit(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.001"),
@@ -1818,7 +1816,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.limit(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.000"),
@@ -1837,7 +1835,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
         self.assertTrue(strategy.execution.is_order_working(order.cl_ord_id))
         self.assertFalse(strategy.execution.is_order_completed(order.cl_ord_id))
-        self.assertTrue(strategy.portfolio.is_flat(order.security))
+        self.assertTrue(strategy.portfolio.is_flat(order.instrument_id))
 
     def test_cancel_all_orders(self):
         # Arrange
@@ -1851,14 +1849,14 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.stop_market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.007"),
         )
 
         order2 = strategy.order_factory.stop_market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.006"),
@@ -1868,7 +1866,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order2)
 
         # Act
-        strategy.cancel_all_orders(USDJPY_SIM.security)
+        strategy.cancel_all_orders(USDJPY_SIM.id)
 
         # Assert
         self.assertIn(order1, strategy.execution.orders())
@@ -1892,13 +1890,13 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -1928,7 +1926,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1961,13 +1959,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.start()
 
         order1 = strategy.order_factory.market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            USDJPY_SIM.security,
+            USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1976,7 +1974,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order2)
 
         # Act
-        strategy.flatten_all_positions(USDJPY_SIM.security)
+        strategy.flatten_all_positions(USDJPY_SIM.id)
 
         # Assert
         self.assertEqual(OrderState.FILLED, order1.state)

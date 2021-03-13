@@ -16,13 +16,13 @@
 from decimal import Decimal
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.data.base cimport Data
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.market cimport MarketOrder
@@ -50,7 +50,7 @@ cdef class EMACross(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
     # Backing fields are necessary
-    cdef Security security
+    cdef InstrumentId instrument_id
     cdef BarType bar_type
     cdef object trade_size
     cdef ExponentialMovingAverage fast_ema_period
@@ -58,7 +58,7 @@ cdef class EMACross(TradingStrategy):
 
     def __init__(
         self,
-        Security security,
+        InstrumentId instrument_id,
         BarSpecification bar_spec,
         trade_size: Decimal,
         int fast_ema_period,
@@ -70,8 +70,8 @@ cdef class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the strategy.
+        instrument_id : InstrumentId
+            The instrument identifier for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -88,8 +88,8 @@ cdef class EMACross(TradingStrategy):
         super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
-        self.security = security
-        self.bar_type = BarType(security, bar_spec)
+        self.instrument_id = instrument_id
+        self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
         # Create the indicators for the strategy
@@ -182,18 +182,18 @@ cdef class EMACross(TradingStrategy):
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.security):
+            if self.portfolio.is_flat(self.instrument_id):
                 self.buy()
-            elif self.portfolio.is_net_short(self.security):
-                self.flatten_all_positions(self.security)
+            elif self.portfolio.is_net_short(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
                 self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.security):
+            if self.portfolio.is_flat(self.instrument_id):
                 self.sell()
-            elif self.portfolio.is_net_long(self.security):
-                self.flatten_all_positions(self.security)
+            elif self.portfolio.is_net_long(self.instrument_id):
+                self.flatten_all_positions(self.instrument_id)
                 self.sell()
 
     cpdef void buy(self) except *:
@@ -201,7 +201,7 @@ cdef class EMACross(TradingStrategy):
         Users simple buy method (example).
         """
         cdef MarketOrder order = self.order_factory.market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
         )
@@ -213,20 +213,20 @@ cdef class EMACross(TradingStrategy):
         Users simple sell method (example).
         """
         cdef MarketOrder order = self.order_factory.market(
-            security=self.security,
+            instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
         )
 
         self.submit_order(order)
 
-    cpdef void on_data(self, Data data) except *:
+    cpdef void on_data(self, GenericData data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 
         Parameters
         ----------
-        data : Data
+        data : GenericData
             The data received.
 
         """
@@ -249,8 +249,8 @@ cdef class EMACross(TradingStrategy):
         Actions to be performed when the strategy is stopped.
 
         """
-        self.cancel_all_orders(self.security)
-        self.flatten_all_positions(self.security)
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)
 
     cpdef void on_reset(self) except *:
         """

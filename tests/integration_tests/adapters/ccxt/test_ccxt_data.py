@@ -24,20 +24,18 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.data.base import DataType
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Exchange
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
@@ -46,9 +44,9 @@ from tests.test_kit.stubs import TestStubs
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
-BINANCE = Exchange("BINANCE")
-BTCUSDT = Security(Symbol("BTC/USDT"), BINANCE, AssetClass.CRYPTO, AssetType.SPOT)
-ETHUSDT = Security(Symbol("ETH/USDT"), BINANCE, AssetClass.CRYPTO, AssetType.SPOT)
+BINANCE = Venue("BINANCE")
+BTCUSDT = InstrumentId(Symbol("BTC/USDT"), BINANCE)
+ETHUSDT = InstrumentId(Symbol("ETH/USDT"), BINANCE)
 
 
 # Monkey patch magic mock
@@ -451,7 +449,7 @@ class CCXTDataClientTests(unittest.TestCase):
             request = DataRequest(
                 provider=BINANCE.value,
                 data_type=DataType(TradeTick, metadata={
-                    "Security": ETHUSDT,
+                    "InstrumentId": ETHUSDT,
                     "FromDateTime": None,
                     "ToDateTime": None,
                     "Limit": 100,
@@ -490,7 +488,7 @@ class CCXTDataClientTests(unittest.TestCase):
             handler = ObjectStorer()
 
             bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-            bar_type = BarType(security=ETHUSDT, bar_spec=bar_spec)
+            bar_type = BarType(instrument_id=ETHUSDT, bar_spec=bar_spec)
 
             request = DataRequest(
                 provider=BINANCE.value,

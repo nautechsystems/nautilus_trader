@@ -28,7 +28,7 @@ class IndicatorTests(unittest.TestCase):
         # Arrange
         indicator = Indicator([])
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         # Assert
@@ -38,7 +38,7 @@ class IndicatorTests(unittest.TestCase):
         # Arrange
         indicator = Indicator([])
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         # Assert

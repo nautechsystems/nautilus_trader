@@ -25,9 +25,11 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -48,8 +50,12 @@ cdef class Position:
     """The client order identifier for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the position.\n\n:returns: `StrategyId`"""
-    cdef readonly Security security
-    """The positions security identifier.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId instrument_id
+    """The position instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The position symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The position venue.\n\n:returns: `Venue`"""
     cdef readonly OrderSide entry
     """The entry direction from open.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly PositionSide side
@@ -61,11 +67,11 @@ cdef class Position:
     cdef readonly Quantity peak_quantity
     """The peak directional quantity reached by the position.\n\n:returns: `Quantity`"""
     cdef readonly Currency quote_currency
-    """The positions quote currency.\n\n:returns: `Currency`"""
+    """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
     cdef readonly datetime timestamp
-    """The positions initialization timestamp.\n\n:returns: `datetime`"""
+    """The position initialization timestamp.\n\n:returns: `datetime`"""
     cdef readonly datetime opened_time
     """The opened time.\n\n:returns: `datetime`"""
     cdef readonly datetime closed_time

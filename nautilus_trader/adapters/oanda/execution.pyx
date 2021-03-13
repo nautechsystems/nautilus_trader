@@ -12,25 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.model.order.base cimport Order
-
-
-cdef class RiskModule:
-    """
-    The abstract base class for all risk modules.
-
-    This class should not be used directly, but through its concrete subclasses.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the `RiskModule` class.
-        """
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}"
-
-    cpdef void approve(self, Order order) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")

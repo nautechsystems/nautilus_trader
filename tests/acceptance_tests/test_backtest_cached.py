@@ -30,7 +30,6 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -48,8 +47,8 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
-        data.add_bars(self.usdjpy.security, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(self.usdjpy.security, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(self.usdjpy.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(self.usdjpy.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         self.engine = BacktestEngine(
             data=data,
@@ -74,7 +73,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def test_run_ema_cross_strategy(self):
         # Arrange
         strategy = EMACross(
-            security=self.usdjpy.security,
+            instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -92,7 +91,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
         strategy = EMACross(
-            security=self.usdjpy.security,
+            instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -113,7 +112,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def test_run_multiple_strategies(self):
         # Arrange
         strategy1 = EMACross(
-            security=self.usdjpy.security,
+            instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -122,7 +121,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         )
 
         strategy2 = EMACross(
-            security=self.usdjpy.security,
+            instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
             trade_size=Decimal(1_000_000),
             fast_ema=20,
@@ -130,7 +129,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             extra_id_tag='002',
         )
 
-        # Note since these strategies are operating on the same security as per
+        # Note since these strategies are operating on the same instrument_id as per
         # the EMACross BUY/SELL logic they will be flattening each others positions.
         # The purpose of the test is just to ensure multiple strategies can run together.
 
@@ -152,8 +151,8 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD", self.venue)
         data = BacktestDataContainer()
         data.add_instrument(self.gbpusd)
-        data.add_bars(self.gbpusd.security, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.gbpusd_1min_bid())
-        data.add_bars(self.gbpusd.security, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.gbpusd_1min_ask())
+        data.add_bars(self.gbpusd.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.gbpusd_1min_bid())
+        data.add_bars(self.gbpusd.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.gbpusd_1min_ask())
 
         self.engine = BacktestEngine(
             data=data,
@@ -178,7 +177,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
     def test_run_ema_cross_with_minute_bar_spec(self):
         # Arrange
         strategy = EMACross(
-            security=self.gbpusd.security,
+            instrument_id=self.gbpusd.id,
             bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.MID),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -202,7 +201,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD", self.venue)
         data = BacktestDataContainer()
         data.add_instrument(self.audusd)
-        data.add_quote_ticks(self.audusd.security, TestDataProvider.audusd_ticks())
+        data.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
 
         self.engine = BacktestEngine(
             data=data,
@@ -227,7 +226,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def test_run_ema_cross_with_minute_bar_spec(self):
         # Arrange
         strategy = EMACross(
-            security=self.audusd.security,
+            instrument_id=self.audusd.id,
             bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -245,7 +244,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
         strategy = EMACross(
-            security=self.audusd.security,
+            instrument_id=self.audusd.id,
             bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -265,11 +264,11 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.venue = Exchange("BINANCE")
+        self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
         data = BacktestDataContainer()
         data.add_instrument(self.ethusdt)
-        data.add_trade_ticks(self.ethusdt.security, TestDataProvider.ethusdt_trades())
+        data.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
 
         self.engine = BacktestEngine(
             data=data,
@@ -291,7 +290,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
         strategy = EMACross(
-            security=self.ethusdt.security,
+            instrument_id=self.ethusdt.id,
             bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
             trade_size=Decimal(100),
             fast_ema=10,
@@ -311,12 +310,12 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.venue = Exchange("BINANCE")
+        self.venue = Venue("BINANCE")
         self.instrument = TestInstrumentProvider.btcusdt_binance()
         data = BacktestDataContainer()
         data.add_instrument(self.instrument)
-        data.add_trade_ticks(self.instrument.security, TestDataProvider.tardis_trades())
-        data.add_quote_ticks(self.instrument.security, TestDataProvider.tardis_quotes())
+        data.add_trade_ticks(self.instrument.id, TestDataProvider.tardis_trades())
+        data.add_quote_ticks(self.instrument.id, TestDataProvider.tardis_quotes())
 
         self.engine = BacktestEngine(
             data=data,
@@ -338,7 +337,7 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
         strategy = EMACross(
-            security=self.instrument.security,
+            instrument_id=self.instrument.id,
             bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
             trade_size=Decimal(100),
             fast_ema=10,

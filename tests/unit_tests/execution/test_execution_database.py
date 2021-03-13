@@ -25,8 +25,8 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from tests.test_kit.stubs import TestStubs
 
-AUDUSD_SIM = TestStubs.security_audusd()
-GBPUSD_SIM = TestStubs.security_gbpusd()
+AUDUSD_SIM = TestStubs.audusd_id()
+GBPUSD_SIM = TestStubs.gbpusd_id()
 
 
 class ExecutionDatabaseTests(unittest.TestCase):

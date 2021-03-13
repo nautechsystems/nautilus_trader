@@ -109,7 +109,7 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.limit(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -119,7 +119,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -146,7 +146,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(2, len(report))
         self.assertEqual("cl_ord_id", report.index.name)
         self.assertEqual(order1.cl_ord_id.value, report.index[0])
-        self.assertEqual("AUD/USD.SIM", report.iloc[0]["security"])
+        self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
@@ -159,7 +159,7 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.limit(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -169,7 +169,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -197,7 +197,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(1, len(report))
         self.assertEqual("cl_ord_id", report.index.name)
         self.assertEqual(order1.cl_ord_id.value, report.index[0])
-        self.assertEqual("AUD/USD.SIM", report.iloc[0]["security"])
+        self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
@@ -209,13 +209,13 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -251,7 +251,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(2, len(report))
         self.assertEqual("position_id", report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
-        self.assertEqual("AUD/USD.SIM", report.iloc[0]["security"])
+        self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["entry"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])
         self.assertEqual(1.0001, report.iloc[0]["avg_open"])

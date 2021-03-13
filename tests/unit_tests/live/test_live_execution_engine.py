@@ -133,7 +133,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         self.engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -178,7 +178,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         self.engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -266,7 +266,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
             self.engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
-                AUDUSD_SIM.security,
+                AUDUSD_SIM.id,
                 OrderSide.BUY,
                 Quantity(100000),
             )
@@ -310,7 +310,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
             self.engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
-                AUDUSD_SIM.security,
+                AUDUSD_SIM.id,
                 OrderSide.BUY,
                 Quantity(100000),
             )
@@ -346,19 +346,19 @@ class LiveExecutionEngineTests(unittest.TestCase):
     #         self.exec_engine.register_strategy(strategy)
     #
     #         order1 = strategy.order_factory.market(
-    #             AUDUSD_SIM.security,
+    #             AUDUSD_SIM.id,
     #             OrderSide.BUY,
     #             Quantity(100000),
     #         )
     #
     #         order2 = strategy.order_factory.market(
-    #             AUDUSD_SIM.security,
+    #             AUDUSD_SIM.id,
     #             OrderSide.BUY,
     #             Quantity(100000),
     #         )
     #
     #         random = self.random_order_factory.market(
-    #             GBPUSD_SIM.security,
+    #             GBPUSD_SIM.id,
     #             OrderSide.BUY,
     #             Quantity(100000),
     #         )
