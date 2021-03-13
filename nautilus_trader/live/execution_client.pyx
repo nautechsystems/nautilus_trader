@@ -18,9 +18,9 @@ from decimal import Decimal
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.live.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.currency cimport Currency
@@ -214,7 +214,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         LiquiditySide liquidity_side,
         datetime timestamp
     ) except *:
-        cdef Instrument instrument = self._instrument_provider.get(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot fill order with {repr(order_id)}, "
                             f"instrument for {instrument_id} not found.")

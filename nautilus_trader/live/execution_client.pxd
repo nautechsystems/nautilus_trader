@@ -17,8 +17,8 @@ from decimal import Decimal
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.live.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
