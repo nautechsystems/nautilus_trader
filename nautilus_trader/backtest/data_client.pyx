@@ -69,9 +69,9 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         for instrument in instruments:
             # Check the instrument is for the correct client
             Condition.equal(
-                instrument.id.venue.value,
+                instrument.venue.value,
                 self.name,
-                "instrument.id.venue.value",
+                "instrument.venue.value",
                 "self.name",
             )
             self._instruments[instrument.id] = instrument
