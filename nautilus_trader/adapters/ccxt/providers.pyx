@@ -50,7 +50,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             If all instruments should be loaded at instantiation.
 
         """
-        self._client = client  # Assign first as `load_all` will call it
+        self._client = client  # Assign here as `super().__init__` will call it
         super().__init__(venue=Venue(client.name.upper()), load_all=load_all)
 
     async def load_all_async(self):

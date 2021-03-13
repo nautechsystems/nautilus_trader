@@ -462,7 +462,7 @@ cdef class LoopTimer(LiveTimer):
         """
         Condition.valid_string(name, "name")
 
-        self._loop = loop
+        self._loop = loop  # Assign here as `super().__init__` will call it
         super().__init__(name, callback, interval, now, start_time, stop_time)
 
     cdef object _start_timer(self, datetime now):

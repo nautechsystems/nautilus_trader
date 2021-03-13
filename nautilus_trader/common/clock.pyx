@@ -512,6 +512,7 @@ cdef class LiveClock(Clock):
 
         """
         super().__init__()
+
         self._loop = loop
         self._utc = pytz.utc
 
