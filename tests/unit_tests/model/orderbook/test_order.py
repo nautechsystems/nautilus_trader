@@ -10,6 +10,22 @@ def test_init():
     assert order.side == OrderSide.BUY
 
 
+def test_order_id():
+    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY, id='1')
+    assert order.id == '1'
+
+    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
+    assert len(order.id) == 36
+
+
+def test_update():
+    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
+    order.update_price(price=90)
+    assert order.price == 90.0
+    order.update_volume(volume=5)
+    assert order.volume == 5.0
+
+
 # def test_exposure():
 #     order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
 #     assert order.exposure == 1000
