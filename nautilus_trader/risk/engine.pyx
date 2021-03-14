@@ -111,7 +111,7 @@ cdef class RiskEngine(Component):
         Raises
         ------
         ValueError
-            If client is already registered with the execution engine.
+            If client is already registered with the risk engine.
 
         """
         Condition.not_none(client, "client")
