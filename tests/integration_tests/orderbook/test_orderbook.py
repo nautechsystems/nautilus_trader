@@ -1,15 +1,61 @@
+import gzip
 import json
 
 import pytest
-from nautilus_trader.model.orderbook.orderbook import Orderbook
+from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.orderbook.orderbook import L3Orderbook
+from nautilus_trader.model.orderbook.order import Order
+
+@pytest.fixture()
+def l2_feed():
+    return [json.loads(line) for line in gzip.open("./resources/L2_feed.log.gz")]
 
 
 @pytest.fixture()
-def feed():
-    return [json.loads(line) for line in open("./resources/L2_feed.log")]
+def l3_feed():
+    def parser(line):
+        parsed = json.loads(line.decode())
+        if not isinstance(parsed, list):
+            # print(parsed)
+            return
+        elif isinstance(parsed, list):
+            channel, updates = parsed
+            if not isinstance(updates[0], list):
+                updates = [updates]
+        else:
+            raise KeyError()
+        if isinstance(updates, int):
+            print("Err", updates)
+            return
+        for values in updates:
+            keys = ("order_id", "price", "volume")
+            data = dict(zip(keys, values))
+            side = OrderSide.BUY if data["volume"] >= 0 else OrderSide.SELL
+            if data["price"] == 0:
+                yield dict(
+                    op="delete",
+                    order=Order(price=data["price"], volume=abs(data["volume"]), side=side, id=str(data["order_id"]))
+                )
+            else:
+                yield dict(
+                    op="update",
+                    order=Order(price=data["price"], volume=abs(data["volume"]), side=side, id=str(data["order_id"]))
+                )
+
+    return [msg for line in gzip.open("./resources/bitfinex_L3_feed.log.gz") for msg in parser(line)]
 
 
-def test_protocol(feed):
-    for m in feed[:10]:
-        print(m)
-        # if m['type'] == 'book_update':
+def test_l3_feed(l3_feed):
+    ob = L3Orderbook()
+    for m in l3_feed[:10]:
+        if m['op'] == 'update':
+            ob.update(order=m['order'])
+        elif m['op'] == 'delete':
+            ob.delete(order=m['order'])
+
+
+# def test_l2_feed(l2_feed):
+#     ob = Orderbook()
+#     for m in l2_feed[:10]:
+#         if m['type'] == 'book_update':
+#             pass

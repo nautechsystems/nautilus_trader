@@ -1,5 +1,3 @@
-from typing import List, Optional
-
 from nautilus_trader.model.c_enums.order_side import OrderSide
 
 from nautilus_trader.model.orderbook.ladder cimport Ladder
@@ -9,9 +7,9 @@ cdef class OrderbookProxy:
     """
     An Orderbook proxy - A L3 Orderbook that can be proxied to L3/L2/L1 Orderbook classes.
     """
-    def __init__(self, bids: Optional[List[Order]] = None, asks: Optional[List[Order]] = None):
-        self.bids = Ladder(orders=bids or [], reverse=True)
-        self.asks = Ladder(orders=asks or [], reverse=False)
+    def __init__(self):
+        self.bids = Ladder(reverse=True)
+        self.asks = Ladder(reverse=False)
 
     cpdef void add(self, Order order):
         if order.side == OrderSide.BUY:
@@ -31,83 +29,96 @@ cdef class OrderbookProxy:
         elif order.side == OrderSide.SELL:
             self.asks.delete(order=order)
 
-    #TODO
-    cpdef bint _check_integrity(self):
-        raise NotImplemented
+    cpdef void clear(self):
+        """ Clear the entire orderbook """
+        self.bids = Ladder(orders=[], reverse=True)
+        self.asks = Ladder(orders=[], reverse=False)
+
+    cpdef bint _check_integrity(self, bint deep=True):
+        return True
+        # if not self.bids.top
 
 cdef class L3Orderbook:
     """ A L3 Orderbook. Should map directly to functionality of the OrderbookProxy """
-    cdef OrderbookProxy _orderbook
 
-    cpdef add(self, Order order):
+    def __init__(self):
+        self._orderbook = OrderbookProxy()
+
+    cpdef void add(self, Order order):
         self._orderbook.add(order=order)
 
-    cpdef update(self, Order order):
+    cpdef void update(self, Order order):
         self._orderbook.update(order=order)
 
-    cpdef delete (self, Order order):
+    cpdef void delete(self, Order order):
         self._orderbook.delete(order=order)
 
+    @property
+    def best_bid(self):
+        return self.top_level[BID]
 
-cdef class L2Orderbook:
-    """ A L2 Orderbook. An Orderbook where price `Levels` are only made up of a single order """
-    cdef OrderbookProxy _orderbook
+    @property
+    def best_ask(self):
+        return self.top_level[ASK]
 
-    cpdef add(self, Order order):
-        """
-        If this `order.price` exists, need to remove and replace with `order`
-        :param order:
-        :return:
-        """
-        # self._orderbook.add(order=order)
-        raise NotImplemented
-
-    cpdef update(self, Order order):
-        """
-        If this `order.price` exists, need to remove and replace with `order`
-        :param order:
-        :return:
-        """
-        # self._orderbook.update(order=order)
-        raise NotImplemented
-
-    cpdef delete (self, Order order):
-        """
-        Delete this order (and the entire level for L2)
-        :param order:
-        :return:
-        """
-        # self._orderbook.delete(order=order)
-        raise NotImplemented
-
-
-cdef class L1Orderbook:
-    """ A L1 Orderbook. An Orderbook that has only has a single (top) level """
-    cdef OrderbookProxy _orderbook
-
-    cpdef add(self, Order order):
-        """
-        Need to remove previous `Level` and add new Level for `order`
-
-        :param order:
-        :return:
-        """
-        # self._orderbook.add(order=order)
-        raise NotImplemented
-
-    cpdef update(self, Order order):
-        """
-        If the price has changes, need to need to remove previous `Level` and add new Level for `order`
-
-        :param order:
-        :return:
-        """
-        # self._orderbook.update(order=order)
-        raise NotImplemented
-
-    cpdef delete (self, Order order):
-        # self._orderbook.delete(order=order)
-        raise NotImplemented
+# cdef class L2Orderbook:
+#     """ A L2 Orderbook. An Orderbook where price `Levels` are only made up of a single order """
+#
+#     cpdef add(self, Order order):
+#         """
+#         If this `order.price` exists, need to remove and replace with `order`
+#         :param order:
+#         :return:
+#         """
+#         # self._orderbook.add(order=order)
+#         raise NotImplemented
+#
+#     cpdef update(self, Order order):
+#         """
+#         If this `order.price` exists, need to remove and replace with `order`
+#         :param order:
+#         :return:
+#         """
+#         # self._orderbook.update(order=order)
+#         raise NotImplemented
+#
+#     cpdef delete (self, Order order):
+#         """
+#         Delete this order (and the entire level for L2)
+#         :param order:
+#         :return:
+#         """
+#         # self._orderbook.delete(order=order)
+#         raise NotImplemented
+#
+#
+# cdef class L1Orderbook:
+#     """ A L1 Orderbook. An Orderbook that has only has a single (top) level """
+#     cdef OrderbookProxy _orderbook
+#
+#     cpdef add(self, Order order):
+#         """
+#         Need to remove previous `Level` and add new Level for `order`
+#
+#         :param order:
+#         :return:
+#         """
+#         # self._orderbook.add(order=order)
+#         raise NotImplemented
+#
+#     cpdef update(self, Order order):
+#         """
+#         If the price has changes, need to need to remove previous `Level` and add new Level for `order`
+#
+#         :param order:
+#         :return:
+#         """
+#         # self._orderbook.update(order=order)
+#         raise NotImplemented
+#
+#     cpdef delete (self, Order order):
+#         # self._orderbook.delete(order=order)
+#         raise NotImplemented
 
 
 #     def top(self, n=1, side=None):

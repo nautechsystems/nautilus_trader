@@ -10,3 +10,4 @@ cdef class Ladder:
     cpdef void add(self, Order order)
     cpdef void update(self, Order order)
     cpdef void delete(self, Order order)
+    cpdef top(self, int n=*)

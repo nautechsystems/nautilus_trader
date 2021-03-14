@@ -8,9 +8,8 @@ from nautilus_trader.model.orderbook.order cimport Order
 logger = logging.getLogger(__name__)
 
 cdef class Ladder:
-
-    def __init__(self, list levels, bint reverse):
-        self.levels = levels # type: List[Level]
+    def __init__(self, bint reverse):
+        self.levels = [] # type: List[Level]
         self.reverse = reverse
         self.price_levels = dict()
         self.order_id_prices = dict()
@@ -31,9 +30,9 @@ cdef class Ladder:
         if order.order_id not in self.order_id_prices:
             self.add(order=order)
         # Find the existing order
-        price = self.order_id_prices[order.order_id]
+        price = self.order_id_prices[order.id]
         level = self.price_levels[price]
-        existing_order = level.order_id_orders[order.order_id]
+        existing_order = level.order_id_orders[order.id]
         if order.price == existing_order.price:
             # This update contains a volume update
             level.update(order=order)
@@ -51,6 +50,11 @@ cdef class Ladder:
             del self.levels[price_idx]
             del self.price_levels[order.price]
 
+    cpdef top(self, int n=1):
+        if not self.levels:
+            return []
+        n = n or len(self.levels)
+        return list(reversed(self.levels[-n:])) if self.reverse else self.levels[:n]
 
     @property
     def prices(self):
@@ -70,11 +74,6 @@ cdef class Ladder:
         if top:
             return top[0]
 
-    def top(self, n=1):
-        if not self.levels:
-            return []
-        n = n or len(self.levels)
-        return list(reversed(self.levels[-n:])) if self.reverse else self.levels[:n]
 
     def iter_orders(self):
         for level in self.levels:

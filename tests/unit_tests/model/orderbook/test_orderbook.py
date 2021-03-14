@@ -1,30 +1,34 @@
+import pytest
+from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.orderbook import OrderbookProxy
 
 
-#
-# def test_init():
-#     bid_list = [Order(price=110, volume=10, side=BID), Order(price=100, volume=5, side=BID)]
-#     ask_list = [Order(price=120, volume=1, side=ASK), Order(price=130, volume=5, side=ASK)]
-#     bid_ladder = Ladder.from_orders(orders=bid_list)
-#     ask_ladder = Ladder.from_orders(orders=ask_list)
-#
-#     # Objects | 16.7 µs ± 70.9 ns per loop |
-#     ob = Orderbook(
-#         bids=Ladder(
-#             levels=[
-#                 Level(orders=[Order(price=100, volume=5, side=BID)]),
-#                 Level(orders=[Order(price=110, volume=10, side=BID)]),
-#             ]
-#         ),
-#         asks=Ladder(
-#             levels=[
-#                 Level(orders=[Order(price=120, volume=1, side=ASK)]),
-#                 Level(orders=[Order(price=130, volume=5, side=ASK)]),
-#             ]
-#         ),
-#     )
-#     assert _compare_ladder(ob.bids, bid_ladder) and _compare_ladder(ob.asks, ask_ladder)
-#
-#
+@pytest.fixture(scope='function')
+def empty_book():
+    return OrderbookProxy()
+
+
+def test_init():
+    ob = OrderbookProxy()
+    assert isinstance(ob.bids, Ladder) and isinstance(ob.asks, Ladder)
+    assert ob.bids.reverse and not ob.asks.reverse
+
+
+def test_add(empty_book):
+    empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
+    assert empty_book.bids.top()[0].price() == 10.0
+
+
+def test_top(empty_book):
+    empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
+    empty_book.add(Order(price=20, volume=5, side=OrderSide.BUY))
+    empty_book.add(Order(price=5, volume=5, side=OrderSide.BUY))
+    empty_book.add(Order(price=25, volume=5, side=OrderSide.SELL))
+    empty_book.add(Order(price=30, volume=5, side=OrderSide.SELL))
+    empty_book.add(Order(price=21, volume=5, side=OrderSide.SELL))
+    assert empty_book.top() == {}
 
 # def test_auction_match_match_orders():
 #     l1 = Ladder.from_orders(
