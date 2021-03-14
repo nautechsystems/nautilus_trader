@@ -26,11 +26,7 @@ cdef class Throttler:
     """
     Provides a generic throttler with an internal queue.
 
-    Will throttle sent messages to the given limit for interval combination.
-
-    If maxsize is less than or equal to zero, the queue size is infinite. If it
-    is an integer greater than 0, then "await put()" will block when the
-    queue reaches maxsize, until an item is removed by get().
+    Will throttle messages to the given limit-interval combination.
 
     Warnings
     --------
@@ -119,6 +115,11 @@ cdef class Throttler:
         ----------
         item : object
             The item to send on the throttler.
+
+        Notes
+        -----
+        Test system specs: x86_64 @ 4000 MHz Linux-4.15.0-136-lowlatency-x86_64-with-glibc2.27
+        Performance overhead ~0.3μs.
 
         """
         if not self.is_active:
