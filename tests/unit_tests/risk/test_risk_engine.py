@@ -82,6 +82,14 @@ class TestRiskEngine:
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
 
+    def test_registered_clients_returns_registered_clients_list(self):
+        # Arrange
+        # Act
+        result = self.risk_engine.registered_clients
+
+        # Assert
+        assert result == [Venue('SIM')]
+
     def test_set_block_all_orders_changes_flag_value(self):
         # Arrange
         # Act
@@ -121,10 +129,10 @@ class TestRiskEngine:
         )
 
         # Act
-        self.risk_engine.approve_order(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Assert
-        assert submit_order.approved
+        assert self.exec_client.calls == ['connect', 'submit_order']
 
     def test_approve_bracket_when_engine_not_overridden_then_approves(self):
         # Arrange
@@ -162,10 +170,10 @@ class TestRiskEngine:
         )
 
         # Act
-        self.risk_engine.approve_bracket(submit_bracket)
+        self.risk_engine.execute(submit_bracket)
 
         # Assert
-        assert submit_bracket.approved
+        assert self.exec_client.calls == ['connect', 'submit_bracket_order']
 
     def test_submit_order_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -203,7 +211,7 @@ class TestRiskEngine:
         self.exec_engine.execute(submit_order)
 
         # Assert
-        assert not submit_order.approved
+        assert self.exec_client.calls == ['connect']
 
     def test_submit_bracket_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -243,7 +251,7 @@ class TestRiskEngine:
         self.risk_engine.set_block_all_orders()
 
         # Act
-        self.risk_engine.approve_bracket(submit_bracket)
+        self.exec_engine.execute(submit_bracket)
 
         # Assert
-        assert not submit_bracket.approved
+        assert self.exec_client.calls == ['connect']

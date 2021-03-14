@@ -13,21 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.risk.engine cimport RiskEngine
 
 
-cdef class LiveDataEngine(DataEngine):
-    cdef dict _config
+cdef class LiveRiskEngine(RiskEngine):
     cdef object _loop
-    cdef object _data_queue
-    cdef object _message_queue
-    cdef object _run_queues_task
+    cdef object _queue
+    cdef object _run_queue_task
 
     cdef readonly bint is_running
 
     cpdef object get_event_loop(self)
     cpdef object get_run_queue_task(self)
-    cpdef int data_qsize(self) except *
-    cpdef int message_qsize(self) except *
+    cpdef int qsize(self) except *
 
     cpdef void kill(self) except *

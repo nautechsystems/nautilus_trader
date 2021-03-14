@@ -40,6 +40,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
@@ -95,6 +96,7 @@ class TradingNode:
         config_system = config.get("system", {})
         config_log = config.get("logging", {})
         config_exec_db = config.get("exec_database", {})
+        config_risk = config.get("risk", {})
         config_strategy = config.get("strategy", {})
         config_adapters = config.get("adapters", {})
 
@@ -177,7 +179,17 @@ class TradingNode:
             config={"qsize": 10000},
         )
 
+        self._risk_engine = LiveRiskEngine(
+            loop=self._loop,
+            exec_engine=self._exec_engine,
+            portfolio=self.portfolio,
+            clock=self._clock,
+            logger=self._logger,
+            config=config_risk,
+        )
+
         self._exec_engine.load_cache()
+        self._exec_engine.register_risk_engine(self._risk_engine)
         self._setup_adapters(config_adapters, self._logger)
 
         self.trader = Trader(
@@ -186,6 +198,7 @@ class TradingNode:
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
+            risk_engine=self._risk_engine,
             clock=self._clock,
             logger=self._logger,
         )
@@ -288,10 +301,12 @@ class TradingNode:
 
             self._log.debug(f"{self._data_engine.get_run_queue_task()}")
             self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
+            self._log.debug(f"{self._risk_engine.get_run_queue_task()}")
 
             self.trader.dispose()
             self._data_engine.dispose()
             self._exec_engine.dispose()
+            self._risk_engine.dispose()
 
             self._log.info("Shutting down executor...")
             if sys.version_info >= (3, 9):
@@ -412,6 +427,7 @@ class TradingNode:
 
             if exec_client is not None:
                 self._exec_engine.register_client(exec_client)
+                # Automatically registers with the risk engine
 
     async def _run(self) -> None:
         try:
@@ -420,6 +436,7 @@ class TradingNode:
 
             self._data_engine.start()
             self._exec_engine.start()
+            self._risk_engine.start()
 
             result: bool = await self._await_engines_connected()
             if not result:
@@ -439,6 +456,7 @@ class TradingNode:
             # Continue to run while engines are running...
             await self._data_engine.get_run_queue_task()
             await self._exec_engine.get_run_queue_task()
+            await self._risk_engine.get_run_queue_task()
         except asyncio.CancelledError as ex:
             self._log.error(str(ex))
 
@@ -483,6 +501,8 @@ class TradingNode:
             self._data_engine.stop()
         if self._exec_engine.state == ComponentState.RUNNING:
             self._exec_engine.stop()
+        if self._risk_engine.state == ComponentState.RUNNING:
+            self._risk_engine.stop()
 
         await self._await_engines_disconnected()
 

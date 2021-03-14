@@ -21,12 +21,21 @@ Alternative implementations can be written on top of the generic engine.
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.commands cimport AmendOrder
+from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -65,28 +74,135 @@ cdef class RiskEngine(Component):
             config = {}
         super().__init__(clock, logger, name="RiskEngine")
 
+        self._clients = {}  # type: dict[Venue, ExecutionClient]
         self._portfolio = portfolio
         self._exec_engine = exec_engine
 
         self.block_all_orders = False
 
-        # Check portfolio matches execution engines portfolio
-        self._exec_engine.check_portfolio_equal(portfolio)
+        # Counters
+        self.command_count = 0
+        self.event_count = 0
 
-    cpdef void set_block_all_orders(self, bint value=True) except *:
+    @property
+    def registered_clients(self):
         """
-        Set the global `block_all_orders` flag to the given value.
+        The execution clients registered with the engine.
+
+        Returns
+        -------
+        list[Venue]
+
+        """
+        return sorted(list(self._clients.keys()))
+
+# -- REGISTRATION ----------------------------------------------------------------------------------
+
+    cpdef void register_client(self, ExecutionClient client) except *:
+        """
+        Register the given execution client with the risk engine.
 
         Parameters
         ----------
-        value : bool
-            The flag setting.
+        client : ExecutionClient
+            The execution client to register.
+
+        Raises
+        ------
+        ValueError
+            If client is already registered with the execution engine.
 
         """
-        self.block_all_orders = value
-        self._log.warning(f"`block_all_orders` set to {value}.")
+        Condition.not_none(client, "client")
+        Condition.not_in(client.venue, self._clients, "client.venue", "self._clients")
 
-    cpdef void approve_order(self, SubmitOrder command) except *:
+        self._clients[client.venue] = client
+        self._log.info(f"Registered {client}.")
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void execute(self, Command command) except *:
+        """
+        Execute the given command.
+
+        Parameters
+        ----------
+        command : Command
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+
+        self._execute_command(command)
+
+    cpdef void process(self, Event event) except *:
+        """
+        Process the given event.
+
+        Parameters
+        ----------
+        event : Event
+            The event to process.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._handle_event(event)
+
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void _on_start(self) except *:
+        pass  # Optionally override in subclass
+
+    cpdef void _on_stop(self) except *:
+        pass  # Optionally override in subclass
+
+# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+
+    cpdef void _start(self) except *:
+        # Do nothing else for now
+        self._on_start()
+
+    cpdef void _stop(self) except *:
+        # Do nothing else for now
+        self._on_stop()
+
+    cpdef void _reset(self) except *:
+        self.command_count = 0
+        self.event_count = 0
+
+    cpdef void _dispose(self) except *:
+        pass
+        # Nothing to dispose for now
+
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+
+    cdef inline void _execute_command(self, Command command) except *:
+        self._log.debug(f"{RECV}{CMD} {command}.")
+        self.command_count += 1
+
+        if isinstance(command, TradingCommand):
+            self._handle_trading_command(command)
+
+    cdef inline void _handle_trading_command(self, TradingCommand command) except *:
+        cdef ExecutionClient client = self._clients.get(command.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command: "
+                            f"No client registered for {command.venue}, {command}.")
+            return  # No client to handle command
+
+        if isinstance(command, SubmitOrder):
+            self._handle_submit_order(client, command)
+        elif isinstance(command, SubmitBracketOrder):
+            self._handle_submit_bracket_order(client, command)
+        elif isinstance(command, AmendOrder):
+            self._handle_amend_order(client, command)
+        elif isinstance(command, CancelOrder):
+            self._handle_cancel_order(client, command)
+        else:
+            self._log.error(f"Cannot handle command: unrecognized {command}.")
+
+    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         """
         Approve the given command based on risk.
 
@@ -107,10 +223,9 @@ cdef class RiskEngine(Component):
         if risk_msgs:
             self._deny_order(command.order, ",".join(risk_msgs))
         else:
-            command.approve()
-            self._exec_engine.execute(command)
+            client.submit_order(command)
 
-    cpdef void approve_bracket(self, SubmitBracketOrder command) except *:
+    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         """
         Approve the given command based on risk.
 
@@ -134,8 +249,22 @@ cdef class RiskEngine(Component):
             self._deny_order(command.bracket_order.stop_loss, ",".join(risk_msgs))
             self._deny_order(command.bracket_order.take_profit, ",".join(risk_msgs))
         else:
-            command.approve()
-            self._exec_engine.execute(command)
+            client.submit_bracket_order(command)
+
+    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
+        # Pass-through for now
+        client.amend_order(command)
+
+    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
+        # Pass-through for now
+        client.cancel_order(command)
+
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
+
+    cdef inline void _handle_event(self, Event event) except *:
+        pass
+
+# -- RISK MANAGEMENT -------------------------------------------------------------------------------
 
     cdef list _check_submit_order_risk(self, SubmitOrder command):
         # Override this implementation with custom logic
@@ -155,3 +284,18 @@ cdef class RiskEngine(Component):
         )
 
         self._exec_engine.process(denied)
+
+# -- TEMP ------------------------------------------------------------------------------------------
+
+    cpdef void set_block_all_orders(self, bint value=True) except *:
+        """
+        Set the global `block_all_orders` flag to the given value.
+
+        Parameters
+        ----------
+        value : bool
+            The flag setting.
+
+        """
+        self.block_all_orders = value
+        self._log.warning(f"`block_all_orders` set to {value}.")
