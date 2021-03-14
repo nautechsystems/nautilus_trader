@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from tests.test_kit.performance import PerformanceHarness
 from datetime import timedelta
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.throttler import Throttler
+from tests.test_kit.performance import PerformanceHarness
 
 
 class TestThrottlerPerformance:
