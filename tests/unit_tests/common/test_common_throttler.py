@@ -34,7 +34,6 @@ class TestThrottler:
             limit=5,
             interval=timedelta(seconds=1),
             output=self.handler.append,
-            maxsize=10000,
             clock=self.clock,
             logger=self.logger,
         )
@@ -43,8 +42,8 @@ class TestThrottler:
         # Arrange
         # Act
         # Assert
-        assert "Throttler-1" == self.throttler.name
-        assert 0 == self.throttler.qsize
+        assert self.throttler.name == "Throttler-1"
+        assert self.throttler.qsize == 0
         assert not self.throttler.is_active
         assert not self.throttler.is_throttling
 
@@ -58,7 +57,7 @@ class TestThrottler:
         # Assert
         assert self.throttler.is_active
         assert not self.throttler.is_throttling
-        assert ["MESSAGE"] == self.handler
+        assert self.handler == ["MESSAGE"]
 
     def test_send_to_limit_becomes_throttled(self):
         # Arrange
@@ -73,11 +72,11 @@ class TestThrottler:
         self.throttler.send(item)
 
         # Assert: Only 5 items are sent
-        assert ["Throttler-1-REFRESH-TOKEN"] == self.clock.timer_names()
+        assert self.clock.timer_names() == ["Throttler-1-REFRESH-TOKEN"]
         assert self.throttler.is_active
         assert self.throttler.is_throttling
-        assert ["MESSAGE"] * 5 == self.handler
-        assert 1 == self.throttler.qsize
+        assert self.handler == ["MESSAGE"] * 5
+        assert self.throttler.qsize == 1
 
     def test_refresh_when_at_limit_sends_remaining_items(self):
         # Arrange
@@ -98,6 +97,6 @@ class TestThrottler:
         # Assert: Remaining items sent
         assert self.clock.timer_names() == ["Throttler-1-REFRESH-TOKEN"]
         assert self.throttler.is_active
-        assert self.throttler.is_throttling
-        assert ["MESSAGE"] * 6 == self.handler
-        assert 0 == self.throttler.qsize
+        assert self.throttler.is_throttling is False
+        assert self.handler == ["MESSAGE"] * 6
+        assert self.throttler.qsize == 0
