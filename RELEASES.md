@@ -6,6 +6,8 @@
 None
 
 ## Enhancements
+- `RiskEngine` built out including configuration options hook and
+  `LiveRiskEngine` implementation.
 - Add details `dict` to `instrument_id` related requests to cover IB futures
   contracts.
 

@@ -14,22 +14,64 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.commands cimport AmendOrder
+from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class RiskEngine(Component):
+    cdef dict _clients
     cdef Portfolio _portfolio
     cdef ExecutionEngine _exec_engine
 
+    cdef readonly int command_count
+    """The total count of commands received by the engine.\n\n:returns: `int`"""
+    cdef readonly int event_count
+    """The total count of events received by the engine.\n\n:returns: `int`"""
     cdef readonly bint block_all_orders
+    """If all orders are blocked from being sent.\n\n:returns: `bool`"""
 
-    cpdef void set_block_all_orders(self, bint value=*) except *
-    cpdef void approve_order(self, SubmitOrder command) except *
-    cpdef void approve_bracket(self, SubmitBracketOrder command) except *
+# -- REGISTRATION ----------------------------------------------------------------------------------
+
+    cpdef void register_client(self, ExecutionClient client) except *
+
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void _on_start(self) except *
+    cpdef void _on_stop(self) except *
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void execute(self, Command command) except *
+    cpdef void process(self, Event event) except *
+
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+
+    cdef inline void _execute_command(self, Command command) except *
+    cdef inline void _handle_trading_command(self, TradingCommand command) except *
+    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
+    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
+    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *
+    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
+
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
+
+    cdef inline void _handle_event(self, Event event) except *
+
+# -- RISK MANAGEMENT -------------------------------------------------------------------------------
+
     cdef list _check_submit_order_risk(self, SubmitOrder command)
     cdef list _check_submit_bracket_order_risk(self, SubmitBracketOrder command)
     cdef void _deny_order(self, Order order, str reason) except *
+
+# -- TEMP ------------------------------------------------------------------------------------------
+
+    cpdef void set_block_all_orders(self, bint value=*) except *

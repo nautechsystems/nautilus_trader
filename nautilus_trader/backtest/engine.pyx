@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
+from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -73,6 +74,7 @@ cdef class BacktestEngine:
         bint use_data_cache=False,
         str exec_db_type not None="in-memory",
         bint exec_db_flush=True,
+        dict risk_config=None,
         bint bypass_logging=False,
         int level_console=LogLevel.INFO,
         int level_file=LogLevel.DEBUG,
@@ -103,6 +105,8 @@ cdef class BacktestEngine:
             The type for the execution cache (can be the default 'in-memory' or redis).
         exec_db_flush : bool, optional
             If the execution cache should be flushed on each run.
+        risk_config : dict[str, object]
+            The configuration for the risk engine.
         bypass_logging : bool, optional
             If logging should be bypassed.
         level_console : int, optional
@@ -139,6 +143,8 @@ cdef class BacktestEngine:
             trader_id = TraderId("BACKTESTER", "000")
         if strategies is None:
             strategies = []
+        if risk_config is None:
+            risk_config = {}
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self._clock = LiveClock()
@@ -256,7 +262,16 @@ cdef class BacktestEngine:
             logger=self._test_logger,
         )
 
+        self._risk_engine = RiskEngine(
+            exec_engine=self._exec_engine,
+            portfolio=self.portfolio,
+            clock=self._test_clock,
+            logger=self._test_logger,
+            config=risk_config,
+        )
+
         self._exec_engine.load_cache()
+        self._exec_engine.register_risk_engine(self._risk_engine)
 
         self.trader = Trader(
             trader_id=trader_id,
@@ -264,6 +279,7 @@ cdef class BacktestEngine:
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
+            risk_engine=self._risk_engine,
             clock=self._test_clock,
             logger=self._test_logger,
         )

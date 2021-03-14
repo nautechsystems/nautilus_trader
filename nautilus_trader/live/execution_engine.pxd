@@ -23,7 +23,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cdef readonly bint is_running
 
-    cpdef void kill(self) except *
     cpdef object get_event_loop(self)
     cpdef object get_run_queue_task(self)
     cpdef int qsize(self) except *
+
+    cpdef void kill(self) except *

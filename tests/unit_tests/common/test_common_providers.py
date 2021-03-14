@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+
 import pytest
 
 from nautilus_trader.common.providers import InstrumentProvider
