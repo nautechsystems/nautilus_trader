@@ -76,6 +76,12 @@ cdef class TimeEventHandler:
         self.event = event
         self._handler = handler
 
+    def handle_py(self) -> None:
+        """
+        Python wrapper for testing.
+        """
+        self.handle()
+
     cdef void handle(self) except *:
         self._handler(self.event)
 
