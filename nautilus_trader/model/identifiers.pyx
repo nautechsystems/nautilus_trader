@@ -149,7 +149,7 @@ cdef class InstrumentId(Identifier):
         self.venue = venue
 
     @staticmethod
-    cdef InstrumentId from_serializable_str_c(str value):
+    cdef InstrumentId from_str_c(str value):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('.')
@@ -160,7 +160,7 @@ cdef class InstrumentId(Identifier):
         return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[2]))
 
     @staticmethod
-    def from_serializable_str(value: str) -> InstrumentId:
+    def from_str(value: str) -> InstrumentId:
         """
         Return an instrument identifier parsed from the given string value.
         Must be correctly formatted including a single period.
@@ -177,18 +177,7 @@ cdef class InstrumentId(Identifier):
         InstrumentId
 
         """
-        return InstrumentId.from_serializable_str_c(value)
-
-    cpdef str to_serializable_str(self):
-        """
-        Return a serializable string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.value
+        return InstrumentId.from_str_c(value)
 
 
 cdef class IdTag(Identifier):
