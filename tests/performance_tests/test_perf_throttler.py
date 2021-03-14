@@ -43,7 +43,7 @@ class TestThrottlerPerformance:
 
     def test_send_unlimited(self):
         PerformanceHarness.profile_function(self.send, 10000, 1)
-        # ~0.0ms / ~0.3μs / 301ns minimum of 100 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.3μs / 301ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_send_when_limited(self):
         PerformanceHarness.profile_function(self.send, 100000, 1)
