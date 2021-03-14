@@ -148,7 +148,7 @@ cdef class LiveRiskEngine(RiskEngine):
             self._queue.put_nowait(command)
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._queue.put(command)  # Block until qsize reduces below maxsize
+            self._loop.create_task(self._queue.put(command))
 
     cpdef void process(self, Event event) except *:
         """
