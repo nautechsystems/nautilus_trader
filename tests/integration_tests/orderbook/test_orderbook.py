@@ -6,6 +6,7 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.orderbook.orderbook import L3Orderbook
 from nautilus_trader.model.orderbook.order import Order
 
+
 @pytest.fixture()
 def l2_feed():
     return [json.loads(line) for line in gzip.open("./resources/L2_feed.log.gz")]
@@ -47,12 +48,12 @@ def l3_feed():
 
 def test_l3_feed(l3_feed):
     ob = L3Orderbook()
-    for m in l3_feed[:10]:
+    for m in l3_feed:
         if m['op'] == 'update':
             ob.update(order=m['order'])
         elif m['op'] == 'delete':
             ob.delete(order=m['order'])
-
+        assert ob._check_integrity(deep=True)
 
 # def test_l2_feed(l2_feed):
 #     ob = Orderbook()

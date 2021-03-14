@@ -1,12 +1,25 @@
+import pytest
 from nautilus_trader.model.c_enums.order_side import OrderSide
 
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.model.orderbook.order import Order
 
 
-def test_init():
-    level = Level(orders=[Order(price=10, volume=100, side=OrderSide.BUY)])
-    assert len(level.orders) == 1
+@pytest.fixture
+def empty_level():
+    return Level()
+
+
+def test_init(empty_level):
+    assert len(empty_level.orders) == 0
+    assert len(empty_level.order_index) == 0
+
+
+def test_add(empty_level):
+    order = Order(price=10, volume=100, side=OrderSide.BUY, id='1')
+    empty_level.add(order=order)
+    assert len(empty_level.orders) == 1
+    assert empty_level.order_index == {'1': order}
 
 
 def test_update():

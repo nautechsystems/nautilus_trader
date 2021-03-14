@@ -1,4 +1,4 @@
-
+from cpython.object cimport  Py_LT, Py_EQ, Py_GT, Py_LE, Py_NE, Py_GE
 from nautilus_trader.model.orderbook.order cimport Order
 
 #TODO - Instead of a Level.orders being a list (python-land) could use structured arrays?
@@ -6,9 +6,9 @@ from nautilus_trader.model.orderbook.order cimport Order
 
 cdef class Level:
     """ A Orderbook level; A price level on one side of the Orderbook with one or more individual Orders"""
-    def __init__(self, orders = None):
-        self.orders = orders or []
-        self.order_index = {order.id: idx for idx, order in enumerate(orders)}
+    def __init__(self):
+        self.orders = []
+        self.order_index = dict()
 
     cpdef void add(self, Order order):
         """
@@ -17,6 +17,7 @@ cdef class Level:
         :return:
         """
         self._check_price(order=order)
+        self.order_index[order.id] = len(self.orders)
         self.orders.append(order)
 
     cpdef void update(self, Order order):
@@ -31,7 +32,7 @@ cdef class Level:
         if order.volume == 0:
             self.delete(order=order)
         else:
-            existing = self.orders[self.order_index[order.id]]
+            existing = self._get_order(order.id)
             existing.update_volume(volume=order.volume)
 
     cpdef void delete(self, Order order):
@@ -43,12 +44,32 @@ cdef class Level:
         idx = self.order_index[order.id]
         del self.orders[idx]
 
-    def _check_price(self, Order order):
+    cpdef _get_order(self, str order_id):
+        return self.orders[self.order_index[order_id]]
+
+    cpdef _check_price(self, Order order):
         err = "Order passed to `update` has wrong price! Should be handled in Ladder"
         assert order.price == self.orders[0].price, err
+
 
     cpdef public double volume(self):
         return sum([order.volume for order in self.orders])
 
     cpdef public double price(self):
         return self.orders[0].price
+
+    def __richcmp__(self, other, int op):
+        if op == Py_LT:
+            return self.price() < other.price()
+        elif op == Py_EQ:
+            return self.price() == other.price()
+        elif op == Py_GT:
+            return self.price() > other.price()
+        elif op == Py_LE:
+            return self.price() <= other.price()
+        elif op == Py_NE:
+            return self.price() != other.price()
+        elif op == Py_GE:
+            return self.price() >= other.price()
+        else:
+            raise KeyError
