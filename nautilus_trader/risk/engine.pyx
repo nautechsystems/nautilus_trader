@@ -59,13 +59,13 @@ cdef class RiskEngine(Component):
         Parameters
         ----------
         exec_engine : ExecutionEngine
-            The execution engine for the risk engine.
+            The execution engine for the engine.
         portfolio : Portfolio
-            The portfolio for the risk engine.
+            The portfolio for the engine.
         clock : Clock
-            The clock for the risk engine.
+            The clock for the engine.
         logger : Logger
-            The logger for the risk engine.
+            The logger for the engine.
         config : dict[str, object], optional
             The configuration options.
 
