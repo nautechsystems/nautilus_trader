@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import unittest
+
+import pytest
 
 from nautilus_trader.common.queue import Queue
 
 
-class QueueTests(unittest.TestCase):
+class TestQueue:
 
     def test_queue_instantiation(self):
         # Arrange
@@ -27,10 +28,10 @@ class QueueTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, queue.maxsize)
-        self.assertEqual(0, queue.qsize())
-        self.assertTrue(queue.empty())
-        self.assertFalse(queue.full())
+        assert queue.maxsize == 0
+        assert queue.qsize() == 0
+        assert queue.empty()
+        assert not queue.full()
 
     def test_put_nowait(self):
         # Arrange
@@ -40,8 +41,8 @@ class QueueTests(unittest.TestCase):
         queue.put_nowait("A")
 
         # Assert
-        self.assertEqual(1, queue.qsize())
-        self.assertFalse(queue.empty())
+        assert queue.qsize() == 1
+        assert not queue.empty()
 
     def test_get_nowait(self):
         # Arrange
@@ -52,8 +53,8 @@ class QueueTests(unittest.TestCase):
         item = queue.get_nowait()
 
         # Assert
-        self.assertEqual(0, queue.qsize())
-        self.assertEqual("A", item)
+        assert queue.empty()
+        assert item == "A"
 
     def test_put_nowait_multiple_items(self):
         # Arrange
@@ -67,8 +68,8 @@ class QueueTests(unittest.TestCase):
         queue.put_nowait("E")
 
         # Assert
-        self.assertEqual(5, queue.qsize())
-        self.assertFalse(queue.empty())
+        assert queue.qsize() == 5
+        assert not queue.empty()
 
     def test_put_to_maxlen_makes_queue_full(self):
         # Arrange
@@ -82,8 +83,8 @@ class QueueTests(unittest.TestCase):
         queue.put_nowait("E")
 
         # Assert
-        self.assertEqual(5, queue.qsize())
-        self.assertTrue(queue.full())
+        assert queue.qsize() == 5
+        assert queue.full()
 
     def test_put_nowait_onto_queue_at_maxsize_raises_queue_full(self):
         # Arrange
@@ -97,7 +98,8 @@ class QueueTests(unittest.TestCase):
         queue.put_nowait("E")
 
         # Assert
-        self.assertRaises(asyncio.QueueFull, queue.put_nowait, "F")
+        with pytest.raises(asyncio.QueueFull):
+            queue.put_nowait("F")
 
     def test_get_nowait_from_empty_queue_raises_queue_empty(self):
         # Arrange
@@ -105,7 +107,8 @@ class QueueTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(asyncio.QueueEmpty, queue.get_nowait)
+        with pytest.raises(asyncio.QueueEmpty):
+            queue.get_nowait()
 
     def test_await_put(self):
         # Fresh isolated loop testing pattern
@@ -121,8 +124,8 @@ class QueueTests(unittest.TestCase):
             item = queue.get_nowait()
 
             # Assert
-            self.assertEqual(0, queue.qsize())
-            self.assertEqual("A", item)
+            assert queue.empty()
+            assert item == "A"
 
         self.loop.run_until_complete(run_test())
 
@@ -140,7 +143,7 @@ class QueueTests(unittest.TestCase):
             item = await queue.get()
 
             # Assert
-            self.assertEqual(0, queue.qsize())
-            self.assertEqual("A", item)
+            assert queue.empty()
+            assert item == "A"
 
         self.loop.run_until_complete(run_test())
