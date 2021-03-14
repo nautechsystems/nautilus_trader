@@ -19,7 +19,7 @@ def test_add(empty_level):
     order = Order(price=10, volume=100, side=OrderSide.BUY, id='1')
     empty_level.add(order=order)
     assert len(empty_level.orders) == 1
-    assert empty_level.order_index == {'1': order}
+    assert empty_level.order_index == {'1': 0}
 
 
 def test_update():

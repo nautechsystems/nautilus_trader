@@ -6,9 +6,11 @@ from nautilus_trader.model.orderbook.order cimport Order
 
 cdef class Level:
     """ A Orderbook level; A price level on one side of the Orderbook with one or more individual Orders"""
-    def __init__(self):
+    def __init__(self, orders=None):
         self.orders = []
         self.order_index = dict()
+        for order in (orders or []):
+            self.add(order)
 
     cpdef void add(self, Order order):
         """
@@ -48,6 +50,8 @@ cdef class Level:
         return self.orders[self.order_index[order_id]]
 
     cpdef _check_price(self, Order order):
+        if not self.orders:
+            return True
         err = "Order passed to `update` has wrong price! Should be handled in Ladder"
         assert order.price == self.orders[0].price, err
 

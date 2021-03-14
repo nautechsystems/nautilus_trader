@@ -5,7 +5,7 @@ from nautilus_trader.model.orderbook.order import Order
 
 
 def test_init():
-    ladder = Ladder(levels=[], reverse=False)
+    ladder = Ladder(reverse=False)
     assert ladder
 
 
@@ -15,18 +15,17 @@ def test_insert():
         Order(price=100, volume=1, side=OrderSide.BUY),
         Order(price=105, volume=20, side=OrderSide.BUY),
     ]
-    ladder = Ladder(levels=[], reverse=False)
+    ladder = Ladder(reverse=False)
     for order in orders:
         ladder.add(order=order)
     ladder.add(order=Order(price=100, volume=10, side=OrderSide.BUY))
     ladder.add(order=Order(price=101, volume=5, side=OrderSide.BUY))
     ladder.add(order=Order(price=101, volume=5, side=OrderSide.BUY))
 
-    #TODO Broken?
     expected = [
         (100, 21),
-        # (101, 10),
-        # (105, 20),
+        (101, 10),
+        (105, 20),
     ]
     result = [(level.price(), level.volume()) for level in ladder.levels]
     assert result == expected
