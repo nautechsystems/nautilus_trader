@@ -160,7 +160,7 @@ cdef class LiveDataEngine(DataEngine):
         except QueueFull:
             self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
-            self._message_queue.put(command)  # Block until qsize reduces below maxsize
+            self._loop.create_task(self._message_queue.put(command))
 
     cpdef void process(self, data) except *:
         """
@@ -188,7 +188,7 @@ cdef class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_data_queue.put` as data_queue full at "
                               f"{self._data_queue.qsize()} items.")
-            self._data_queue.put(data)  # Block until qsize reduces below maxsize
+            self._loop.create_task(self._data_queue.put(data))
 
     cpdef void send(self, DataRequest request) except *:
         """
@@ -216,7 +216,7 @@ cdef class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
-            self._message_queue.put(request)  # Block until qsize reduces below maxsize
+            self._loop.create_task(self._message_queue.put(request))
 
     cpdef void receive(self, DataResponse response) except *:
         """

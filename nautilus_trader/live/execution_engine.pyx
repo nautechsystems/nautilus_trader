@@ -230,7 +230,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._queue.put_nowait(command)
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._queue.put(command)  # Block until qsize reduces below maxsize
+            self._loop.create_task(self._queue.put(command))
 
     cpdef void process(self, Event event) except *:
         """
@@ -257,7 +257,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._queue.put(event)  # Block until qsize reduces below maxsize
+            self._loop.create_task(self._queue.put(event))
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
