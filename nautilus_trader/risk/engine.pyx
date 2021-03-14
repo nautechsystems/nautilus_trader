@@ -203,17 +203,6 @@ cdef class RiskEngine(Component):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
-        """
-        Approve the given command based on risk.
-
-        Parameters
-        ----------
-        command : SubmitOrder
-            The command to approve.
-
-        """
-        Condition.not_none(command, "command")
-
         cdef list risk_msgs = self._check_submit_order_risk(command)
 
         if self.block_all_orders:
@@ -226,17 +215,6 @@ cdef class RiskEngine(Component):
             client.submit_order(command)
 
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
-        """
-        Approve the given command based on risk.
-
-        Parameters
-        ----------
-        command : SubmitBracketOrder
-            The command to approve.
-
-        """
-        Condition.not_none(command, "command")
-
         # TODO: Below currently just cut-and-pasted from above. Can refactor further.
         cdef list risk_msgs = self._check_submit_bracket_order_risk(command)
 
