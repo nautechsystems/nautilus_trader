@@ -419,15 +419,22 @@ cdef class BacktestEngine:
         """
         self._log.debug(f"Resetting...")
 
+        # Reset DataEngine
         if self._data_engine.state_c() == ComponentState.RUNNING:
             self._data_engine.stop()
         self._data_engine.reset()
 
+        # Reset ExecEngine
         if self._exec_engine.state_c() == ComponentState.RUNNING:
             self._exec_engine.stop()
         if self._exec_db_flush:
             self._exec_engine.flush_db()
         self._exec_engine.reset()
+
+        # Reset RiskEngine
+        if self._risk_engine.state_c() == ComponentState.RUNNING:
+            self._risk_engine.stop()
+        self._risk_engine.reset()
 
         self.trader.reset()
 
@@ -457,6 +464,7 @@ cdef class BacktestEngine:
 
         self._data_engine.dispose()
         self._exec_engine.dispose()
+        self._risk_engine.dispose()
 
     cpdef void change_fill_model(self, Venue venue, FillModel model) except *:
         """
