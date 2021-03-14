@@ -214,3 +214,19 @@ def match_orders(traded_bids, traded_asks):
         matched[bid.order_id].append(ask)
         matched[ask.order_id].append(bid)
     return matched
+
+
+def pprint_ob(self: Orderbook, num_levels=3):
+    from tabulate import tabulate
+
+    empty = Level(orders=[], price=0, side=OrderSide.BUY)
+    prices = reversed([lvl.price for lvl in self.bids.levels[:num_levels] + self.asks.levels[:num_levels]])
+    data = [
+        {
+            "bids": [order.order_id for order in self.bids.price_levels.get(price, empty).orders] or None,
+            "price": price,
+            "asks": [order.order_id for order in self.asks.price_levels.get(price, empty).orders] or None,
+        }
+        for price in prices
+    ]
+    return tabulate(data, headers="keys", numalign="center", floatfmt=".2f", tablefmt="fancy")
