@@ -1114,7 +1114,7 @@ cdef class DataEngine(Component):
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
         cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
-        cdef InstrumentId instrument_id = InstrumentId.from_serializable_str_c(pieces[0])
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef int interval = int(pieces[2])
         cdef list handlers = self._order_book_intervals.get((instrument_id, interval))
         if handlers is None:

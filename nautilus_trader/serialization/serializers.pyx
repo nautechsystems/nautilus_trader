@@ -128,7 +128,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         super().__init__()
 
-        self.symbol_cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str_c)
+        self.symbol_cache = ObjectCache(InstrumentId, InstrumentId.from_str_c)
 
     cpdef bytes serialize(self, Order order):  # Can be None
         """
@@ -150,7 +150,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef dict package = {
             ID: order.cl_ord_id.value,
             STRATEGY_ID: order.strategy_id.value,
-            INSTRUMENT_ID: order.instrument_id.to_serializable_str(),
+            INSTRUMENT_ID: order.instrument_id.value,
             ORDER_SIDE: self.convert_snake_to_camel(OrderSideParser.to_str(order.side)),
             ORDER_TYPE: self.convert_snake_to_camel(OrderTypeParser.to_str(order.type)),
             QUANTITY: str(order.quantity),
@@ -487,7 +487,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[STRATEGY_ID] = event.strategy_id.value
-            package[INSTRUMENT_ID] = event.instrument_id.to_serializable_str()
+            package[INSTRUMENT_ID] = event.instrument_id.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
             package[QUANTITY] = str(event.quantity)
@@ -562,7 +562,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[EXECUTION_ID] = event.execution_id.value
             package[POSITION_ID] = event.position_id.value
             package[STRATEGY_ID] = event.strategy_id.value
-            package[INSTRUMENT_ID] = event.instrument_id.to_serializable_str()
+            package[INSTRUMENT_ID] = event.instrument_id.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[FILL_QTY] = str(event.fill_qty)
             package[FILL_PRICE] = str(event.fill_price)

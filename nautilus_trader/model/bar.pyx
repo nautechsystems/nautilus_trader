@@ -253,7 +253,7 @@ cdef class BarType:
         if len(pieces) != 4:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
-        cdef InstrumentId instrument_id = InstrumentId.from_serializable_str_c(pieces[0])
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
             BarAggregationParser.from_str(pieces[2]),
@@ -295,7 +295,7 @@ cdef class BarType:
         str
 
         """
-        return f"{self.instrument_id.to_serializable_str()}-{self.spec}"
+        return f"{self.instrument_id}-{self.spec}"
 
 
 cdef class Bar(Data):
