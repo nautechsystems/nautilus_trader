@@ -4,9 +4,6 @@ from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.model.orderbook.order import Order
 
 
-# ---- L2 Tests ----- #
-
-
 def test_init():
     level = Level(orders=[Order(price=10, volume=100, side=OrderSide.BUY)])
     assert len(level.orders) == 1
@@ -20,8 +17,6 @@ def test_update():
     level.update(order=order)
     assert level.volume() == 50
 
-
-# ---- L3 Tests ----- #
 
 # def test_init_orders():
 #     orders = [Order(price=100, volume=10, side=OrderSide.SELL, id='1'),
@@ -44,22 +39,6 @@ def test_update():
 #     assert l.volume == 80
 #
 #
-# def test_delete_order_id():
-#     l = Level(
-#         orders=[
-#             Order(price=100, volume=20, side=OrderSide.BUY, id="1"),
-#             Order(price=100, volume=50, side=OrderSide.BUY, id="2"),
-#         ]
-#     )
-#     l.delete(id="2")
-#     remaining = [Order(price=100, volume=20, side=OrderSide.BUY, id="1")]
-#     assert l.orders == remaining
-#
-#     l.delete(id="1")
-#     remaining = []
-#     assert l.orders == remaining
-#
-#
 # def test_zero_volume_level():
 #     l = Level(orders=[Order(price=10, volume=0, side=OrderSide.BUY)])
 #     assert l.volume == 0
@@ -70,30 +49,3 @@ def test_update():
 #     assert not Level(orders=[Order(price=10, volume=0, side=OrderSide.BUY)]) == Level(
 #         orders=[Order(price=10, volume=1, side=OrderSide.SELL)]
 #     )
-#
-#
-# def test_dict():
-#     lvl = Level(orders=[Order(price=10, volume=0, side=OrderSide.BUY, id="1")])
-#     result = lvl.dict()
-#     expected = {"orders": [{"order_id": "1", "price": 10.0, "side": OrderSide.BUY, "volume": 0.0}], "price": 10.0, "side": OrderSide.BUY}
-#     assert result == expected
-#
-#
-# def test_serialization():
-#     lvl = Level(orders=[Order(price=10, volume=0, side=OrderSide.BUY)])
-#     raw = lvl.dumps()
-#     assert len(raw) == 273
-#     result = lvl.loads(raw)
-#     assert result == lvl
-
-
-# def test_order_id_orders():
-#     lvl = Level(price=10, side=OrderSide.BUY)
-#     lvl.add(order=Order(price=10, volume=1, side=OrderSide.BUY, id="1"))
-#     lvl.add(order=Order(price=10, volume=1, side=OrderSide.BUY, id="2"))
-#     assert tuple(lvl.order_index) == ("1", "2")
-#     lvl.delete(id="2")
-#     assert tuple(lvl.order_index) == ("1",)
-#     lvl.delete(order=Order(price=10, volume=1, side=OrderSide.BUY, id="1"))
-#     assert tuple(lvl.order_index) == ()
-#     assert tuple(lvl.order_index) == ()

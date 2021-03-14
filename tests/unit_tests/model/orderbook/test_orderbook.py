@@ -1,16 +1,5 @@
-# from cumulo.protocol.enums import BID, ASK
-# from cumulo.protocol.models.ladder import Ladder
-# from cumulo.protocol.models.order import Order
-# from cumulo.protocol.models.orderbook import Orderbook, Level
-#
-#
-# def _compare_ladder(ladder1: Ladder, ladder2: Ladder):
-#     return all([(l1.price, l1.volume) == (l2.price, l2.volume) for l1, l2 in zip(ladder1.levels, ladder2.levels)])
-#
-#
-# def _compare_orderbook(ob1, ob2):
-#     return _compare_ladder(ob1.bids, ob2.bids) and _compare_ladder(ob1.asks, ob2.asks)
-#
+
+
 #
 # def test_init():
 #     bid_list = [Order(price=110, volume=10, side=BID), Order(price=100, volume=5, side=BID)]
@@ -36,24 +25,7 @@
 #     assert _compare_ladder(ob.bids, bid_ladder) and _compare_ladder(ob.asks, ask_ladder)
 #
 #
-# def test_orderbook_transform():
-#     ob = Orderbook(
-#         bids=Ladder(levels=[Level(orders=[Order(price=100, volume=5, side=BID)])], side=BID),
-#         asks=Ladder(levels=[Level(orders=[Order(price=120, volume=1, side=ASK)])], side=ASK),
-#     )
-#
-#     def double_volume(order):
-#         return order.replace(volume=order.volume * 2)
-#
-#     assert ob.bids.depth_at_price(100) == 5
-#     assert ob.asks.depth_at_price(120) == 1
-#
-#     ob.transform(double_volume)
-#
-#     assert ob.bids.depth_at_price(100) == 10
-#     assert ob.asks.depth_at_price(120) == 2
-#
-#
+
 # def test_auction_match_match_orders():
 #     l1 = Ladder.from_orders(
 #         [
@@ -103,31 +75,6 @@
 #     assert trades == expected
 #
 #
-# def test_serialization():
-#     bids = Ladder.from_orders(
-#         [
-#             Order(price=103, volume=5, side=BID),
-#             Order(price=102, volume=10, side=BID),
-#             Order(price=100, volume=5, side=BID),
-#             Order(price=90, volume=5, side=BID),
-#         ]
-#     )
-#     asks = Ladder.from_orders(
-#         [
-#             Order(price=100, volume=10, side=ASK),
-#             Order(price=101, volume=10, side=ASK),
-#             Order(price=105, volume=5, side=ASK),
-#             Order(price=110, volume=5, side=ASK),
-#         ]
-#     )
-#
-#     book = Orderbook(bids=bids, asks=asks)
-#     raw = book.dumps()
-#     assert len(raw) == 2578
-#     result = book.loads(raw)
-#     assert result == book
-#
-#
 # def test_exchange_order_ids():
 #     book = Orderbook(bids=None, asks=None, exchange_order_ids=True)
 #     assert book.exchange_order_ids
@@ -140,24 +87,6 @@
 #     expected = orderbook.order_id_side
 #     assert len(result) == 10
 #     assert result == expected
-#
-#
-# def test_orderbook_flatten(orderbook):
-#     data = orderbook.flatten()
-#     expected = {
-#         "orderbook_bid_price_1": 11.0,
-#         "orderbook_bid_volume_1": 7.11,
-#         "orderbook_ask_price_1": 1.2,
-#         "orderbook_ask_volume_1": 2.85,
-#     }
-#     assert data == expected
-#
-#
-# def test_orderbook_empty_flatten():
-#     orderbook = Orderbook(bids=None, asks=None)
-#     data = orderbook.flatten()
-#     expected = {}
-#     assert data == expected
 #
 #
 # def test_orderbook_in_cross():
