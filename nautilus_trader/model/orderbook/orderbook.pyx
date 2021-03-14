@@ -1,9 +1,118 @@
-from nautilus_trader.model.orderbook.ladder import Ladder
+from typing import List, Optional
 
-cdef class Orderbook:
-    pass
-    # cdef Ladder bids
-    # cdef Ladder asks
+from nautilus_trader.model.c_enums.order_side import OrderSide
+
+from nautilus_trader.model.orderbook.ladder cimport Ladder
+from nautilus_trader.model.orderbook.order cimport Order
+
+cdef class OrderbookProxy:
+    """
+    An Orderbook proxy - A L3 Orderbook that can be proxied to L3/L2/L1 Orderbook classes.
+    """
+    def __init__(self, bids: Optional[List[Order]] = None, asks: Optional[List[Order]] = None):
+        self.bids = Ladder(orders=bids or [], reverse=True)
+        self.asks = Ladder(orders=asks or [], reverse=False)
+
+    cpdef void add(self, Order order):
+        if order.side == OrderSide.BUY:
+            self.bids.add(order=order)
+        elif order.side == OrderSide.SELL:
+            self.asks.add(order=order)
+
+    cpdef void update(self, Order order):
+        if order.side == OrderSide.BUY:
+            self.bids.update(order=order)
+        elif order.side == OrderSide.SELL:
+            self.asks.update(order=order)
+
+    cpdef void delete(self, Order order):
+        if order.side == OrderSide.BUY:
+            self.bids.delete(order=order)
+        elif order.side == OrderSide.SELL:
+            self.asks.delete(order=order)
+
+    #TODO
+    cpdef bint _check_integrity(self):
+        raise NotImplemented
+
+cdef class L3Orderbook:
+    """ A L3 Orderbook. Should map directly to functionality of the OrderbookProxy """
+    cdef OrderbookProxy _orderbook
+
+    cpdef add(self, Order order):
+        self._orderbook.add(order=order)
+
+    cpdef update(self, Order order):
+        self._orderbook.update(order=order)
+
+    cpdef delete (self, Order order):
+        self._orderbook.delete(order=order)
+
+
+cdef class L2Orderbook:
+    """ A L2 Orderbook. An Orderbook where price `Levels` are only made up of a single order """
+    cdef OrderbookProxy _orderbook
+
+    cpdef add(self, Order order):
+        """
+        If this `order.price` exists, need to remove and replace with `order`
+        :param order:
+        :return:
+        """
+        # self._orderbook.add(order=order)
+        raise NotImplemented
+
+    cpdef update(self, Order order):
+        """
+        If this `order.price` exists, need to remove and replace with `order`
+        :param order:
+        :return:
+        """
+        # self._orderbook.update(order=order)
+        raise NotImplemented
+
+    cpdef delete (self, Order order):
+        """
+        Delete this order (and the entire level for L2)
+        :param order:
+        :return:
+        """
+        # self._orderbook.delete(order=order)
+        raise NotImplemented
+
+
+cdef class L1Orderbook:
+    """ A L1 Orderbook. An Orderbook that has only has a single (top) level """
+    cdef OrderbookProxy _orderbook
+
+    cpdef add(self, Order order):
+        """
+        Need to remove previous `Level` and add new Level for `order`
+
+        :param order:
+        :return:
+        """
+        # self._orderbook.add(order=order)
+        raise NotImplemented
+
+    cpdef update(self, Order order):
+        """
+        If the price has changes, need to need to remove previous `Level` and add new Level for `order`
+
+        :param order:
+        :return:
+        """
+        # self._orderbook.update(order=order)
+        raise NotImplemented
+
+    cpdef delete (self, Order order):
+        # self._orderbook.delete(order=order)
+        raise NotImplemented
+
+
+
+# cdef Ladder bids
+# cdef Ladder asks
 #     default_on = "volume"
 #     exchange_order_ids: bool = Field(default=False, description="Do we receive order_ids from the exchange")
 #     bids: Optional[Ladder] = None

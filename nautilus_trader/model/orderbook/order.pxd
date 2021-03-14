@@ -8,7 +8,4 @@ cdef class Order:
 
     cpdef void update_price(self, float price)
     cpdef void update_volume(self, float volume)
-
-    @property
-    cdef inline double exposure(self):
-        return self.price * self.volume
+    # cpdef inline double exposure(self)

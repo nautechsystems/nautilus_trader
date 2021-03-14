@@ -1,81 +1,54 @@
 
-from model.orderbook.order import Order
+from nautilus_trader.model.orderbook.order cimport Order
 
 #TODO - Instead of a Level.orders being a list (python-land) could use structured arrays?
 # https://docs.scipy.org/doc/numpy-1.13.0/user/basics.rec.html
 
-cdef class LevelMixin:
-
-    cpdef void add(self):
-        raise NotImplemented
-
-    cpdef void update(self):
-        raise NotImplemented
-
-    cpdef void delete(self):
-        raise NotImplemented
-
-
-#TODO Cython subclassing is slow ??
-cdef class L2Level:
-    """ A L2 Orderbook level. Only supports updating volume at this  """
+cdef class Level:
+    """ A Orderbook level; A price level on one side of the Orderbook with one or more individual Orders"""
     def __init__(self, orders = None):
         self.orders = orders or []
         self.order_index = {order.id: idx for idx, order in enumerate(orders)}
 
-    # TODO I don't think we need this? Should only be creating a level from Orderbook
-    cpdef void add(self, order):
-        raise NotImplemented("Add should not be called for L2 Orderbook")
-
-    cpdef void update(self, float volume):
+    cpdef void add(self, Order order):
         """
-        Update the volume on this level.
-
-        Applicable for exchanges that send level updates only
-
-        :param volume: New volume
+        Add an order to this level.
+        :param order: New order
         :return:
         """
-        assert len(self.orders) == 1
-        if volume == 0:
-            self.orders = []
+        self._check_price(order=order)
+        self.orders.append(order)
+
+    cpdef void update(self, Order order):
+        """
+        Update an order on this level.
+        :param order: New order
+        :return:
+        """
+        # TODO - Is creating an Order object at the top level every time we want to update something too costly?
+        #  Should we just use an order_id and price/volume here?
+        self._check_price(order=order)
+        if order.volume == 0:
+            self.delete(order=order)
         else:
-            self.orders[0].update_volume(volume=volume)
+            existing = self.orders[self.order_index[order.id]]
+            existing.update_volume(volume=order.volume)
 
-    # TODO I don't think we need this either
-    cpdef void delete(self, float volume):
+    cpdef void delete(self, Order order):
         """
-        Delete the `volume` from this level
-        :param volume: Quantity of volume to delete
+        Delete an Order from this level
+        :param order: Quantity of volume to delete
         :return:
         """
-        # self.orders[0].volume = self.orders[0].volume - volume
-        raise NotImplemented()
+        idx = self.order_index[order.id]
+        del self.orders[idx]
 
-    cpdef double volume(self):
+    def _check_price(self, Order order):
+        err = "Order passed to `update` has wrong price! Should be handled in Ladder"
+        assert order.price == self.orders[0].price, err
+
+    cpdef public double volume(self):
         return sum([order.volume for order in self.orders])
 
-
-
-# cdef class L3Level(Level):
-#     """
-#     An L3 Orderbook Level
-#     """
-#     def add(self, *, Order order):
-#         self.orders.append(order)
-#         self.order_index[order.id] = len(self.orders)
-#
-#     def update(self, order_id: str, volume: float):
-#         """
-#         Update an order on this level.
-#
-#         :param order_id: New order to update
-#         :param volume: New volume
-#         :return:
-#         """
-#         idx = self.order_index[order_id]
-#         self.orders[idx].update_volume(volume=volume)
-#
-#     cdef delete(self, str order_id):
-#         order_idx = self.order_index.pop(order_id)
-#         return self.orders.pop(order_idx)
+    cpdef public double price(self):
+        return self.orders[0].price

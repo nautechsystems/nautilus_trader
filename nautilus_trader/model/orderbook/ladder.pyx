@@ -1,30 +1,56 @@
 import logging
 from bisect import bisect
+from typing import List
 
-from nautilus_trader.model.orderbook.level import L2Level
+from nautilus_trader.model.orderbook.level cimport Level
+from nautilus_trader.model.orderbook.order cimport Order
 
 logger = logging.getLogger(__name__)
 
 cdef class Ladder:
-    cdef list levels
-    cdef bint reverse
-    cdef dict price_levels
-    cdef dict order_id_prices
 
-    def __init__(self, levels, reverse):
-        self.levels = levels
+    def __init__(self, list levels, bint reverse):
+        self.levels = levels # type: List[Level]
         self.reverse = reverse
         self.price_levels = dict()
         self.order_id_prices = dict()
 
-    cpdef add(self):
-        raise NotImplemented
+    cpdef void add(self, Order order):
+        # Level exists, add new order
+        if order.price in self.prices:
+            idx = tuple(self.prices).index(order.price)
+            self.levels[idx].add(order=order)
+        # New price, create Level
+        else:
+            level = Level(orders=[order])
+            self.levels.insert(bisect(self.levels, level), level)
+            self.price_levels[order.price] = level
+        self.order_id_prices[order.id] = order.price
 
-    cpdef update(self):
-        raise NotImplemented
+    cpdef void update(self, order: Order):
+        if order.order_id not in self.order_id_prices:
+            self.add(order=order)
+        # Find the existing order
+        price = self.order_id_prices[order.order_id]
+        level = self.price_levels[price]
+        existing_order = level.order_id_orders[order.order_id]
+        if order.price == existing_order.price:
+            # This update contains a volume update
+            level.update(order=order)
+        else:
+            # New price for this order, delete and insert
+            self.delete(order=order)
+            self.add(order=order)
 
-    cpdef delete(self):
-        raise NotImplemented
+    cpdef void delete(self, Order order):
+        price_idx = self.price_levels[order.price]
+        level = self.levels[price_idx] # type: Level
+        level.delete(order=order)
+        del self.order_id_prices[order.id]
+        if not level.orders:
+            del self.levels[price_idx]
+            del self.price_levels[order.price]
+
 
     @property
     def prices(self):
@@ -55,41 +81,41 @@ cdef class Ladder:
             for order in level.iter_orders():
                 yield order
 
-#TODO Cython subclassing is slow ??
-cdef class L2Ladder(LadderMixin):
-    cpdef add(self, level: L2Level):
-        order = level.orders[0]
-        if order.price in self.prices:
-            idx = tuple(self.prices).index(order.price)
-            self.levels[idx].add(order)
-        else:
-            level = L2Level(orders=[order])
-            self.levels.insert(bisect(self.levels, level), level)
-            self.price_levels[order.price] = level
-        self.order_id_prices[order.id] = order.price
-
-    cpdef update(self, level: L2Level):
-        """
-        Update a level.
-
-        :param level: Level to update
-        :return:
-        """
-        if level.price not in self.prices:
-            self.add(level=level)
-        elif level.volume == 0:
-            self.delete(price=level.orders[0].price)
-        else:
-            price_idx = tuple(self.prices).index(level.price)
-            self.levels[price_idx].update(volume=level.volume)
-
-    cpdef delete(self, price: float):
-        prices = tuple(self.prices)
-        if price not in prices:
-            logger.warning(f"Price {price} not in prices: {prices}")
-            return
-        price_idx = tuple(self.prices).index(price)
-        return self.levels.pop(price_idx)
+# #TODO Cython subclassing is slow ??
+# cdef class L2Ladder(LadderMixin):
+#     cpdef add(self, level: L2Level):
+#         order = level.orders[0]
+#         if order.price in self.prices:
+#             idx = tuple(self.prices).index(order.price)
+#             self.levels[idx].add(order)
+#         else:
+#             level = L2Level(orders=[order])
+#             self.levels.insert(bisect(self.levels, level), level)
+#             self.price_levels[order.price] = level
+#         self.order_id_prices[order.id] = order.price
+#
+#     cpdef update(self, level: L2Level):
+#         """
+#         Update a level.
+#
+#         :param level: Level to update
+#         :return:
+#         """
+#         if level.price not in self.prices:
+#             self.add(level=level)
+#         elif level.volume == 0:
+#             self.delete(price=level.orders[0].price)
+#         else:
+#             price_idx = tuple(self.prices).index(level.price)
+#             self.levels[price_idx].update(volume=level.volume)
+#
+#     cpdef delete(self, price: float):
+#         prices = tuple(self.prices)
+#         if price not in prices:
+#             logger.warning(f"Price {price} not in prices: {prices}")
+#             return
+#         price_idx = tuple(self.prices).index(price)
+#         return self.levels.pop(price_idx)
 
 # cdef class L3Ladder(LadderMixin):
 #     cpdef add(self):

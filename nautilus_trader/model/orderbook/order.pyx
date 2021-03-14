@@ -15,6 +15,11 @@ cdef class Order:
     cpdef public void update_volume(self, float volume):
         self.volume = volume
 
+    #TODO
+    # @property
+    # cpdef inline double exposure(self):
+    #     return self.price * self.volume
+
     # @property
     # def side_sign(self):
     #     if self.side == OrderSide.BUY:

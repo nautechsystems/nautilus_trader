@@ -1,16 +1,17 @@
-cdef class L2Level:
-    cdef public list orders
-    cdef public dict order_index
+from nautilus_trader.model.orderbook.order cimport Order
 
-    cpdef void add(self, order)
-    cpdef void update(self, float volume)
-    cpdef void delete(self, float volume)
-    cpdef double volume(self)
+cdef class Level:
+    cdef readonly list orders
+    cdef dict order_index
 
-    @property
-    cdef inline double volume(self):
-        return sum([order.volume for order in self.orders])
-    #
+    cpdef void add(self, Order order)
+    cpdef void update(self, Order order)
+    cpdef void delete(self, Order order)
+
+    #TODO - make property?
+    cpdef public double volume(self)
+    cpdef public double price(self)
+
     # @property
     # cdef inline double exposure(self):
     #     return sum([order.exposure for order in self.orders])
