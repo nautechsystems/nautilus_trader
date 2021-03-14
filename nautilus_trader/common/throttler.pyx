@@ -37,6 +37,8 @@ cdef class Throttler:
     This throttler is not thread-safe and must be called from the same thread as
     the event loop.
 
+    The internal queue is unbounded and so a bounded queue should be upstream.
+
     """
 
     def __init__(
@@ -45,7 +47,6 @@ cdef class Throttler:
         int limit,
         timedelta interval not None,
         output not None: callable,
-        int maxsize,
         Clock clock not None,
         Logger logger not None,
     ):
@@ -62,8 +63,6 @@ cdef class Throttler:
             The interval setting for the throttling.
         output : callable
             The output handler from the throttler.
-        maxsize : int
-            The maximum capacity of the internal queue before blocking.
         clock : Clock
             The clock for the throttler.
         logger : Logger
@@ -85,7 +84,7 @@ cdef class Throttler:
 
         self._clock = clock
         self._log = LoggerAdapter(name, logger)
-        self._queue = Queue(maxsize=maxsize)
+        self._queue = Queue()
         self._limit = limit
         self._vouchers = limit
         self._token = name + "-REFRESH-TOKEN"
@@ -136,6 +135,8 @@ cdef class Throttler:
         if self._vouchers == 0 and not self._queue.empty():
             self.is_throttling = True
             self._log.debug("At limit.")
+        else:
+            self.is_throttling = False
 
     cpdef void _refresh_vouchers(self, TimeEvent event) except *:
         self._vouchers = self._limit
