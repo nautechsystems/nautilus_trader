@@ -22,6 +22,7 @@ Alternative implementations can be written on top of the generic engine.
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
+from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
@@ -240,7 +241,8 @@ cdef class RiskEngine(Component):
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef inline void _handle_event(self, Event event) except *:
-        pass
+        self._log.debug(f"{RECV}{EVT} {event}.")
+        self.event_count += 1
 
 # -- RISK MANAGEMENT -------------------------------------------------------------------------------
 
