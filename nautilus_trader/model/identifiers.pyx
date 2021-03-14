@@ -14,10 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
-from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 
 
 cdef str _NULL_ID = "NULL"
@@ -49,7 +45,7 @@ cdef class Identifier:
         self.value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return self._is_subclass(type(other)) and self.value == other.value
+        return isinstance(other, type(self)) and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
         return not self == other
@@ -75,15 +71,11 @@ cdef class Identifier:
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
 
-    cdef inline bint _is_subclass(self, type other) except *:
-        cdef type type_self = type(self)
-        return issubclass(other, type_self) or issubclass(type_self, other)
-
 
 cdef class Symbol(Identifier):
     """
     Represents a valid ticker symbol identifier for a financial market tradeable
-    security.
+    instrument.
 
     The identifier value must be unique for a trading venue.
     """
@@ -109,7 +101,7 @@ cdef class Symbol(Identifier):
 cdef class Venue(Identifier):
     """
     Represents a valid trading venue identifier for a financial market tradeable
-    security.
+    instrument.
 
     The identifier value must be unique at the fund level.
     """
@@ -132,137 +124,60 @@ cdef class Venue(Identifier):
         super().__init__(name)
 
 
-cdef class Exchange(Venue):
+cdef class InstrumentId(Identifier):
     """
-    Represents a valid exchange identifier which financial market securities are
-    traded on.
+    Represents a valid instrument identifier.
 
-    The identifier value must be unique at the fund level.
+    The symbol and venue combination should uniquely identify the instrument.
     """
 
-    def __init__(self, str name):
+    def __init__(self not None, Symbol symbol, Venue venue not None):
         """
-        Initialize a new instance of the `Exchange` class.
-
-        Parameters
-        ----------
-        name : str
-            The exchange name identifier value.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-
-        """
-        super().__init__(name)
-
-
-cdef class Security(Identifier):
-    """
-    Represents a valid financial market tradeable security identifier.
-
-    The symbol and venue combination should uniquely identify the security.
-
-    Warnings
-    --------
-    The specifying a security identifier requires care as all members must match
-    for two securities to be considered equal.
-
-    """
-
-    def __init__(
-        self,
-        Symbol symbol,
-        Venue venue not None,
-        AssetClass asset_class,
-        AssetType asset_type,
-    ):
-        """
-        Initialize a new instance of the `Security` class.
+        Initialize a new instance of the `InstrumentId` class.
 
         Parameters
         ----------
         symbol : Symbol
-            The securities ticker symbol.
+            The instruments ticker symbol.
         venue : Venue
-            The securities primary trading venue.
-        asset_class : AssetClass, optional
-            The securities asset class.
-        asset_type : AssetType, optional
-            The securities asset type.
-
-        Raises
-        ------
-        ValueError
-            If asset_class is UNDEFINED.
-        ValueError
-            If asset_type is UNDEFINED.
+            The instruments trading venue.
 
         """
-        Condition.not_equal(asset_class, AssetClass.UNDEFINED, "asset_class", "UNDEFINED")
-        Condition.not_equal(asset_type, AssetType.UNDEFINED, "asset_type", "UNDEFINED")
         super().__init__(f"{symbol.value}.{venue.value}")
 
         self.symbol = symbol
         self.venue = venue
-        self.asset_class = asset_class
-        self.asset_type = asset_type
-
-    def __eq__(self, Security other) -> bool:
-        return self.value == other.value \
-            and self.asset_class == other.asset_class \
-            and self.asset_type == other.asset_type
-
-    def __hash__(self) -> int:
-        return hash((self.value, self.asset_class, self.asset_type))
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}('"
-                f"{self.value},"
-                f"{AssetClassParser.to_str(self.asset_class)},"
-                f"{AssetTypeParser.to_str(self.asset_type)}')")
 
     @staticmethod
-    cdef Security from_serializable_str_c(str value):
+    cdef InstrumentId from_serializable_str_c(str value):
         Condition.valid_string(value, "value")
 
-        cdef list pieces = value.split(',', maxsplit=2)
+        cdef tuple pieces = value.partition('.')
 
         if len(pieces) != 3:
-            raise ValueError(f"The Security string value was malformed, was {value}")
+            raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        cdef tuple symbol_venue = pieces[0].partition('.')
-
-        if len(symbol_venue) != 3:
-            raise ValueError(f"The Security string value was malformed, was {value}")
-
-        return Security(
-            symbol=Symbol(symbol_venue[0]),
-            venue=Venue(symbol_venue[2]),
-            asset_class=AssetClassParser.from_str(pieces[1]),
-            asset_type=AssetTypeParser.from_str(pieces[2]),
-        )
+        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[2]))
 
     @staticmethod
-    def from_serializable_str(value: str) -> Security:
+    def from_serializable_str(value: str) -> InstrumentId:
         """
-        Return a security parsed from the given string value. Must be correctly
-        formatted including a single period and two commas.
+        Return an instrument identifier parsed from the given string value.
+        Must be correctly formatted including a single period.
 
-        Example: "AUD/USD.IDEALPRO,FX,SPOT".
+        Example: "AUD/USD.IDEALPRO".
 
         Parameters
         ----------
         value : str
-            The security identifier string value to parse.
+            The instrument identifier string value to parse.
 
         Returns
         -------
-        Security
+        InstrumentId
 
         """
-        return Security.from_serializable_str_c(value)
+        return InstrumentId.from_serializable_str_c(value)
 
     cpdef str to_serializable_str(self):
         """
@@ -273,128 +188,7 @@ cdef class Security(Identifier):
         str
 
         """
-        return f"{self.value},{AssetClassParser.to_str(self.asset_class)},{AssetTypeParser.to_str(self.asset_type)}"
-
-
-# cdef class FutureSecurity(Security):
-#     """
-#     Represents a futures contract security identifier.
-#     """
-#
-#     def __init__(
-#         self,
-#         str security,
-#         Venue venue not None,
-#         AssetType sec_type,
-#         str expiry not None='',
-#         str currency not None='',
-#         str multiplier not None='',
-#     ):
-#         """
-#         Initialize a new instance of the `Security` class.
-#
-#         Parameters
-#         ----------
-#         security : str
-#             The security security security.
-#         venue : Venue
-#             The securities venue.
-#
-#         Raises
-#         ------
-#         ValueError
-#             If security is not a valid string.
-#
-#         """
-#         # Condition.valid_string(security, "security") check in base class
-#         super().__init__(security, venue)
-#
-#         self.sec_type = sec_type
-#         self.expiry = expiry
-#         self.currency = currency
-#         self.multiplier = multiplier
-#
-#     def __eq__(self, Identifier other) -> bool:
-#         return self._is_subclass(type(other)) \
-#             and self.value == other.value \
-#             and self.sec_type == other.sec_type \
-#             and self.expiry == other.expiry \
-#             and self.currency == other.currency \
-#             and self.multiplier == other.multiplier
-#
-#     def __ne__(self, Identifier other) -> bool:
-#         return not self == other
-#
-#     def __hash__(self) -> int:
-#         return hash(
-#             (
-#                 type(self),
-#                 self.value,
-#                 self.sec_type,
-#                 self.expiry,
-#                 self.currency,
-#                 self.multiplier,
-#             ),
-#         )
-#
-#     @staticmethod
-#     cdef Security from_str_c(str value):
-#         Condition.valid_string(value, "value")
-#
-#         cdef list pieces = value.split(',', maxsplit=4)
-#
-#         if len(pieces) != 5:
-#             raise ValueError(f"The Security string value was malformed, was {value}")
-#
-#         cdef tuple pieces0 = pieces[0].partition('.')
-#
-#         if len(pieces0) != 3:
-#             raise ValueError(f"The Security string value was malformed, was {value}")
-#
-#         return Security(
-#             security=pieces0[0],
-#             venue=Venue(pieces0[2]),
-#             sec_type=AssetTypeParser.from_str(pieces[1]),
-#             expiry=pieces[2],
-#             currency=pieces[3],
-#             multiplier=pieces[4]
-#         )
-#
-#     @staticmethod
-#     def from_str(value: str) -> Security:
-#         """
-#         Return a security parsed from the given string value. Must be correctly
-#         formatted with two valid strings either side of a period and then four
-#         commas.
-#
-#         Example: "DAX.DTB,FUTURE,201609,EUR,5".
-#
-#         Parameters
-#         ----------
-#         value : str
-#             The security string value to parse.
-#
-#         Returns
-#         -------
-#         Security
-#
-#         """
-#         return Security.from_str_c(value)
-#
-#     cpdef str to_serializable_str(self):
-#         """
-#         Return a serializable string representation of this object.
-#
-#         Returns
-#         -------
-#         str
-#
-#         """
-#         return (f"{self.value},"
-#                 f"{AssetTypeParser.to_str(self.sec_type)},"
-#                 f"{self.expiry},"
-#                 f"{self.currency},"
-#                 f"{self.multiplier}")
+        return self.value
 
 
 cdef class IdTag(Identifier):
@@ -475,7 +269,7 @@ cdef class TraderId(Identifier):
         Return a trader identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
 
-        Its is expected a trader identifier  is the abbreviated name of the
+        It is expected a trader identifier is the abbreviated name of the
         trader with an order identifier tag number separated by a hyphen.
 
         Example: "TESTER-001".
@@ -557,7 +351,7 @@ cdef class StrategyId(Identifier):
 
         Must be correctly formatted with two valid strings either side of a hyphen.
         Is is expected a strategy identifier is the class name of the strategy with
-        an order_id tag number separated by a hyphen.
+        an order identifier tag number separated by a hyphen.
 
         Example: "EMACross-001".
 

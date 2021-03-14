@@ -28,8 +28,8 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -137,7 +137,7 @@ cdef class OrderInitialized(OrderEvent):
         self,
         ClientOrderId cl_ord_id not None,
         StrategyId strategy_id not None,
-        Security security not None,
+        InstrumentId instrument_id not None,
         OrderSide order_side,
         OrderType order_type,
         Quantity quantity not None,
@@ -155,8 +155,8 @@ cdef class OrderInitialized(OrderEvent):
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        security : Security
-            The order security identifier.
+        instrument_id : InstrumentId
+            The order instrument identifier.
         order_side : OrderSide (Enum)
             The order side.
         order_type : OrderType (Enum)
@@ -195,7 +195,7 @@ cdef class OrderInitialized(OrderEvent):
 
         self.cl_ord_id = cl_ord_id
         self.strategy_id = strategy_id
-        self.security = security
+        self.instrument_id = instrument_id
         self.order_side = order_side
         self.order_type = order_type
         self.quantity = quantity
@@ -779,7 +779,7 @@ cdef class OrderFilled(OrderEvent):
         ExecutionId execution_id not None,
         PositionId position_id not None,
         StrategyId strategy_id not None,
-        Security security not None,
+        InstrumentId instrument_id not None,
         OrderSide order_side,
         Quantity fill_qty not None,
         Quantity cum_qty not None,
@@ -811,8 +811,8 @@ cdef class OrderFilled(OrderEvent):
             The position identifier associated with the order.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        security : Security
-            The security identifier.
+        instrument_id : InstrumentId
+            The instrument identifier.
         order_side : OrderSide (Enum)
             The execution order side.
         fill_qty : Quantity
@@ -856,7 +856,7 @@ cdef class OrderFilled(OrderEvent):
         self.execution_id = execution_id
         self.position_id = position_id
         self.strategy_id = strategy_id
-        self.security = security
+        self.instrument_id = instrument_id
         self.order_side = order_side
         self.fill_qty = fill_qty
         self.cum_qty = cum_qty
@@ -876,7 +876,7 @@ cdef class OrderFilled(OrderEvent):
                 f"order_id={self.order_id}, "
                 f"position_id={self.position_id}, "
                 f"strategy_id={self.strategy_id}, "
-                f"security={self.security}, "
+                f"instrument_id={self.instrument_id}, "
                 f"side={OrderSideParser.to_str(self.order_side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"fill_qty={self.fill_qty.to_str()}, "
@@ -917,6 +917,7 @@ cdef class PositionEvent(Event):
 
         """
         super().__init__(event_id, event_timestamp)
+
         self.position = position
         self.order_fill = order_fill
 
@@ -948,7 +949,7 @@ cdef class PositionOpened(PositionEvent):
             The event timestamp.
 
         """
-        assert position.is_open_c()
+        assert position.is_open_c()  # Design-time check
         super().__init__(
             position,
             order_fill,
@@ -999,7 +1000,7 @@ cdef class PositionChanged(PositionEvent):
             If position is not open.
 
         """
-        assert position.is_open_c()
+        assert position.is_open_c()  # Design-time check
         super().__init__(
             position,
             order_fill,
@@ -1053,7 +1054,7 @@ cdef class PositionClosed(PositionEvent):
             If position is not closed.
 
         """
-        assert position.is_closed_c()
+        assert position.is_closed_c()  # Design-time check
         super().__init__(
             position,
             order_fill,

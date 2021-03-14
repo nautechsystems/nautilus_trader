@@ -77,7 +77,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = SimpleMovingAverage(10, PriceType.MID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -90,7 +90,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = SimpleMovingAverage(10)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_trade_tick(tick)
@@ -146,7 +146,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
         sma_for_ticks2 = SimpleMovingAverage(10, PriceType.MID)
         sma_for_ticks3 = SimpleMovingAverage(10, PriceType.BID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         sma_for_ticks1.handle_quote_tick(tick)
@@ -165,7 +165,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Arrange
         sma_for_ticks = SimpleMovingAverage(10)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         sma_for_ticks.handle_trade_tick(tick)

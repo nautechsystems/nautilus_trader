@@ -18,15 +18,15 @@ from decimal import Decimal
 
 import ccxt
 
-from nautilus_trader.live.providers cimport InstrumentProvider
+from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Exchange
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -50,8 +50,15 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             If all instruments should be loaded at instantiation.
 
         """
-        self._client = client  # Assign first as `load_all` will call it
-        super().__init__(venue=Exchange(client.name.upper()), load_all=load_all)
+        super().__init__()
+
+        self._client = client
+        self._currencies = {}  # type: dict[str, Currency]
+
+        self.venue = Venue(client.name.upper())
+
+        if load_all:
+            self.load_all()
 
     async def load_all_async(self):
         """
@@ -69,19 +76,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         self._load_currencies()
         self._load_instruments()
 
-    cpdef dict get_all(self):
-        """
-        Return all loaded instruments.
-
-        If no instruments loaded, will return an empty dict.
-
-        Returns
-        -------
-        dict[Security, Instrument]
-
-        """
-        return self._instruments.copy()
-
     cpdef Currency currency(self, str code):
         """
         Return the currency with the given code (if found).
@@ -98,30 +92,18 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         """
         return self._currencies.get(code)
 
-    cdef Instrument get_c(self, Symbol symbol):
-        # Provides fast C level access assuming the venue is correct
-        return self._instruments.get(symbol)
-
     cdef void _load_instruments(self) except *:
         cdef str k
         cdef dict v
-        cdef Security security
+        cdef InstrumentId instrument_id
         cdef Instrument instrument
         for k, v in self._client.markets.items():
-            asset_type_str = v.get("type")
-            if asset_type_str is not None:
-                asset_type = AssetTypeParser.from_str(asset_type_str.upper())
-            else:
-                asset_type = AssetType.UNDEFINED
-
-            security = Security(Symbol(k), self.venue, AssetClass.CRYPTO, asset_type)
-            instrument = self._parse_instrument(security, v)
+            instrument_id = InstrumentId(Symbol(k), self.venue)
+            instrument = self._parse_instrument(instrument_id, v)
             if instrument is None:
                 continue  # Something went wrong in parsing
 
-            self._instruments[security.symbol] = instrument
-
-        self.count = len(self._instruments)
+            self._instruments[instrument_id] = instrument
 
     cdef void _load_currencies(self) except *:
         cdef int precision_mode = self._client.precisionMode
@@ -157,7 +139,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
     cdef inline CurrencyType _parse_currency_type(self, str code):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
-    cdef Instrument _parse_instrument(self, Security security, dict values):
+    cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):
         # Precisions
         cdef dict precisions = values["precision"]
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
@@ -175,6 +157,12 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             raise RuntimeError(f"The {self._client.name} exchange is using "
                                f"SIGNIFICANT_DIGITS precision which is not "
                                f"currently supported in this version.")
+
+        cdef str asset_type_str = values.get("type")
+        if asset_type_str is not None:
+            asset_type = AssetTypeParser.from_str(asset_type_str.upper())
+        else:
+            asset_type = AssetType.UNDEFINED
 
         base_currency = values.get("base")
         if base_currency is not None:
@@ -235,7 +223,9 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
 
         return Instrument(
-            security=security,
+            instrument_id=instrument_id,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=asset_type,
             base_currency=base_currency,
             quote_currency=quote_currency,
             settlement_currency=quote_currency,

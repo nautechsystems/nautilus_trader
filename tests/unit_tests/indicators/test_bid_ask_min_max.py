@@ -18,9 +18,7 @@ import pytz
 
 from nautilus_trader.indicators.bid_ask_min_max import BidAskMinMax
 from nautilus_trader.indicators.bid_ask_min_max import WindowedMinMaxPrices
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -29,11 +27,11 @@ from nautilus_trader.model.tick import QuoteTick
 
 
 class BidAskMinMaxTests(unittest.TestCase):
-    security = Security(Symbol("SPY"), Venue("NYSE"), AssetClass.STOCK, AssetType.SPOT)
+    instrument_id = InstrumentId(Symbol("SPY"), Venue("NYSE"))
 
     def test_instantiate(self):
         # Arrange
-        indicator = BidAskMinMax(self.security, timedelta(minutes=5))
+        indicator = BidAskMinMax(self.instrument_id, timedelta(minutes=5))
 
         # Act
         # Assert
@@ -45,12 +43,12 @@ class BidAskMinMaxTests(unittest.TestCase):
 
     def test_handle_quote_tick(self):
         # Arrange
-        indicator = BidAskMinMax(self.security, timedelta(minutes=5))
+        indicator = BidAskMinMax(self.instrument_id, timedelta(minutes=5))
 
         # Act
         indicator.handle_quote_tick(
             QuoteTick(
-                self.security,
+                self.instrument_id,
                 Price("1.0"),
                 Price("2.0"),
                 Quantity(1),
@@ -61,7 +59,7 @@ class BidAskMinMaxTests(unittest.TestCase):
         # 5 min later (still in the window)
         indicator.handle_quote_tick(
             QuoteTick(
-                self.security,
+                self.instrument_id,
                 Price("0.9"),
                 Price("2.1"),
                 Quantity(1),
@@ -78,11 +76,11 @@ class BidAskMinMaxTests(unittest.TestCase):
 
     def test_reset(self):
         # Arrange
-        indicator = BidAskMinMax(self.security, timedelta(minutes=5))
+        indicator = BidAskMinMax(self.instrument_id, timedelta(minutes=5))
 
         indicator.handle_quote_tick(
             QuoteTick(
-                self.security,
+                self.instrument_id,
                 Price("0.9"),
                 Price("2.1"),
                 Quantity(1),

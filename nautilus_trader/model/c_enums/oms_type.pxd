@@ -17,7 +17,7 @@
 cpdef enum OMSType:
     UNDEFINED = 0,  # Invalid value
     NETTING = 1,
-    HEDGING = 2
+    HEDGING = 2,
 
 
 cdef class OMSTypeParser:

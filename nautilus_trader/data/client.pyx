@@ -29,13 +29,12 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
@@ -127,21 +126,21 @@ cdef class DataClient:
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    def _handle_data_py(self, DataType data_type, data):
-        self._engine.process(Data(data_type, data))
+    def _handle_data_py(self, GenericData data):
+        self._handle_data(data)
 
-    def _handle_data_response_py(self, DataType data_type, data, UUID correlation_id):
-        self._handle_data_response(data_type, data, correlation_id)
+    def _handle_data_response_py(self, GenericData data, UUID correlation_id):
+        self._handle_data_response(data, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, DataType data_type, data) except *:
-        self._engine.process(Data(data_type, data))
+    cdef void _handle_data(self, GenericData data) except *:
+        self._engine.process(data)
 
-    cdef void _handle_data_response(self, DataType data_type, data, UUID correlation_id) except *:
+    cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             provider=self.name,
-            data_type=data_type,
+            data_type=data.data_type,
             data=data,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -229,19 +228,19 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument(self, Security security) except *:
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, Security security, int level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, int level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_quote_ticks(self, Security security) except *:
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_trade_ticks(self, Security security) except *:
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -249,19 +248,19 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument(self, Security security) except *:
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book(self, Security security) except *:
+    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_quote_ticks(self, Security security) except *:
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_trade_ticks(self, Security security) except *:
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -275,7 +274,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void request_instrument(self, Security security, UUID correlation_id) except *:
+    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -285,7 +284,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void request_quote_ticks(
         self,
-        Security security,
+        InstrumentId instrument_id,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -296,7 +295,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void request_trade_ticks(
         self,
-        Security security,
+        InstrumentId instrument_id,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
@@ -336,11 +335,11 @@ cdef class MarketDataClient(DataClient):
     def _handle_instruments_py(self, list instruments, UUID correlation_id):
         self._handle_instruments(instruments, correlation_id)
 
-    def _handle_quote_ticks_py(self, Security security, list ticks, UUID correlation_id):
-        self._handle_quote_ticks(security, ticks, correlation_id)
+    def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id):
+        self._handle_quote_ticks(instrument_id, ticks, correlation_id)
 
-    def _handle_trade_ticks_py(self, Security security, list ticks, UUID correlation_id):
-        self._handle_trade_ticks(security, ticks, correlation_id)
+    def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id):
+        self._handle_trade_ticks(instrument_id, ticks, correlation_id)
 
     def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
         self._handle_bars(bar_type, bars, partial, correlation_id)
@@ -374,10 +373,10 @@ cdef class MarketDataClient(DataClient):
 
         self._engine.receive(response)
 
-    cdef void _handle_quote_ticks(self, Security security, list ticks, UUID correlation_id) except *:
+    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             provider=self.name,
-            data_type=DataType(QuoteTick, metadata={SECURITY: security}),
+            data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -386,10 +385,10 @@ cdef class MarketDataClient(DataClient):
 
         self._engine.receive(response)
 
-    cdef void _handle_trade_ticks(self, Security security, list ticks, UUID correlation_id) except *:
+    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             provider=self.name,
-            data_type=DataType(TradeTick, metadata={SECURITY: security}),
+            data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

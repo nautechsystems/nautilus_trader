@@ -92,9 +92,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_subscribe_instrument(self):
         # Arrange
         # Act
-        self.client.subscribe_instrument(USDJPY_SIM.security)
+        self.client.subscribe_instrument(USDJPY_SIM.id)
         self.client.connect()
-        self.client.subscribe_instrument(USDJPY_SIM.security)
+        self.client.subscribe_instrument(USDJPY_SIM.id)
 
         # Assert
         self.assertTrue(True)
@@ -102,9 +102,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_subscribe_quote_ticks(self):
         # Arrange
         # Act
-        self.client.subscribe_quote_ticks(USDJPY_SIM.security)
+        self.client.subscribe_quote_ticks(USDJPY_SIM.id)
         self.client.connect()
-        self.client.subscribe_quote_ticks(USDJPY_SIM.security)
+        self.client.subscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
         self.assertTrue(True)
@@ -112,9 +112,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_subscribe_trade_ticks(self):
         # Arrange
         # Act
-        self.client.subscribe_trade_ticks(USDJPY_SIM.security)
+        self.client.subscribe_trade_ticks(USDJPY_SIM.id)
         self.client.connect()
-        self.client.subscribe_trade_ticks(USDJPY_SIM.security)
+        self.client.subscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
         self.assertTrue(True)
@@ -132,9 +132,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_unsubscribe_instrument(self):
         # Arrange
         # Act
-        self.client.unsubscribe_instrument(USDJPY_SIM.security)
+        self.client.unsubscribe_instrument(USDJPY_SIM.id)
         self.client.connect()
-        self.client.unsubscribe_instrument(USDJPY_SIM.security)
+        self.client.unsubscribe_instrument(USDJPY_SIM.id)
 
         # Assert
         self.assertTrue(True)
@@ -142,9 +142,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_unsubscribe_quote_ticks(self):
         # Arrange
         # Act
-        self.client.unsubscribe_quote_ticks(USDJPY_SIM.security)
+        self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
         self.client.connect()
-        self.client.unsubscribe_quote_ticks(USDJPY_SIM.security)
+        self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
         self.assertTrue(True)
@@ -152,9 +152,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_unsubscribe_trade_ticks(self):
         # Arrange
         # Act
-        self.client.unsubscribe_trade_ticks(USDJPY_SIM.security)
+        self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
         self.client.connect()
-        self.client.unsubscribe_trade_ticks(USDJPY_SIM.security)
+        self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
         self.assertTrue(True)
@@ -172,9 +172,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_request_instrument(self):
         # Arrange
         # Act
-        self.client.request_instrument(USDJPY_SIM.security, uuid4())
+        self.client.request_instrument(USDJPY_SIM.id, uuid4())
         self.client.connect()
-        self.client.request_instrument(USDJPY_SIM.security, uuid4())
+        self.client.request_instrument(USDJPY_SIM.id, uuid4())
 
         # Assert
         self.assertTrue(True)
@@ -192,9 +192,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_request_quote_ticks(self):
         # Arrange
         # Act
-        self.client.request_quote_ticks(USDJPY_SIM.security, None, None, 0, uuid4())
+        self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
         self.client.connect()
-        self.client.request_quote_ticks(USDJPY_SIM.security, None, None, 0, uuid4())
+        self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
         self.assertTrue(True)
@@ -202,9 +202,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_request_trade_ticks(self):
         # Arrange
         # Act
-        self.client.request_trade_ticks(USDJPY_SIM.security, None, None, 0, uuid4())
+        self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
         self.client.connect()
-        self.client.request_trade_ticks(USDJPY_SIM.security, None, None, 0, uuid4())
+        self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
         self.assertTrue(True)

@@ -23,11 +23,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative im
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
@@ -60,6 +58,8 @@ config = {
         "port": 6379,
     },
 
+    "risk": {},
+
     "strategy": {
         "load_state": True,  # Strategy state is loaded from the database on start
         "save_state": True,  # Strategy state is saved to the database on shutdown
@@ -80,15 +80,13 @@ config = {
 # custom options into the configuration file or even use another configuration
 # file.
 
-security1 = Security(
+instrument1 = InstrumentId(
     symbol=Symbol("AUD/USD"),
     venue=Venue("OANDA"),
-    asset_class=AssetClass.FX,
-    asset_type=AssetType.SPOT,
 )
 
 strategy1 = EMACross(
-    security=security1,
+    instrument_id=instrument1,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,
@@ -98,15 +96,13 @@ strategy1 = EMACross(
 
 # ------------------------------------------------------------------------------
 
-security2 = Security(
+instrument2 = InstrumentId(
     symbol=Symbol("EUR/USD"),
     venue=Venue("OANDA"),
-    asset_class=AssetClass.FX,
-    asset_type=AssetType.SPOT,
 )
 
 strategy2 = EMACross(
-    security=security2,
+    instrument_id=instrument2,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,
@@ -116,15 +112,13 @@ strategy2 = EMACross(
 
 # ------------------------------------------------------------------------------
 
-security3 = Security(
+instrument3 = InstrumentId(
     symbol=Symbol("GBP/USD"),
     venue=Venue("OANDA"),
-    asset_class=AssetClass.FX,
-    asset_type=AssetType.SPOT,
 )
 
 strategy3 = EMACross(
-    security=security3,
+    instrument_id=instrument3,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema_period=10,
     slow_ema_period=20,

@@ -29,7 +29,7 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD = TestStubs.security_audusd()
+AUDUSD = TestStubs.audusd_id()
 
 
 class SerializationPerformanceTests(unittest.TestCase):

@@ -45,8 +45,8 @@ cdef class RateOfChange(Indicator):
 
         """
         Condition.true(period > 1, "period was <= 1")
-
         super().__init__(params=[period])
+
         self.period = period
         self._use_log = use_log
         self._prices = deque(maxlen=period)

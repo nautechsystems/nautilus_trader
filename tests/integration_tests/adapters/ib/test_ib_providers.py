@@ -15,50 +15,51 @@
 
 from decimal import Decimal
 import pickle
-import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
-from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Exchange
-
-#from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from tests import TESTS_PACKAGE_ROOT
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
-class IBInstrumentProviderTests(unittest.TestCase):
+class TestIBInstrumentProvider:
 
-    pass
-    # def test_load_futures_contract_instrument(self):
-    #     # Arrange
-    #     mock_client = MagicMock()
-    #
-    #     with open(TEST_PATH + "contract_details_cl.pickle", "rb") as file:
-    #         details = pickle.load(file)
-    #
-    #     print(details)
-    #     mock_client.reqContractDetails.return_value = [details]
-    #
-    #     provider = IBInstrumentProvider(client=mock_client)
-    #     provider.connect()
-    #
-    #     security = Security(
-    #         security=Symbol("CL"),
-    #         venue=Exchange("NYMEX"),
-    #         sec_type=AssetType.FUTURE,
-    #         multiplier="1000",
-    #         expiry="20211119",
-    #         currency="USD",
-    #     )
-    #
-    #     # Act
-    #     future = provider.load_future(security)
-    #
-    #     # Assert
-    #     self.assertEqual(security, future.security)
-    #     self.assertEqual(1000, future.multiplier)
-    #     self.assertEqual(Decimal("0.01"), future.tick_size)
-    #     self.assertEqual(2, future.price_precision)
-    #     # TODO: Test all properties
+    def test_load_futures_contract_instrument(self):
+        # Arrange
+        mock_client = MagicMock()
+
+        with open(TEST_PATH + "contract_details_cl.pickle", "rb") as file:
+            details = pickle.load(file)
+
+        print(details)
+        mock_client.reqContractDetails.return_value = [details]
+
+        provider = IBInstrumentProvider(client=mock_client)
+        provider.connect()
+
+        instrument_id = InstrumentId(
+            symbol=Symbol("CL"),
+            venue=Venue("NYMEX"),
+        )
+
+        details = {
+            "asset_class": "COMMODITY",
+            "expiry": "20211119",
+            "currency": "USD",
+            "multiplier": 1000,
+        }
+
+        # Act
+        provider.load(instrument_id, details)
+        future = provider.find(instrument_id)
+
+        # Assert
+        assert instrument_id == future.id
+        assert 1000, future.multiplier
+        assert Decimal("0.01") == future.tick_size
+        assert 2, future.price_precision
+        # TODO: Test all properties

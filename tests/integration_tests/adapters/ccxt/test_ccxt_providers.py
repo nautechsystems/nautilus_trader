@@ -24,9 +24,9 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
-from nautilus_trader.model.identifiers import Exchange
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from tests import TESTS_PACKAGE_ROOT
 
@@ -50,6 +50,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     # Uncomment to test real API
     # def test_real_api(self):
+    #     import ccxt
     #     client = ccxt.binance()
     #     provider = CCXTInstrumentProvider(client=client)
     #
@@ -171,7 +172,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         # Assert
         self.assertTrue(len(instruments) > 0)
         self.assertEqual(dict, type(instruments))
-        self.assertEqual(Symbol, type(next(iter(instruments))))
+        self.assertEqual(InstrumentId, type(next(iter(instruments))))
 
     def test_get_all_when_load_all_is_true_returns_expected_instruments(self):
         # Arrange
@@ -195,7 +196,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         # Assert
         self.assertTrue(len(instruments) > 0)
         self.assertEqual(dict, type(instruments))
-        self.assertEqual(Symbol, type(next(iter(instruments))))
+        self.assertEqual(InstrumentId, type(next(iter(instruments))))
 
     def test_get_btcusdt_when_not_loaded_returns_none(self):
         # Arrange
@@ -204,10 +205,10 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
         provider = CCXTInstrumentProvider(client=mock_client)
 
-        security = Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
         # Act
-        instrument = provider.get(security)
+        instrument = provider.find(instrument_id)
 
         # Assert
         self.assertIsNone(instrument)
@@ -229,15 +230,15 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         provider = CCXTInstrumentProvider(client=mock_client)
         provider.load_all()
 
-        security = Security(Symbol("BTC/USDT"), Exchange("BINANCE"), AssetClass.CRYPTO, AssetType.SPOT)
+        instrument_id = InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
         # Act
-        instrument = provider.get(security)
+        instrument = provider.find(instrument_id)
 
         # Assert
         self.assertEqual(Instrument, type(instrument))
-        self.assertEqual(AssetClass.CRYPTO, instrument.security.asset_class)
-        self.assertEqual(AssetType.SPOT, instrument.security.asset_type)
+        self.assertEqual(AssetClass.CRYPTO, instrument.asset_class)
+        self.assertEqual(AssetType.SPOT, instrument.asset_type)
         self.assertEqual(BTC, instrument.base_currency)
         self.assertEqual(USDT, instrument.quote_currency)
         self.assertEqual(USDT, instrument.settlement_currency)

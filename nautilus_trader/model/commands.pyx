@@ -98,10 +98,10 @@ cdef class SubmitOrder(TradingCommand):
         Raises
         ------
         ValueError
-            If venue is not equal to order.security.venue.
+            If venue is not equal to order.venue.
 
         """
-        Condition.equal(venue, order.security.venue, "venue", "order.security.venue")
+        Condition.equal(venue, order.venue, "venue", "order.venue")
         super().__init__(venue, command_id, command_timestamp)
 
         self.trader_id = trader_id
@@ -119,7 +119,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"cl_ord_id={self.order.cl_ord_id.value}, "
                 f"{position_id_str}"
                 f"strategy_id={self.strategy_id.value}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")
 
 
 cdef class SubmitBracketOrder(TradingCommand):
@@ -160,10 +160,10 @@ cdef class SubmitBracketOrder(TradingCommand):
         Raises
         ------
         ValueError
-            If venue is not equal to order.security.venue.
+            If venue is not equal to order.venue.
 
         """
-        Condition.equal(venue, bracket_order.entry.security.venue, "venue", "bracket_order.entry.security.venue")
+        Condition.equal(venue, bracket_order.entry.venue, "venue", "bracket_order.entry.venue")
         super().__init__(venue, command_id, command_timestamp)
 
         self.trader_id = trader_id
@@ -178,7 +178,7 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
                 f"entry_cl_ord_id={self.bracket_order.entry.cl_ord_id.value}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")
 
 
 cdef class AmendOrder(TradingCommand):
@@ -241,7 +241,7 @@ cdef class AmendOrder(TradingCommand):
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")
 
 
 cdef class CancelOrder(TradingCommand):
@@ -294,4 +294,4 @@ cdef class CancelOrder(TradingCommand):
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"order_id={self.order_id.value}, "
-                f"cmd_id={self.id})")
+                f"command_id={self.id})")

@@ -20,7 +20,7 @@ cpdef enum TimeInForce:
     GTC = 2,
     IOC = 3,
     FOK = 4,
-    GTD = 5
+    GTD = 5,
 
 
 cdef class TimeInForceParser:

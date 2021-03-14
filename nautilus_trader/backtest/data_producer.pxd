@@ -19,15 +19,15 @@ from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class DataProducerFacade:
     cpdef void setup(self, datetime start, datetime stop) except *
     cpdef void reset(self) except *
-    cpdef Tick next_tick(self)
+    cpdef Data next(self)
 
 
 cdef class BacktestDataProducer(DataProducerFacade):
@@ -37,10 +37,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef BacktestDataContainer _data
     cdef object _quote_tick_data
     cdef object _trade_tick_data
-    cdef dict _security_index
+    cdef dict _instrument_index
     cdef bint _is_connected
 
-    cdef unsigned short[:] _quote_securities
+    cdef unsigned short[:] _quote_instruments
     cdef str[:] _quote_bids
     cdef str[:] _quote_asks
     cdef str[:] _quote_bid_sizes
@@ -50,7 +50,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef int _quote_index_last
     cdef QuoteTick _next_quote_tick
 
-    cdef unsigned short[:] _trade_securities
+    cdef unsigned short[:] _trade_instruments
     cdef str[:] _trade_prices
     cdef str[:] _trade_sizes
     cdef str[:] _trade_match_ids
@@ -63,13 +63,13 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
     cdef readonly datetime max_timestamp
-    cdef readonly bint has_tick_data
+    cdef readonly bint has_data
 
     cpdef LoggerAdapter get_logger(self)
     cpdef void setup(self, datetime start, datetime stop) except *
     cpdef void reset(self) except *
     cpdef void clear(self) except *
-    cpdef Tick next_tick(self)
+    cpdef Data next(self)
 
     cdef inline QuoteTick _generate_quote_tick(self, int index)
     cdef inline TradeTick _generate_trade_tick(self, int index)
@@ -80,7 +80,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 cdef class CachedProducer(DataProducerFacade):
     cdef BacktestDataProducer _producer
     cdef LoggerAdapter _log
-    cdef list _tick_cache
+    cdef list _data_cache
     cdef list _ts_cache
     cdef int _tick_index
     cdef int _tick_index_last
@@ -90,9 +90,9 @@ cdef class CachedProducer(DataProducerFacade):
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
     cdef readonly datetime max_timestamp
-    cdef readonly bint has_tick_data
+    cdef readonly bint has_data
 
     cpdef void setup(self, datetime start, datetime stop) except *
     cpdef void reset(self) except *
-    cpdef Tick next_tick(self)
-    cdef void _create_tick_cache(self) except *
+    cpdef Data next(self)
+    cdef void _create_data_cache(self) except *

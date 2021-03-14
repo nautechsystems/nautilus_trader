@@ -45,9 +45,9 @@ from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -61,6 +61,7 @@ from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
@@ -145,29 +146,29 @@ cdef class SimulatedExchange:
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
 
-        # Security indexer for order_ids
-        self._security_indexer = {}  # type: dict[Security, int]
+        # InstrumentId indexer for order_ids
+        self._instrument_indexer = {}  # type: dict[InstrumentId, int]
 
         # Load instruments
         self.instruments = {}
         for instrument in instruments:
-            Condition.equal(instrument.security.venue, self.id, "instrument.security.venue", "self.id")
-            self.instruments[instrument.security] = instrument
-            index = len(self._security_indexer) + 1
-            self._security_indexer[instrument.security] = index
-            self._log.info(f"Loaded instrument {instrument.security.value}.")
+            Condition.equal(instrument.venue, self.id, "instrument.venue", "self.id")
+            self.instruments[instrument.id] = instrument
+            index = len(self._instrument_indexer) + 1
+            self._instrument_indexer[instrument.id] = index
+            self._log.info(f"Loaded instrument {instrument.id.value}.")
 
         self._slippages = self._get_tick_sizes()
-        self._market_bids = {}          # type: dict[Security, Price]
-        self._market_asks = {}          # type: dict[Security, Price]
+        self._market_bids = {}          # type: dict[InstrumentId, Price]
+        self._market_asks = {}          # type: dict[InstrumentId, Price]
 
         self._working_orders = {}       # type: dict[ClientOrderId, Order]
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
         self._child_orders = {}         # type: dict[ClientOrderId, list[Order]]
         self._oco_orders = {}           # type: dict[ClientOrderId, ClientOrderId]
         self._position_oco_orders = {}  # type: dict[PositionId, list[ClientOrderId]]
-        self._symbol_pos_count = {}     # type: dict[Security, int]
-        self._symbol_ord_count = {}     # type: dict[Security, int]
+        self._symbol_pos_count = {}     # type: dict[InstrumentId, int]
+        self._symbol_ord_count = {}     # type: dict[InstrumentId, int]
         self._executions_count = 0
 
     def __repr__(self) -> str:
@@ -232,14 +233,14 @@ cdef class SimulatedExchange:
         Parameters
         ----------
         tick : Tick
-            The tick data to process with (`QuoteTick` or `TradeTick`).
+            The tick to process.
 
         """
         Condition.not_none(tick, "tick")
 
         self._clock.set_time(tick.timestamp)
 
-        cdef Security security = tick.security
+        cdef InstrumentId instrument_id = tick.instrument_id
 
         # Update market bid and ask
         cdef Price bid
@@ -247,27 +248,29 @@ cdef class SimulatedExchange:
         if isinstance(tick, QuoteTick):
             bid = tick.bid
             ask = tick.ask
-            self._market_bids[security] = bid
-            self._market_asks[security] = ask
-        else:  # TradeTick
+            self._market_bids[instrument_id] = bid
+            self._market_asks[instrument_id] = ask
+        elif isinstance(tick, TradeTick):
             if tick.side == OrderSide.SELL:  # TAKER hit the bid
                 bid = tick.price
-                ask = self._market_asks.get(security)
+                ask = self._market_asks.get(instrument_id)
                 if ask is None:
                     ask = bid  # Initialize ask
-                self._market_bids[security] = bid
+                self._market_bids[instrument_id] = bid
             elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
                 ask = tick.price
-                bid = self._market_bids.get(security)
+                bid = self._market_bids.get(instrument_id)
                 if bid is None:
                     bid = ask  # Initialize bid
-                self._market_asks[security] = ask
+                self._market_asks[instrument_id] = ask
             # tick.side must be BUY or SELL (condition checked in TradeTick)
+        else:
+            raise RuntimeError("not market data")  # Design-time error
 
         cdef PassiveOrder order
         for order in self._working_orders.copy().values():  # Copy dict for safe loop
-            if order.security != tick.security:
-                continue  # Order is for a different security
+            if order.instrument_id != tick.instrument_id:
+                continue  # Order is for a different instrument_id
             if not order.is_working_c():
                 continue  # Orders state has changed since the loop started
 
@@ -289,6 +292,10 @@ cdef class SimulatedExchange:
             The time to advance to.
 
         """
+        Condition.not_none(now, "now")
+
+        self._clock.set_time(now)
+
         # Iterate through modules
         cdef SimulationModule module
         for module in self.modules:
@@ -352,7 +359,7 @@ cdef class SimulatedExchange:
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         Condition.not_none(command, "command")
 
-        cdef PositionId position_id = self._generate_position_id(command.bracket_order.entry.security)
+        cdef PositionId position_id = self._generate_position_id(command.bracket_order.entry.instrument_id)
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
         self._position_oco_orders[position_id] = []
@@ -396,15 +403,15 @@ cdef class SimulatedExchange:
         # Generate and handle event
         self.exec_client.handle_event(self._generate_account_event())
 
-    cdef inline Price get_current_bid(self, Security security):
-        Condition.not_none(security, "security")
+    cdef inline Price get_current_bid(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
 
-        return self._market_bids.get(security)
+        return self._market_bids.get(instrument_id)
 
-    cdef inline Price get_current_ask(self, Security security):
-        Condition.not_none(security, "security")
+    cdef inline Price get_current_ask(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
 
-        return self._market_asks.get(security)
+        return self._market_asks.get(instrument_id)
 
     cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type):
         Condition.not_none(from_currency, "from_currency")
@@ -420,37 +427,37 @@ cdef class SimulatedExchange:
         )
 
     cdef inline dict _build_current_bid_rates(self):
-        cdef Security security
+        cdef InstrumentId instrument_id
         cdef QuoteTick tick
-        return {security.symbol.value: price.as_decimal() for security, price in self._market_bids.items()}
+        return {instrument_id.symbol.value: price.as_decimal() for instrument_id, price in self._market_bids.items()}
 
     cdef inline dict _build_current_ask_rates(self):
-        cdef Security security
+        cdef InstrumentId instrument_id
         cdef QuoteTick tick
-        return {security.symbol.value: price.as_decimal() for security, price in self._market_asks.items()}
+        return {instrument_id.symbol.value: price.as_decimal() for instrument_id, price in self._market_asks.items()}
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline object _get_tick_sizes(self):
-        cdef dict slippage_index = {}  # type: dict[Security, Decimal]
+        cdef dict slippage_index = {}  # type: dict[InstrumentId, Decimal]
 
-        for security, instrument in self.instruments.items():
+        for instrument_id, instrument in self.instruments.items():
             # noinspection PyUnresolvedReferences
-            slippage_index[security] = instrument.tick_size
+            slippage_index[instrument_id] = instrument.tick_size
 
         return slippage_index
 
-    cdef inline PositionId _generate_position_id(self, Security security):
-        cdef int pos_count = self._symbol_pos_count.get(security, 0)
+    cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id):
+        cdef int pos_count = self._symbol_pos_count.get(instrument_id, 0)
         pos_count += 1
-        self._symbol_pos_count[security] = pos_count
-        return PositionId(f"{self._security_indexer[security]}-{pos_count:03d}")
+        self._symbol_pos_count[instrument_id] = pos_count
+        return PositionId(f"{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
 
-    cdef inline OrderId _generate_order_id(self, Security security):
-        cdef int ord_count = self._symbol_ord_count.get(security, 0)
+    cdef inline OrderId _generate_order_id(self, InstrumentId instrument_id):
+        cdef int ord_count = self._symbol_ord_count.get(instrument_id, 0)
         ord_count += 1
-        self._symbol_ord_count[security] = ord_count
-        return OrderId(f"{self._security_indexer[security]}-{ord_count:03d}")
+        self._symbol_ord_count[instrument_id] = ord_count
+        return OrderId(f"{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
 
     cdef inline ExecutionId _generate_execution_id(self):
         self._executions_count += 1
@@ -489,7 +496,7 @@ cdef class SimulatedExchange:
         cdef OrderAccepted accepted = OrderAccepted(
             self.exec_client.account_id,
             order.cl_ord_id,
-            self._generate_order_id(order.security),
+            self._generate_order_id(order.instrument_id),
             self._clock.utc_now_c(),
             self._uuid_factory.generate(),
             self._clock.utc_now_c(),
@@ -522,7 +529,7 @@ cdef class SimulatedExchange:
             )
             return  # Cannot amend order
 
-        cdef Instrument instrument = self.instruments[order.security]
+        cdef Instrument instrument = self.instruments[order.instrument_id]
 
         if qty <= 0:
             self._cancel_reject(
@@ -532,8 +539,8 @@ cdef class SimulatedExchange:
             )
             return  # Cannot amend order
 
-        cdef Price bid = self._market_bids[order.security]  # Market must exist
-        cdef Price ask = self._market_asks[order.security]  # Market must exist
+        cdef Price bid = self._market_bids[order.instrument_id]  # Market must exist
+        cdef Price ask = self._market_asks[order.instrument_id]  # Market must exist
 
         if order.type == OrderType.LIMIT:
             self._amend_limit_order(order, qty, price, bid, ask)
@@ -637,7 +644,7 @@ cdef class SimulatedExchange:
     cdef inline void _process_order(self, Order order) except *:
         Condition.not_in(order.cl_ord_id, self._working_orders, "order.id", "working_orders")
 
-        cdef Instrument instrument = self.instruments[order.security]
+        cdef Instrument instrument = self.instruments[order.instrument_id]
 
         # Check order size is valid or reject
         if instrument.max_quantity and order.quantity > instrument.max_quantity:
@@ -655,12 +662,12 @@ cdef class SimulatedExchange:
             )
             return  # Cannot accept order
 
-        cdef Price bid = self._market_bids.get(order.security)
-        cdef Price ask = self._market_asks.get(order.security)
+        cdef Price bid = self._market_bids.get(order.instrument_id)
+        cdef Price ask = self._market_asks.get(order.instrument_id)
 
         # Check market exists
         if bid is None or ask is None:  # Market not initialized
-            self._reject_order(order, f"no market for {order.security}")
+            self._reject_order(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
 
         if order.type == OrderType.MARKET:
@@ -680,7 +687,7 @@ cdef class SimulatedExchange:
         # Immediately fill marketable order
         self._fill_order(
             order,
-            self._fill_price_taker(order.security, order.side, bid, ask),
+            self._fill_price_taker(order.instrument_id, order.side, bid, ask),
             LiquiditySide.TAKER,
         )
 
@@ -752,7 +759,7 @@ cdef class SimulatedExchange:
                 # Immediate fill as TAKER
                 self._generate_order_amended(order, qty, price)
 
-                fill_price = self._fill_price_taker(order.security, order.side, bid, ask)
+                fill_price = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
                 self._fill_order(order, fill_price, LiquiditySide.TAKER)
                 return  # Filled
 
@@ -813,7 +820,7 @@ cdef class SimulatedExchange:
                     # Immediate fill as TAKER
                     self._generate_order_amended(order, qty, price)
 
-                    fill_price = self._fill_price_taker(order.security, order.side, bid, ask)
+                    fill_price = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
                     self._fill_order(order, fill_price, LiquiditySide.TAKER)
                     return  # Filled
 
@@ -858,7 +865,7 @@ cdef class SimulatedExchange:
         if self._is_stop_triggered(order.side, order.price, bid, ask):
             self._fill_order(
                 order,
-                self._fill_price_stop(order.security, order.side, order.price),
+                self._fill_price_stop(order.instrument_id, order.side, order.price),
                 LiquiditySide.TAKER,  # Triggered stop places market order
             )
 
@@ -886,7 +893,7 @@ cdef class SimulatedExchange:
                     else:
                         self._fill_order(
                             order,
-                            self._fill_price_taker(order.security, order.side, bid, ask),
+                            self._fill_price_taker(order.instrument_id, order.side, bid, ask),
                             LiquiditySide.TAKER,  # Immediate fill takes liquidity
                         )
 
@@ -922,18 +929,18 @@ cdef class SimulatedExchange:
         else:  # => OrderSide.SELL
             return ask
 
-    cdef inline Price _fill_price_taker(self, Security security, OrderSide side, Price bid, Price ask):
+    cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Price bid, Price ask):
         # Simulating potential slippage of one tick
         if side == OrderSide.BUY:
-            return ask if not self.fill_model.is_slipped() else Price(ask + self._slippages[security])
+            return ask if not self.fill_model.is_slipped() else Price(ask + self._slippages[instrument_id])
         else:  # => OrderSide.SELL
-            return bid if not self.fill_model.is_slipped() else Price(bid - self._slippages[security])
+            return bid if not self.fill_model.is_slipped() else Price(bid - self._slippages[instrument_id])
 
-    cdef inline Price _fill_price_stop(self, Security security, OrderSide side, Price stop):
+    cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop):
         if side == OrderSide.BUY:
-            return stop if not self.fill_model.is_slipped() else Price(stop + self._slippages[security])
+            return stop if not self.fill_model.is_slipped() else Price(stop + self._slippages[instrument_id])
         else:  # => OrderSide.SELL
-            return stop if not self.fill_model.is_slipped() else Price(stop - self._slippages[security])
+            return stop if not self.fill_model.is_slipped() else Price(stop - self._slippages[instrument_id])
 
 # --------------------------------------------------------------------------------------------------
 
@@ -953,7 +960,7 @@ cdef class SimulatedExchange:
         cdef Position position = None
         if position_id is None:
             # Generate a new position identifier
-            new_position_id = self._generate_position_id(order.security)
+            new_position_id = self._generate_position_id(order.instrument_id)
             self._position_index[order.cl_ord_id] = new_position_id
             if self.generate_position_ids:
                 # Set the filled position identifier
@@ -966,9 +973,9 @@ cdef class SimulatedExchange:
             position_id = position.id
 
         # Calculate commission
-        cdef Instrument instrument = self.instruments.get(order.security)
+        cdef Instrument instrument = self.instruments.get(order.instrument_id)
         if instrument is None:
-            raise RuntimeError(f"Cannot run backtest: no instrument data for {order.security}")
+            raise RuntimeError(f"Cannot run backtest: no instrument data for {order.instrument_id}")
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
@@ -980,11 +987,11 @@ cdef class SimulatedExchange:
         cdef OrderFilled filled = OrderFilled(
             self.exec_client.account_id,
             order.cl_ord_id,
-            order.id if order.id is not None else self._generate_order_id(order.security),
+            order.id if order.id is not None else self._generate_order_id(order.instrument_id),
             self._generate_execution_id(),
             position_id,
             order.strategy_id,
-            order.security,
+            order.instrument_id,
             order.side,
             order.quantity,
             order.quantity,

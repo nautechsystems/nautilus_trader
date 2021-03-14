@@ -14,7 +14,7 @@ using the Python ecosystem - within a highly performant and robust Python native
 
 The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular
 adapters. Thus the platform can handle high-frequency trading operations for any asset classes
-including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
+including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
 - **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
@@ -38,9 +38,9 @@ The value of NautilusTrader here is that this re-implementation step is circumve
 platform was designed from the ground up to hold its own in terms of performance and quality.
 
 Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
-making it a suitable language for implementing a large system such as this. The benefit being
-that a Python native environment can be offered, suitable for professional quantitative traders and
-hedge funds.
+making it a suitable language for building a large system such as this. The benefit being that a
+Python native environment can be offered, suitable for professional quantitative traders and hedge
+funds.
 
 Why Python?
 -----------
@@ -130,10 +130,11 @@ Index
     :caption: Adapter Reference
     :hidden:
 
+    adapter_reference/ib
+    adapter_reference/oanda
+    adapter_reference/ccxtpro
     adapter_reference/binance
     adapter_reference/bitmex
-    adapter_reference/ccxtpro
-    adapter_reference/oanda
 
 .. toctree::
     :glob:

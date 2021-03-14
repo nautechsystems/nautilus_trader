@@ -45,11 +45,13 @@ from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
+from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -69,9 +71,10 @@ cdef class BacktestEngine:
         list strategies=None,
         int tick_capacity=1000,
         int bar_capacity=1000,
-        bint use_tick_cache=False,
+        bint use_data_cache=False,
         str exec_db_type not None="in-memory",
         bint exec_db_flush=True,
+        dict risk_config=None,
         bint bypass_logging=False,
         int level_console=LogLevel.INFO,
         int level_file=LogLevel.DEBUG,
@@ -96,12 +99,14 @@ cdef class BacktestEngine:
             The length for the data engines internal ticks deque (> 0).
         bar_capacity : int, optional
             The length for the data engines internal bars deque (> 0).
-        use_tick_cache : bool, optional
+        use_data_cache : bool, optional
             If use cache for DataProducer (increased performance with repeated backtests on same data).
         exec_db_type : str, optional
             The type for the execution cache (can be the default 'in-memory' or redis).
         exec_db_flush : bool, optional
             If the execution cache should be flushed on each run.
+        risk_config : dict[str, object]
+            The configuration for the risk engine.
         bypass_logging : bool, optional
             If logging should be bypassed.
         level_console : int, optional
@@ -138,6 +143,8 @@ cdef class BacktestEngine:
             trader_id = TraderId("BACKTESTER", "000")
         if strategies is None:
             strategies = []
+        if risk_config is None:
+            risk_config = {}
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self._clock = LiveClock()
@@ -228,14 +235,14 @@ cdef class BacktestEngine:
             logger=self._test_logger,
         )
 
-        if use_tick_cache:
+        if use_data_cache:
             self._data_producer = CachedProducer(self._data_producer)
 
         # Create data client per venue
         for venue in data.venues:
             instruments = []
             for instrument in data.instruments.values():
-                if instrument.security.venue == venue:
+                if instrument.venue == venue:
                     instruments.append(instrument)
 
             data_client = BacktestMarketDataClient(
@@ -255,7 +262,16 @@ cdef class BacktestEngine:
             logger=self._test_logger,
         )
 
+        self._risk_engine = RiskEngine(
+            exec_engine=self._exec_engine,
+            portfolio=self.portfolio,
+            clock=self._test_clock,
+            logger=self._test_logger,
+            config=risk_config,
+        )
+
         self._exec_engine.load_cache()
+        self._exec_engine.register_risk_engine(self._risk_engine)
 
         self.trader = Trader(
             trader_id=trader_id,
@@ -263,6 +279,7 @@ cdef class BacktestEngine:
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
+            risk_engine=self._risk_engine,
             clock=self._test_clock,
             logger=self._test_logger,
         )
@@ -345,7 +362,7 @@ cdef class BacktestEngine:
         # Gather instruments for exchange
         instruments = []
         for instrument in self._data_engine.cache.instruments():
-            if instrument.security.venue == venue:
+            if instrument.venue == venue:
                 instruments.append(instrument)
 
         # Create exchange
@@ -402,15 +419,22 @@ cdef class BacktestEngine:
         """
         self._log.debug(f"Resetting...")
 
+        # Reset DataEngine
         if self._data_engine.state_c() == ComponentState.RUNNING:
             self._data_engine.stop()
         self._data_engine.reset()
 
+        # Reset ExecEngine
         if self._exec_engine.state_c() == ComponentState.RUNNING:
             self._exec_engine.stop()
         if self._exec_db_flush:
             self._exec_engine.flush_db()
         self._exec_engine.reset()
+
+        # Reset RiskEngine
+        if self._risk_engine.state_c() == ComponentState.RUNNING:
+            self._risk_engine.stop()
+        self._risk_engine.reset()
 
         self.trader.reset()
 
@@ -440,6 +464,7 @@ cdef class BacktestEngine:
 
         self._data_engine.dispose()
         self._exec_engine.dispose()
+        self._risk_engine.dispose()
 
     cpdef void change_fill_model(self, Venue venue, FillModel model) except *:
         """
@@ -546,14 +571,15 @@ cdef class BacktestEngine:
         self._exec_engine.start()
         self.trader.start()
 
-        cdef Tick tick
+        cdef Data data
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        while self._data_producer.has_tick_data:
-            tick = self._data_producer.next_tick()
-            self._advance_time(tick.timestamp)
-            self._exchanges[tick.security.venue].process_tick(tick)
-            self._data_engine.process(tick)
-            self._process_modules(tick.timestamp)
+        while self._data_producer.has_data:
+            data = self._data_producer.next()
+            self._advance_time(data.timestamp)
+            if isinstance(data, Tick):
+                self._exchanges[data.venue].process_tick(data)
+            self._data_engine.process(data)
+            self._process_modules(data.timestamp)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -575,9 +601,8 @@ cdef class BacktestEngine:
         self._test_clock.set_time(now)
 
     cdef inline void _process_modules(self, datetime now) except *:
-        cdef Venue venue
         cdef SimulatedExchange exchange
-        for venue, exchange in self._exchanges.items():
+        for exchange in self._exchanges.values():
             exchange.process_modules(now)
 
     cdef inline void _log_header(
@@ -655,7 +680,7 @@ cdef class BacktestEngine:
             # Find all positions for exchange venue
             positions = []
             for position in self._exec_engine.cache.positions():
-                if position.security.venue == exchange.id:
+                if position.venue == exchange.id:
                     positions.append(position)
 
             # Calculate statistics

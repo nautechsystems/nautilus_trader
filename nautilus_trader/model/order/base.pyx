@@ -48,8 +48,8 @@ from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Security
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -122,7 +122,9 @@ cdef class Order:
         self.strategy_id = event.strategy_id
         self.account_id = None        # Can be None
         self.execution_id = None      # Can be None
-        self.security = event.security
+        self.instrument_id = event.instrument_id
+        self.symbol = event.instrument_id.symbol
+        self.venue = event.instrument_id.venue
         self.side = event.order_side
         self.type = event.order_type
         self.quantity = event.quantity
@@ -530,7 +532,7 @@ cdef class PassiveOrder(Order):
         self,
         ClientOrderId cl_ord_id not None,
         StrategyId strategy_id not None,
-        Security security not None,
+        InstrumentId instrument_id not None,
         OrderSide order_side,
         OrderType order_type,  # 'type' hides keyword
         Quantity quantity not None,
@@ -550,8 +552,8 @@ cdef class PassiveOrder(Order):
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        security : Security
-            The order security identifier.
+        instrument_id : InstrumentId
+            The order instrument identifier.
         order_side : OrderSide (Enum)
             The order side (BUY or SELL).
         order_type : OrderType (Enum)
@@ -604,7 +606,7 @@ cdef class PassiveOrder(Order):
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
             strategy_id=strategy_id,
-            security=security,
+            instrument_id=instrument_id,
             order_side=order_side,
             order_type=order_type,
             quantity=quantity,
@@ -623,7 +625,7 @@ cdef class PassiveOrder(Order):
 
     cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.security} "
+        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
                 f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 

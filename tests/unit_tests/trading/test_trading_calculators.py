@@ -31,9 +31,9 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-AUDUSD_SIM = TestStubs.security_audusd()
-GBPUSD_SIM = TestStubs.security_gbpusd()
-USDJPY_SIM = TestStubs.security_usdjpy()
+AUDUSD_SIM = TestStubs.audusd_id()
+GBPUSD_SIM = TestStubs.gbpusd_id()
+USDJPY_SIM = TestStubs.usdjpy_id()
 
 
 class ExchangeRateCalculatorTests(unittest.TestCase):

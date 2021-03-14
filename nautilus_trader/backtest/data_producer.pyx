@@ -39,6 +39,7 @@ from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -58,7 +59,7 @@ cdef class DataProducerFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Tick next_tick(self):
+    cpdef Data next(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -98,8 +99,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
         data.check_integrity()
         self._data = data
 
-        cdef int security_counter = 0
-        self._security_index = {}
+        cdef int instrument_counter = 0
+        self._instrument_index = {}
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
@@ -115,58 +116,58 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef double ts_total = self._clock.unix_time()
         cdef double ts
         for instrument in data.instruments.values():
-            security = instrument.security
-            self._log.info(f"Preparing {security} data...")
+            instrument_id = instrument.id
+            self._log.info(f"Preparing {instrument_id} data...")
 
-            self._security_index[security_counter] = security
+            self._instrument_index[instrument_counter] = instrument_id
 
             execution_resolution = None
 
             # Process quote tick data
             # -----------------------
-            if data.has_quote_data(security):
+            if data.has_quote_data(instrument_id):
                 ts = self._clock.unix_time()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
-                    data_quotes=self._data.quote_ticks.get(security),
-                    data_bars_bid=self._data.bars_bid.get(security),
-                    data_bars_ask=self._data.bars_ask.get(security),
+                    data_quotes=self._data.quote_ticks.get(instrument_id),
+                    data_bars_bid=self._data.bars_bid.get(instrument_id),
+                    data_bars_ask=self._data.bars_ask.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
-                quote_wrangler.pre_process(security_counter)
+                quote_wrangler.pre_process(instrument_counter)
                 quote_tick_frames.append(quote_wrangler.processed_data)
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
-                self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {security} quote tick rows in "
+                self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
                                f"{self._clock.unix_time() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
             # -----------------------
-            if data.has_trade_data(security):
+            if data.has_trade_data(instrument_id):
                 ts = self._clock.unix_time()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
-                    data=self._data.trade_ticks.get(security),
+                    data=self._data.trade_ticks.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
-                trade_wrangler.pre_process(security_counter)
+                trade_wrangler.pre_process(instrument_counter)
                 trade_tick_frames.append(trade_wrangler.processed_data)
 
                 execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
-                self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {security} trade tick rows in "
+                self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
                                f"{self._clock.unix_time() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
             if execution_resolution is None:
-                self._log.warning(f"No execution level data for {security}.")
+                self._log.warning(f"No execution level data for {instrument_id}.")
 
-            # Increment counter for indexing the next security
-            security_counter += 1
+            # Increment counter for indexing the next instrument
+            instrument_counter += 1
 
-            self.execution_resolutions.append(f"{security}={execution_resolution}")
+            self.execution_resolutions.append(f"{instrument_id}={execution_resolution}")
 
         # Merge and sort all ticks
         self._log.info(f"Merging tick data streams...")
@@ -198,7 +199,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 self.max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
         # Initialize backing fields
-        self._quote_securities = None
+        self._quote_instruments = None
         self._quote_bids = None
         self._quote_asks = None
         self._quote_bid_sizes = None
@@ -208,7 +209,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._quote_index_last = 0
         self._next_quote_tick = None
 
-        self._trade_securities = None
+        self._trade_instruments = None
         self._trade_prices = None
         self._trade_sizes = None
         self._trade_match_ids = None
@@ -218,7 +219,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._trade_index_last = 0
         self._next_trade_tick = None
 
-        self.has_tick_data = False
+        self.has_data = False
 
         self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
                        f"total tick rows in {self._clock.unix_time() - ts_total:.3f}s.")
@@ -266,7 +267,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # See slice_dataframe function comments on why [:] isn't used
             quote_ticks_slice = slice_dataframe(self._quote_tick_data, start + time_buffer, stop)
 
-            self._quote_securities = quote_ticks_slice["security"].to_numpy(dtype=np.ushort)
+            self._quote_instruments = quote_ticks_slice["instrument_id"].to_numpy(dtype=np.ushort)
             self._quote_bids = quote_ticks_slice["bid"].values
             self._quote_asks = quote_ticks_slice["ask"].values
             self._quote_bid_sizes = quote_ticks_slice["bid_size"].values
@@ -274,7 +275,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_timestamps = np.asarray([<datetime>dt for dt in quote_ticks_slice.index])
 
             # Calculate cumulative data size
-            total_size += get_size_of(self._quote_securities)
+            total_size += get_size_of(self._quote_instruments)
             total_size += get_size_of(self._quote_bids)
             total_size += get_size_of(self._quote_asks)
             total_size += get_size_of(self._quote_bid_sizes)
@@ -293,7 +294,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # See slice_dataframe function comments on why [:] isn't used
             trade_ticks_slice = slice_dataframe(self._trade_tick_data, start, stop)
 
-            self._trade_securities = trade_ticks_slice["security"].to_numpy(dtype=np.ushort)
+            self._trade_instruments = trade_ticks_slice["instrument_id"].to_numpy(dtype=np.ushort)
             self._trade_prices = trade_ticks_slice["price"].values
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
@@ -301,7 +302,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_timestamps = np.asarray([<datetime>dt for dt in trade_ticks_slice.index])
 
             # Calculate cumulative data size
-            total_size += get_size_of(self._trade_securities)
+            total_size += get_size_of(self._trade_instruments)
             total_size += get_size_of(self._trade_prices)
             total_size += get_size_of(self._trade_sizes)
             total_size += get_size_of(self._trade_match_ids)
@@ -315,7 +316,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # Prepare initial tick
             self._iterate_trade_ticks()
 
-        self.has_tick_data = True
+        self.has_data = True
 
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
@@ -327,7 +328,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         self._log.info(f"Resetting...")
 
-        self._quote_securities = None
+        self._quote_instruments = None
         self._quote_bids = None
         self._quote_asks = None
         self._quote_bid_sizes = None
@@ -336,7 +337,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._quote_index = 0
         self._quote_index_last = len(self._quote_tick_data) - 1
 
-        self._trade_securities = None
+        self._trade_instruments = None
         self._trade_prices = None
         self._trade_sizes = None
         self._trade_match_ids = None
@@ -345,7 +346,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._trade_index = 0
         self._trade_index_last = len(self._quote_tick_data) - 1
 
-        self.has_tick_data = False
+        self.has_data = False
 
         self._log.info("Reset.")
 
@@ -360,42 +361,44 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         self._log.info("Cleared.")
 
-    cpdef Tick next_tick(self):
+    cpdef Data next(self):
         """
-        Return the next tick in the stream (if one exists).
+        Return the next data item in the stream (if one exists).
 
-        Checking `has_tick_data` is `True` will ensure there is a next tick.
+        Checking `has_data` is `True` will ensure there is data.
 
         Returns
         -------
-        Tick or None
+        Data or None
 
         """
-        cdef Tick next_tick
+        # TODO: Refactor below logic
+
+        cdef Data next_data
         # Quote ticks only
         if self._next_trade_tick is None:
-            next_tick = self._next_quote_tick
+            next_data = self._next_quote_tick
             self._iterate_quote_ticks()
-            return next_tick
+            return next_data
         # Trade ticks only
         if self._next_quote_tick is None:
-            next_tick = self._next_trade_tick
+            next_data = self._next_trade_tick
             self._iterate_trade_ticks()
-            return next_tick
+            return next_data
 
         # Mixture of quote and trade ticks
         if self._next_quote_tick.timestamp <= self._next_trade_tick.timestamp:
-            next_tick = self._next_quote_tick
+            next_data = self._next_quote_tick
             self._iterate_quote_ticks()
-            return next_tick
+            return next_data
         else:
-            next_tick = self._next_trade_tick
+            next_data = self._next_trade_tick
             self._iterate_trade_ticks()
-            return next_tick
+            return next_data
 
     cdef inline QuoteTick _generate_quote_tick(self, int index):
         return QuoteTick(
-            self._security_index[self._quote_securities[index]],
+            self._instrument_index[self._quote_instruments[index]],
             Price(self._quote_bids[index]),
             Price(self._quote_asks[index]),
             Quantity(self._quote_bid_sizes[index]),
@@ -405,7 +408,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
     cdef inline TradeTick _generate_trade_tick(self, int index):
         return TradeTick(
-            self._security_index[self._trade_securities[index]],
+            self._instrument_index[self._trade_instruments[index]],
             Price(self._trade_prices[index]),
             Quantity(self._trade_sizes[index]),
             OrderSideParser.from_str(self._trade_sides[index]),
@@ -420,7 +423,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         else:
             self._next_quote_tick = None
             if self._next_trade_tick is None:
-                self.has_tick_data = False
+                self.has_data = False
 
     cdef inline void _iterate_trade_ticks(self) except *:
         if self._trade_index <= self._trade_index_last:
@@ -429,7 +432,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         else:
             self._next_trade_tick = None
             if self._next_quote_tick is None:
-                self.has_tick_data = False
+                self.has_data = False
 
 
 cdef class CachedProducer(DataProducerFacade):
@@ -449,7 +452,7 @@ cdef class CachedProducer(DataProducerFacade):
         """
         self._producer = producer
         self._log = producer.get_logger()
-        self._tick_cache = []
+        self._data_cache = []
         self._ts_cache = []
         self._tick_index = 0
         self._tick_index_last = 0
@@ -459,9 +462,9 @@ cdef class CachedProducer(DataProducerFacade):
         self.execution_resolutions = self._producer.execution_resolutions
         self.min_timestamp = self._producer.min_timestamp
         self.max_timestamp = self._producer.max_timestamp
-        self.has_tick_data = False
+        self.has_data = False
 
-        self._create_tick_cache()
+        self._create_data_cache()
 
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
@@ -485,7 +488,7 @@ cdef class CachedProducer(DataProducerFacade):
         self._tick_index_last = bisect_left(self._ts_cache, stop.timestamp())
         self._init_start_tick_index = self._tick_index
         self._init_stop_tick_index = self._tick_index_last
-        self.has_tick_data = True
+        self.has_data = True
 
     cpdef void reset(self) except *:
         """
@@ -495,44 +498,46 @@ cdef class CachedProducer(DataProducerFacade):
         """
         self._tick_index = self._init_start_tick_index
         self._tick_index_last = self._init_stop_tick_index
-        self.has_tick_data = True
+        self.has_data = True
 
-    cpdef Tick next_tick(self):
+    cpdef Data next(self):
         """
-        Return the next tick in the stream (if one exists).
+        Return the next data item in the stream (if one exists).
 
-        Checking `has_tick_data` is `True` will ensure there is a next tick.
+        Checking `has_data` is `True` will ensure there is data.
 
         Returns
         -------
-        Tick or None
+        Data or None
 
         """
-        cdef Tick tick
+        # TODO: Refactor for generic data
+
+        cdef Data data
         if self._tick_index <= self._tick_index_last:
-            tick = self._tick_cache[self._tick_index]
+            data = self._data_cache[self._tick_index]
             self._tick_index += 1
 
         # Check if last tick
         if self._tick_index > self._tick_index_last:
-            self.has_tick_data = False
+            self.has_data = False
 
-        return tick
+        return data
 
-    cdef void _create_tick_cache(self) except *:
-        self._log.info(f"Pre-caching ticks...")
+    cdef void _create_data_cache(self) except *:
+        self._log.info(f"Pre-caching data...")
         self._producer.setup(self.min_timestamp, self.max_timestamp)
 
         cdef double ts = time.time()
 
-        cdef Tick tick
-        while self._producer.has_tick_data:
-            tick = self._producer.next_tick()
-            self._tick_cache.append(tick)
-            self._ts_cache.append(tick.timestamp.timestamp())
+        cdef Data data
+        while self._producer.has_data:
+            data = self._producer.next()
+            self._data_cache.append(data)
+            self._ts_cache.append(data.unix_timestamp)
 
-        self._log.info(f"Pre-cached {len(self._tick_cache):,} "
-                       f"total tick rows in {time.time() - ts:.3f}s.")
+        self._log.info(f"Pre-cached {len(self._data_cache):,} "
+                       f"total data items in {time.time() - ts:.3f}s.")
 
         self._producer.reset()
         self._producer.clear()

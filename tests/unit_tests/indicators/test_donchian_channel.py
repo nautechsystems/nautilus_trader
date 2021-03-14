@@ -74,7 +74,7 @@ class DonchianChannelTests(unittest.TestCase):
         # Arrange
         indicator = DonchianChannel(10)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -87,7 +87,7 @@ class DonchianChannelTests(unittest.TestCase):
         # Arrange
         indicator = DonchianChannel(10)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.security)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
         # Act
         indicator.handle_trade_tick(tick)

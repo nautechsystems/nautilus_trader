@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
 
@@ -27,26 +24,24 @@ cdef class InstrumentProvider:
     This class should not be used directly, but through its concrete subclasses.
     """
 
-    def __init__(self, Venue venue not None, bint load_all=False):
+    def __init__(self):
         """
         Initialize a new instance of the `InstrumentProvider` class.
 
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the provider.
-        load_all : bool, optional
-            If all instruments should be loaded at instantiation.
+        """
+        self._instruments = {}  # type: dict[InstrumentId, Instrument]
+
+    @property
+    def count(self) -> int:
+        """
+        The count of instruments held by the provider.
+
+        Returns
+        -------
+        int
 
         """
-        self.venue = venue
-        self.count = 0
-
-        self._currencies = {}   # type: dict[str, Currency]
-        self._instruments = {}  # type: dict[Symbol, Instrument]
-
-        if load_all:
-            self.load_all()
+        return len(self._instruments)
 
     async def load_all_async(self):
         """Abstract method (implement in subclass)."""
@@ -56,30 +51,39 @@ cdef class InstrumentProvider:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict get_all(self):
+    cpdef void load(self, InstrumentId instrument_id, dict details) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Instrument get(self, Security security):
+    cpdef dict get_all(self):
         """
-        Get the instrument for the given security (if found).
+        Return all loaded instruments.
+
+        If no instruments loaded, will return an empty dict.
+
+        Returns
+        -------
+        dict[InstrumentId, Instrument]
+
+        """
+        return self._instruments.copy()
+
+    cpdef Instrument find(self, InstrumentId instrument_id):
+        """
+        Return the instrument for the given instrument identifier (if found).
 
         Parameters
         ----------
-        security : Security
-            The security identifier for the instrument
+        instrument_id : InstrumentId
+            The identifier for the instrument
 
         Returns
         -------
         Instrument or None
 
         """
-        return self.get_c(security.symbol)
+        return self.find_c(instrument_id)
 
-    cpdef Currency currency(self, str code):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cdef Instrument get_c(self, Symbol symbol):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+    cdef Instrument find_c(self, InstrumentId instrument_id):
+        # Provides faster C level access
+        return self._instruments.get(instrument_id)

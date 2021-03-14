@@ -18,7 +18,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -27,44 +27,27 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class Data:
-    cdef readonly DataType data_type
-    """The data type for the data.\n\n:returns: `DataType`"""
-    cdef readonly object data
-    """The data.\n\n:returns: `object`"""
-
-
-cdef class DataType:
-    cdef frozenset _metadata_key
-    cdef int _hash
-
-    cdef readonly type type
-    """The type of the data.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The data types metadata.\n\n:returns: `set[str, object]`"""
-
-
 cdef class DataCacheFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
-    cpdef list securities(self)
+    cpdef list instrument_ids(self)
     cpdef list instruments(self)
-    cpdef list quote_ticks(self, Security security)
-    cpdef list trade_ticks(self, Security security)
+    cpdef list quote_ticks(self, InstrumentId instrument_id)
+    cpdef list trade_ticks(self, InstrumentId instrument_id)
     cpdef list bars(self, BarType bar_type)
-    cpdef Instrument instrument(self, Security security)
-    cpdef Price price(self, Security security, PriceType price_type)
-    cpdef OrderBook order_book(self, Security security)
-    cpdef QuoteTick quote_tick(self, Security security, int index=*)
-    cpdef TradeTick trade_tick(self, Security security, int index=*)
+    cpdef Instrument instrument(self, InstrumentId instrument_id)
+    cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
+    cpdef OrderBook order_book(self, InstrumentId instrument_id)
+    cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=*)
+    cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
-    cpdef int quote_tick_count(self, Security security) except *
-    cpdef int trade_tick_count(self, Security security) except *
+    cpdef int quote_tick_count(self, InstrumentId instrument_id) except *
+    cpdef int trade_tick_count(self, InstrumentId instrument_id) except *
     cpdef int bar_count(self, BarType bar_type) except *
-    cpdef bint has_order_book(self, Security security) except *
-    cpdef bint has_quote_ticks(self, Security security) except *
-    cpdef bint has_trade_ticks(self, Security security) except *
+    cpdef bint has_order_book(self, InstrumentId instrument_id) except *
+    cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef bint has_bars(self, BarType bar_type) except *
 
     cpdef object get_xrate(

@@ -25,7 +25,7 @@ from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -52,7 +52,7 @@ cdef class StopLimitOrder(PassiveOrder):
         self,
         ClientOrderId cl_ord_id not None,
         StrategyId strategy_id not None,
-        Security security not None,
+        InstrumentId instrument_id not None,
         OrderSide order_side,
         Quantity quantity not None,
         Price price not None,
@@ -74,8 +74,8 @@ cdef class StopLimitOrder(PassiveOrder):
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
-        security : Security
-            The order security.
+        instrument_id : InstrumentId
+            The order instrument_id.
         order_side : OrderSide (Enum)
             The order side (BUY or SELL).
         quantity : Quantity
@@ -116,11 +116,10 @@ cdef class StopLimitOrder(PassiveOrder):
             Condition.false(hidden, "A post-only order is not hidden")
         if hidden:
             Condition.false(post_only, "A hidden order is not post-only")
-
         super().__init__(
             cl_ord_id,
             strategy_id,
-            security,
+            instrument_id,
             order_side,
             OrderType.STOP_LIMIT,
             quantity,
@@ -178,7 +177,7 @@ cdef class StopLimitOrder(PassiveOrder):
         return StopLimitOrder(
             cl_ord_id=event.cl_ord_id,
             strategy_id=event.strategy_id,
-            security=event.security,
+            instrument_id=event.instrument_id,
             order_side=event.order_side,
             quantity=event.quantity,
             price=Price(event.options[PRICE]),

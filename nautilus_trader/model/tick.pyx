@@ -23,13 +23,14 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Tick:
+cdef class Tick(Data):
     """
     The abstract base class for all ticks.
 
@@ -38,7 +39,7 @@ cdef class Tick:
 
     def __init__(
         self,
-        Security security not None,
+        InstrumentId instrument_id not None,
         datetime timestamp not None,
         double unix_timestamp,
     ):
@@ -47,38 +48,25 @@ cdef class Tick:
 
         Parameters
         ----------
-        security : Security
-            The ticks security identifier.
+        instrument_id : InstrumentId
+            The ticks instrument identifier.
         timestamp : datetime
             The ticks timestamp (UTC).
         unix_timestamp : double
             The ticks Unix timestamp (seconds).
 
         """
-        self.security = security
-        self.timestamp = timestamp
-        self.unix_timestamp = unix_timestamp
+        super().__init__(timestamp, unix_timestamp)
+
+        self.instrument_id = instrument_id
+        self.symbol = instrument_id.symbol
+        self.venue = instrument_id.venue
 
     def __eq__(self, Tick other) -> bool:
-        return self.unix_timestamp == other.unix_timestamp
+        return self.instrument_id == other.instrument_id and self.timestamp == other.timestamp
 
     def __ne__(self, Tick other) -> bool:
-        return self.unix_timestamp != other.unix_timestamp
-
-    def __lt__(self, Tick other) -> bool:
-        return self.unix_timestamp < other.unix_timestamp
-
-    def __le__(self, Tick other) -> bool:
-        return self.unix_timestamp <= other.unix_timestamp
-
-    def __gt__(self, Tick other) -> bool:
-        return self.unix_timestamp > other.unix_timestamp
-
-    def __ge__(self, Tick other) -> bool:
-        return self.unix_timestamp >= other.unix_timestamp
-
-    def __hash__(self) -> int:
-        return hash((self.security, self.timestamp))
+        return not self == other
 
 
 cdef class QuoteTick(Tick):
@@ -88,7 +76,7 @@ cdef class QuoteTick(Tick):
 
     def __init__(
         self,
-        Security security not None,
+        InstrumentId instrument_id not None,
         Price bid not None,
         Price ask not None,
         Quantity bid_size not None,
@@ -101,8 +89,8 @@ cdef class QuoteTick(Tick):
 
         Parameters
         ----------
-        security : Security
-            The security identifier.
+        instrument_id : InstrumentId
+            The instrument identifier.
         bid : Price
             The best bid price.
         ask : Price
@@ -118,10 +106,7 @@ cdef class QuoteTick(Tick):
             captured from `timestamp.timestamp()`.
 
         """
-        if unix_timestamp == 0:
-            unix_timestamp = timestamp.timestamp()
-
-        super().__init__(security, timestamp, unix_timestamp)
+        super().__init__(instrument_id, timestamp, unix_timestamp)
 
         self.bid = bid
         self.ask = ask
@@ -129,7 +114,7 @@ cdef class QuoteTick(Tick):
         self.ask_size = ask_size
 
     def __str__(self) -> str:
-        return (f"{self.security},"
+        return (f"{self.instrument_id},"
                 f"{self.bid},"
                 f"{self.ask},"
                 f"{self.bid_size},"
@@ -186,8 +171,8 @@ cdef class QuoteTick(Tick):
             raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
 
     @staticmethod
-    cdef QuoteTick from_serializable_str_c(Security security, str values):
-        Condition.not_none(security, 'security')
+    cdef QuoteTick from_serializable_str_c(InstrumentId instrument_id, str values):
+        Condition.not_none(instrument_id, 'instrument_id')
         Condition.valid_string(values, 'values')
 
         cdef list pieces = values.split(',', maxsplit=4)
@@ -196,7 +181,7 @@ cdef class QuoteTick(Tick):
             raise ValueError(f"The QuoteTick string value was malformed, was {values}")
 
         return QuoteTick(
-            security,
+            instrument_id,
             Price(pieces[0]),
             Price(pieces[1]),
             Quantity(pieces[2]),
@@ -205,14 +190,14 @@ cdef class QuoteTick(Tick):
         )
 
     @staticmethod
-    def from_serializable_str(Security security, str values):
+    def from_serializable_str(InstrumentId instrument_id, str values):
         """
-        Parse a tick from the given security identifier and values string.
+        Parse a tick from the given instrument identifier and values string.
 
         Parameters
         ----------
-        security : Security
-            The tick security.
+        instrument_id : InstrumentId
+            The tick instrument_id.
         values : str
             The tick values string.
 
@@ -226,7 +211,7 @@ cdef class QuoteTick(Tick):
             If values is not a valid string.
 
         """
-        return QuoteTick.from_serializable_str_c(security, values)
+        return QuoteTick.from_serializable_str_c(instrument_id, values)
 
     cpdef str to_serializable_str(self):
         """
@@ -247,7 +232,7 @@ cdef class TradeTick(Tick):
 
     def __init__(
         self,
-        Security security not None,
+        InstrumentId instrument_id not None,
         Price price not None,
         Quantity size not None,
         OrderSide side,
@@ -260,8 +245,8 @@ cdef class TradeTick(Tick):
 
         Parameters
         ----------
-        security : Security
-            The tick security identifier.
+        instrument_id : InstrumentId
+            The tick instrument identifier.
         price : Price
             The price of the trade.
         size : Quantity
@@ -287,7 +272,7 @@ cdef class TradeTick(Tick):
         if unix_timestamp == 0:
             unix_timestamp = timestamp.timestamp()
 
-        super().__init__(security, timestamp, unix_timestamp)
+        super().__init__(instrument_id, timestamp, unix_timestamp)
 
         self.price = price
         self.size = size
@@ -295,7 +280,7 @@ cdef class TradeTick(Tick):
         self.match_id = match_id
 
     def __str__(self) -> str:
-        return (f"{self.security},"
+        return (f"{self.instrument_id},"
                 f"{self.price},"
                 f"{self.size},"
                 f"{OrderSideParser.to_str(self.side)},"
@@ -306,8 +291,8 @@ cdef class TradeTick(Tick):
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef TradeTick from_serializable_str_c(Security security, str values):
-        Condition.not_none(security, 'security')
+    cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values):
+        Condition.not_none(instrument_id, 'instrument_id')
         Condition.valid_string(values, 'values')
 
         cdef list pieces = values.split(',', maxsplit=4)
@@ -316,7 +301,7 @@ cdef class TradeTick(Tick):
             raise ValueError(f"The TradeTick string value was malformed, was {values}")
 
         return TradeTick(
-            security,
+            instrument_id,
             Price(pieces[0]),
             Quantity(pieces[1]),
             OrderSideParser.from_str(pieces[2]),
@@ -325,14 +310,14 @@ cdef class TradeTick(Tick):
         )
 
     @staticmethod
-    def from_serializable_str(Security security, str values):
+    def from_serializable_str(InstrumentId instrument_id, str values):
         """
-        Parse a tick from the given security identifier and values string.
+        Parse a tick from the given instrument identifier and values string.
 
         Parameters
         ----------
-        security : Security
-            The tick security.
+        instrument_id : InstrumentId
+            The tick instrument_id.
         values : str
             The tick values string.
 
@@ -346,7 +331,7 @@ cdef class TradeTick(Tick):
             If values is not a valid string.
 
         """
-        return TradeTick.from_serializable_str_c(security, values)
+        return TradeTick.from_serializable_str_c(instrument_id, values)
 
     cpdef str to_serializable_str(self):
         """

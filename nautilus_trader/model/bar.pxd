@@ -17,7 +17,10 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -38,10 +41,14 @@ cdef class BarSpecification:
 
 
 cdef class BarType:
-    cdef readonly Security security
-    """The security identifier of the bar type.\n\n:returns: `Security`"""
+    cdef readonly InstrumentId instrument_id
+    """The bar type instrument identifier.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The bar type symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The bar type venue.\n\n:returns: `Venue`"""
     cdef readonly BarSpecification spec
-    """The specification of the bar type.\n\n:returns: `BarSpecification`"""
+    """The bar type specification.\n\n:returns: `BarSpecification`"""
     cdef readonly bint is_internal_aggregation
     """If bar aggregation is internal to the platform.\n\n:returns: `bool`"""
 
@@ -50,7 +57,7 @@ cdef class BarType:
     cpdef str to_serializable_str(self)
 
 
-cdef class Bar:
+cdef class Bar(Data):
     cdef readonly Price open
     """The open price of the bar.\n\n:returns: `Price`"""
     cdef readonly Price high
@@ -61,8 +68,6 @@ cdef class Bar:
     """The close price of the bar.\n\n:returns: `Price`"""
     cdef readonly Quantity volume
     """The volume of the bar.\n\n:returns: `Quantity`"""
-    cdef readonly datetime timestamp
-    """The timestamp the bar closed at (UTC).\n\n:returns: `datetime`"""
     cdef readonly bint checked
     """If the input values were integrity checked.\n\n:returns: `bool`"""
 

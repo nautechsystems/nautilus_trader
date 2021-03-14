@@ -50,8 +50,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # Arrange
         data = BacktestDataContainer()
         data.add_instrument(USDJPY_SIM)
-        data.add_bars(USDJPY_SIM.security, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_SIM.security, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [TradingStrategy("001")]
 
@@ -96,11 +96,11 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # Arrange
         data = BacktestDataContainer()
         data.add_instrument(USDJPY_SIM)
-        data.add_bars(USDJPY_SIM.security, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_SIM.security, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategy = EMACross(
-            security=USDJPY_SIM.security,
+            instrument_id=USDJPY_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -132,11 +132,11 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # Arrange
         data = BacktestDataContainer()
         data.add_instrument(USDJPY_SIM)
-        data.add_bars(USDJPY_SIM.security, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_SIM.security, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategy = EMACross(
-            security=USDJPY_SIM.security,
+            instrument_id=USDJPY_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             trade_size=Decimal(1_000_000),
             fast_ema=10,

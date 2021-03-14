@@ -49,13 +49,13 @@ if __name__ == "__main__":
     data = BacktestDataContainer()
     data.add_instrument(GBPUSD)
     data.add_bars(
-        security=GBPUSD.security,
+        instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.BID,
         data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
     data.add_bars(
-        security=GBPUSD.security,
+        instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.ASK,
         data=TestDataProvider.gbpusd_1min_ask(),  # Stub data from the test kit
@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     # Instantiate your strategy
     strategy = VolatilityMarketMaker(
-        security=GBPUSD.security,
+        instrument_id=GBPUSD.id,
         bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
         trade_size=Decimal(500_000),
         atr_period=20,
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
-        use_tick_cache=True,
+        use_data_cache=True,
         # exec_db_type="redis",
         # bypass_logging=True
     )

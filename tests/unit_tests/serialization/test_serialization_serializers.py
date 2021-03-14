@@ -118,7 +118,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_market_orders(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -135,7 +135,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_limit_orders(self):
         # Arrange
         order = self.order_factory.limit(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -156,7 +156,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = LimitOrder(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -180,7 +180,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = StopMarketOrder(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -204,7 +204,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -229,7 +229,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -267,7 +267,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000))
 
@@ -297,7 +297,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(self):
         # Arrange
         entry_order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000))
 
@@ -330,7 +330,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(self):
         # Arrange
         entry_order = self.order_factory.limit(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -437,7 +437,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderInitialized(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.MARKET,
             Quantity(100000),
@@ -466,7 +466,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderInitialized(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.LIMIT,
             Quantity(100000),
@@ -491,7 +491,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderInitialized(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.STOP_MARKET,
             Quantity(100000),
@@ -522,7 +522,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderInitialized(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000),
@@ -710,7 +710,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ExecutionId("E123456"),
             PositionId("T123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(50000),
             Quantity(50000),
@@ -741,7 +741,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ExecutionId("E123456"),
             PositionId("T123456"),
             StrategyId("S", "001"),
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
             Quantity(100000),

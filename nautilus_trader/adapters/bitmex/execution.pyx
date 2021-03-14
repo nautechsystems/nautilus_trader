@@ -119,7 +119,7 @@ cdef class BitmexExecutionClient(CCXTExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.security.symbol.value,
+                symbol=order.symbol.value,
                 type=order_type,
                 side=OrderSideParser.to_str(order.side).capitalize(),
                 amount=str(order.quantity),

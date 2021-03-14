@@ -16,19 +16,19 @@
 import pytest
 
 from nautilus_trader.core.cache import ObjectCache
-from nautilus_trader.model.identifiers import Security
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class TestObjectCache:
 
     def test_cache_initialization(self):
         # Arrange
-        cache = ObjectCache(Security, Security.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
 
         # Act
         # Assert
         assert str == cache.type_key
-        assert Security == cache.type_value
+        assert InstrumentId == cache.type_value
         assert [] == cache.keys()
 
     @pytest.mark.parametrize(
@@ -41,7 +41,7 @@ class TestObjectCache:
     )
     def test_get_given_none_raises_value_error(self, value, ex):
         # Arrange
-        cache = ObjectCache(Security, Security.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
 
         # Act
         # Assert
@@ -50,35 +50,35 @@ class TestObjectCache:
 
     def test_get_from_empty_cache(self):
         # Arrange
-        cache = ObjectCache(Security, Security.from_serializable_str)
-        security = "AUD/USD.SIM,FX,SPOT"
+        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        instrument_id = "AUD/USD.SIM,FX,SPOT"
 
         # Act
-        result = cache.get(security)
+        result = cache.get(instrument_id)
 
         # Assert
-        assert security == result.to_serializable_str()
+        assert instrument_id == result.to_serializable_str()
         assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
 
     def test_get_from_cache(self):
         # Arrange
-        cache = ObjectCache(Security, Security.from_serializable_str)
-        security = "AUD/USD.SIM,FX,SPOT"
-        cache.get(security)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        instrument_id = "AUD/USD.SIM,FX,SPOT"
+        cache.get(instrument_id)
 
         # Act
-        cache.get(security)
-        result1 = cache.get(security)
-        result2 = cache.get(security)
+        cache.get(instrument_id)
+        result1 = cache.get(instrument_id)
+        result2 = cache.get(instrument_id)
 
         # Assert
-        assert security == result1.to_serializable_str()
+        assert instrument_id == result1.to_serializable_str()
         assert id(result1) == id(result2)
         assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
 
     def test_keys_when_cache_empty_returns_empty_list(self):
         # Arrange
-        cache = ObjectCache(Security, Security.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
 
         # Act
         result = cache.keys()
@@ -88,9 +88,9 @@ class TestObjectCache:
 
     def test_clear_cache(self):
         # Arrange
-        cache = ObjectCache(Security, Security.from_serializable_str)
-        security = "AUD/USD.SIM,FX,SPOT"
-        cache.get(security)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        instrument_id = "AUD/USD.SIM,FX,SPOT"
+        cache.get(instrument_id)
 
         # Act
         cache.clear()

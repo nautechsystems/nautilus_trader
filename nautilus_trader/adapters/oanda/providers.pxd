@@ -13,22 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Security
+from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class OandaInstrumentProvider:
-    cdef dict _instruments
+cdef class OandaInstrumentProvider(InstrumentProvider):
     cdef object _client
     cdef str _account_id
 
     cdef readonly Venue venue
     """The venue of the provider.\n\n:returns: `Venue`"""
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
 
     cpdef void load_all(self) except *
-    cpdef dict get_all(self)
-    cpdef Instrument get(self, Security security)
     cdef Instrument _parse_instrument(self, dict values)

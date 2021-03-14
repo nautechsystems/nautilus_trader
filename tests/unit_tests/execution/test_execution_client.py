@@ -99,7 +99,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_submit_order_raises_exception(self):
         order = self.order_factory.limit(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
@@ -120,7 +120,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_submit_bracket_order_raises_not_implemented_error(self):
         entry_order = self.order_factory.stop_market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.99995"),
@@ -181,7 +181,7 @@ class ExecutionClientTests(unittest.TestCase):
     def test_handle_event_sends_to_execution_engine(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.security,
+            AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
         )

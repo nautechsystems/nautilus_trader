@@ -13,24 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport Security
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class InstrumentProvider:
-    cdef dict _currencies
     cdef dict _instruments
 
-    cdef readonly Venue venue
-    """The venue of the provider.\n\n:returns: `Venue`"""
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
-
     cpdef void load_all(self) except *
+    cpdef void load(self, InstrumentId instrument_id, dict details) except *
     cpdef dict get_all(self)
-    cpdef Currency currency(self, str code)
-    cpdef Instrument get(self, Security security)
-    cdef Instrument get_c(self, Symbol symbol)
+    cpdef Instrument find(self, InstrumentId instrument_id)
+    cdef Instrument find_c(self, InstrumentId instrument_id)

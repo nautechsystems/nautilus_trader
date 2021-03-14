@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -45,6 +46,7 @@ cdef class ExecutionEngine(Component):
     cdef dict _strategies
     cdef PositionIdGenerator _pos_id_generator
     cdef Portfolio _portfolio
+    cdef RiskEngine _risk_engine
 
     cdef readonly TraderId trader_id
     """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
@@ -66,6 +68,7 @@ cdef class ExecutionEngine(Component):
 
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
+    cpdef void register_risk_engine(self, RiskEngine engine) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
 
@@ -73,6 +76,10 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _on_start(self) except *
     cpdef void _on_stop(self) except *
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _set_position_id_counts(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -108,7 +115,3 @@ cdef class ExecutionEngine(Component):
     cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef inline void _set_position_id_counts(self) except *

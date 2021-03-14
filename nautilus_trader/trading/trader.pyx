@@ -31,6 +31,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -46,6 +47,7 @@ cdef class Trader(Component):
         Portfolio portfolio not None,
         DataEngine data_engine not None,
         ExecutionEngine exec_engine not None,
+        RiskEngine risk_engine not None,
         Clock clock not None,
         Logger logger not None,
     ):
@@ -61,9 +63,11 @@ cdef class Trader(Component):
         portfolio : Portfolio
             The portfolio for the trader.
         data_engine : DataEngine
-            The data engine to register the traders strategies with.
+            The data engine for the trader.
         exec_engine : ExecutionEngine
-            The execution engine to register the traders strategies with.
+            The execution engine for the trader.
+        risk_engine : RiskEngine
+            The risk engine for the trader.
         clock : Clock
             The clock for the trader.
         logger : Logger
@@ -91,6 +95,7 @@ cdef class Trader(Component):
         self._portfolio = portfolio
         self._data_engine = data_engine
         self._exec_engine = exec_engine
+        self._risk_engine = risk_engine
         self._report_provider = ReportProvider()
 
         self.id = trader_id
@@ -217,7 +222,7 @@ cdef class Trader(Component):
             self._exec_engine.register_strategy(strategy)
 
             order_ids = self._exec_engine.cache.order_ids(
-                security=None,
+                instrument_id=None,
                 strategy_id=strategy.id,
             )
 
