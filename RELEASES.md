@@ -8,11 +8,16 @@ None
 ## Enhancements
 - `RiskEngine` built out including configuration options hook and
   `LiveRiskEngine` implementation.
+- Add generic `Throttler`.
 - Add details `dict` to `instrument_id` related requests to cover IB futures
   contracts.
+- Add missing Fiat currencies.
+- Add additional Crypto currencies.
+- Add ISO 4217 codes.
+- Add currency names.
 
 ## Fixes
-None
+- Queue blocking coroutines in live engines.
 
 ---
 

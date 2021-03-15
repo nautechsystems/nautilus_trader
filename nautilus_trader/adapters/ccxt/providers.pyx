@@ -121,6 +121,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 currency = Currency(
                     code=code,
                     precision=self._get_precision(precision, precision_mode),
+                    iso4217=0,
+                    name=code,
                     currency_type=currency_type,
                 )
 
