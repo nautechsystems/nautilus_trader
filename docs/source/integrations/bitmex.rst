@@ -1,7 +1,7 @@
-CCXT Pro Integration
-====================
+Bitmex
+======
 
-.. automodule:: nautilus_trader.adapters.ccxt
+.. automodule:: nautilus_trader.adapters.bitmex
 
 
 Data
@@ -16,7 +16,7 @@ Data
 Execution
 ---------
 
-.. automodule:: nautilus_trader.adapters.ccxt.execution
+.. automodule:: nautilus_trader.adapters.bitmex.execution
    :show-inheritance:
    :inherited-members:
    :members:
@@ -25,7 +25,7 @@ Execution
 Factory
 -------
 
-.. automodule:: nautilus_trader.adapters.ccxt.factory
+.. automodule:: nautilus_trader.adapters.bitmex.factory
    :show-inheritance:
    :inherited-members:
    :members:

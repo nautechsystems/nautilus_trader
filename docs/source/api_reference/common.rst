@@ -85,6 +85,15 @@ Queue
    :members:
    :member-order: bysource
 
+Throttler
+---------
+
+.. automodule:: nautilus_trader.common.throttler
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Timer
 -----
 
