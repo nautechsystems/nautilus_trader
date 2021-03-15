@@ -131,7 +131,11 @@ cdef class InstrumentId(Identifier):
     The symbol and venue combination should uniquely identify the instrument.
     """
 
-    def __init__(self not None, Symbol symbol, Venue venue not None):
+    def __init__(
+        self,
+        Symbol symbol not None,
+        Venue venue not None,
+    ):
         """
         Initialize a new instance of the `InstrumentId` class.
 
