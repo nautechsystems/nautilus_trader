@@ -528,8 +528,6 @@ cdef class OandaDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot request bars (no instrument for {bar_type.instrument_id}).")
             return
 
-        oanda_name = instrument.info["name"]
-
         if bar_type.spec.price_type == PriceType.BID:
             pricing = "B"
         elif bar_type.spec.price_type == PriceType.ASK:
@@ -601,7 +599,10 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         cdef dict res
         try:
-            req = InstrumentsCandles(instrument=oanda_name, params=params)
+            req = InstrumentsCandles(
+                instrument=instrument.symbol.value.replace('/', '_'),
+                params=params,
+            )
             res = self._client.request(req)
         except Exception as ex:
             self._log.error(str(ex))

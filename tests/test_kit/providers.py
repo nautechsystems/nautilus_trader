@@ -120,7 +120,6 @@ class TestInstrumentProvider:
             size_precision=6,
             tick_size=Decimal("0.01"),
             multiplier=Decimal("1"),
-            leverage=Decimal("1"),
             lot_size=Quantity("1"),
             max_quantity=Quantity("9000.0"),
             min_quantity=Quantity("1e-06"),
@@ -163,7 +162,6 @@ class TestInstrumentProvider:
             size_precision=5,
             tick_size=Decimal("0.01"),
             multiplier=Decimal("1"),
-            leverage=Decimal("1"),
             lot_size=Quantity("1"),
             max_quantity=Quantity("9000"),
             min_quantity=Quantity("1e-05"),
@@ -180,7 +178,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+    def xbtusd_bitmex() -> Instrument:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
 
@@ -211,7 +209,6 @@ class TestInstrumentProvider:
             size_precision=0,
             tick_size=Decimal("0.5"),
             multiplier=Decimal("1"),
-            leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=None,
             min_quantity=None,
@@ -228,7 +225,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+    def ethusd_bitmex() -> Instrument:
         """
         Return the BitMEX ETH/USD perpetual contract for backtesting.
 
@@ -259,7 +256,6 @@ class TestInstrumentProvider:
             size_precision=0,
             tick_size=Decimal("0.05"),
             multiplier=Decimal("1"),
-            leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=Quantity("10000000.0"),
             min_quantity=Quantity("1.0"),
@@ -276,7 +272,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue=None, leverage: Decimal=Decimal("50")) -> Instrument:
+    def default_fx_ccy(symbol: str, venue: Venue=None) -> Instrument:
         """
         Return a default FX currency pair instrument from the given instrument_id.
 
@@ -286,8 +282,6 @@ class TestInstrumentProvider:
             The currency pair symbol.
         venue : Venue
             The currency pair venue.
-        leverage : Decimal
-            The leverage for the instrument.
 
         Returns
         -------
@@ -330,7 +324,6 @@ class TestInstrumentProvider:
             size_precision=0,
             tick_size=Decimal(f"{1 / 10 ** price_precision:.{price_precision}f}"),
             multiplier=Decimal("1"),
-            leverage=leverage,
             lot_size=Quantity("1000"),
             max_quantity=Quantity("1e7"),
             min_quantity=Quantity("1000"),

@@ -60,8 +60,6 @@ cdef class Instrument(Data):
     """The tick size of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object multiplier
     """The multiplier of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly object leverage
-    """The leverage of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly Quantity lot_size
     """The lot size of the instrument.\n\n:returns: `Quantity`"""
     cdef readonly Quantity max_quantity
@@ -84,10 +82,6 @@ cdef class Instrument(Data):
     """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
     """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly dict financing
-    """The financing information for the instrument.\n\n:returns: `dict[str, object]`"""
-    cdef readonly dict info
-    """The additional instrument information.\n\n:returns: `dict[str, object]`"""
 
     cdef bint _is_quanto(
         self,
@@ -96,14 +90,15 @@ cdef class Instrument(Data):
         Currency settlement_currency,
     ) except *
 
-    cpdef Money market_value(self, Quantity quantity, close_price: Decimal)
+    cpdef Money market_value(self, Quantity quantity, close_price: Decimal, leverage: Decimal=*)
     cpdef Money notional_value(self, Quantity quantity, close_price: Decimal)
-    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price)
+    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price, leverage: Decimal=*)
     cpdef Money calculate_maint_margin(
         self,
         PositionSide side,
         Quantity quantity,
         Price last,
+        leverage: Decimal=*,
     )
 
     cpdef Money calculate_commission(

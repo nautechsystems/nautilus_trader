@@ -799,9 +799,6 @@ cdef class Portfolio(PortfolioFacade):
                                 f"(no instrument for {order.instrument_id}).")
                 continue  # Cannot calculate
 
-            if instrument.leverage == 1:
-                continue  # No margin necessary
-
             # Calculate margin
             margin = instrument.calculate_initial_margin(
                 order.quantity,
@@ -860,9 +857,6 @@ cdef class Portfolio(PortfolioFacade):
                 self._log.error(f"Cannot calculate position maintenance margin "
                                 f"(no instrument for {position.instrument_id}).")
                 continue  # Cannot calculate
-
-            if instrument.leverage == 1:
-                continue  # No margin necessary
 
             last = self._get_last_price(position)
             if last is None:
