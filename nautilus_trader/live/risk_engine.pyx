@@ -17,51 +17,39 @@ import asyncio
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
-
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.execution.reports cimport ExecutionStateReport
-from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
-cdef class LiveExecutionEngine(ExecutionEngine):
+cdef class LiveRiskEngine(RiskEngine):
     """
-    Provides a high-performance asynchronous live execution engine.
+    Provides a high-performance asynchronous live risk engine.
     """
 
     def __init__(
         self,
         loop not None: AbstractEventLoop,
-        ExecutionDatabase database not None,
+        ExecutionEngine exec_engine not None,
         Portfolio portfolio not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionEngine` class.
+        Initialize a new instance of the `LiveRiskEngine` class.
 
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        database : ExecutionDatabase
-            The execution database for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -75,7 +63,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if config is None:
             config = {}
         super().__init__(
-            database,
+            exec_engine,
             portfolio,
             clock,
             logger,
@@ -121,77 +109,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-    async def reconcile_state(self) -> bool:
-        """
-        Reconcile the execution engines state with all execution clients.
-
-        The execution engine will collect all cached active orders and send
-        those to the relevant execution client(s) for a comparison with the
-        exchange(s) order states.
-
-        If a cached order does not match the exchanges order status then
-        the missing events will be generated. If there is not enough information
-        to resolve a state then errors will be logged.
-
-        Returns
-        -------
-        bool
-            True if states resolve within timeout, else False.
-
-        """
-        self._log.info("Resolving states...")
-
-        cdef list orders = self.cache.orders()
-        cdef list open_orders = [order for order in orders if not order.is_completed_c()]
-
-        # Initialize order state map
-        cdef dict venue_orders = {}   # type: dict[Venue, list[Order]]
-        cdef Venue venue
-        for venue in self._clients.keys():
-            venue_orders[venue] = []
-
-        # Build order state map
-        cdef Order order
-        for order in open_orders:
-            if order.venue in venue_orders:
-                venue_orders[order.venue].append(order)
-            else:
-                self._log.error(f"Cannot resolve state. No registered"
-                                f"execution client for active {order}.")
-                continue
-
-        cdef dict venue_reports = {}  # type: dict[Venue, ExecutionStateReport]
-
-        cdef LiveExecutionClient client
-        # Get state report from each client
-        for venue, client in self._clients.items():
-            venue_reports[venue] = await client.state_report(venue_orders[venue])
-
-        cdef int seconds = 10  # Hard coded for now
-        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
-        cdef OrderState target_state
-        cdef bint resolved
-        while True:
-            if self._clock.utc_now() >= timeout:
-                self._log.error(f"Timed out ({seconds}s) waiting for "
-                                f"execution states to resolve.")
-                return False
-
-            resolved = True
-            for order in open_orders:
-                target_state = venue_reports[order.venue].order_states.get(order.id, 0)
-                if order.state_c() != target_state:
-                    resolved = False  # Incorrect state
-                if target_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
-                    filled_qty = venue_reports[order.venue].order_filled[order.id]
-                    if order.filled_qty != filled_qty:
-                        resolved = False  # Incorrect filled quantity
-            if resolved:
-                break
-            await asyncio.sleep(0.001)  # One millisecond sleep
-
-        self._log.info(f"State reconciled.", LogColor.GREEN)
-        return True  # Execution states resolved
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void kill(self) except *:
         """
@@ -205,7 +123,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self.is_running = False  # Avoids sentinel messages for queues
             self.stop()
 
-    cpdef void execute(self, TradingCommand command) except *:
+    cpdef void execute(self, Command command) except *:
         """
         Execute the given command.
 
@@ -214,7 +132,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         Parameters
         ----------
-        command : TradingCommand
+        command : Command
             The command to execute.
 
         Warnings
@@ -257,7 +175,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._loop.create_task(self._queue.put(event))
+            self._queue.put(event)  # Block until qsize reduces below maxsize
+
+# -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():

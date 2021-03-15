@@ -34,8 +34,7 @@ cdef class InstrumentId(Identifier):
     """The instrument trading venue.\n\n:returns: `Venue`"""
 
     @staticmethod
-    cdef InstrumentId from_serializable_str_c(str value)
-    cpdef str to_serializable_str(self)
+    cdef InstrumentId from_str_c(str value)
 
 
 cdef class IdTag(Identifier):

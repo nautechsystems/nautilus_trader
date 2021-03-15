@@ -183,6 +183,7 @@ cdef class Instrument:
         Condition.type(taker_fee, Decimal, "taker_fee")
         if info is None:
             info = {}
+        super().__init__(timestamp)
 
         self.id = instrument_id
         self.symbol = instrument_id.symbol
@@ -212,7 +213,6 @@ cdef class Instrument:
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
         self.financing = financing
-        self.timestamp = timestamp
         self.info = info
 
     cdef bint _is_quanto(

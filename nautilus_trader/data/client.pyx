@@ -126,23 +126,21 @@ cdef class DataClient:
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    def _handle_data_py(self, DataType data_type, data, datetime timestamp=None):
-        self._handle_data(data_type, data, timestamp)
+    def _handle_data_py(self, GenericData data):
+        self._handle_data(data)
 
-    def _handle_data_response_py(self, DataType data_type, data, UUID correlation_id):
-        self._handle_data_response(data_type, data, correlation_id)
+    def _handle_data_response_py(self, GenericData data, UUID correlation_id):
+        self._handle_data_response(data, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, DataType data_type, data, datetime timestamp=None) except *:
-        if timestamp is None:
-            timestamp = self._clock.utc_now()
-        self._engine.process(GenericData(data_type, data, timestamp))
+    cdef void _handle_data(self, GenericData data) except *:
+        self._engine.process(data)
 
-    cdef void _handle_data_response(self, DataType data_type, data, UUID correlation_id) except *:
+    cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             provider=self.name,
-            data_type=data_type,
+            data_type=data.data_type,
             data=data,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

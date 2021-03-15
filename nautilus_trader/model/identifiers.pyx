@@ -149,7 +149,7 @@ cdef class InstrumentId(Identifier):
         self.venue = venue
 
     @staticmethod
-    cdef InstrumentId from_serializable_str_c(str value):
+    cdef InstrumentId from_str_c(str value):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('.')
@@ -160,10 +160,10 @@ cdef class InstrumentId(Identifier):
         return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[2]))
 
     @staticmethod
-    def from_serializable_str(value: str) -> InstrumentId:
+    def from_str(value: str) -> InstrumentId:
         """
         Return an instrument identifier parsed from the given string value.
-        Must be correctly formatted including a single period and two commas.
+        Must be correctly formatted including a single period.
 
         Example: "AUD/USD.IDEALPRO".
 
@@ -177,18 +177,7 @@ cdef class InstrumentId(Identifier):
         InstrumentId
 
         """
-        return InstrumentId.from_serializable_str_c(value)
-
-    cpdef str to_serializable_str(self):
-        """
-        Return a serializable string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.value
+        return InstrumentId.from_str_c(value)
 
 
 cdef class IdTag(Identifier):
@@ -269,7 +258,7 @@ cdef class TraderId(Identifier):
         Return a trader identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
 
-        Its is expected a trader identifier  is the abbreviated name of the
+        It is expected a trader identifier is the abbreviated name of the
         trader with an order identifier tag number separated by a hyphen.
 
         Example: "TESTER-001".
@@ -351,7 +340,7 @@ cdef class StrategyId(Identifier):
 
         Must be correctly formatted with two valid strings either side of a hyphen.
         Is is expected a strategy identifier is the class name of the strategy with
-        an order_id tag number separated by a hyphen.
+        an order identifier tag number separated by a hyphen.
 
         Example: "EMACross-001".
 

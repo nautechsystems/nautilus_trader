@@ -917,6 +917,7 @@ cdef class PositionEvent(Event):
 
         """
         super().__init__(event_id, event_timestamp)
+
         self.position = position
         self.order_fill = order_fill
 
@@ -948,7 +949,7 @@ cdef class PositionOpened(PositionEvent):
             The event timestamp.
 
         """
-        assert position.is_open_c()
+        assert position.is_open_c()  # Design-time check
         super().__init__(
             position,
             order_fill,
@@ -999,7 +1000,7 @@ cdef class PositionChanged(PositionEvent):
             If position is not open.
 
         """
-        assert position.is_open_c()
+        assert position.is_open_c()  # Design-time check
         super().__init__(
             position,
             order_fill,
@@ -1053,7 +1054,7 @@ cdef class PositionClosed(PositionEvent):
             If position is not closed.
 
         """
-        assert position.is_closed_c()
+        assert position.is_closed_c()  # Design-time check
         super().__init__(
             position,
             order_fill,

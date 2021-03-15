@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     BINANCE = Venue("BINANCE")
     instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
-    ETHUSDT_BINANCE = instruments.get(instrument_id)
+    ETHUSDT_BINANCE = instruments.find(instrument_id)
 
     # Setup data container
     data = BacktestDataContainer()
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
-        use_tick_cache=True,    # Pre-cache ticks for increased performance on repeated runs
+        use_data_cache=True,    # Pre-cache data for increased performance on repeated runs
         # exec_db_type="redis",
         # bypass_logging=True
     )

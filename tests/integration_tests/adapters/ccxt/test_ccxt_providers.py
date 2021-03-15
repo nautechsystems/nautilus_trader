@@ -50,6 +50,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     # Uncomment to test real API
     # def test_real_api(self):
+    #     import ccxt
     #     client = ccxt.binance()
     #     provider = CCXTInstrumentProvider(client=client)
     #
@@ -171,7 +172,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         # Assert
         self.assertTrue(len(instruments) > 0)
         self.assertEqual(dict, type(instruments))
-        self.assertEqual(Symbol, type(next(iter(instruments))))
+        self.assertEqual(InstrumentId, type(next(iter(instruments))))
 
     def test_get_all_when_load_all_is_true_returns_expected_instruments(self):
         # Arrange
@@ -195,7 +196,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         # Assert
         self.assertTrue(len(instruments) > 0)
         self.assertEqual(dict, type(instruments))
-        self.assertEqual(Symbol, type(next(iter(instruments))))
+        self.assertEqual(InstrumentId, type(next(iter(instruments))))
 
     def test_get_btcusdt_when_not_loaded_returns_none(self):
         # Arrange
@@ -207,7 +208,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instrument_id = InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
         # Act
-        instrument = provider.get(instrument_id)
+        instrument = provider.find(instrument_id)
 
         # Assert
         self.assertIsNone(instrument)
@@ -232,7 +233,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instrument_id = InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE"))
 
         # Act
-        instrument = provider.get(instrument_id)
+        instrument = provider.find(instrument_id)
 
         # Assert
         self.assertEqual(Instrument, type(instrument))

@@ -13,22 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum AssetClass:
-    UNDEFINED = 0,  # Invalid value
-    FX = 1,
-    STOCK = 2,
-    COMMODITY = 3,
-    BOND = 4,
-    INDEX = 5,
-    CRYPTO = 6,
-    BETTING = 7,
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class AssetClassParser:
+cdef class InstrumentProvider:
+    cdef dict _instruments
 
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AssetClass from_str(str value)
+    cpdef void load_all(self) except *
+    cpdef void load(self, InstrumentId instrument_id, dict details) except *
+    cpdef dict get_all(self)
+    cpdef Instrument find(self, InstrumentId instrument_id)
+    cdef Instrument find_c(self, InstrumentId instrument_id)

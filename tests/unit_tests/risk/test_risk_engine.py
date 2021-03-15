@@ -16,10 +16,14 @@
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.message import Event
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.commands import AmendOrder
+from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
@@ -82,6 +86,14 @@ class TestRiskEngine:
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
 
+    def test_registered_clients_returns_expected_list(self):
+        # Arrange
+        # Act
+        result = self.risk_engine.registered_clients
+
+        # Assert
+        assert result == [Venue('SIM')]
+
     def test_set_block_all_orders_changes_flag_value(self):
         # Arrange
         # Act
@@ -90,7 +102,26 @@ class TestRiskEngine:
         # Assert
         assert self.risk_engine.block_all_orders
 
-    def test_approve_order_when_engine_not_overridden_then_approves(self):
+    def test_given_random_command_logs_and_continues(self):
+        # Arrange
+        random = TradingCommand(
+            self.venue,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.risk_engine.execute(random)
+
+    def test_given_random_event_logs_and_continues(self):
+        # Arrange
+        random = Event(
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.exec_engine.process(random)
+
+    def test_submit_order_with_default_settings_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
 
@@ -121,12 +152,12 @@ class TestRiskEngine:
         )
 
         # Act
-        self.risk_engine.approve_order(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Assert
-        assert submit_order.approved
+        assert self.exec_client.calls == ['connect', 'submit_order']
 
-    def test_approve_bracket_when_engine_not_overridden_then_approves(self):
+    def test_submit_bracket_with_default_settings_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
 
@@ -162,10 +193,10 @@ class TestRiskEngine:
         )
 
         # Act
-        self.risk_engine.approve_bracket(submit_bracket)
+        self.risk_engine.execute(submit_bracket)
 
         # Assert
-        assert submit_bracket.approved
+        assert self.exec_client.calls == ['connect', 'submit_bracket_order']
 
     def test_submit_order_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -203,7 +234,105 @@ class TestRiskEngine:
         self.exec_engine.execute(submit_order)
 
         # Assert
-        assert not submit_order.approved
+        assert self.exec_client.calls == ['connect']
+        assert self.exec_engine.event_count == 1
+
+    def test_amend_order_with_default_settings_sends_to_client(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        amend = AmendOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            order.cl_ord_id,
+            order.quantity,
+            Price("1.00010"),
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        # Act
+        self.risk_engine.execute(amend)
+
+        # Assert
+        assert self.exec_client.calls == ['connect', 'submit_order', 'amend_order']
+
+    def test_cancel_order_with_default_settings_sends_to_client(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        cancel = CancelOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            order.cl_ord_id,
+            order.id,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        # Act
+        self.risk_engine.execute(cancel)
+
+        # Assert
+        assert self.exec_client.calls == ['connect', 'submit_order', 'cancel_order']
 
     def test_submit_bracket_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -243,7 +372,8 @@ class TestRiskEngine:
         self.risk_engine.set_block_all_orders()
 
         # Act
-        self.risk_engine.approve_bracket(submit_bracket)
+        self.exec_engine.execute(submit_bracket)
 
         # Assert
-        assert not submit_bracket.approved
+        assert self.exec_client.calls == ['connect']
+        assert self.exec_engine.event_count == 3

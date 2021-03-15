@@ -651,7 +651,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     # TODO: Possibly combine this with _watch_quotes
     async def _watch_order_book(self, InstrumentId instrument_id, int level, int depth, dict kwargs):
-        cdef Instrument instrument = self._instrument_provider.get(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to order book (no instrument for {instrument_id.symbol}).")
             return
@@ -705,7 +705,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             self._log.exception(ex)
 
     async def _watch_quotes(self, InstrumentId instrument_id):
-        cdef Instrument instrument = self._instrument_provider.get(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to quote ticks (no instrument for {instrument_id.symbol}).")
             return
@@ -806,7 +806,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self._handle_quote_tick(tick)
 
     async def _watch_trades(self, InstrumentId instrument_id):
-        cdef Instrument instrument = self._instrument_provider.get(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to trade ticks (no instrument for {instrument_id.symbol}).")
             return
@@ -877,7 +877,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self._handle_trade_tick(tick)
 
     async def _watch_ohlcv(self, BarType bar_type):
-        cdef Instrument instrument = self._instrument_provider.get(bar_type.instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(bar_type.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to bars (no instrument for {bar_type.instrument_id}).")
             return
@@ -975,7 +975,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     async def _request_instrument(self, InstrumentId instrument_id, UUID correlation_id):
         await self._load_instruments()
-        cdef Instrument instrument = self._instrument_provider.get(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
         if instrument is not None:
             self._handle_instruments([instrument], correlation_id)
         else:
@@ -992,7 +992,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef InstrumentId instrument_id
         cdef Instrument instrument
         for instrument_id in self._subscribed_instruments:
-            instrument = self._instrument_provider.get(instrument_id)
+            instrument = self._instrument_provider.find_c(instrument_id)
             if instrument is not None:
                 self._handle_instrument(instrument)
             else:
@@ -1010,7 +1010,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ):
-        cdef Instrument instrument = self._instrument_provider.get(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot request trade ticks (no instrument for {instrument_id}).")
             return
@@ -1061,7 +1061,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ):
-        cdef Instrument instrument = self._instrument_provider.get(bar_type.instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find_c(bar_type.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.instrument_id}).")
             return

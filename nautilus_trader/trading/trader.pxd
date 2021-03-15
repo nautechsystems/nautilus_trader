@@ -20,6 +20,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -28,6 +29,7 @@ cdef class Trader(Component):
     cdef Portfolio _portfolio
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
+    cdef RiskEngine _risk_engine
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id

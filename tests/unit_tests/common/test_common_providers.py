@@ -14,9 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import unittest
 
-from nautilus_trader.live.providers import InstrumentProvider
+import pytest
+
+from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.stubs import TestStubs
 
@@ -24,15 +25,12 @@ BITMEX = Venue("BITMEX")
 AUDUSD = TestStubs.audusd_id()
 
 
-class LiveProvidersTests(unittest.TestCase):
+class TestInstrumentProvider:
 
-    def setUp(self):
+    def setup(self):
         # Fixture Setup
 
-        self.provider = InstrumentProvider(
-            venue=BITMEX,
-            load_all=False,
-        )
+        self.provider = InstrumentProvider()
 
     def test_load_all_async_when_not_implemented_raises_exception(self):
         # Fresh isolated loop testing pattern
@@ -43,10 +41,8 @@ class LiveProvidersTests(unittest.TestCase):
             # Arrange
             # Act
             # Assert
-            try:
+            with pytest.raises(NotImplementedError):
                 await self.provider.load_all_async()
-            except NotImplementedError as ex:
-                self.assertEqual(NotImplementedError, type(ex))
 
         loop.run_until_complete(run_test())
 
@@ -54,22 +50,28 @@ class LiveProvidersTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.provider.load_all)
+        with pytest.raises(NotImplementedError):
+            self.provider.load_all()
 
-    def test_get_all_when_not_implemented_raises_exception(self):
+    def test_load_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.provider.get_all)
+        with pytest.raises(NotImplementedError):
+            self.provider.load(AUDUSD, {})
 
-    def test_get_when_not_implemented_raises_exception(self):
+    def test_get_all_when_no_instruments_returns_empty_dict(self):
         # Arrange
         # Act
-        # Assert
-        self.assertRaises(NotImplementedError, self.provider.get, AUDUSD)
+        result = self.provider.get_all()
 
-    def test_currency_when_not_implemented_raises_exception(self):
+        # Assert
+        assert result == {}
+
+    def test_find_when_no_instruments_returns_none(self):
         # Arrange
         # Act
+        result = self.provider.find(AUDUSD)
+
         # Assert
-        self.assertRaises(NotImplementedError, self.provider.currency, "BTC")
+        assert result is None

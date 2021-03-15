@@ -18,7 +18,9 @@ cdef class Queue:
     cdef object _queue
 
     cdef readonly int maxsize
+    """The maximum capacity of the queue before blocking.\n\n:returns: `int`"""
     cdef readonly int count
+    """The current count of items on the queue.\n\n:returns: `int`"""
 
     cpdef int qsize(self) except *
     cpdef bint empty(self) except *

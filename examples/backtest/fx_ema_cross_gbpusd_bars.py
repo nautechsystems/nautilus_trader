@@ -74,7 +74,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
-        use_tick_cache=True,    # Pre-cache ticks for increased performance on repeated runs
+        use_data_cache=True,    # Pre-cache data for increased performance on repeated runs
         # exec_db_type="redis",
         # exec_db_flush=False,
         # bypass_logging=True
