@@ -67,6 +67,15 @@ Logging
    :members:
    :member-order: bysource
 
+Providers
+---------
+
+.. automodule:: nautilus_trader.common.providers
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Queue
 -----
 

@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
@@ -110,6 +111,14 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=clock,
+            logger=logger,
+        )
+
+        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
 
         strategies = [
@@ -123,6 +132,7 @@ class TraderTests(unittest.TestCase):
             portfolio=self.portfolio,
             data_engine=self.data_engine,
             exec_engine=self.exec_engine,
+            risk_engine=self.risk_engine,
             clock=clock,
             logger=logger,
         )

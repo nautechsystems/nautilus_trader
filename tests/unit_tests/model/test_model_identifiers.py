@@ -256,7 +256,7 @@ class TestInstrumentId:
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
         # Act
-        result = InstrumentId.from_serializable_str(instrument_id.to_serializable_str())
+        result = InstrumentId.from_str(str(instrument_id))
 
         # Assert
         assert instrument_id == result

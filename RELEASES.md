@@ -1,3 +1,27 @@
+# NautilusTrader 1.111.0 Beta - Release Notes
+
+This release adds further enhancements to the platform.
+
+## Breaking Changes
+None
+
+## Enhancements
+- `RiskEngine` built out including configuration options hook and
+  `LiveRiskEngine` implementation.
+- Add generic `Throttler`.
+- Add details `dict` to `instrument_id` related requests to cover IB futures
+  contracts.
+- Add missing Fiat currencies.
+- Add additional Crypto currencies.
+- Add ISO 4217 codes.
+- Add currency names.
+
+## Fixes
+- Queue `put` coroutines in live engines when blocking at `maxlen` was not
+  creating a task on the event loop.
+
+---
+
 # NautilusTrader 1.110.0 Beta - Release Notes
 
 This release applies one more major change to the identifier API. `Security` has

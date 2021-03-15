@@ -19,7 +19,7 @@ cpdef enum PriceType:
     BID = 1,
     ASK = 2,
     MID = 3,
-    LAST = 4
+    LAST = 4,
 
 
 cdef class PriceTypeParser:

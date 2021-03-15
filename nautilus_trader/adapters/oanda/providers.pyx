@@ -19,6 +19,8 @@ from decimal import Decimal
 import oandapyV20
 from oandapyV20.endpoints.accounts import AccountInstruments
 
+from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
@@ -31,7 +33,7 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OandaInstrumentProvider:
+cdef class OandaInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects through Oanda.
     """
@@ -54,12 +56,19 @@ cdef class OandaInstrumentProvider:
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 
+        Raises
+        ------
+        ValueError
+            If account_id is not a valid string.
+
         """
-        self.venue = Venue("OANDA")
-        self.count = 0
-        self._instruments = {}  # type: dict[InstrumentId, Instrument]
+        Condition.valid_string(account_id, "account_id")
+        super().__init__()
+
         self._client = client
         self._account_id = account_id
+
+        self.venue = Venue("OANDA")
 
         if load_all:
             self.load_all()
@@ -78,49 +87,18 @@ cdef class OandaInstrumentProvider:
             instrument = self._parse_instrument(values)
             self._instruments[instrument.id] = instrument
 
-        self.count = len(self._instruments)
-
-    cpdef dict get_all(self):
-        """
-        Return all loaded instruments.
-
-        If no instruments loaded, will return an empty dict.
-
-        Returns
-        -------
-        dict[InstrumentId, Instrument]
-
-        """
-        return self._instruments.copy()
-
-    cpdef Instrument get(self, InstrumentId instrument_id):
-        """
-        Return the instrument for the given instrument identifier (if found).
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the instrument.
-
-        Returns
-        -------
-        Instrument or None
-
-        """
-        return self._instruments.get(instrument_id)
-
     cdef Instrument _parse_instrument(self, dict values):
         cdef str oanda_name = values["name"]
         cdef str oanda_type = values["type"]
         cdef list instrument_id_pieces = values["name"].split('_', maxsplit=1)
 
         cdef Currency base_currency = None
-        cdef Currency quote_currency = Currency(instrument_id_pieces[1], 2, CurrencyType.FIAT)
+        cdef Currency quote_currency = Currency.from_str_c(instrument_id_pieces[1])
 
         if oanda_type == "CURRENCY":
             asset_class = AssetClass.FX
             asset_type = AssetType.SPOT
-            base_currency = Currency(instrument_id_pieces[0], 2, CurrencyType.FIAT)
+            base_currency = Currency.from_str_c(instrument_id_pieces[0])
         elif oanda_type == "METAL":
             asset_class = AssetClass.COMMODITY
             asset_type = AssetType.SPOT

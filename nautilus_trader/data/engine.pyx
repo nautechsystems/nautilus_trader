@@ -64,8 +64,8 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
@@ -964,7 +964,7 @@ cdef class DataEngine(Component):
             self._handle_bar(data.bar_type, data.bar)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, Data):
+        elif isinstance(data, GenericData):
             self._handle_custom_data(data)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
@@ -1011,7 +1011,7 @@ cdef class DataEngine(Component):
         for handler in bar_handlers:
             handler(bar_type, bar)
 
-    cdef inline void _handle_custom_data(self, Data data) except *:
+    cdef inline void _handle_custom_data(self, GenericData data) except *:
         # Send to all registered data handlers for that data type
         cdef list handlers = self._data_handlers.get(data.data_type, [])
         for handler in handlers:
@@ -1114,7 +1114,7 @@ cdef class DataEngine(Component):
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
         cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
-        cdef InstrumentId instrument_id = InstrumentId.from_serializable_str_c(pieces[0])
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef int interval = int(pieces[2])
         cdef list handlers = self._order_book_intervals.get((instrument_id, interval))
         if handlers is None:

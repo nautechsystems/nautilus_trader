@@ -112,7 +112,7 @@ class ExecutionEngineTests(unittest.TestCase):
     def test_registered_venues_returns_expected(self):
         # Arrange
         # Act
-        result = self.exec_engine.registered_venues
+        result = self.exec_engine.registered_clients
 
         # Assert
         self.assertEqual([Venue("SIM")], result)
@@ -123,7 +123,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.deregister_client(self.exec_client)
 
         # Assert
-        self.assertEqual([], self.exec_engine.registered_venues)
+        self.assertEqual([], self.exec_engine.registered_clients)
 
     def test_register_strategy(self):
         # Arrange

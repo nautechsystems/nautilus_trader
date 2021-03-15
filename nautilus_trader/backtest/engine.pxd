@@ -27,6 +27,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
 
@@ -37,6 +38,7 @@ cdef class BacktestEngine:
     cdef UUIDFactory _uuid_factory
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
+    cdef RiskEngine _risk_engine
     cdef DataProducerFacade _data_producer
     cdef LoggerAdapter _log
     cdef Logger _logger

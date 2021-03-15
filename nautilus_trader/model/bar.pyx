@@ -23,6 +23,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -252,7 +253,7 @@ cdef class BarType:
         if len(pieces) != 4:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
-        cdef InstrumentId instrument_id = InstrumentId.from_serializable_str_c(pieces[0])
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
             BarAggregationParser.from_str(pieces[2]),
@@ -294,10 +295,10 @@ cdef class BarType:
         str
 
         """
-        return f"{self.instrument_id.to_serializable_str()}-{self.spec}"
+        return f"{self.instrument_id}-{self.spec}"
 
 
-cdef class Bar:
+cdef class Bar(Data):
     """
     Represents an aggregated bar.
     """
@@ -328,7 +329,7 @@ cdef class Bar:
         volume : Quantity
             The bars volume.
         timestamp : datetime
-            The bars timestamp (UTC).
+            The timestamp the bar closed at (UTC).
         check : bool
             If bar parameters should be checked valid.
 
@@ -346,13 +347,13 @@ cdef class Bar:
             Condition.true(high_price >= low_price, 'high_price was < low_price')
             Condition.true(high_price >= close_price, 'high_price was < close_price')
             Condition.true(low_price <= close_price, 'low_price was > close_price')
+        super().__init__(timestamp)
 
         self.open = open_price
         self.high = high_price
         self.low = low_price
         self.close = close_price
         self.volume = volume
-        self.timestamp = timestamp
         self.checked = check
 
     def __eq__(self, Bar other) -> bool:

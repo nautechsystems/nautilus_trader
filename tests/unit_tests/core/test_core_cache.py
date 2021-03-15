@@ -23,7 +23,7 @@ class TestObjectCache:
 
     def test_cache_initialization(self):
         # Arrange
-        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_str)
 
         # Act
         # Assert
@@ -41,7 +41,7 @@ class TestObjectCache:
     )
     def test_get_given_none_raises_value_error(self, value, ex):
         # Arrange
-        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_str)
 
         # Act
         # Assert
@@ -50,19 +50,19 @@ class TestObjectCache:
 
     def test_get_from_empty_cache(self):
         # Arrange
-        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_str)
         instrument_id = "AUD/USD.SIM,FX,SPOT"
 
         # Act
         result = cache.get(instrument_id)
 
         # Assert
-        assert instrument_id == result.to_serializable_str()
+        assert instrument_id == str(result)
         assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
 
     def test_get_from_cache(self):
         # Arrange
-        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_str)
         instrument_id = "AUD/USD.SIM,FX,SPOT"
         cache.get(instrument_id)
 
@@ -72,13 +72,13 @@ class TestObjectCache:
         result2 = cache.get(instrument_id)
 
         # Assert
-        assert instrument_id == result1.to_serializable_str()
+        assert instrument_id == str(result1)
         assert id(result1) == id(result2)
         assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
 
     def test_keys_when_cache_empty_returns_empty_list(self):
         # Arrange
-        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_str)
 
         # Act
         result = cache.keys()
@@ -88,7 +88,7 @@ class TestObjectCache:
 
     def test_clear_cache(self):
         # Arrange
-        cache = ObjectCache(InstrumentId, InstrumentId.from_serializable_str)
+        cache = ObjectCache(InstrumentId, InstrumentId.from_str)
         instrument_id = "AUD/USD.SIM,FX,SPOT"
         cache.get(instrument_id)
 

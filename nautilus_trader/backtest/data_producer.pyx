@@ -39,6 +39,7 @@ from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -58,7 +59,7 @@ cdef class DataProducerFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Tick next_tick(self):
+    cpdef Data next(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -163,7 +164,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if execution_resolution is None:
                 self._log.warning(f"No execution level data for {instrument_id}.")
 
-            # Increment counter for indexing the next instrument_id
+            # Increment counter for indexing the next instrument
             instrument_counter += 1
 
             self.execution_resolutions.append(f"{instrument_id}={execution_resolution}")
@@ -218,7 +219,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._trade_index_last = 0
         self._next_trade_tick = None
 
-        self.has_tick_data = False
+        self.has_data = False
 
         self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
                        f"total tick rows in {self._clock.unix_time() - ts_total:.3f}s.")
@@ -315,7 +316,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # Prepare initial tick
             self._iterate_trade_ticks()
 
-        self.has_tick_data = True
+        self.has_data = True
 
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
@@ -345,7 +346,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._trade_index = 0
         self._trade_index_last = len(self._quote_tick_data) - 1
 
-        self.has_tick_data = False
+        self.has_data = False
 
         self._log.info("Reset.")
 
@@ -360,38 +361,40 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         self._log.info("Cleared.")
 
-    cpdef Tick next_tick(self):
+    cpdef Data next(self):
         """
-        Return the next tick in the stream (if one exists).
+        Return the next data item in the stream (if one exists).
 
-        Checking `has_tick_data` is `True` will ensure there is a next tick.
+        Checking `has_data` is `True` will ensure there is data.
 
         Returns
         -------
-        Tick or None
+        Data or None
 
         """
-        cdef Tick next_tick
+        # TODO: Refactor below logic
+
+        cdef Data next_data
         # Quote ticks only
         if self._next_trade_tick is None:
-            next_tick = self._next_quote_tick
+            next_data = self._next_quote_tick
             self._iterate_quote_ticks()
-            return next_tick
+            return next_data
         # Trade ticks only
         if self._next_quote_tick is None:
-            next_tick = self._next_trade_tick
+            next_data = self._next_trade_tick
             self._iterate_trade_ticks()
-            return next_tick
+            return next_data
 
         # Mixture of quote and trade ticks
         if self._next_quote_tick.timestamp <= self._next_trade_tick.timestamp:
-            next_tick = self._next_quote_tick
+            next_data = self._next_quote_tick
             self._iterate_quote_ticks()
-            return next_tick
+            return next_data
         else:
-            next_tick = self._next_trade_tick
+            next_data = self._next_trade_tick
             self._iterate_trade_ticks()
-            return next_tick
+            return next_data
 
     cdef inline QuoteTick _generate_quote_tick(self, int index):
         return QuoteTick(
@@ -420,7 +423,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         else:
             self._next_quote_tick = None
             if self._next_trade_tick is None:
-                self.has_tick_data = False
+                self.has_data = False
 
     cdef inline void _iterate_trade_ticks(self) except *:
         if self._trade_index <= self._trade_index_last:
@@ -429,7 +432,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         else:
             self._next_trade_tick = None
             if self._next_quote_tick is None:
-                self.has_tick_data = False
+                self.has_data = False
 
 
 cdef class CachedProducer(DataProducerFacade):
@@ -449,7 +452,7 @@ cdef class CachedProducer(DataProducerFacade):
         """
         self._producer = producer
         self._log = producer.get_logger()
-        self._tick_cache = []
+        self._data_cache = []
         self._ts_cache = []
         self._tick_index = 0
         self._tick_index_last = 0
@@ -459,9 +462,9 @@ cdef class CachedProducer(DataProducerFacade):
         self.execution_resolutions = self._producer.execution_resolutions
         self.min_timestamp = self._producer.min_timestamp
         self.max_timestamp = self._producer.max_timestamp
-        self.has_tick_data = False
+        self.has_data = False
 
-        self._create_tick_cache()
+        self._create_data_cache()
 
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
@@ -485,7 +488,7 @@ cdef class CachedProducer(DataProducerFacade):
         self._tick_index_last = bisect_left(self._ts_cache, stop.timestamp())
         self._init_start_tick_index = self._tick_index
         self._init_stop_tick_index = self._tick_index_last
-        self.has_tick_data = True
+        self.has_data = True
 
     cpdef void reset(self) except *:
         """
@@ -495,44 +498,46 @@ cdef class CachedProducer(DataProducerFacade):
         """
         self._tick_index = self._init_start_tick_index
         self._tick_index_last = self._init_stop_tick_index
-        self.has_tick_data = True
+        self.has_data = True
 
-    cpdef Tick next_tick(self):
+    cpdef Data next(self):
         """
-        Return the next tick in the stream (if one exists).
+        Return the next data item in the stream (if one exists).
 
-        Checking `has_tick_data` is `True` will ensure there is a next tick.
+        Checking `has_data` is `True` will ensure there is data.
 
         Returns
         -------
-        Tick or None
+        Data or None
 
         """
-        cdef Tick tick
+        # TODO: Refactor for generic data
+
+        cdef Data data
         if self._tick_index <= self._tick_index_last:
-            tick = self._tick_cache[self._tick_index]
+            data = self._data_cache[self._tick_index]
             self._tick_index += 1
 
         # Check if last tick
         if self._tick_index > self._tick_index_last:
-            self.has_tick_data = False
+            self.has_data = False
 
-        return tick
+        return data
 
-    cdef void _create_tick_cache(self) except *:
-        self._log.info(f"Pre-caching ticks...")
+    cdef void _create_data_cache(self) except *:
+        self._log.info(f"Pre-caching data...")
         self._producer.setup(self.min_timestamp, self.max_timestamp)
 
         cdef double ts = time.time()
 
-        cdef Tick tick
-        while self._producer.has_tick_data:
-            tick = self._producer.next_tick()
-            self._tick_cache.append(tick)
-            self._ts_cache.append(tick.timestamp.timestamp())
+        cdef Data data
+        while self._producer.has_data:
+            data = self._producer.next()
+            self._data_cache.append(data)
+            self._ts_cache.append(data.unix_timestamp)
 
-        self._log.info(f"Pre-cached {len(self._tick_cache):,} "
-                       f"total tick rows in {time.time() - ts:.3f}s.")
+        self._log.info(f"Pre-cached {len(self._data_cache):,} "
+                       f"total data items in {time.time() - ts:.3f}s.")
 
         self._producer.reset()
         self._producer.clear()

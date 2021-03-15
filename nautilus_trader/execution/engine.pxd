@@ -77,6 +77,10 @@ cdef class ExecutionEngine(Component):
     cpdef void _on_start(self) except *
     cpdef void _on_stop(self) except *
 
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _set_position_id_counts(self) except *
+
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *
@@ -111,7 +115,3 @@ cdef class ExecutionEngine(Component):
     cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef inline void _set_position_id_counts(self) except *

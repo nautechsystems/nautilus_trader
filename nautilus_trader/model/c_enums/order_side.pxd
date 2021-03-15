@@ -17,7 +17,7 @@
 cpdef enum OrderSide:
     UNDEFINED = 0,  # Invalid value
     BUY = 1,
-    SELL = 2
+    SELL = 2,
 
 
 cdef class OrderSideParser:

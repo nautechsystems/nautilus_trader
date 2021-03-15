@@ -13,22 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum AssetClass:
-    UNDEFINED = 0,  # Invalid value
-    FX = 1,
-    STOCK = 2,
-    COMMODITY = 3,
-    BOND = 4,
-    INDEX = 5,
-    CRYPTO = 6,
-    BETTING = 7,
+from nautilus_trader.risk.engine cimport RiskEngine
 
 
-cdef class AssetClassParser:
+cdef class LiveRiskEngine(RiskEngine):
+    cdef object _loop
+    cdef object _queue
+    cdef object _run_queue_task
 
-    @staticmethod
-    cdef str to_str(int value)
+    cdef readonly bint is_running
 
-    @staticmethod
-    cdef AssetClass from_str(str value)
+    cpdef object get_event_loop(self)
+    cpdef object get_run_queue_task(self)
+    cpdef int qsize(self) except *
+
+    cpdef void kill(self) except *

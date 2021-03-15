@@ -15,13 +15,12 @@
 
 from decimal import Decimal
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -30,7 +29,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Instrument:
+cdef class Instrument(Data):
     cdef readonly InstrumentId id
     """The instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly Symbol symbol
@@ -87,8 +86,6 @@ cdef class Instrument:
     """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly dict financing
     """The financing information for the instrument.\n\n:returns: `dict[str, object]`"""
-    cdef readonly datetime timestamp
-    """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
     cdef readonly dict info
     """The additional instrument information.\n\n:returns: `dict[str, object]`"""
 

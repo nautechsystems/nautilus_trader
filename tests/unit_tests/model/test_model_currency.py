@@ -31,9 +31,29 @@ class TestCurrency:
 
     def test_currency_equality(self):
         # Arrange
-        currency1 = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
-        currency2 = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
-        currency3 = Currency("GBP", precision=2, currency_type=CurrencyType.FIAT)
+        currency1 = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
+
+        currency2 = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
+
+        currency3 = Currency(
+            code="GBP",
+            precision=2,
+            iso4217=826,
+            name="British pound",
+            currency_type=CurrencyType.FIAT,
+        )
 
         # Act
         # Assert
@@ -43,7 +63,13 @@ class TestCurrency:
 
     def test_currency_hash(self):
         # Arrange
-        currency = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
+        currency = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
 
         # Act
         # Assert
@@ -52,12 +78,18 @@ class TestCurrency:
 
     def test_str_repr(self):
         # Arrange
-        currency = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
+        currency = Currency(
+            code="AUD",
+            precision=2,
+            iso4217=36,
+            name="Australian dollar",
+            currency_type=CurrencyType.FIAT,
+        )
 
         # Act
         # Assert
         assert "AUD" == str(currency)
-        assert "Currency(code=AUD, precision=2, type=FIAT)" == repr(currency)
+        assert "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)" == repr(currency)
 
     def test_from_str_given_unknown_code_returns_none(self):
         # Arrange

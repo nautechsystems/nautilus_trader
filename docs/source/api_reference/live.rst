@@ -13,7 +13,6 @@ Data Client
    :members:
    :member-order: bysource
 
-
 Data Engine
 -----------
 
@@ -22,7 +21,6 @@ Data Engine
    :inherited-members:
    :members:
    :member-order: bysource
-
 
 Execution Client
 ----------------
@@ -33,7 +31,6 @@ Execution Client
    :members:
    :member-order: bysource
 
-
 Execution Engine
 ----------------
 
@@ -43,21 +40,19 @@ Execution Engine
    :members:
    :member-order: bysource
 
+Risk Engine
+-----------
 
-Node
-----
-
-.. automodule:: nautilus_trader.live.node
+.. automodule:: nautilus_trader.live.risk_engine
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 
+Node
+----
 
-Providers
----------
-
-.. automodule:: nautilus_trader.live.providers
+.. automodule:: nautilus_trader.live.node
    :show-inheritance:
    :inherited-members:
    :members:

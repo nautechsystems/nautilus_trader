@@ -106,7 +106,6 @@ cdef class LimitOrder(PassiveOrder):
             Condition.false(hidden, "A post-only order is not hidden")
         if hidden:
             Condition.false(post_only, "A hidden order is not post-only")
-
         super().__init__(
             cl_ord_id,
             strategy_id,

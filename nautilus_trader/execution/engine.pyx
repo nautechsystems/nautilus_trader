@@ -124,9 +124,9 @@ cdef class ExecutionEngine(Component):
         self.event_count = 0
 
     @property
-    def registered_venues(self):
+    def registered_clients(self):
         """
-        The trading venues registered with the execution engine.
+        The execution clients registered with the engine.
 
         Returns
         -------
@@ -138,7 +138,7 @@ cdef class ExecutionEngine(Component):
     @property
     def registered_strategies(self):
         """
-        The strategy identifiers registered with the execution engine.
+        The strategy identifiers registered with the engine.
 
         Returns
         -------
@@ -261,6 +261,9 @@ cdef class ExecutionEngine(Component):
         self._clients[client.venue] = client
         self._log.info(f"Registered {client}.")
 
+        if self._risk_engine is not None and client not in self._risk_engine.registered_clients:
+            self._risk_engine.register_client(client)
+
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
         Register the given strategy with the execution engine.
@@ -298,6 +301,14 @@ cdef class ExecutionEngine(Component):
 
         self._risk_engine = engine
         self._log.info(f"Registered {engine}.")
+
+        cdef list risk_registered = self._risk_engine.registered_clients
+
+        cdef Venue venue
+        cdef ExecutionClient client
+        for venue, client in self._clients.items():
+            if venue not in risk_registered:
+                self._risk_engine.register_client(client)
 
     cpdef void deregister_client(self, ExecutionClient client) except *:
         """
@@ -445,6 +456,31 @@ cdef class ExecutionEngine(Component):
         """
         self.cache.flush_db()
 
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _set_position_id_counts(self) except *:
+        # For the internal position identifier generator
+        cdef list positions = self.cache.positions()
+
+        # Count positions per instrument_id
+        cdef dict counts = {}  # type: dict[StrategyId, int]
+        cdef int count
+        cdef Position position
+        for position in positions:
+            count = counts.get(position.strategy_id, 0)
+            count += 1
+            # noinspection PyUnresolvedReferences
+            counts[position.strategy_id] = count
+
+        # Reset position identifier generator
+        self._pos_id_generator.reset()
+
+        # Set counts
+        cdef StrategyId strategy_id
+        for strategy_id, count in counts.items():
+            self._pos_id_generator.set_count(strategy_id, count)
+            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
+
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, TradingCommand command) except *:
@@ -486,7 +522,10 @@ cdef class ExecutionEngine(Component):
             return  # Invalid command
 
         # Submit order
-        client.submit_order(command)
+        if self._risk_engine is not None:
+            self._risk_engine.execute(command)
+        else:
+            client.submit_order(command)
 
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Validate command
@@ -507,8 +546,11 @@ cdef class ExecutionEngine(Component):
         if command.bracket_order.take_profit is not None:
             self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
 
-        # Submit bracket order
-        client.submit_bracket_order(command)
+        # Submit order
+        if self._risk_engine is not None:
+            self._risk_engine.execute(command)
+        else:
+            client.submit_bracket_order(command)
 
     cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
         # Validate command
@@ -517,7 +559,11 @@ cdef class ExecutionEngine(Component):
                               f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
-        client.amend_order(command)
+        # Amend order
+        if self._risk_engine is not None:
+            self._risk_engine.execute(command)
+        else:
+            client.amend_order(command)
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command
@@ -526,7 +572,11 @@ cdef class ExecutionEngine(Component):
                               f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
-        client.cancel_order(command)
+        # Cancel order
+        if self._risk_engine is not None:
+            self._risk_engine.execute(command)
+        else:
+            client.cancel_order(command)
 
     cdef inline void _invalidate_order(self, ClientOrderId cl_ord_id, str reason) except *:
         # Generate event
@@ -858,28 +908,3 @@ cdef class ExecutionEngine(Component):
             return  # Cannot send to strategy
 
         strategy.handle_event_c(event)
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef inline void _set_position_id_counts(self) except *:
-        # For the internal position identifier generator
-        cdef list positions = self.cache.positions()
-
-        # Count positions per instrument_id
-        cdef dict counts = {}  # type: dict[StrategyId, int]
-        cdef int count
-        cdef Position position
-        for position in positions:
-            count = counts.get(position.strategy_id, 0)
-            count += 1
-            # noinspection PyUnresolvedReferences
-            counts[position.strategy_id] = count
-
-        # Reset position identifier generator
-        self._pos_id_generator.reset()
-
-        # Set counts
-        cdef StrategyId strategy_id
-        for strategy_id, count in counts.items():
-            self._pos_id_generator.set_count(strategy_id, count)
-            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
