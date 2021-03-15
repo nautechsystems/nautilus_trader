@@ -1,6 +1,6 @@
 # NautilusTrader 1.111.0 Beta - Release Notes
 
-
+This release adds further enhancements to the platform.
 
 ## Breaking Changes
 None
@@ -17,7 +17,8 @@ None
 - Add currency names.
 
 ## Fixes
-- Queue blocking coroutines in live engines.
+- Queue `put` coroutines in live engines when blocking at `maxlen` was not
+  creating a task on the event loop.
 
 ---
 
