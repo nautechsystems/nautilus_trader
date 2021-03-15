@@ -13,26 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-
-
-cdef class Currency:
-    cdef readonly str code
-    """The currency identifier code.\n\n:returns: `str`"""
-    cdef readonly int precision
-    """The currency decimal precision.\n\n:returns: `int`"""
-    cdef readonly int iso4217
-    """The currency ISO 4217 code.\n\n:returns: `int`"""
-    cdef readonly str name
-    """The currency name.\n\n:returns: `str`"""
-    cdef readonly CurrencyType currency_type
-    """The currency type (FIAT or CRYPTO).\n\n:returns: `CurrencyType` (Enum)"""
-
-    @staticmethod
-    cdef Currency from_str_c(str code)
-
-    @staticmethod
-    cdef bint is_fiat_c(str code)
-
-    @staticmethod
-    cdef bint is_crypto_c(str code)
+cdef dict _CURRENCY_MAP

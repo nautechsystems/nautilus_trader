@@ -93,12 +93,12 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
         cdef list instrument_id_pieces = values["name"].split('_', maxsplit=1)
 
         cdef Currency base_currency = None
-        cdef Currency quote_currency = Currency(instrument_id_pieces[1], 2, CurrencyType.FIAT)
+        cdef Currency quote_currency = Currency.from_str_c(instrument_id_pieces[1])
 
         if oanda_type == "CURRENCY":
             asset_class = AssetClass.FX
             asset_type = AssetType.SPOT
-            base_currency = Currency(instrument_id_pieces[0], 2, CurrencyType.FIAT)
+            base_currency = Currency.from_str_c(instrument_id_pieces[0])
         elif oanda_type == "METAL":
             asset_class = AssetClass.COMMODITY
             asset_type = AssetType.SPOT

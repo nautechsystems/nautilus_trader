@@ -16,92 +16,7 @@
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
-
-# Crypto currencies
-BTC = Currency("BTC", precision=8, currency_type=CurrencyType.CRYPTO)
-ETH = Currency("ETH", precision=8, currency_type=CurrencyType.CRYPTO)
-USDT = Currency("USDT", precision=8, currency_type=CurrencyType.CRYPTO)
-XRP = Currency("XRP", precision=8, currency_type=CurrencyType.CRYPTO)
-BCH = Currency("BCH", precision=8, currency_type=CurrencyType.CRYPTO)
-BNB = Currency("BNB", precision=8, currency_type=CurrencyType.CRYPTO)
-DOT = Currency("DOT", precision=8, currency_type=CurrencyType.CRYPTO)
-LINK = Currency("LINK", precision=8, currency_type=CurrencyType.CRYPTO)
-LTC = Currency("LTC", precision=8, currency_type=CurrencyType.CRYPTO)
-
-# Fiat currencies
-AUD = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
-CAD = Currency("CAD", precision=2, currency_type=CurrencyType.FIAT)
-CHF = Currency("CHF", precision=2, currency_type=CurrencyType.FIAT)
-CNY = Currency("CNY", precision=2, currency_type=CurrencyType.FIAT)
-CNH = Currency("CNH", precision=2, currency_type=CurrencyType.FIAT)
-CZK = Currency("CZK", precision=2, currency_type=CurrencyType.FIAT)
-EUR = Currency("EUR", precision=2, currency_type=CurrencyType.FIAT)
-GBP = Currency("GBP", precision=2, currency_type=CurrencyType.FIAT)
-HKD = Currency("HKD", precision=2, currency_type=CurrencyType.FIAT)
-JPY = Currency("JPY", precision=2, currency_type=CurrencyType.FIAT)
-MXN = Currency("MXN", precision=2, currency_type=CurrencyType.FIAT)
-NOK = Currency("NOK", precision=2, currency_type=CurrencyType.FIAT)
-NZD = Currency("NZD", precision=2, currency_type=CurrencyType.FIAT)
-RUB = Currency("RUB", precision=2, currency_type=CurrencyType.FIAT)
-SEK = Currency("SEK", precision=2, currency_type=CurrencyType.FIAT)
-TRY = Currency("TRY", precision=2, currency_type=CurrencyType.FIAT)
-SGD = Currency("SGD", precision=2, currency_type=CurrencyType.FIAT)
-USD = Currency("USD", precision=2, currency_type=CurrencyType.FIAT)
-ZAR = Currency("ZAR", precision=2, currency_type=CurrencyType.FIAT)
-
-
-cdef dict _CURRENCY_TABLE = {
-    "BTC": BTC,
-    "ETH": ETH,
-    "XRP": XRP,
-    "BCH": BCH,
-    "BNB": BNB,
-    "DOT": DOT,
-    "LINK": LINK,
-    "LTC": LTC,
-    "USDT": USDT,
-    "AUD": AUD,
-    "CAD": CAD,
-    "CHF": CHF,
-    "CNY": CNY,
-    "CNH": CNH,
-    "CZK": CZK,
-    "EUR": EUR,
-    "GBP": GBP,
-    "HKD": HKD,
-    "JPY": JPY,
-    "MXN": MXN,
-    "NOK": NOK,
-    "NZD": NZD,
-    "RUB": RUB,
-    "SEK": SEK,
-    "TRY": TRY,
-    "SGD": SGD,
-    "USD": USD,
-    "ZAR": ZAR,
-}
-
-cdef set _FIAT_CURRENCIES = {
-    "AUD",
-    "CAD",
-    "CHF",
-    "CNY",
-    "CNH",
-    "CZK",
-    "EUR",
-    "GBP",
-    "HKD",
-    "JPY",
-    "MXN",
-    "NOK",
-    "NZD",
-    "RUB",
-    "SEK",
-    "TRY",
-    "SGD",
-    "USD",
-    "ZAR",
-}
+from nautilus_trader.model.currencies cimport _CURRENCY_MAP
 
 
 cdef class Currency:
@@ -114,6 +29,8 @@ cdef class Currency:
         self,
         str code,
         int precision,
+        int iso4217,
+        str name,
         CurrencyType currency_type,
     ):
         """
@@ -125,6 +42,10 @@ cdef class Currency:
             The currency code.
         precision : int
             The currency decimal precision.
+        iso4217 : int
+            The currency ISO 4217 code.
+        name : str
+            The currency name.
         currency_type : CurrencyType (Enum)
             The currency type.
 
@@ -135,15 +56,20 @@ cdef class Currency:
         ValueError
             If precision is negative (< 0).
         ValueError
+            If name is not a valid string.
+        ValueError
             If currency_type is UNDEFINED.
 
         """
         Condition.valid_string(code, "code")
+        Condition.valid_string(name, "name")
         Condition.not_negative_int(precision, "precision")
         Condition.not_equal(currency_type, CurrencyType.UNDEFINED, "currency_type", "UNDEFINED")
 
         self.code = code
+        self.name = name
         self.precision = precision
+        self.iso4217 = iso4217
         self.currency_type = currency_type
 
     def __eq__(self, Currency other) -> bool:
@@ -161,12 +87,14 @@ cdef class Currency:
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"code={self.code}, "
+                f"name={self.name}, "
                 f"precision={self.precision}, "
+                f"iso4217={self.iso4217}, "
                 f"type={CurrencyTypeParser.to_str(self.currency_type)})")
 
     @staticmethod
     cdef Currency from_str_c(str code):
-        return _CURRENCY_TABLE.get(code)
+        return _CURRENCY_MAP.get(code)
 
     @staticmethod
     def from_str(str code):
@@ -183,11 +111,23 @@ cdef class Currency:
         Currency or None
 
         """
-        return _CURRENCY_TABLE.get(code)
+        return _CURRENCY_MAP.get(code)
 
     @staticmethod
     cdef bint is_fiat_c(str code):
-        return code in _FIAT_CURRENCIES
+        cdef Currency currency = _CURRENCY_MAP.get(code)
+        if currency is None:
+            return False
+
+        return currency.currency_type == CurrencyType.FIAT
+
+    @staticmethod
+    cdef bint is_crypto_c(str code):
+        cdef Currency currency = _CURRENCY_MAP.get(code)
+        if currency is None:
+            return False
+
+        return currency.currency_type == CurrencyType.CRYPTO
 
     @staticmethod
     def is_fiat(str code):
@@ -204,5 +144,37 @@ cdef class Currency:
         bool
             True if Fiat, else False.
 
+        Raises
+        ------
+        ValueError
+            If code is not a valid string.
+
         """
-        return code in _FIAT_CURRENCIES
+        Condition.valid_string(code, "code")
+
+        return Currency.is_fiat_c(code)
+
+    @staticmethod
+    def is_crypto(str code):
+        """
+        Return a value indicating whether a currency with the given code is Crypto.
+
+        Parameters
+        ----------
+        code : str
+            The code of the currency.
+
+        Returns
+        -------
+        bool
+            True if Crypto, else False.
+
+        Raises
+        ------
+        ValueError
+            If code is not a valid string.
+
+        """
+        Condition.valid_string(code, "code")
+
+        return Currency.is_crypto_c(code)
