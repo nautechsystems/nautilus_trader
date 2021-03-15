@@ -236,7 +236,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             size_precision=size_precision,
             tick_size=tick_size,
             multiplier=Decimal(1),
-            leverage=Decimal(1),
             lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,

@@ -78,19 +78,6 @@ class InstrumentTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money("0.00000000", BTC), margin)
 
-    def test_calculate_order_margin_with_100x_leverage_returns_expected(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal(100))
-
-        # Act
-        margin = instrument.calculate_initial_margin(
-            Quantity(100000),
-            Price("11493.60"),
-        )
-
-        # Assert
-        self.assertEqual(Money("0.01392079", BTC), margin)
-
     def test_calculate_position_margin_with_no_leverage_returns_zero(self):
         # Arrange
         instrument = TestInstrumentProvider.xbtusd_bitmex()
@@ -104,20 +91,6 @@ class InstrumentTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money("0.00000000", BTC), margin)
-
-    def test_calculate_position_margin_with_100x_leverage_returns_expected(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal(100))
-
-        # Act
-        margin = instrument.calculate_maint_margin(
-            PositionSide.LONG,
-            Quantity(100000),
-            Price("11493.60"),
-        )
-
-        # Assert
-        self.assertEqual(Money("0.00682989", BTC), margin)
 
     def test_calculate_notional_value(self):
         # Arrange
