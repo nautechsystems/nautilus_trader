@@ -1,5 +1,5 @@
-Interactive Brokers Integration
-===============================
+Interactive Brokers
+===================
 
 .. automodule:: nautilus_trader.adapters.ib
 
