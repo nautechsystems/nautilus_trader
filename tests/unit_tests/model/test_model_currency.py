@@ -88,8 +88,8 @@ class TestCurrency:
 
         # Act
         # Assert
-        assert "AUD" == str(currency)
-        assert "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)" == repr(currency)
+        assert str(currency) == "AUD"
+        assert repr(currency) == "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)"
 
     def test_from_str_given_unknown_code_returns_none(self):
         # Arrange
@@ -112,7 +112,7 @@ class TestCurrency:
         result = Currency.from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -125,4 +125,17 @@ class TestCurrency:
         result = Currency.is_fiat(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [["BTC", True],
+         ["ZZZ", False]],
+    )
+    def test_is_crypto(self, string, expected):
+        # Arrange
+        # Act
+        result = Currency.is_crypto(string)
+
+        # Assert
+        assert result == expected
