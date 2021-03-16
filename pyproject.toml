@@ -112,6 +112,10 @@ use_parentheses = true
 target-version = ["py37", "py38"]
 include = '\.pyi?$'
 
+
+################
+# Lint configs #
+################
 [tool.flakehell]
 filename = ["*.py", "*.pyx", "*.pxd"]
 exclude = [".github", ".nox", ".pytest_cache", "__pycache__", "build", "dist", "docs", "noxfile.py"]
@@ -123,7 +127,7 @@ statistics = true
 [tool.flakehell.plugins]
 filename = ["*.py", "*.pyx", "*.pxd"]
 pyflakes = ["+*"]
-pycodestyle = ["+*", "-E501", "-W503"]
+pycodestyle = ["+*", "-E501", "-W503"]  # TODO: max_line_length config
 flake8-bandit = ["+*"]
 flake8-bugbear = ["+*"]
 flake8-rst-docstrings = ["+*"]
