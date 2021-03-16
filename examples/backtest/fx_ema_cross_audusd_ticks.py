@@ -21,6 +21,7 @@ import sys
 
 import pandas as pd
 
+
 sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -38,6 +39,7 @@ from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
+
 
 if __name__ == "__main__":
     # Setup trading instruments

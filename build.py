@@ -12,6 +12,7 @@ import numpy as np
 from setuptools import Distribution
 from setuptools import Extension
 
+
 # If DEBUG mode is enabled, skip compiler optimizations (TODO: implement)
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If PROFILING mode is enabled, include traces necessary for coverage and profiling

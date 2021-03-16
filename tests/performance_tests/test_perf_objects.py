@@ -25,6 +25,7 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 AUDUSD_SIM = TestStubs.audusd_id()
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 

@@ -20,6 +20,7 @@ import oandapyV20
 from oandapyV20.endpoints.accounts import AccountInstruments
 from oandapyV20.endpoints.instruments import InstrumentsCandles
 
+
 # Requirements:
 # - An internet connection
 # - Environment variable OANDA_API_TOKEN with a valid practice account api token

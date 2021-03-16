@@ -19,4 +19,5 @@ Contains the test suite for `NautilusTrader`.
 
 import os
 
+
 TESTS_PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
