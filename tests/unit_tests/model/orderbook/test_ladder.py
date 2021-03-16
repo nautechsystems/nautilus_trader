@@ -27,7 +27,7 @@ def test_insert():
         (101, 10),
         (105, 20),
     ]
-    result = [(level.price(), level.volume()) for level in ladder.levels]
+    result = [(level.price, level.volume) for level in ladder.levels]
     assert result == expected
 
 # @pytest.mark.skip

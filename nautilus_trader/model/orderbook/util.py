@@ -11,7 +11,6 @@ from operator import attrgetter
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.model.orderbook.order import Order
-from nautilus_trader.model.orderbook.orderbook import Orderbook
 
 
 def cumulative(self: Ladder, attrib="volume"):
@@ -32,7 +31,7 @@ def cumulative(self: Ladder, attrib="volume"):
     return accumulate(values)
 
 
-def check_for_trade(orderbook: Orderbook, order: Order):
+def check_for_trade(orderbook: 'Orderbook', order: Order):
     """
     Run an auction match on this order to see if any would trade
     :param order:
@@ -216,17 +215,16 @@ def match_orders(traded_bids, traded_asks):
     return matched
 
 
-def pprint_ob(self: Orderbook, num_levels=3):
+def pprint_ob(self: 'Orderbook', num_levels=3):
     from tabulate import tabulate
 
-    empty = Level(orders=[], price=0, side=OrderSide.BUY)
-    prices = reversed([lvl.price for lvl in self.bids.levels[:num_levels] + self.asks.levels[:num_levels]])
+    levels = reversed([lvl for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]])
     data = [
         {
-            "bids": [order.order_id for order in self.bids.price_levels.get(price, empty).orders] or None,
-            "price": price,
-            "asks": [order.order_id for order in self.asks.price_levels.get(price, empty).orders] or None,
+            "bids": [order.id for order in level.orders if level in self.bids.levels] or None,
+            "price": level.price,
+            "asks": [order.id for order in level.orders if level in self.asks.levels] or None,
         }
-        for price in prices
+        for level in levels
     ]
     return tabulate(data, headers="keys", numalign="center", floatfmt=".2f", tablefmt="fancy")

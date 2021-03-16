@@ -1,10 +1,12 @@
+import logging
+
 from nautilus_trader.model.c_enums.order_side import OrderSide
 
-from nautilus_trader.model.orderbook.ladder cimport Ladder
-from nautilus_trader.model.orderbook.level cimport Level
-from nautilus_trader.model.orderbook.order cimport Order
+from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orderbook.level import Level
 
-cdef class OrderbookProxy:
+
+class OrderbookProxy:
     """
     An Orderbook proxy - A L3 Orderbook that can be proxied to L3/L2/L1 Orderbook classes.
     """
@@ -12,38 +14,39 @@ cdef class OrderbookProxy:
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
 
-    cpdef void add(self, Order order):
+    def add(self, order):
         if order.side == OrderSide.BUY:
             self.bids.add(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.add(order=order)
 
-    cpdef void update(self, Order order):
+    def update(self, order):
         if order.side == OrderSide.BUY:
             self.bids.update(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.update(order=order)
 
-    cpdef void delete(self, Order order):
+    def delete(self, order):
         if order.side == OrderSide.BUY:
             self.bids.delete(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.delete(order=order)
 
-    cpdef void clear(self):
+    def clear(self):
         """ Clear the entire orderbook """
-        self.bids = Ladder(orders=[], reverse=True)
-        self.asks = Ladder(orders=[], reverse=False)
+        self.bids = Ladder(reverse=True)
+        self.asks = Ladder(reverse=False)
 
-    cpdef bint _check_integrity(self, bint deep=True):
+    def _check_integrity(self, deep=True):
         if self.best_bid is None or self.best_ask is None:
             return True
-        if not self.best_bid.price() < self.best_ask.price():
+        if not self.best_bid.price < self.best_ask.price:
+            logging.warning("Price in cross")
             return False
         if deep:
-            if not [lvl.price for lvl in self.bids] == sorted([lvl.price for lvl in self.bids]):
+            if not [lvl.price for lvl in self.bids.price_levels] == sorted([lvl.price for lvl in self.bids.price_levels]):
                 return False
-            if not [lvl.price for lvl in self.asks] == sorted([lvl.price for lvl in self.bids], reverse=True):
+            if not [lvl.price for lvl in self.asks.price_levels] == sorted([lvl.price for lvl in self.asks.price_levels], reverse=True):
                 return False
         return True
 
@@ -56,22 +59,30 @@ cdef class OrderbookProxy:
         return self.asks.top
 
 
-cdef class L3Orderbook:
+class L3Orderbook:
     """ A L3 Orderbook. Should map directly to functionality of the OrderbookProxy """
 
     def __init__(self):
         self._orderbook = OrderbookProxy()
 
-    cpdef void add(self, Order order):
+    @property
+    def bids(self):
+        return self._orderbook.bids
+
+    @property
+    def asks(self):
+        return self._orderbook.asks
+
+    def add(self, order):
         self._orderbook.add(order=order)
 
-    cpdef void update(self, Order order):
+    def update(self, order):
         self._orderbook.update(order=order)
 
-    cpdef void delete(self, Order order):
+    def delete(self, order):
         self._orderbook.delete(order=order)
 
-    cpdef bint _check_integrity(self, bint deep=True):
+    def _check_integrity(self, deep=True):
         return self._orderbook._check_integrity(deep=deep)
 
     @property
@@ -81,6 +92,10 @@ cdef class L3Orderbook:
     @property
     def best_ask(self):
         return self._orderbook.best_ask
+
+    def repr(self):
+        from nautilus_trader.model.orderbook.util import pprint_ob
+        return pprint_ob(self)
 
 # cdef class L2Orderbook:
 #     """ A L2 Orderbook. An Orderbook where price `Levels` are only made up of a single order """
