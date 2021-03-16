@@ -13,11 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.identifiers import Venue
 
 
 class TestRouting:
+
+    def test_instantiate_when_all_venues_none_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            Routing(None, None, None)
 
     def test_first(self):
         # Arrange
