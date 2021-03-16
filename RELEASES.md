@@ -1,3 +1,21 @@
+# NautilusTrader 1.112.0 Beta - Release Notes
+
+[WIP] Fix `reconcile_state` before release...
+
+[WIP] Update dependencies before release...
+
+## Breaking Changes
+- Remove `Instrument.leverage` (incorrect place for concept).
+- Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
+
+## Enhancements
+- Add optional `Routing` instructions.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.111.0 Beta - Release Notes
 
 This release adds further enhancements to the platform.
