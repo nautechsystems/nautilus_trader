@@ -39,7 +39,7 @@ cdef class DataClient:
     cdef dict _config
 
     cdef readonly str name
-    """The clients venue.\n\n:returns: `Venue`"""
+    """The clients name.\n\n:returns: `str`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 

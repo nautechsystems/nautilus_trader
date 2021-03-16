@@ -107,7 +107,7 @@ cdef class ExecutionEngine(Component):
             config = {}
         super().__init__(clock, logger, name="ExecEngine")
 
-        self._clients = {}     # type: dict[Venue, ExecutionClient]
+        self._clients = {}     # type: dict[str, ExecutionClient]
         self._strategies = {}  # type: dict[StrategyId, TradingStrategy]
         self._pos_id_generator = PositionIdGenerator(
             id_tag_trader=database.trader_id.tag,
@@ -130,7 +130,7 @@ cdef class ExecutionEngine(Component):
 
         Returns
         -------
-        list[Venue]
+        list[str]
 
         """
         return sorted(list(self._clients.keys()))
@@ -256,9 +256,9 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.venue, self._clients, "client.venue", "self._clients")
+        Condition.not_in(client.name, self._clients, "client.name", "self._clients")
 
-        self._clients[client.venue] = client
+        self._clients[client.name] = client
         self._log.info(f"Registered {client}.")
 
         if self._risk_engine is not None and client not in self._risk_engine.registered_clients:
@@ -304,7 +304,6 @@ cdef class ExecutionEngine(Component):
 
         cdef list risk_registered = self._risk_engine.registered_clients
 
-        cdef Venue venue
         cdef ExecutionClient client
         for venue, client in self._clients.items():
             if venue not in risk_registered:
@@ -326,9 +325,9 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
+        Condition.is_in(client.name, self._clients, "client.name", "self._clients")
 
-        del self._clients[client.venue]
+        del self._clients[client.name]
         self._log.info(f"Deregistered {client}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
@@ -487,10 +486,10 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._clients.get(command.venue)
+        cdef ExecutionClient client = self._clients.get(command.routing.first().value)
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.venue}, {command}.")
+                            f"No client registered for {command.routing.first().value}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):

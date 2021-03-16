@@ -61,7 +61,7 @@ cdef class DataClient:
 
         Parameters
         ----------
-        name : Venue
+        name : str
             The data client name.
         engine : DataEngine
             The data engine to connect to the client.
@@ -71,6 +71,11 @@ cdef class DataClient:
             The logger for the component.
         config : dict[str, object], optional
             The configuration options.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
 
         """
         Condition.valid_string(name, "name")

@@ -38,7 +38,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -54,7 +53,7 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     def __init__(
         self,
-        Venue venue not None,
+        str name not None,
         AccountId account_id not None,
         LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
@@ -67,8 +66,8 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the client.
+        name : str
+            The name of the client.
         account_id : AccountId
             The account identifier for the client.
         engine : LiveDataEngine
@@ -84,7 +83,7 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            venue,
+            name,
             account_id,
             engine,
             clock,

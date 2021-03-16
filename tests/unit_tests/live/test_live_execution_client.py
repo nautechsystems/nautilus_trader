@@ -81,7 +81,7 @@ class LiveExecutionClientTests(unittest.TestCase):
         )
 
         self.client = LiveExecutionClient(
-            venue=SIM,
+            name=SIM.value,
             account_id=self.account_id,
             engine=self.engine,
             instrument_provider=InstrumentProvider(),

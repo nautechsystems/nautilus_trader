@@ -28,6 +28,7 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
@@ -109,6 +110,8 @@ class BacktestExecClientTests(unittest.TestCase):
             clock=self.clock,
         )
 
+        self.routing = Routing(exchange=BINANCE)
+
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange
 
@@ -160,7 +163,7 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            BINANCE,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -192,7 +195,7 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            BINANCE,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -216,7 +219,7 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = CancelOrder(
-            BINANCE,
+            self.routing,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
@@ -241,7 +244,7 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = AmendOrder(
-            BINANCE,
+            self.routing,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
