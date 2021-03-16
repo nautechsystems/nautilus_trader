@@ -90,7 +90,7 @@ filterwarnings = [
 # Style configs #
 #################
 [tool.isort]
-src_paths = ["examples", "nautilus_trader", "scripts", "tests", "build.py", "noxfile.py"]
+src_paths = ["examples", "nautilus_trader", "scripts", "tests", "tools", "build.py", "noxfile.py"]
 atomic = true
 combine_as_imports = true
 ensure_newline_before_comments = true
