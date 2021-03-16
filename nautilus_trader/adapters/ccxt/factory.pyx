@@ -24,6 +24,7 @@ from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
 
+
 try:
     import ccxtpro
 except ImportError:
