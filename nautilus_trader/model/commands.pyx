@@ -57,11 +57,9 @@ cdef class Routing:
             If broker, intermediary and exchange are all None.
 
         """
-        Condition.true(
-            broker is not None
-            or intermediary is not None  # noqa
-            or exchange is not None,     # noqa
-            "all routing venues were None"
+        Condition.false(
+            broker is None and intermediary is None and exchange is None,
+            "all routing venues were None",
         )
 
         self.broker = broker
