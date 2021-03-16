@@ -120,19 +120,22 @@ include = '\.pyi?$'
 filename = ["*.py", "*.pyx", "*.pxd"]
 exclude = [".github", ".nox", ".pytest_cache", "__pycache__", "build", "dist", "docs", "noxfile.py"]
 format = "grouped"
-max_line_length = 120
+max_line_length = 120  # TODO: max_line_length config
 max_complexity = 10
 statistics = true
 
 [tool.flakehell.plugins]
 filename = ["*.py", "*.pyx", "*.pxd"]
 pyflakes = ["+*"]
-pycodestyle = ["+*", "-E501", "-W503"]  # TODO: max_line_length config
+pycodestyle = ["+*", "-E501", "-W503"]
 flake8-bandit = ["+*"]
 flake8-bugbear = ["+*"]
 flake8-rst-docstrings = ["+*"]
 pep8-naming = ["+*"]
 darglint = ["+*"]
+
+# W503 in error will be amended by flake8 soon
+# https://www.flake8rules.com/rules/W503.html
 
 [tool.flakehell.exceptions."examples/"]
 pycodestyle = ["-E402"]  # Allows relative imports from examples
