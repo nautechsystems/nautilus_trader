@@ -29,7 +29,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class SpreadAnalyzerTests(unittest.TestCase):
-
     def test_instantiate(self):
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1000)

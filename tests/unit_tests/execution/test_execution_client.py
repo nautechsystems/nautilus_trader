@@ -47,7 +47,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class ExecutionClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -147,7 +146,9 @@ class ExecutionClientTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        self.assertRaises(NotImplementedError, self.client.submit_bracket_order, command)
+        self.assertRaises(
+            NotImplementedError, self.client.submit_bracket_order, command
+        )
 
     def test_amend_order_raises_not_implemented_error(self):
         # Arrange

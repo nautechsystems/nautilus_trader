@@ -31,7 +31,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class FuzzyCandlesticksTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.fc = FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)

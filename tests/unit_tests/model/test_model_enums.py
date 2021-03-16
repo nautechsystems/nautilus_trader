@@ -42,17 +42,18 @@ from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
 
 
 class TestAssetClass:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[AssetClass.UNDEFINED, "UNDEFINED"],
-         [AssetClass.FX, "FX"],
-         [AssetClass.STOCK, "STOCK"],
-         [AssetClass.COMMODITY, "COMMODITY"],
-         [AssetClass.BOND, "BOND"],
-         [AssetClass.INDEX, "INDEX"],
-         [AssetClass.CRYPTO, "CRYPTO"],
-         [AssetClass.BETTING, "BETTING"]],
+        [
+            [AssetClass.UNDEFINED, "UNDEFINED"],
+            [AssetClass.FX, "FX"],
+            [AssetClass.STOCK, "STOCK"],
+            [AssetClass.COMMODITY, "COMMODITY"],
+            [AssetClass.BOND, "BOND"],
+            [AssetClass.INDEX, "INDEX"],
+            [AssetClass.CRYPTO, "CRYPTO"],
+            [AssetClass.BETTING, "BETTING"],
+        ],
     )
     def test_asset_class_to_str(self, enum, expected):
         # Arrange
@@ -64,15 +65,17 @@ class TestAssetClass:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", AssetClass.UNDEFINED],
-         ["UNDEFINED", AssetClass.UNDEFINED],
-         ["FX", AssetClass.FX],
-         ["STOCK", AssetClass.STOCK],
-         ["COMMODITY", AssetClass.COMMODITY],
-         ["BOND", AssetClass.BOND],
-         ["INDEX", AssetClass.INDEX],
-         ["CRYPTO", AssetClass.CRYPTO],
-         ["BETTING", AssetClass.BETTING]],
+        [
+            ["", AssetClass.UNDEFINED],
+            ["UNDEFINED", AssetClass.UNDEFINED],
+            ["FX", AssetClass.FX],
+            ["STOCK", AssetClass.STOCK],
+            ["COMMODITY", AssetClass.COMMODITY],
+            ["BOND", AssetClass.BOND],
+            ["INDEX", AssetClass.INDEX],
+            ["CRYPTO", AssetClass.CRYPTO],
+            ["BETTING", AssetClass.BETTING],
+        ],
     )
     def test_asset_class_from_str(self, string, expected):
         # Arrange
@@ -84,17 +87,18 @@ class TestAssetClass:
 
 
 class TestAssetType:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[AssetType.UNDEFINED, "UNDEFINED"],
-         [AssetType.SPOT, "SPOT"],
-         [AssetType.SWAP, "SWAP"],
-         [AssetType.FUTURE, "FUTURE"],
-         [AssetType.FORWARD, "FORWARD"],
-         [AssetType.CFD, "CFD"],
-         [AssetType.OPTION, "OPTION"],
-         [AssetType.WARRANT, "WARRANT"]],
+        [
+            [AssetType.UNDEFINED, "UNDEFINED"],
+            [AssetType.SPOT, "SPOT"],
+            [AssetType.SWAP, "SWAP"],
+            [AssetType.FUTURE, "FUTURE"],
+            [AssetType.FORWARD, "FORWARD"],
+            [AssetType.CFD, "CFD"],
+            [AssetType.OPTION, "OPTION"],
+            [AssetType.WARRANT, "WARRANT"],
+        ],
     )
     def test_asset_type_to_str(self, enum, expected):
         # Arrange
@@ -106,15 +110,17 @@ class TestAssetType:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", AssetType.UNDEFINED],
-         ["UNDEFINED", AssetType.UNDEFINED],
-         ["SPOT", AssetType.SPOT],
-         ["SWAP", AssetType.SWAP],
-         ["FUTURE", AssetType.FUTURE],
-         ["FORWARD", AssetType.FORWARD],
-         ["CFD", AssetType.CFD],
-         ["OPTION", AssetType.OPTION],
-         ["WARRANT", AssetType.WARRANT]],
+        [
+            ["", AssetType.UNDEFINED],
+            ["UNDEFINED", AssetType.UNDEFINED],
+            ["SPOT", AssetType.SPOT],
+            ["SWAP", AssetType.SWAP],
+            ["FUTURE", AssetType.FUTURE],
+            ["FORWARD", AssetType.FORWARD],
+            ["CFD", AssetType.CFD],
+            ["OPTION", AssetType.OPTION],
+            ["WARRANT", AssetType.WARRANT],
+        ],
     )
     def test_asset_type_from_str(self, string, expected):
         # Arrange
@@ -126,23 +132,24 @@ class TestAssetType:
 
 
 class TestBarAggregation:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[BarAggregation.UNDEFINED, "UNDEFINED"],
-         [BarAggregation.TICK, "TICK"],
-         [BarAggregation.TICK_IMBALANCE, "TICK_IMBALANCE"],
-         [BarAggregation.TICK_RUNS, "TICK_RUNS"],
-         [BarAggregation.VOLUME, "VOLUME"],
-         [BarAggregation.VOLUME_IMBALANCE, "VOLUME_IMBALANCE"],
-         [BarAggregation.VOLUME_RUNS, "VOLUME_RUNS"],
-         [BarAggregation.VALUE, "VALUE"],
-         [BarAggregation.VALUE_IMBALANCE, "VALUE_IMBALANCE"],
-         [BarAggregation.VALUE_RUNS, "VALUE_RUNS"],
-         [BarAggregation.SECOND, "SECOND"],
-         [BarAggregation.MINUTE, "MINUTE"],
-         [BarAggregation.HOUR, "HOUR"],
-         [BarAggregation.DAY, "DAY"]],
+        [
+            [BarAggregation.UNDEFINED, "UNDEFINED"],
+            [BarAggregation.TICK, "TICK"],
+            [BarAggregation.TICK_IMBALANCE, "TICK_IMBALANCE"],
+            [BarAggregation.TICK_RUNS, "TICK_RUNS"],
+            [BarAggregation.VOLUME, "VOLUME"],
+            [BarAggregation.VOLUME_IMBALANCE, "VOLUME_IMBALANCE"],
+            [BarAggregation.VOLUME_RUNS, "VOLUME_RUNS"],
+            [BarAggregation.VALUE, "VALUE"],
+            [BarAggregation.VALUE_IMBALANCE, "VALUE_IMBALANCE"],
+            [BarAggregation.VALUE_RUNS, "VALUE_RUNS"],
+            [BarAggregation.SECOND, "SECOND"],
+            [BarAggregation.MINUTE, "MINUTE"],
+            [BarAggregation.HOUR, "HOUR"],
+            [BarAggregation.DAY, "DAY"],
+        ],
     )
     def test_bar_aggregation_to_str(self, enum, expected):
         # Arrange
@@ -154,21 +161,23 @@ class TestBarAggregation:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", BarAggregation.UNDEFINED],
-         ["UNDEFINED", BarAggregation.UNDEFINED],
-         ["TICK", BarAggregation.TICK],
-         ["TICK_IMBALANCE", BarAggregation.TICK_IMBALANCE],
-         ["TICK_RUNS", BarAggregation.TICK_RUNS],
-         ["VOLUME", BarAggregation.VOLUME],
-         ["VOLUME_IMBALANCE", BarAggregation.VOLUME_IMBALANCE],
-         ["VOLUME_RUNS", BarAggregation.VOLUME_RUNS],
-         ["VALUE", BarAggregation.VALUE],
-         ["VALUE_IMBALANCE", BarAggregation.VALUE_IMBALANCE],
-         ["VALUE_RUNS", BarAggregation.VALUE_RUNS],
-         ["SECOND", BarAggregation.SECOND],
-         ["MINUTE", BarAggregation.MINUTE],
-         ["HOUR", BarAggregation.HOUR],
-         ["DAY", BarAggregation.DAY]],
+        [
+            ["", BarAggregation.UNDEFINED],
+            ["UNDEFINED", BarAggregation.UNDEFINED],
+            ["TICK", BarAggregation.TICK],
+            ["TICK_IMBALANCE", BarAggregation.TICK_IMBALANCE],
+            ["TICK_RUNS", BarAggregation.TICK_RUNS],
+            ["VOLUME", BarAggregation.VOLUME],
+            ["VOLUME_IMBALANCE", BarAggregation.VOLUME_IMBALANCE],
+            ["VOLUME_RUNS", BarAggregation.VOLUME_RUNS],
+            ["VALUE", BarAggregation.VALUE],
+            ["VALUE_IMBALANCE", BarAggregation.VALUE_IMBALANCE],
+            ["VALUE_RUNS", BarAggregation.VALUE_RUNS],
+            ["SECOND", BarAggregation.SECOND],
+            ["MINUTE", BarAggregation.MINUTE],
+            ["HOUR", BarAggregation.HOUR],
+            ["DAY", BarAggregation.DAY],
+        ],
     )
     def test_bar_aggregation_from_str(self, string, expected):
         # Arrange
@@ -180,12 +189,13 @@ class TestBarAggregation:
 
 
 class TestCurrencyType:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[CurrencyType.UNDEFINED, "UNDEFINED"],
-         [CurrencyType.CRYPTO, "CRYPTO"],
-         [CurrencyType.FIAT, "FIAT"]],
+        [
+            [CurrencyType.UNDEFINED, "UNDEFINED"],
+            [CurrencyType.CRYPTO, "CRYPTO"],
+            [CurrencyType.FIAT, "FIAT"],
+        ],
     )
     def test_currency_type_to_str(self, enum, expected):
         # Arrange
@@ -197,10 +207,12 @@ class TestCurrencyType:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", CurrencyType.UNDEFINED],
-         ["UNDEFINED", CurrencyType.UNDEFINED],
-         ["CRYPTO", CurrencyType.CRYPTO],
-         ["FIAT", CurrencyType.FIAT]],
+        [
+            ["", CurrencyType.UNDEFINED],
+            ["UNDEFINED", CurrencyType.UNDEFINED],
+            ["CRYPTO", CurrencyType.CRYPTO],
+            ["FIAT", CurrencyType.FIAT],
+        ],
     )
     def test_currency_type_from_str(self, string, expected):
         # Arrange
@@ -212,12 +224,13 @@ class TestCurrencyType:
 
 
 class TestLiquiditySide:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[LiquiditySide.NONE, "NONE"],
-         [LiquiditySide.MAKER, "MAKER"],
-         [LiquiditySide.TAKER, "TAKER"]],
+        [
+            [LiquiditySide.NONE, "NONE"],
+            [LiquiditySide.MAKER, "MAKER"],
+            [LiquiditySide.TAKER, "TAKER"],
+        ],
     )
     def test_liquidity_side_to_str(self, enum, expected):
         # Arrange
@@ -229,10 +242,12 @@ class TestLiquiditySide:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", LiquiditySide.NONE],
-         ["NONE", LiquiditySide.NONE],
-         ["MAKER", LiquiditySide.MAKER],
-         ["TAKER", LiquiditySide.TAKER]],
+        [
+            ["", LiquiditySide.NONE],
+            ["NONE", LiquiditySide.NONE],
+            ["MAKER", LiquiditySide.MAKER],
+            ["TAKER", LiquiditySide.TAKER],
+        ],
     )
     def test_liquidity_side_from_str(self, string, expected):
         # Arrange
@@ -244,12 +259,13 @@ class TestLiquiditySide:
 
 
 class TestOMSType:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[OMSType.UNDEFINED, "UNDEFINED"],
-         [OMSType.NETTING, "NETTING"],
-         [OMSType.HEDGING, "HEDGING"]],
+        [
+            [OMSType.UNDEFINED, "UNDEFINED"],
+            [OMSType.NETTING, "NETTING"],
+            [OMSType.HEDGING, "HEDGING"],
+        ],
     )
     def test_oms_type_to_str(self, enum, expected):
         # Arrange
@@ -261,10 +277,12 @@ class TestOMSType:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", OMSType.UNDEFINED],
-         ["UNDEFINED", OMSType.UNDEFINED],
-         ["NETTING", OMSType.NETTING],
-         ["HEDGING", OMSType.HEDGING]],
+        [
+            ["", OMSType.UNDEFINED],
+            ["UNDEFINED", OMSType.UNDEFINED],
+            ["NETTING", OMSType.NETTING],
+            ["HEDGING", OMSType.HEDGING],
+        ],
     )
     def test_oms_type_from_str(self, string, expected):
         # Arrange
@@ -276,12 +294,13 @@ class TestOMSType:
 
 
 class TestOrderSide:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[OrderSide.UNDEFINED, "UNDEFINED"],
-         [OrderSide.BUY, "BUY"],
-         [OrderSide.SELL, "SELL"]],
+        [
+            [OrderSide.UNDEFINED, "UNDEFINED"],
+            [OrderSide.BUY, "BUY"],
+            [OrderSide.SELL, "SELL"],
+        ],
     )
     def test_order_side_to_str(self, enum, expected):
         # Arrange
@@ -293,10 +312,12 @@ class TestOrderSide:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", OrderSide.UNDEFINED],
-         ["UNDEFINED", OrderSide.UNDEFINED],
-         ["BUY", OrderSide.BUY],
-         ["SELL", OrderSide.SELL]],
+        [
+            ["", OrderSide.UNDEFINED],
+            ["UNDEFINED", OrderSide.UNDEFINED],
+            ["BUY", OrderSide.BUY],
+            ["SELL", OrderSide.SELL],
+        ],
     )
     def test_order_side_from_str(self, string, expected):
         # Arrange
@@ -308,21 +329,22 @@ class TestOrderSide:
 
 
 class TestOrderState:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[OrderState.UNDEFINED, "UNDEFINED"],
-         [OrderState.INITIALIZED, "INITIALIZED"],
-         [OrderState.INVALID, "INVALID"],
-         [OrderState.DENIED, "DENIED"],
-         [OrderState.SUBMITTED, "SUBMITTED"],
-         [OrderState.ACCEPTED, "ACCEPTED"],
-         [OrderState.REJECTED, "REJECTED"],
-         [OrderState.CANCELLED, "CANCELLED"],
-         [OrderState.EXPIRED, "EXPIRED"],
-         [OrderState.TRIGGERED, "TRIGGERED"],
-         [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
-         [OrderState.FILLED, "FILLED"]],
+        [
+            [OrderState.UNDEFINED, "UNDEFINED"],
+            [OrderState.INITIALIZED, "INITIALIZED"],
+            [OrderState.INVALID, "INVALID"],
+            [OrderState.DENIED, "DENIED"],
+            [OrderState.SUBMITTED, "SUBMITTED"],
+            [OrderState.ACCEPTED, "ACCEPTED"],
+            [OrderState.REJECTED, "REJECTED"],
+            [OrderState.CANCELLED, "CANCELLED"],
+            [OrderState.EXPIRED, "EXPIRED"],
+            [OrderState.TRIGGERED, "TRIGGERED"],
+            [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
+            [OrderState.FILLED, "FILLED"],
+        ],
     )
     def test_order_state_to_str(self, enum, expected):
         # Arrange
@@ -334,19 +356,21 @@ class TestOrderState:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", OrderState.UNDEFINED],
-         ["UNDEFINED", OrderState.UNDEFINED],
-         ["INITIALIZED", OrderState.INITIALIZED],
-         ["INVALID", OrderState.INVALID],
-         ["DENIED", OrderState.DENIED],
-         ["SUBMITTED", OrderState.SUBMITTED],
-         ["ACCEPTED", OrderState.ACCEPTED],
-         ["REJECTED", OrderState.REJECTED],
-         ["CANCELLED", OrderState.CANCELLED],
-         ["EXPIRED", OrderState.EXPIRED],
-         ["TRIGGERED", OrderState.TRIGGERED],
-         ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
-         ["FILLED", OrderState.FILLED]],
+        [
+            ["", OrderState.UNDEFINED],
+            ["UNDEFINED", OrderState.UNDEFINED],
+            ["INITIALIZED", OrderState.INITIALIZED],
+            ["INVALID", OrderState.INVALID],
+            ["DENIED", OrderState.DENIED],
+            ["SUBMITTED", OrderState.SUBMITTED],
+            ["ACCEPTED", OrderState.ACCEPTED],
+            ["REJECTED", OrderState.REJECTED],
+            ["CANCELLED", OrderState.CANCELLED],
+            ["EXPIRED", OrderState.EXPIRED],
+            ["TRIGGERED", OrderState.TRIGGERED],
+            ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
+            ["FILLED", OrderState.FILLED],
+        ],
     )
     def test_order_state_from_str(self, string, expected):
         # Arrange
@@ -358,14 +382,15 @@ class TestOrderState:
 
 
 class TestOrderType:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[OrderType.UNDEFINED, "UNDEFINED"],
-         [OrderType.MARKET, "MARKET"],
-         [OrderType.LIMIT, "LIMIT"],
-         [OrderType.STOP_MARKET, "STOP_MARKET"],
-         [OrderType.STOP_LIMIT, "STOP_LIMIT"]],
+        [
+            [OrderType.UNDEFINED, "UNDEFINED"],
+            [OrderType.MARKET, "MARKET"],
+            [OrderType.LIMIT, "LIMIT"],
+            [OrderType.STOP_MARKET, "STOP_MARKET"],
+            [OrderType.STOP_LIMIT, "STOP_LIMIT"],
+        ],
     )
     def test_order_type_to_str(self, enum, expected):
         # Arrange
@@ -377,12 +402,14 @@ class TestOrderType:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", OrderType.UNDEFINED],
-         ["UNDEFINED", OrderType.UNDEFINED],
-         ["MARKET", OrderType.MARKET],
-         ["LIMIT", OrderType.LIMIT],
-         ["STOP_MARKET", OrderType.STOP_MARKET],
-         ["STOP_LIMIT", OrderType.STOP_LIMIT]],
+        [
+            ["", OrderType.UNDEFINED],
+            ["UNDEFINED", OrderType.UNDEFINED],
+            ["MARKET", OrderType.MARKET],
+            ["LIMIT", OrderType.LIMIT],
+            ["STOP_MARKET", OrderType.STOP_MARKET],
+            ["STOP_LIMIT", OrderType.STOP_LIMIT],
+        ],
     )
     def test_order_type_from_str(self, string, expected):
         # Arrange
@@ -394,13 +421,14 @@ class TestOrderType:
 
 
 class TestPositionSide:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[PositionSide.UNDEFINED, "UNDEFINED"],
-         [PositionSide.FLAT, "FLAT"],
-         [PositionSide.LONG, "LONG"],
-         [PositionSide.SHORT, "SHORT"]],
+        [
+            [PositionSide.UNDEFINED, "UNDEFINED"],
+            [PositionSide.FLAT, "FLAT"],
+            [PositionSide.LONG, "LONG"],
+            [PositionSide.SHORT, "SHORT"],
+        ],
     )
     def test_position_side_to_str(self, enum, expected):
         # Arrange
@@ -412,11 +440,13 @@ class TestPositionSide:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", PositionSide.UNDEFINED],
-         ["UNDEFINED", PositionSide.UNDEFINED],
-         ["FLAT", PositionSide.FLAT],
-         ["LONG", PositionSide.LONG],
-         ["SHORT", PositionSide.SHORT]],
+        [
+            ["", PositionSide.UNDEFINED],
+            ["UNDEFINED", PositionSide.UNDEFINED],
+            ["FLAT", PositionSide.FLAT],
+            ["LONG", PositionSide.LONG],
+            ["SHORT", PositionSide.SHORT],
+        ],
     )
     def test_position_side_from_str(self, string, expected):
         # Arrange
@@ -428,14 +458,15 @@ class TestPositionSide:
 
 
 class TestPriceType:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[PriceType.UNDEFINED, "UNDEFINED"],
-         [PriceType.BID, "BID"],
-         [PriceType.ASK, "ASK"],
-         [PriceType.MID, "MID"],
-         [PriceType.LAST, "LAST"]],
+        [
+            [PriceType.UNDEFINED, "UNDEFINED"],
+            [PriceType.BID, "BID"],
+            [PriceType.ASK, "ASK"],
+            [PriceType.MID, "MID"],
+            [PriceType.LAST, "LAST"],
+        ],
     )
     def test_price_type_to_str(self, enum, expected):
         # Arrange
@@ -447,11 +478,13 @@ class TestPriceType:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", PriceType.UNDEFINED],
-         ["UNDEFINED", PriceType.UNDEFINED],
-         ["ASK", PriceType.ASK],
-         ["MID", PriceType.MID],
-         ["LAST", PriceType.LAST]],
+        [
+            ["", PriceType.UNDEFINED],
+            ["UNDEFINED", PriceType.UNDEFINED],
+            ["ASK", PriceType.ASK],
+            ["MID", PriceType.MID],
+            ["LAST", PriceType.LAST],
+        ],
     )
     def test_price_type_from_str(self, string, expected):
         # Arrange
@@ -463,15 +496,16 @@ class TestPriceType:
 
 
 class TestTimeInForce:
-
     @pytest.mark.parametrize(
         "enum, expected",
-        [[TimeInForce.UNDEFINED, "UNDEFINED"],
-         [TimeInForce.DAY, "DAY"],
-         [TimeInForce.GTC, "GTC"],
-         [TimeInForce.IOC, "IOC"],
-         [TimeInForce.FOK, "FOK"],
-         [TimeInForce.GTD, "GTD"]],
+        [
+            [TimeInForce.UNDEFINED, "UNDEFINED"],
+            [TimeInForce.DAY, "DAY"],
+            [TimeInForce.GTC, "GTC"],
+            [TimeInForce.IOC, "IOC"],
+            [TimeInForce.FOK, "FOK"],
+            [TimeInForce.GTD, "GTD"],
+        ],
     )
     def test_time_in_force_to_str(self, enum, expected):
         # Arrange
@@ -483,13 +517,15 @@ class TestTimeInForce:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["", TimeInForce.UNDEFINED],
-         ["UNDEFINED", TimeInForce.UNDEFINED],
-         ["DAY", TimeInForce.DAY],
-         ["GTC", TimeInForce.GTC],
-         ["IOC", TimeInForce.IOC],
-         ["FOK", TimeInForce.FOK],
-         ["GTD", TimeInForce.GTD]],
+        [
+            ["", TimeInForce.UNDEFINED],
+            ["UNDEFINED", TimeInForce.UNDEFINED],
+            ["DAY", TimeInForce.DAY],
+            ["GTC", TimeInForce.GTC],
+            ["IOC", TimeInForce.IOC],
+            ["FOK", TimeInForce.FOK],
+            ["GTD", TimeInForce.GTD],
+        ],
     )
     def test_time_in_force_from_str(self, string, expected):
         # Arrange

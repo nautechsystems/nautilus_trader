@@ -38,7 +38,6 @@ USDJPY_SIM = TestStubs.usdjpy_id()
 
 
 class ExchangeRateCalculatorTests(unittest.TestCase):
-
     def test_get_rate_when_price_type_last_raises_value_error(self):
         # Arrange
         converter = ExchangeRateCalculator()
@@ -195,8 +194,12 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertAlmostEqual(Decimal("0.01135331516802906448683015441"), result1)  # JPYAUD
-        self.assertAlmostEqual(Decimal("88.11501299999999999999999997"), result2)  # AUDJPY
+        self.assertAlmostEqual(
+            Decimal("0.01135331516802906448683015441"), result1
+        )  # JPYAUD
+        self.assertAlmostEqual(
+            Decimal("88.11501299999999999999999997"), result2
+        )  # AUDJPY
 
     def test_calculate_exchange_rate_for_mid_price_type(self):
         # Arrange
@@ -236,10 +239,11 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
 
 class RolloverInterestCalculatorTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
-        self.data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        self.data = pd.read_csv(
+            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+        )
 
     def test_rate_dataframe_returns_correct_dataframe(self):
         # Arrange
@@ -251,7 +255,9 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(dict, type(rate_data))
 
-    def test_calc_overnight_fx_rate_with_audusd_on_unix_epoch_returns_correct_rate(self):
+    def test_calc_overnight_fx_rate_with_audusd_on_unix_epoch_returns_correct_rate(
+        self,
+    ):
         # Arrange
         calculator = RolloverInterestCalculator(data=self.data)
 
@@ -261,7 +267,9 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(-8.52054794520548e-05, rate)
 
-    def test_calc_overnight_fx_rate_with_audusd_on_later_date_returns_correct_rate(self):
+    def test_calc_overnight_fx_rate_with_audusd_on_later_date_returns_correct_rate(
+        self,
+    ):
         # Arrange
         calculator = RolloverInterestCalculator(data=self.data)
 
@@ -277,5 +285,15 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_SIM, datetime.date(1900, 1, 1))
-        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_SIM, datetime.date(3000, 1, 1))
+        self.assertRaises(
+            RuntimeError,
+            calculator.calc_overnight_rate,
+            AUDUSD_SIM,
+            datetime.date(1900, 1, 1),
+        )
+        self.assertRaises(
+            RuntimeError,
+            calculator.calc_overnight_rate,
+            AUDUSD_SIM,
+            datetime.date(3000, 1, 1),
+        )

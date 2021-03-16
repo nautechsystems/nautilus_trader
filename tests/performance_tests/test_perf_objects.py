@@ -31,7 +31,6 @@ AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 
 
 class ObjectTests:
-
     @staticmethod
     def make_symbol():
         Symbol("AUD/USD")
@@ -70,7 +69,6 @@ class ObjectTests:
 
 
 class ObjectPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_make_symbol():
         PerformanceHarness.profile_function(ObjectTests.make_symbol, 100000, 1)
@@ -88,10 +86,14 @@ class ObjectPerformanceTests(unittest.TestCase):
 
     @staticmethod
     def test_build_bar_no_checking():
-        PerformanceHarness.profile_function(ObjectTests.build_bar_no_checking, 100000, 1)
+        PerformanceHarness.profile_function(
+            ObjectTests.build_bar_no_checking, 100000, 1
+        )
         # ~0.0ms / ~2.5μs / 2512ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_build_bar_with_checking():
-        PerformanceHarness.profile_function(ObjectTests.build_bar_with_checking, 100000, 1)
+        PerformanceHarness.profile_function(
+            ObjectTests.build_bar_with_checking, 100000, 1
+        )
         # ~0.0ms / ~2.7μs / 2717ns minimum of 100,000 runs @ 1 iteration each run.

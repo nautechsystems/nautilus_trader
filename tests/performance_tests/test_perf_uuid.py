@@ -21,7 +21,6 @@ from tests.test_kit.performance import PerformanceHarness
 
 
 class UUIDPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_make_builtin_uuid():
         PerformanceHarness.profile_function(uuid.uuid4, 100000, 1)

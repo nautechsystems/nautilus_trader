@@ -22,7 +22,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestThrottler:
-
     def setup(self):
         # Fixture setup
         self.clock = TestClock()

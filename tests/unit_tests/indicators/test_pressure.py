@@ -25,7 +25,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class PressureTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.pressure = Pressure(10, MovingAverageType.EXPONENTIAL)

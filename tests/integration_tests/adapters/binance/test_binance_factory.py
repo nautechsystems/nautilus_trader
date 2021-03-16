@@ -31,7 +31,6 @@ from nautilus_trader.trading.portfolio import Portfolio
 
 
 class BinanceClientFactoryTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -71,7 +70,7 @@ class BinanceClientFactoryTests(unittest.TestCase):
             "data_client": True,
             "exec_client": True,
             "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable name
-            "api_key": "BITMEX_API_KEY",        # value is the environment variable name
+            "api_key": "BITMEX_API_KEY",  # value is the environment variable name
             "api_secret": "BITMEX_API_SECRET",  # value is the environment variable name
         }
 

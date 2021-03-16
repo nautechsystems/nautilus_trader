@@ -46,7 +46,6 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class DataCacheTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.cache = DataCache(logger=TestLogger(TestClock()))
@@ -404,12 +403,16 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual(Price("1.00000"), result)
 
-    @parameterized.expand([
-        [PriceType.BID, Price("1.00000")],
-        [PriceType.ASK, Price("1.00001")],
-        [PriceType.MID, Price("1.000005")],
-    ])
-    def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(self, price_type, expected):
+    @parameterized.expand(
+        [
+            [PriceType.BID, Price("1.00000")],
+            [PriceType.ASK, Price("1.00001")],
+            [PriceType.MID, Price("1.000005")],
+        ]
+    )
+    def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
+        self, price_type, expected
+    ):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,

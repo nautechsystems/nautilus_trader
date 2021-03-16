@@ -33,7 +33,6 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 
 class OandaInstrumentProviderTests(unittest.TestCase):
-
     def test_load_all(self):
         # Arrange
         mock_client = MagicMock()
@@ -111,7 +110,9 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
         mock_client.request.return_value = instruments
 
-        provider = OandaInstrumentProvider(client=mock_client, account_id="001", load_all=True)
+        provider = OandaInstrumentProvider(
+            client=mock_client, account_id="001", load_all=True
+        )
 
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("OANDA"))
 

@@ -25,7 +25,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.macd = MovingAverageConvergenceDivergence(3, 10)
@@ -40,8 +39,12 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", str(self.macd))
-        self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", repr(self.macd))
+        self.assertEqual(
+            "MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", str(self.macd)
+        )
+        self.assertEqual(
+            "MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", repr(self.macd)
+        )
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange

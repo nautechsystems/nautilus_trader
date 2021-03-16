@@ -68,7 +68,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class SerializerBaseTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.serializer = Serializer()
@@ -107,7 +106,6 @@ class SerializerBaseTests(unittest.TestCase):
 
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
@@ -253,7 +251,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
 
 class MsgPackCommandSerializerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
@@ -269,9 +266,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000))
+            AUDUSD_SIM.id, OrderSide.BUY, Quantity(100000)
+        )
 
         command = SubmitOrder(
             Routing(exchange=order.venue),
@@ -296,12 +292,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(serialized)
         print(b64encode(serialized))
 
-    def test_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(self):
+    def test_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(
+        self,
+    ):
         # Arrange
         entry_order = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000))
+            AUDUSD_SIM.id, OrderSide.BUY, Quantity(100000)
+        )
 
         bracket_order = self.order_factory.bracket(
             entry_order,
@@ -329,7 +326,9 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
-    def test_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(self):
+    def test_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(
+        self,
+    ):
         # Arrange
         entry_order = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -409,7 +408,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
@@ -459,10 +457,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_limit_order_initialized_events(self):
         # Arrange
         options = {
-            'Price': '1.0010',
-            'PostOnly': True,
-            'ReduceOnly': True,
-            'Hidden': False,
+            "Price": "1.0010",
+            "PostOnly": True,
+            "ReduceOnly": True,
+            "Hidden": False,
         }
 
         event = OrderInitialized(
@@ -488,7 +486,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_stop_market_order_initialized_events(self):
         # Arrange
-        options = {'Price': '1.0005', 'ReduceOnly': False}
+        options = {"Price": "1.0005", "ReduceOnly": False}
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
@@ -514,11 +512,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
-            'Price': '1.0005',
-            'Trigger': '1.0010',
-            'PostOnly': True,
-            'ReduceOnly': False,
-            'Hidden': False,
+            "Price": "1.0005",
+            "Trigger": "1.0010",
+            "PostOnly": True,
+            "ReduceOnly": False,
+            "Hidden": False,
         }
 
         event = OrderInitialized(

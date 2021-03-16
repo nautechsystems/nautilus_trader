@@ -35,7 +35,6 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class LiveMarketDataClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()

@@ -53,7 +53,6 @@ ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 
 
 class PositionTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
@@ -67,13 +66,19 @@ class PositionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Position.side_from_order_side, OrderSide.UNDEFINED)
+        self.assertRaises(
+            ValueError, Position.side_from_order_side, OrderSide.UNDEFINED
+        )
 
-    @parameterized.expand([
-        [OrderSide.BUY, PositionSide.LONG],
-        [OrderSide.SELL, PositionSide.SHORT],
-    ])
-    def test_side_from_order_side_given_valid_sides_returns_expected_side(self, order_side, expected):
+    @parameterized.expand(
+        [
+            [OrderSide.BUY, PositionSide.LONG],
+            [OrderSide.SELL, PositionSide.SHORT],
+        ]
+    )
+    def test_side_from_order_side_given_valid_sides_returns_expected_side(
+        self, order_side, expected
+    ):
         # Arrange
         # Act
         position_side = Position.side_from_order_side(order_side)
@@ -104,7 +109,9 @@ class PositionTests(unittest.TestCase):
 
         # Assert
         self.assertFalse(position != position)  # Equality operator test
-        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), position.from_order)
+        self.assertEqual(
+            ClientOrderId("O-19700101-000000-000-001-1"), position.from_order
+        )
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_quantity)
         self.assertEqual(OrderSide.BUY, position.entry)
@@ -115,8 +122,12 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
         self.assertEqual([OrderId.null()], position.order_ids)
-        self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
-        self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
+        self.assertEqual(
+            [ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids
+        )
+        self.assertEqual(
+            ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id
+        )
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertEqual(1, len(position.events))
         self.assertTrue(position.is_long)
@@ -130,7 +141,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(47.00, USD), position.total_pnl(last))
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
-        self.assertEqual("Position(id=P-123456, LONG 100,000 AUD/USD.SIM)", repr(position))
+        self.assertEqual(
+            "Position(id=P-123456, LONG 100,000 AUD/USD.SIM)", repr(position)
+        )
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -160,8 +173,12 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
-        self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
-        self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
+        self.assertEqual(
+            [ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids
+        )
+        self.assertEqual(
+            ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id
+        )
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertFalse(position.is_long)
         self.assertTrue(position.is_short)
@@ -174,7 +191,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-51.00, USD), position.total_pnl(last))
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
-        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.SIM)", repr(position))
+        self.assertEqual(
+            "Position(id=P-123456, SHORT 100,000 AUD/USD.SIM)", repr(position)
+        )
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -216,7 +235,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(21.50, USD), position.total_pnl(last))
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
-        self.assertEqual("Position(id=P-123456, LONG 50,000 AUD/USD.SIM)", repr(position))
+        self.assertEqual(
+            "Position(id=P-123456, LONG 50,000 AUD/USD.SIM)", repr(position)
+        )
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -268,9 +289,13 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-52.50, USD), position.total_pnl(last))
         self.assertEqual([Money(4.00, USD)], position.commissions())
         self.assertEqual(Money(4.00, USD), position.commission)
-        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.SIM)", repr(position))
+        self.assertEqual(
+            "Position(id=P-123456, SHORT 100,000 AUD/USD.SIM)", repr(position)
+        )
 
-    def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
+    def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(
+        self,
+    ):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -322,14 +347,18 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(timedelta(minutes=1), position.open_duration)
         self.assertEqual(Decimal("1.00001"), position.avg_open)
         self.assertEqual(2, position.event_count)
-        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), position.closed_time)
+        self.assertEqual(
+            datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), position.closed_time
+        )
         self.assertEqual(Decimal("1.00011"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertFalse(position.is_open)
         self.assertTrue(position.is_closed)
         self.assertEqual(Decimal("0.00010"), position.realized_points)
-        self.assertEqual(Decimal('0.00009999900000999990000099999000'), position.realized_return)
+        self.assertEqual(
+            Decimal("0.00009999900000999990000099999000"), position.realized_return
+        )
         self.assertEqual(Money(12.00, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(12.00, USD), position.total_pnl(last))
@@ -337,7 +366,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(3.00, USD), position.commission)
         self.assertEqual("Position(id=P-123456, FLAT AUD/USD.SIM)", repr(position))
 
-    def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
+    def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(
+        self,
+    ):
         # Arrange
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -401,7 +432,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-8.000, USD), position.total_pnl(last))
         self.assertEqual([Money(6.00, USD)], position.commissions())
         self.assertEqual(Money(6.00, USD), position.commission)
-        self.assertEqual("Position(id=P-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
+        self.assertEqual(
+            "Position(id=P-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position)
+        )
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
@@ -445,10 +478,11 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.0"), position.avg_open)
         self.assertEqual(2, position.event_count)
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
-        self.assertEqual([
-            ExecutionId("E-19700101-000000-000-001-1"),
-            ExecutionId("E-19700101-000000-000-001-2")
-        ],
+        self.assertEqual(
+            [
+                ExecutionId("E-19700101-000000-000-001-1"),
+                ExecutionId("E-19700101-000000-000-001-2"),
+            ],
             position.execution_ids,
         )
         self.assertEqual(UNIX_EPOCH, position.closed_time)
@@ -464,9 +498,13 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-4.00, USD), position.total_pnl(last))
         self.assertEqual([Money(4.00, USD)], position.commissions())
         self.assertEqual(Money(4.00, USD), position.commission)
-        self.assertEqual("Position(id=P-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
+        self.assertEqual(
+            "Position(id=P-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position)
+        )
 
-    def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
+    def test_position_long_with_multiple_filled_orders_returns_expected_attributes(
+        self,
+    ):
         # Arrange
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -522,7 +560,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(Decimal("1.000005"), position.avg_open)
         self.assertEqual(3, position.event_count)
-        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual(
+            [order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.cl_ord_ids
+        )
         self.assertEqual(UNIX_EPOCH, position.closed_time)
         self.assertEqual(Decimal("1.0001"), position.avg_close)
         self.assertFalse(position.is_long)
@@ -630,7 +670,10 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money("32.09968966", USDT), position.realized_pnl)
         self.assertEqual(Decimal("99.98003629764065335753176042"), position.avg_open)
-        self.assertEqual("Position(id=P-19700101-000000-000-001-1, LONG 19 ETH/USDT.BINANCE)", repr(position))
+        self.assertEqual(
+            "Position(id=P-19700101-000000-000-001-1, LONG 19 ETH/USDT.BINANCE)",
+            repr(position),
+        )
 
     def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
@@ -724,7 +767,10 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money("-415.27137481", USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_open)
-        self.assertEqual("Position(id=P-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
+        self.assertEqual(
+            "Position(id=P-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)",
+            repr(position),
+        )
 
     def test_calculate_pnl_when_given_position_side_flat_returns_zero(self):
         # Arrange
@@ -745,7 +791,9 @@ class PositionTests(unittest.TestCase):
         position = Position(fill)
 
         # Act
-        result = position.calculate_pnl(Price("10500.00"), Price("10500.00"), Quantity(100000))
+        result = position.calculate_pnl(
+            Price("10500.00"), Price("10500.00"), Quantity(100000)
+        )
 
         # Assert
         self.assertEqual(Money(0, USDT), result)
@@ -778,8 +826,12 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money("120.00000000", USDT), pnl)
         self.assertEqual(Money("-126.00000000", USDT), position.realized_pnl)
-        self.assertEqual(Money("120.00000000", USDT), position.unrealized_pnl(Price("10510.00")))
-        self.assertEqual(Money("-6.00000000", USDT), position.total_pnl(Price("10510.00")))
+        self.assertEqual(
+            Money("120.00000000", USDT), position.unrealized_pnl(Price("10510.00"))
+        )
+        self.assertEqual(
+            Money("-6.00000000", USDT), position.total_pnl(Price("10510.00"))
+        )
         self.assertEqual([Money("126.00000000", USDT)], position.commissions())
         self.assertEqual(Money("126.00000000", USDT), position.commission)
 
@@ -811,8 +863,12 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money("-195.00000000", USDT), pnl)
         self.assertEqual(Money("-126.00000000", USDT), position.realized_pnl)
-        self.assertEqual(Money("-234.00000000", USDT), position.unrealized_pnl(Price("10480.50")))
-        self.assertEqual(Money("-360.00000000", USDT), position.total_pnl(Price("10480.50")))
+        self.assertEqual(
+            Money("-234.00000000", USDT), position.unrealized_pnl(Price("10480.50"))
+        )
+        self.assertEqual(
+            Money("-360.00000000", USDT), position.total_pnl(Price("10480.50"))
+        )
         self.assertEqual([Money("126.00000000", USDT)], position.commissions())
         self.assertEqual(Money("126.00000000", USDT), position.commission)
 
@@ -843,11 +899,15 @@ class PositionTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money("1116.50000000", USDT), pnl)
-        self.assertEqual(Money("1116.50000000", USDT), position.unrealized_pnl(Price("10390.00")))
+        self.assertEqual(
+            Money("1116.50000000", USDT), position.unrealized_pnl(Price("10390.00"))
+        )
         self.assertEqual(Money("-106.57500000", USDT), position.realized_pnl)
         self.assertEqual([Money("106.57500000", USDT)], position.commissions())
         self.assertEqual(Money("106.57500000", USDT), position.commission)
-        self.assertEqual(Money("105458.50000000", USDT), position.notional_value(Price("10390.00")))
+        self.assertEqual(
+            Money("105458.50000000", USDT), position.notional_value(Price("10390.00"))
+        )
 
     def test_calculate_pnl_for_short_position_loss(self):
         # Arrange
@@ -876,11 +936,15 @@ class PositionTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money("-1705.00000000", USDT), pnl)
-        self.assertEqual(Money("-1705.00000000", USDT), position.unrealized_pnl(Price("10670.50")))
+        self.assertEqual(
+            Money("-1705.00000000", USDT), position.unrealized_pnl(Price("10670.50"))
+        )
         self.assertEqual(Money("-105.00000000", USDT), position.realized_pnl)
         self.assertEqual([Money("105.00000000", USDT)], position.commissions())
         self.assertEqual(Money("105.00000000", USDT), position.commission)
-        self.assertEqual(Money("106705.00000000", USDT), position.notional_value(Price("10670.50")))
+        self.assertEqual(
+            Money("106705.00000000", USDT), position.notional_value(Price("10670.50"))
+        )
 
     def test_calculate_pnl_for_inverse1(self):
         # Arrange
@@ -909,10 +973,14 @@ class PositionTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money(-10000.00, USD), pnl)
-        self.assertEqual(Money(-10000.00, USD), position.unrealized_pnl(Price("11000.00")))
+        self.assertEqual(
+            Money(-10000.00, USD), position.unrealized_pnl(Price("11000.00"))
+        )
         self.assertEqual(Money(0.00, USD), position.realized_pnl)
         self.assertEqual(Money(0.00, USD), position.commission)
-        self.assertEqual(Money(100000.00, USD), position.notional_value(Price("11000.00")))
+        self.assertEqual(
+            Money(100000.00, USD), position.notional_value(Price("11000.00"))
+        )
 
     def test_calculate_pnl_for_inverse2(self):
         # Arrange
@@ -935,7 +1003,9 @@ class PositionTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(Money(1582.66, USD), position.unrealized_pnl(Price("370.00")))
-        self.assertEqual(Money(100000.00, USD), position.notional_value(Price("370.00")))
+        self.assertEqual(
+            Money(100000.00, USD), position.notional_value(Price("370.00"))
+        )
 
     def test_calculate_unrealized_pnl_for_long(self):
         # Arrange

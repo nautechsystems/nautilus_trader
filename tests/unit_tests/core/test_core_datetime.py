@@ -32,15 +32,21 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestDatetimeFunctions:
-
     @pytest.mark.parametrize(
         "value, expected",
-        [[datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), -2674800000],
-         [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), 0],
-         [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc), 1357002000000],
-         [datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc), 1577934120001]],
+        [
+            [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), -2674800000],
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), 0],
+            [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc), 1357002000000],
+            [
+                datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc),
+                1577934120001,
+            ],
+        ],
     )
-    def test_to_posix_ms_with_various_values_returns_expected_long(self, value, expected):
+    def test_to_posix_ms_with_various_values_returns_expected_long(
+        self, value, expected
+    ):
         # Arrange
         # Act
         posix = to_unix_time_ms(value)
@@ -50,12 +56,16 @@ class TestDatetimeFunctions:
 
     @pytest.mark.parametrize(
         "value, expected",
-        [[-2674800000, datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc)],
-         [0, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
-         [1357002000000, datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)],
-         [1577934120001, datetime(2020, 1, 2, 3, 2, 0, 1000, tzinfo=pytz.utc)]],
+        [
+            [-2674800000, datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc)],
+            [0, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
+            [1357002000000, datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)],
+            [1577934120001, datetime(2020, 1, 2, 3, 2, 0, 1000, tzinfo=pytz.utc)],
+        ],
     )
-    def test_from_posix_ms_with_various_values_returns_expected_datetime(self, value, expected):
+    def test_from_posix_ms_with_various_values_returns_expected_datetime(
+        self, value, expected
+    ):
         # Arrange
         # Act
         dt = from_unix_time_ms(value)
@@ -91,8 +101,9 @@ class TestDatetimeFunctions:
         time_object1 = UNIX_EPOCH
         time_object2 = pd.Timestamp(UNIX_EPOCH)
 
-        time_object3 = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
-                                                   "2019-05-21T12:15:00+00:00"]})
+        time_object3 = pd.DataFrame(
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+        )
         time_object3.set_index("timestamp")
         time_object3.index = pd.to_datetime(time_object3.index)
 
@@ -233,8 +244,9 @@ class TestDatetimeFunctions:
 
     def test_with_utc_index_given_tz_unaware_dataframe(self):
         # Arrange
-        data = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
-                                           "2019-05-21T12:15:00+00:00"]})
+        data = pd.DataFrame(
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+        )
         data.set_index("timestamp")
         data.index = pd.to_datetime(data.index)
 
@@ -246,8 +258,9 @@ class TestDatetimeFunctions:
 
     def test_with_utc_index_given_tz_aware_dataframe(self):
         # Arrange
-        data = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
-                                           "2019-05-21T12:15:00+00:00"]})
+        data = pd.DataFrame(
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+        )
         data.set_index("timestamp")
         data.index = pd.to_datetime(data.index, utc=True)
 
@@ -259,13 +272,20 @@ class TestDatetimeFunctions:
 
     def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
         # Arrange
-        data1 = pd.DataFrame({"timestamp": ["2019-05-21 12:00:00",
-                                            "2019-05-21 12:15:00"]})
+        data1 = pd.DataFrame(
+            {"timestamp": ["2019-05-21 12:00:00", "2019-05-21 12:15:00"]}
+        )
         data1.set_index("timestamp")
         data1.index = pd.to_datetime(data1.index)
 
-        data2 = pd.DataFrame({"timestamp": [datetime(1970, 1, 1, 0, 0, 0, 0),
-                                            datetime(1970, 1, 1, 0, 0, 0, 0)]})
+        data2 = pd.DataFrame(
+            {
+                "timestamp": [
+                    datetime(1970, 1, 1, 0, 0, 0, 0),
+                    datetime(1970, 1, 1, 0, 0, 0, 0),
+                ]
+            }
+        )
         data2.set_index("timestamp")
         data2.index = pd.to_datetime(data2.index, utc=True)
 

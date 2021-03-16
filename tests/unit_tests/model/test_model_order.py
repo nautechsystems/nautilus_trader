@@ -56,7 +56,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class OrderTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
@@ -79,10 +78,12 @@ class OrderTests(unittest.TestCase):
         self.assertRaises(ValueError, Order.flatten_side, PositionSide.UNDEFINED)
         self.assertRaises(ValueError, Order.flatten_side, PositionSide.FLAT)
 
-    @parameterized.expand([
-        [OrderSide.BUY, OrderSide.SELL],
-        [OrderSide.SELL, OrderSide.BUY],
-    ])
+    @parameterized.expand(
+        [
+            [OrderSide.BUY, OrderSide.SELL],
+            [OrderSide.SELL, OrderSide.BUY],
+        ]
+    )
     def test_opposite_side_returns_expected_sides(self, side, expected):
         # Arrange
         # Act
@@ -91,10 +92,12 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, result)
 
-    @parameterized.expand([
-        [PositionSide.LONG, OrderSide.SELL],
-        [PositionSide.SHORT, OrderSide.BUY],
-    ])
+    @parameterized.expand(
+        [
+            [PositionSide.LONG, OrderSide.SELL],
+            [PositionSide.SHORT, OrderSide.BUY],
+        ]
+    )
     def test_flatten_side_returns_expected_sides(self, side, expected):
         # Arrange
         # Act
@@ -285,8 +288,14 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC)", str(order))  # noqa
-        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC)", repr(order))  # noqa
+        self.assertEqual(
+            "MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC)",
+            str(order),
+        )  # noqa
+        self.assertEqual(
+            "MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC)",
+            repr(order),
+        )  # noqa
 
     def test_initialize_limit_order(self):
         # Arrange
@@ -382,8 +391,12 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        bracket_order1 = self.order_factory.bracket(entry1, Price("1.00000"), Price("1.00010"))
-        bracket_order2 = self.order_factory.bracket(entry2, Price("1.00000"), Price("1.00010"))
+        bracket_order1 = self.order_factory.bracket(
+            entry1, Price("1.00000"), Price("1.00010")
+        )
+        bracket_order2 = self.order_factory.bracket(
+            entry2, Price("1.00000"), Price("1.00010")
+        )
 
         # Act
         # Assert
@@ -412,9 +425,17 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(AUDUSD_SIM.id, bracket_order.stop_loss.instrument_id)
         self.assertTrue(bracket_order.take_profit is not None)
         self.assertEqual(AUDUSD_SIM.id, bracket_order.take_profit.instrument_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-3"), bracket_order.take_profit.cl_ord_id)
+        self.assertEqual(
+            ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id
+        )
+        self.assertEqual(
+            ClientOrderId("O-19700101-000000-000-001-2"),
+            bracket_order.stop_loss.cl_ord_id,
+        )
+        self.assertEqual(
+            ClientOrderId("O-19700101-000000-000-001-3"),
+            bracket_order.take_profit.cl_ord_id,
+        )
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(OrderSide.SELL, bracket_order.take_profit.side)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
@@ -426,7 +447,9 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, bracket_order.entry.expire_time)
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
         self.assertEqual(None, bracket_order.take_profit.expire_time)
-        self.assertEqual(BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id)
+        self.assertEqual(
+            BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id
+        )
         self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
 
     def test_bracket_order_str_and_repr(self):
@@ -445,8 +468,14 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC), SL=0.99990, TP=1.00010)", repr(bracket_order))  # noqa
+        self.assertEqual(
+            "BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC), SL=0.99990, TP=1.00010)",
+            str(bracket_order),
+        )  # noqa
+        self.assertEqual(
+            "BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC), SL=0.99990, TP=1.00010)",
+            repr(bracket_order),
+        )  # noqa
 
     def test_apply_order_invalid_event(self):
         # Arrange
@@ -713,7 +742,9 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
-    def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(self):
+    def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(
+        self,
+    ):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,

@@ -24,7 +24,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class BollingerBandsTests(unittest.TestCase):
-
     def test_name_returns_expected_name(self):
         # Arrange
         indicator = BollingerBands(20, 2.0)

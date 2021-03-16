@@ -46,7 +46,6 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class LiveExecutionPerformanceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -147,6 +146,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
                 self.strategy.submit_order(order)
 
             PerformanceHarness.profile_function(submit_order, 10000, 1)
+
         self.loop.run_until_complete(run_test())
         # ~0.0ms / ~30.5μs / 30539ns minimum of 10,000 runs @ 1 iteration each run.
 
@@ -165,6 +165,8 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
                 self.strategy.submit_order(order)
 
         stats_file = "perf_live_execution.prof"
-        cProfile.runctx("self.loop.run_until_complete(run_test())", globals(), locals(), stats_file)
+        cProfile.runctx(
+            "self.loop.run_until_complete(run_test())", globals(), locals(), stats_file
+        )
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()

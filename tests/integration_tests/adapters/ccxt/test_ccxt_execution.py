@@ -52,7 +52,6 @@ async def async_magic():
 
 
 class CCXTExecutionClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()

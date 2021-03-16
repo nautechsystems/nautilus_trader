@@ -24,7 +24,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class TradingNodeConfigurationTests(unittest.TestCase):
-
     def test_config_with_inmemory_execution_database(self):
         # Arrange
         config = {
@@ -32,36 +31,31 @@ class TradingNodeConfigurationTests(unittest.TestCase):
                 "name": "tester",
                 "id_tag": "000",
             },
-
             "logging": {
                 "log_level_console": "INF",
                 "log_level_file": "DBG",
                 "log_level_store": "WRN",
-                "run_in_process": False  # Avoid pytest hanging on multiprocessing resources
+                "run_in_process": False,  # Avoid pytest hanging on multiprocessing resources
             },
-
             "exec_database": {
                 "type": "in-memory",
             },
-
             "strategy": {
                 "load_state": True,
                 "save_state": True,
             },
-
             "data_clients": {
                 "binance": {
-                    "api_key": "BINANCE_API_KEY",        # value is the environment variable name
+                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
                     "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
                 },
             },
-
             "exec_clients": {
                 "binance": {
-                    "api_key": "BINANCE_API_KEY",        # value is the environment variable name
+                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
                     "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
                 },
-            }
+            },
         }
 
         # Act
@@ -80,38 +74,33 @@ class TradingNodeConfigurationTests(unittest.TestCase):
                 "name": "tester",
                 "id_tag": "000",
             },
-
             "logging": {
                 "log_level_console": "INF",
                 "log_level_file": "DBG",
                 "log_level_store": "WRN",
-                "run_in_process": False  # Avoid pytest hanging on multiprocessing resources
+                "run_in_process": False,  # Avoid pytest hanging on multiprocessing resources
             },
-
             "exec_database": {
                 "type": "redis",
                 "host": "localhost",
                 "port": 6379,
             },
-
             "strategy": {
                 "load_state": True,
                 "save_state": True,
             },
-
             "data_clients": {
                 "oanda": {
-                    "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+                    "api_token": "OANDA_API_TOKEN",  # value is the environment variable name
                     "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
                 },
             },
-
             "exec_clients": {
                 "oanda": {
-                    "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+                    "api_token": "OANDA_API_TOKEN",  # value is the environment variable name
                     "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
                 },
-            }
+            },
         }
 
         # Act
@@ -125,7 +114,6 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 
 
 class TradingNodeOperationTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         # Fresh isolated loop testing pattern
@@ -137,23 +125,19 @@ class TradingNodeOperationTests(unittest.TestCase):
                 "name": "tester",
                 "id_tag": "000",
             },
-
             "logging": {
                 "log_level_console": "INF",
                 "log_level_file": "DBG",
                 "log_level_store": "WRN",
-                "run_in_process": False  # Avoid pytest hanging on multiprocessing resources
+                "run_in_process": False,  # Avoid pytest hanging on multiprocessing resources
             },
-
             "exec_database": {
                 "type": "in-memory",
             },
-
             "strategy": {
                 "load_state": True,
                 "save_state": True,
             },
-
             "data_clients": {},
             "exec_clients": {},
         }

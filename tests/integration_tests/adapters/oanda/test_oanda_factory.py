@@ -27,7 +27,6 @@ from nautilus_trader.trading.portfolio import Portfolio
 
 
 class OandaDataClientFactoryTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -55,7 +54,7 @@ class OandaDataClientFactoryTests(unittest.TestCase):
     def test_create(self):
         # Arrange
         config = {
-            "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+            "api_token": "OANDA_API_TOKEN",  # value is the environment variable name
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
         }
 

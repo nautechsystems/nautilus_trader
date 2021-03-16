@@ -38,7 +38,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class SerializationBaseTests(unittest.TestCase):
-
     def test_instrument_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         serializer = InstrumentSerializer()

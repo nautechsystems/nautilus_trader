@@ -52,7 +52,6 @@ async def async_magic():
 
 
 class BitmexExecutionClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()

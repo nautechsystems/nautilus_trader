@@ -43,7 +43,6 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
 
 class ReportProviderTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()

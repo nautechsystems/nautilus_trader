@@ -54,7 +54,6 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusd_bitmex()
 
 
 class BarBuilderTests(unittest.TestCase):
-
     def test_instantiate(self):
         # Arrange
         bar_spec = TestStubs.bar_spec_1min_mid()
@@ -75,8 +74,12 @@ class BarBuilderTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("BarBuilder(bar_spec=1-MINUTE-MID,None,None,None,None,0)", str(builder))
-        self.assertEqual("BarBuilder(bar_spec=1-MINUTE-MID,None,None,None,None,0)", repr(builder))
+        self.assertEqual(
+            "BarBuilder(bar_spec=1-MINUTE-MID,None,None,None,None,0)", str(builder)
+        )
+        self.assertEqual(
+            "BarBuilder(bar_spec=1-MINUTE-MID,None,None,None,None,0)", repr(builder)
+        )
 
     def test_set_partial_updates_bar_to_expected_properties(self):
         # Arrange
@@ -164,7 +167,9 @@ class BarBuilderTests(unittest.TestCase):
         builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
 
         # Act
-        builder.update(Price("1.00001"), Quantity("1"), UNIX_EPOCH - timedelta(seconds=1))
+        builder.update(
+            Price("1.00001"), Quantity("1"), UNIX_EPOCH - timedelta(seconds=1)
+        )
 
         # Assert
         self.assertTrue(builder.initialized)
@@ -202,7 +207,9 @@ class BarBuilderTests(unittest.TestCase):
 
         builder.update(Price("1.00001"), Quantity("1.0"), UNIX_EPOCH)
         builder.update(Price("1.00002"), Quantity("1.5"), UNIX_EPOCH)
-        builder.update(Price("1.00000"), Quantity("1.5"), UNIX_EPOCH + timedelta(seconds=1))
+        builder.update(
+            Price("1.00000"), Quantity("1.5"), UNIX_EPOCH + timedelta(seconds=1)
+        )
 
         # Act
         bar = builder.build()  # Also resets builder
@@ -240,7 +247,6 @@ class BarBuilderTests(unittest.TestCase):
 
 
 class TickBarAggregatorTests(unittest.TestCase):
-
     def test_handle_quote_tick_when_count_below_threshold_updates(self):
         # Arrange
         bar_store = ObjectStorer()
@@ -448,7 +454,6 @@ class TickBarAggregatorTests(unittest.TestCase):
 
 
 class VolumeBarAggregatorTests(unittest.TestCase):
-
     def test_handle_quote_tick_when_volume_below_threshold_updates(self):
         # Arrange
         bar_store = ObjectStorer()
@@ -543,7 +548,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
         self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
 
     def test_handle_trade_tick_when_volume_at_threshold_sends_bar_to_handler(self):
@@ -592,7 +597,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
         self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
 
     def test_handle_quote_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
@@ -641,17 +646,17 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
         self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.open)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[1].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[1].bar.volume)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.open)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[2].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[2].bar.volume)
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
@@ -700,17 +705,17 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
         self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.open)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[1].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[1].bar.volume)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.open)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[2].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.close)
         self.assertEqual(Quantity(10000), bar_store.get_store()[2].bar.volume)
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
@@ -774,7 +779,6 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
 
 class ValueBarAggregatorTests(unittest.TestCase):
-
     def test_handle_quote_tick_when_value_below_threshold_updates(self):
         # Arrange
         bar_store = ObjectStorer()
@@ -871,7 +875,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
         self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
-        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity("99999"), bar_store.get_store()[0].bar.volume)
         self.assertEqual(Decimal("10501.00000"), aggregator.cum_value)
 
@@ -921,12 +925,12 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("20.00001"), bar_store.get_store()[0].bar.open)
         self.assertEqual(Price("20.00002"), bar_store.get_store()[0].bar.high)
         self.assertEqual(Price("20.00001"), bar_store.get_store()[0].bar.low)
-        self.assertEqual(Price('20.00002'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Price("20.00002"), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity("5000"), bar_store.get_store()[0].bar.volume)
         self.assertEqual(Price("20.00002"), bar_store.get_store()[1].bar.open)
         self.assertEqual(Price("20.00002"), bar_store.get_store()[1].bar.high)
         self.assertEqual(Price("20.00000"), bar_store.get_store()[1].bar.low)
-        self.assertEqual(Price('20.00000'), bar_store.get_store()[1].bar.close)
+        self.assertEqual(Price("20.00000"), bar_store.get_store()[1].bar.close)
         self.assertEqual(Quantity("5000.00"), bar_store.get_store()[1].bar.volume)
         self.assertEqual(Decimal("40000.00000"), aggregator.cum_value)
 
@@ -991,7 +995,6 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
 
 class TimeBarAggregatorTests(unittest.TestCase):
-
     def test_instantiate_given_invalid_bar_spec_raises_value_error(self):
         # Arrange
         clock = TestClock()
@@ -1013,12 +1016,26 @@ class TimeBarAggregatorTests(unittest.TestCase):
             TestLogger(clock),
         )
 
-    @parameterized.expand([
-        [BarSpecification(10, BarAggregation.SECOND, PriceType.MID), datetime(1970, 1, 1, 0, 0, 10, tzinfo=pytz.utc)],
-        [BarSpecification(1, BarAggregation.MINUTE, PriceType.MID), datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc)],
-        [BarSpecification(1, BarAggregation.HOUR, PriceType.MID), datetime(1970, 1, 1, 1, 0, tzinfo=pytz.utc)],
-        [BarSpecification(1, BarAggregation.DAY, PriceType.MID), datetime(1970, 1, 2, 0, 0, tzinfo=pytz.utc)],
-    ])
+    @parameterized.expand(
+        [
+            [
+                BarSpecification(10, BarAggregation.SECOND, PriceType.MID),
+                datetime(1970, 1, 1, 0, 0, 10, tzinfo=pytz.utc),
+            ],
+            [
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+                datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc),
+            ],
+            [
+                BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
+                datetime(1970, 1, 1, 1, 0, tzinfo=pytz.utc),
+            ],
+            [
+                BarSpecification(1, BarAggregation.DAY, PriceType.MID),
+                datetime(1970, 1, 2, 0, 0, tzinfo=pytz.utc),
+            ],
+        ]
+    )
     def test_instantiate_with_various_bar_specs(self, bar_spec, expected):
         # Arrange
         clock = TestClock()
@@ -1028,7 +1045,9 @@ class TimeBarAggregatorTests(unittest.TestCase):
         bar_type = BarType(instrument_id, bar_spec)
 
         # Act
-        aggregator = TimeBarAggregator(bar_type, handler, True, clock, TestLogger(clock))
+        aggregator = TimeBarAggregator(
+            bar_type, handler, True, clock, TestLogger(clock)
+        )
 
         # Assert
         self.assertEqual(expected, aggregator.next_close)
@@ -1041,7 +1060,9 @@ class TimeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = TimeBarAggregator(bar_type, handler, True, TestClock(), TestLogger(clock))
+        aggregator = TimeBarAggregator(
+            bar_type, handler, True, TestClock(), TestLogger(clock)
+        )
 
         stop_time = UNIX_EPOCH + timedelta(minutes=2)
 
@@ -1084,11 +1105,13 @@ class TimeBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.000025"), bar_store.get_store()[0].bar.low)
         self.assertEqual(Price("1.000035"), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity(2), bar_store.get_store()[0].bar.volume)
-        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), bar_store.get_store()[0].bar.timestamp)
+        self.assertEqual(
+            datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc),
+            bar_store.get_store()[0].bar.timestamp,
+        )
 
 
 class BulkTickBarBuilderTests(unittest.TestCase):
-
     def test_given_list_of_ticks_aggregates_tick_bars(self):
         # Arrange
         tick_data = TestDataProvider.usdjpy_ticks()

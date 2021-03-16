@@ -33,7 +33,6 @@ AUDUSD_SIM = TestStubs.audusd_id()
 
 
 class OrderPerformanceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.generator = ClientOrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())

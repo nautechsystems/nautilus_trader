@@ -97,7 +97,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
         self.instrument = None  # Initialize in on_start
-        self.tick_size = None   # Initialize in on_start
+        self.tick_size = None  # Initialize in on_start
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema_period)
@@ -194,8 +194,10 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]..."
+            )
             return  # Wait for indicators to warm up...
 
         if self.portfolio.is_flat(self.instrument_id):
@@ -286,12 +288,16 @@ class EMACrossWithTrailingStop(TradingStrategy):
             return
 
         if self.trailing_stop.is_sell:
-            new_trailing_price = last_bar.low - (self.atr.value * self.trail_atr_multiple)
+            new_trailing_price = last_bar.low - (
+                self.atr.value * self.trail_atr_multiple
+            )
             if new_trailing_price > self.trailing_stop.price:
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_sell(last_bar)
         else:  # trailing_stop.is_buy
-            new_trailing_price = last_bar.high + (self.atr.value * self.trail_atr_multiple)
+            new_trailing_price = last_bar.high + (
+                self.atr.value * self.trail_atr_multiple
+            )
             if new_trailing_price < self.trailing_stop.price:
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_buy(last_bar)

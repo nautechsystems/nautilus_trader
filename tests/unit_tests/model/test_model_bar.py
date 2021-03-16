@@ -35,7 +35,6 @@ GBPUSD_SIM = TestStubs.gbpusd_id()
 
 
 class TestBarSpecification:
-
     def test_bar_spec_equality(self):
         # Arrange
         bar_spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
@@ -71,12 +70,25 @@ class TestBarSpecification:
 
     @pytest.mark.parametrize(
         "value, expected",
-        [["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
-         ["15-MINUTE-MID", BarSpecification(15, BarAggregation.MINUTE, PriceType.MID)],
-         ["100-TICK-LAST", BarSpecification(100, BarAggregation.TICK, PriceType.LAST)],
-         ["10000-VALUE_IMBALANCE-MID", BarSpecification(10000, BarAggregation.VALUE_IMBALANCE, PriceType.MID)]],
+        [
+            ["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
+            [
+                "15-MINUTE-MID",
+                BarSpecification(15, BarAggregation.MINUTE, PriceType.MID),
+            ],
+            [
+                "100-TICK-LAST",
+                BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
+            ],
+            [
+                "10000-VALUE_IMBALANCE-MID",
+                BarSpecification(10000, BarAggregation.VALUE_IMBALANCE, PriceType.MID),
+            ],
+        ],
     )
-    def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
+    def test_from_str_given_various_valid_string_returns_expected_specification(
+        self, value, expected
+    ):
         # Arrange
         # Act
         spec = BarSpecification.from_str(value)
@@ -86,10 +98,32 @@ class TestBarSpecification:
 
     @pytest.mark.parametrize(
         "bar_spec, is_time_aggregated, is_threshold_aggregated, is_information_aggregated",
-        [[BarSpecification(1, BarAggregation.SECOND, PriceType.BID), True, False, False],
-         [BarSpecification(1, BarAggregation.MINUTE, PriceType.BID), True, False, False],
-         [BarSpecification(1000, BarAggregation.TICK, PriceType.MID), False, True, False],
-         [BarSpecification(10000, BarAggregation.VALUE_RUNS, PriceType.MID), False, False, True]],
+        [
+            [
+                BarSpecification(1, BarAggregation.SECOND, PriceType.BID),
+                True,
+                False,
+                False,
+            ],
+            [
+                BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
+                True,
+                False,
+                False,
+            ],
+            [
+                BarSpecification(1000, BarAggregation.TICK, PriceType.MID),
+                False,
+                True,
+                False,
+            ],
+            [
+                BarSpecification(10000, BarAggregation.VALUE_RUNS, PriceType.MID),
+                False,
+                False,
+                True,
+            ],
+        ],
     )
     def test_aggregation_queries(
         self,
@@ -107,7 +141,6 @@ class TestBarSpecification:
 
 
 class TestBarType:
-
     def test_bar_type_equality(self):
         # Arrange
         instrument_id1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
@@ -145,7 +178,9 @@ class TestBarType:
         # Assert
         assert isinstance(hash(bar_type), int)
         assert "AUD/USD.SIM-1-MINUTE-BID" == str(bar_type)
-        assert "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)" == repr(bar_type)
+        assert "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)" == repr(
+            bar_type
+        )
 
     @pytest.mark.parametrize(
         "value",
@@ -160,12 +195,40 @@ class TestBarType:
 
     @pytest.mark.parametrize(
         "value, expected",
-        [["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],  # noqa
-         ["GBP/USD.SIM-1000-TICK-MID", BarType(InstrumentId(Symbol("GBP/USD"), Venue("SIM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],  # noqa
-         ["AAPL.NYSE-1-HOUR-MID", BarType(InstrumentId(Symbol("AAPL"), Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],  # noqa
-         ["BTC/USDT.BINANCE-100-TICK-LAST", BarType(InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))]],  # noqa
+        [
+            [
+                "AUD/USD.IDEALPRO-1-MINUTE-BID",
+                BarType(
+                    InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")),
+                    BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
+                ),
+            ],  # noqa
+            [
+                "GBP/USD.SIM-1000-TICK-MID",
+                BarType(
+                    InstrumentId(Symbol("GBP/USD"), Venue("SIM")),
+                    BarSpecification(1000, BarAggregation.TICK, PriceType.MID),
+                ),
+            ],  # noqa
+            [
+                "AAPL.NYSE-1-HOUR-MID",
+                BarType(
+                    InstrumentId(Symbol("AAPL"), Venue("NYSE")),
+                    BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
+                ),
+            ],  # noqa
+            [
+                "BTC/USDT.BINANCE-100-TICK-LAST",
+                BarType(
+                    InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+                    BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
+                ),
+            ],
+        ],  # noqa
     )
-    def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
+    def test_from_str_given_various_valid_string_returns_expected_specification(
+        self, value, expected
+    ):
         # Arrange
         # Act
         bar_type = BarType.from_serializable_str(value, internal_aggregation=True)
@@ -175,7 +238,6 @@ class TestBarType:
 
 
 class TestBar:
-
     def test_check_when_high_below_low_raises_value_error(self):
         # Arrange
         # Act
@@ -260,8 +322,13 @@ class TestBar:
         # Act
         # Assert
         assert isinstance(hash(bar), int)
-        assert "1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z" == str(bar)
-        assert "Bar(1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)" == repr(bar)
+        assert "1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z" == str(
+            bar
+        )
+        assert (
+            "Bar(1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)"
+            == repr(bar)
+        )
 
     def test_to_serializable_string(self):
         # Arrange
@@ -308,7 +375,6 @@ class TestBar:
 
 
 class TestBarData:
-
     def test_str_repr(self):
         # Arrange
         instrument_id = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
@@ -327,5 +393,11 @@ class TestBarData:
 
         # Act
         # Assert
-        assert "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)" == str(bar_data)  # noqa
-        assert "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)" == repr(bar_data)  # noqa
+        assert (
+            "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)"
+            == str(bar_data)
+        )  # noqa
+        assert (
+            "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)"
+            == repr(bar_data)
+        )  # noqa

@@ -22,7 +22,9 @@ import sys
 import pandas as pd
 
 
-sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
+sys.path.insert(
+    0, str(pathlib.Path(__file__).parents[2])
+)  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.data_container import BacktestDataContainer
@@ -76,7 +78,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
-        use_data_cache=True,    # Pre-cache data for increased performance on repeated runs
+        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
         # exec_db_type="redis",
         # exec_db_flush=False,
         # bypass_logging=True
@@ -92,7 +94,9 @@ if __name__ == "__main__":
 
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
-    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+    interest_rate_data = pd.read_csv(
+        os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+    )
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Add an exchange (multiple exchanges possible)
@@ -116,7 +120,8 @@ if __name__ == "__main__":
         100,
         "display.max_columns",
         None,
-        "display.width", 300,
+        "display.width",
+        300,
     ):
         print(engine.trader.generate_account_report(SIM))
         print(engine.trader.generate_order_fills_report())

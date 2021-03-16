@@ -44,7 +44,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestRiskEngine:
-
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -61,7 +60,9 @@ class TestRiskEngine:
         )
         self.portfolio.register_cache(DataCache(self.logger))
 
-        self.database = MockExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = MockExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = ExecutionEngine(
             database=self.database,
             portfolio=self.portfolio,
@@ -159,7 +160,7 @@ class TestRiskEngine:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_order']
+        assert self.exec_client.calls == ["connect", "submit_order"]
 
     def test_submit_bracket_with_default_settings_sends_to_client(self):
         # Arrange
@@ -200,7 +201,7 @@ class TestRiskEngine:
         self.risk_engine.execute(submit_bracket)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_bracket_order']
+        assert self.exec_client.calls == ["connect", "submit_bracket_order"]
 
     def test_submit_order_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -238,7 +239,7 @@ class TestRiskEngine:
         self.exec_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_client.calls == ['connect']
+        assert self.exec_client.calls == ["connect"]
         assert self.exec_engine.event_count == 1
 
     def test_amend_order_with_default_settings_sends_to_client(self):
@@ -288,7 +289,7 @@ class TestRiskEngine:
         self.risk_engine.execute(amend)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_order', 'amend_order']
+        assert self.exec_client.calls == ["connect", "submit_order", "amend_order"]
 
     def test_cancel_order_with_default_settings_sends_to_client(self):
         # Arrange
@@ -336,7 +337,7 @@ class TestRiskEngine:
         self.risk_engine.execute(cancel)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_order', 'cancel_order']
+        assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
 
     def test_submit_bracket_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -379,5 +380,5 @@ class TestRiskEngine:
         self.exec_engine.execute(submit_bracket)
 
         # Assert
-        assert self.exec_client.calls == ['connect']
+        assert self.exec_client.calls == ["connect"]
         assert self.exec_engine.event_count == 3

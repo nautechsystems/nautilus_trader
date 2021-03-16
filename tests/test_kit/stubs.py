@@ -57,7 +57,6 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
 class TestStubs:
-
     @staticmethod
     def btcusd_bitmex_id() -> InstrumentId:
         return InstrumentId(Symbol("BTC/USD"), Venue("BITMEX"))
@@ -140,7 +139,9 @@ class TestStubs:
 
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
-        return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last())
+        return BarType(
+            TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last()
+        )
 
     @staticmethod
     def bar_5decimal() -> Bar:

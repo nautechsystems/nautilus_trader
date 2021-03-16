@@ -37,11 +37,12 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class InstrumentTests(unittest.TestCase):
-
-    @parameterized.expand([
-        [AUDUSD_SIM, AUDUSD_SIM, True, False],
-        [AUDUSD_SIM, USDJPY_SIM, False, True],
-    ])
+    @parameterized.expand(
+        [
+            [AUDUSD_SIM, AUDUSD_SIM, True, False],
+            [AUDUSD_SIM, USDJPY_SIM, False, True],
+        ]
+    )
     def test_equality(self, instrument1, instrument2, expected1, expected2):
         # Arrange
         # Act

@@ -25,7 +25,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestClockTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.handler = []
@@ -58,7 +57,9 @@ class TestClockTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(datetime, type(result))
-        self.assertEqual(UNIX_EPOCH.astimezone(tz=pytz.timezone("Australia/Sydney")), result)
+        self.assertEqual(
+            UNIX_EPOCH.astimezone(tz=pytz.timezone("Australia/Sydney")), result
+        )
 
     def test_delta(self):
         # Arrange
@@ -79,7 +80,9 @@ class TestClockTests(unittest.TestCase):
 
         # Act
         self.clock.set_time_alert(name, alert_time)
-        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=200))
+        events = self.clock.advance_time(
+            self.clock.utc_now() + timedelta(milliseconds=200)
+        )
 
         # Assert
         self.assertEqual([], self.clock.timer_names())
@@ -109,7 +112,9 @@ class TestClockTests(unittest.TestCase):
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=300))
+        events = self.clock.advance_time(
+            self.clock.utc_now() + timedelta(milliseconds=300)
+        )
 
         # Assert
         self.assertEqual([], self.clock.timer_names())
@@ -127,12 +132,17 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
+        events = self.clock.advance_time(
+            self.clock.utc_now() + timedelta(milliseconds=400)
+        )
 
         # Assert
         self.assertEqual([name], self.clock.timer_names())
         self.assertEqual(4, len(events))
-        self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc), events[3].event.timestamp)
+        self.assertEqual(
+            datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc),
+            events[3].event.timestamp,
+        )
 
     def test_set_timer(self):
         # Arrange
@@ -147,7 +157,9 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
+        events = self.clock.advance_time(
+            self.clock.utc_now() + timedelta(milliseconds=400)
+        )
 
         # Assert
         self.assertEqual([name], self.clock.timer_names())
@@ -165,7 +177,9 @@ class TestClockTests(unittest.TestCase):
             stop_time=self.clock.utc_now() + timedelta(milliseconds=300),
         )
 
-        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=300))
+        events = self.clock.advance_time(
+            self.clock.utc_now() + timedelta(milliseconds=300)
+        )
 
         # Assert
         self.assertEqual([], self.clock.timer_names())
@@ -202,7 +216,9 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
+        events = self.clock.advance_time(
+            self.clock.utc_now() + timedelta(milliseconds=400)
+        )
 
         # Assert
         self.assertEqual([name], self.clock.timer_names())
@@ -248,7 +264,9 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=500))
+        events = self.clock.advance_time(
+            self.clock.utc_now() + timedelta(milliseconds=500)
+        )
 
         # Assert
         self.assertEqual(10, len(events))

@@ -25,7 +25,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class HullMovingAverageTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.hma = HullMovingAverage(10)

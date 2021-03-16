@@ -20,7 +20,6 @@ from tests.test_kit.performance import PerformanceHarness
 
 
 class CorrectnessTests:
-
     @staticmethod
     def none():
         PyCondition.none(None, "param")
@@ -35,7 +34,6 @@ class CorrectnessTests:
 
 
 class CorrectnessConditionPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_condition_none():
         PerformanceHarness.profile_function(CorrectnessTests.none, 100000, 1)

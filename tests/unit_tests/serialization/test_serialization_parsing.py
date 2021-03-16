@@ -20,7 +20,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class SerializationFunctionTests(unittest.TestCase):
-
     def test_convert_datetime_to_str_from_none(self):
         # Arrange
         # Act

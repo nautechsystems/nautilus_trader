@@ -28,7 +28,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
-
     def test_simple_returns_expected_indicator(self):
         # Arrange
         # Act

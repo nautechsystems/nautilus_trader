@@ -3,7 +3,7 @@ import json
 import ccxt
 
 
-exchange = 'binance'
+exchange = "binance"
 ccxt = getattr(ccxt, exchange.lower())()
 ccxt.load_markets()
 print(ccxt.name)

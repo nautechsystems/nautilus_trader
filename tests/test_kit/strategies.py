@@ -97,9 +97,9 @@ class EMACross(TradingStrategy):
         instrument_id: InstrumentId,
         bar_spec: BarSpecification,
         trade_size: Decimal,
-        fast_ema: int=10,
-        slow_ema: int=20,
-        extra_id_tag: str="",
+        fast_ema: int = 10,
+        slow_ema: int = 20,
+        extra_id_tag: str = "",
     ):
         """
         Initialize a new instance of the `EMACross` class.
@@ -122,7 +122,9 @@ class EMACross(TradingStrategy):
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace('/', "") + extra_id_tag)
+        super().__init__(
+            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag
+        )
 
         # Custom strategy variables
         self.instrument_id = instrument_id
@@ -197,8 +199,10 @@ class EMACross(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]..."
+            )
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC
@@ -294,7 +298,7 @@ class EMACross(TradingStrategy):
             The strategy state dictionary.
 
         """
-        return {'example': b'123456'}
+        return {"example": b"123456"}
 
     def on_load(self, state: {}):
         """

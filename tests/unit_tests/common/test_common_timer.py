@@ -24,7 +24,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TimeEventTests(unittest.TestCase):
-
     def test_equality(self):
         # Arrange
         event1 = TimeEvent("EVENT_1", uuid4(), UNIX_EPOCH)
@@ -44,17 +43,26 @@ class TimeEventTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(f"TimeEvent(name=EVENT, id={uuid}, timestamp=1970-01-01T00:00:00.000Z)", str(event))  # noqa
-        self.assertEqual(f"TimeEvent(name=EVENT, id={uuid}, timestamp=1970-01-01T00:00:00.000Z)", repr(event))  # noqa
+        self.assertEqual(
+            f"TimeEvent(name=EVENT, id={uuid}, timestamp=1970-01-01T00:00:00.000Z)",
+            str(event),
+        )  # noqa
+        self.assertEqual(
+            f"TimeEvent(name=EVENT, id={uuid}, timestamp=1970-01-01T00:00:00.000Z)",
+            repr(event),
+        )  # noqa
 
 
 class TimeEventHandlerTests(unittest.TestCase):
-
     def test_comparisons(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH), receiver.append)
-        event2 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1)), receiver.append)
+        event1 = TimeEventHandler(
+            TimeEvent("123", uuid4(), UNIX_EPOCH), receiver.append
+        )
+        event2 = TimeEventHandler(
+            TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1)), receiver.append
+        )
 
         # Act
         # Assert
@@ -73,15 +81,27 @@ class TimeEventHandlerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, timestamp=1970-01-01T00:00:00.000Z))", str(handler))  # noqa
-        self.assertEqual(f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, timestamp=1970-01-01T00:00:00.000Z))", repr(handler))  # noqa
+        self.assertEqual(
+            f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, timestamp=1970-01-01T00:00:00.000Z))",
+            str(handler),
+        )  # noqa
+        self.assertEqual(
+            f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, timestamp=1970-01-01T00:00:00.000Z))",
+            repr(handler),
+        )  # noqa
 
     def test_sort(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH), receiver.append)
-        event2 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH), receiver.append)
-        event3 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1)), receiver.append)
+        event1 = TimeEventHandler(
+            TimeEvent("123", uuid4(), UNIX_EPOCH), receiver.append
+        )
+        event2 = TimeEventHandler(
+            TimeEvent("123", uuid4(), UNIX_EPOCH), receiver.append
+        )
+        event3 = TimeEventHandler(
+            TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1)), receiver.append
+        )
 
         # Act
         # Stable sort as event1 and event2 remain in order
@@ -92,7 +112,6 @@ class TimeEventHandlerTests(unittest.TestCase):
 
 
 class TimerTests(unittest.TestCase):
-
     def test_equality(self):
         # Arrange
         receiver = []
@@ -127,8 +146,14 @@ class TimerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)", str(timer))  # noqa
-        self.assertEqual("Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)", repr(timer))  # noqa
+        self.assertEqual(
+            "Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)",
+            str(timer),
+        )  # noqa
+        self.assertEqual(
+            "Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)",
+            repr(timer),
+        )  # noqa
 
     def test_hash(self):
         # Arrange

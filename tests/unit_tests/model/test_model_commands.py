@@ -20,7 +20,6 @@ from nautilus_trader.model.identifiers import Venue
 
 
 class TestRouting:
-
     def test_instantiate_when_all_venues_none_raises_value_error(self):
         # Arrange
         # Act
@@ -134,6 +133,12 @@ class TestRouting:
         assert routing1.to_serializable_str() == "IB,SMART,NYSE"
         assert routing2.to_serializable_str() == "IB,,NYSE"
         assert routing3.to_serializable_str() == ",,BITMEX"
-        assert routing1.from_serializable_str(routing1.to_serializable_str()) == routing1
-        assert routing2.from_serializable_str(routing2.to_serializable_str()) == routing2
-        assert routing3.from_serializable_str(routing3.to_serializable_str()) == routing3
+        assert (
+            routing1.from_serializable_str(routing1.to_serializable_str()) == routing1
+        )
+        assert (
+            routing2.from_serializable_str(routing2.to_serializable_str()) == routing2
+        )
+        assert (
+            routing3.from_serializable_str(routing3.to_serializable_str()) == routing3
+        )

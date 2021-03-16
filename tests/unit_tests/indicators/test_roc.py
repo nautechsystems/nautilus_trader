@@ -24,7 +24,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class RateOfChangeTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.roc = RateOfChange(3)
@@ -102,7 +101,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0., self.roc.value)
+        self.assertEqual(0.0, self.roc.value)
 
     def test_value_with_half_oscillating_inputs_returns_zero(self):
         # Arrange

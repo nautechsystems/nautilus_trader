@@ -287,7 +287,7 @@ class MockMarketDataClient(MarketDataClient):
 
         self.calls = []
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+    # -- COMMANDS --------------------------------------------------------------------------------------
 
     def connect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -301,7 +301,7 @@ class MockMarketDataClient(MarketDataClient):
     def dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -339,12 +339,14 @@ class MockMarketDataClient(MarketDataClient):
     def unsubscribe_order_book(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+    # -- REQUESTS --------------------------------------------------------------------------------------
 
     def request(self, datatype: DataType, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID) -> None:
+    def request_instrument(
+        self, instrument_id: InstrumentId, correlation_id: UUID
+    ) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def request_instruments(self, correlation_id: UUID) -> None:
@@ -438,7 +440,7 @@ class MockExecutionClient(ExecutionClient):
     def reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+    # -- COMMANDS --------------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -478,7 +480,7 @@ class MockExecutionDatabase(ExecutionDatabase):
         logger : Logger
             The logger for the database.
 
-    """
+        """
         super().__init__(trader_id, logger)
 
         self.accounts = {}

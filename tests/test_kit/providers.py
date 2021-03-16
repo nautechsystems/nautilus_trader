@@ -42,7 +42,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestDataProvider:
-
     @staticmethod
     def ethusdt_trades() -> DataFrame:
         return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/binance-ethusdt-trades.csv")
@@ -81,11 +80,15 @@ class TestDataProvider:
 
     @staticmethod
     def parquet_btcusdt_trades() -> DataFrame:
-        return ParquetTickDataLoader.load(PACKAGE_ROOT + "/data/binance-btcusdt-trades.parquet")
+        return ParquetTickDataLoader.load(
+            PACKAGE_ROOT + "/data/binance-btcusdt-trades.parquet"
+        )
 
     @staticmethod
     def parquet_btcusdt_quotes() -> DataFrame:
-        return ParquetTickDataLoader.load(PACKAGE_ROOT + "/data/binance-btcusdt-quotes.parquet")
+        return ParquetTickDataLoader.load(
+            PACKAGE_ROOT + "/data/binance-btcusdt-quotes.parquet"
+        )
 
 
 class TestInstrumentProvider:
@@ -262,7 +265,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue=None) -> Instrument:
+    def default_fx_ccy(symbol: str, venue: Venue = None) -> Instrument:
         """
         Return a default FX currency pair instrument from the given instrument_id.
 
@@ -297,7 +300,7 @@ class TestInstrumentProvider:
         quote_currency = symbol[-3:]
 
         # Check tick precision of quote currency
-        if quote_currency == 'JPY':
+        if quote_currency == "JPY":
             price_precision = 3
         else:
             price_precision = 5

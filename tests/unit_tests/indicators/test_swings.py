@@ -23,7 +23,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class SwingsTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.swings = Swings(3)

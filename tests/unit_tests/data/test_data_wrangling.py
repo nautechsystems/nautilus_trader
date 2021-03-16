@@ -35,7 +35,6 @@ AUDUSD_SIM = TestStubs.audusd_id()
 
 
 class QuoteTickDataWranglerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -65,7 +64,9 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
         self.assertEqual(1000, len(ticks))
-        self.assertEqual(Timestamp("2013-01-01 22:02:35.907000", tz="UTC"), ticks.iloc[1].name)
+        self.assertEqual(
+            Timestamp("2013-01-01 22:02:35.907000", tz="UTC"), ticks.iloc[1].name
+        )
 
     def test_pre_process_with_bar_data(self):
         # Arrange
@@ -85,10 +86,21 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarAggregation.MINUTE, self.tick_builder.resolution)
         self.assertEqual(115044, len(tick_data))
-        self.assertEqual(Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"), tick_data.iloc[0].name)
-        self.assertEqual(Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC"), tick_data.iloc[1].name)
-        self.assertEqual(Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC"), tick_data.iloc[2].name)
-        self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name)
+        self.assertEqual(
+            Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"),
+            tick_data.iloc[0].name,
+        )
+        self.assertEqual(
+            Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC"),
+            tick_data.iloc[1].name,
+        )
+        self.assertEqual(
+            Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC"),
+            tick_data.iloc[2].name,
+        )
+        self.assertEqual(
+            Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name
+        )
         self.assertEqual(0, tick_data.iloc[0]["instrument_id"])
         self.assertEqual("1", tick_data.iloc[0]["bid_size"])
         self.assertEqual("1", tick_data.iloc[0]["ask_size"])
@@ -119,7 +131,9 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Price("0.67070"), ticks[0].ask)
         self.assertEqual(Quantity("1"), ticks[0].bid_size)
         self.assertEqual(Quantity("1"), ticks[0].ask_size)
-        self.assertEqual(Timestamp("2020-01-30 15:28:09.820000+0000", tz="UTC"), ticks[0].timestamp)
+        self.assertEqual(
+            Timestamp("2020-01-30 15:28:09.820000+0000", tz="UTC"), ticks[0].timestamp
+        )
 
     def test_build_ticks_with_bar_data(self):
         # Arrange
@@ -142,11 +156,12 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Price("91.717"), ticks[0].ask)
         self.assertEqual(Quantity("1"), ticks[0].bid_size)
         self.assertEqual(Quantity("1"), ticks[0].ask_size)
-        self.assertEqual(Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"), ticks[0].timestamp)
+        self.assertEqual(
+            Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"), ticks[0].timestamp
+        )
 
 
 class TradeTickDataWranglerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -173,7 +188,9 @@ class TradeTickDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(69806, len(ticks))
-        self.assertEqual(Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks.iloc[0].name)
+        self.assertEqual(
+            Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks.iloc[0].name
+        )
 
     def test_build_ticks(self):
         # Arrange
@@ -193,11 +210,12 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Quantity("2.67900"), ticks[0].size)
         self.assertEqual(OrderSide.SELL, ticks[0].side)
         self.assertEqual(TradeMatchId("148568980"), ticks[0].match_id)
-        self.assertEqual(Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks[0].timestamp)
+        self.assertEqual(
+            Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks[0].timestamp
+        )
 
 
 class BarDataWranglerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
@@ -274,16 +292,20 @@ class TardisQuoteDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
         self.assertEqual(9999, len(ticks))
-        self.assertEqual(Timestamp('2020-02-22 00:00:03.522418+0000', tz='UTC'), ticks.iloc[1].name)
-        self.assertEqual('0.670000', ticks.bid_size[0])
-        self.assertEqual('0.840000', ticks.ask_size[0])
-        self.assertEqual('9681.92', ticks.bid[0])
-        self.assertEqual('9682.00', ticks.ask[0])
-        self.assertEqual(sorted(['ask', 'ask_size', 'bid', 'bid_size', 'instrument_id', 'symbol']), sorted(ticks.columns))
+        self.assertEqual(
+            Timestamp("2020-02-22 00:00:03.522418+0000", tz="UTC"), ticks.iloc[1].name
+        )
+        self.assertEqual("0.670000", ticks.bid_size[0])
+        self.assertEqual("0.840000", ticks.ask_size[0])
+        self.assertEqual("9681.92", ticks.bid[0])
+        self.assertEqual("9682.00", ticks.ask[0])
+        self.assertEqual(
+            sorted(["ask", "ask_size", "bid", "bid_size", "instrument_id", "symbol"]),
+            sorted(ticks.columns),
+        )
 
 
 class TardisTradeDataWranglerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -310,7 +332,9 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(9999, len(ticks))
-        self.assertEqual(Timestamp('2020-02-22 00:00:02.418379+0000', tz='UTC'), ticks.iloc[0].name)
+        self.assertEqual(
+            Timestamp("2020-02-22 00:00:02.418379+0000", tz="UTC"), ticks.iloc[0].name
+        )
 
     def test_build_ticks(self):
         # Arrange
@@ -330,4 +354,6 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
         self.assertEqual(Quantity("0.132000"), ticks[0].size)
         self.assertEqual(OrderSide.BUY, ticks[0].side)
         self.assertEqual(TradeMatchId("42377944"), ticks[0].match_id)
-        self.assertEqual(Timestamp('2020-02-22 00:00:02.418379+0000', tz='UTC'), ticks[0].timestamp)
+        self.assertEqual(
+            Timestamp("2020-02-22 00:00:02.418379+0000", tz="UTC"), ticks[0].timestamp
+        )

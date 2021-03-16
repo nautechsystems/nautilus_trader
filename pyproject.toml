@@ -109,5 +109,5 @@ single_line_exclusions = "typing"
 use_parentheses = true
 
 [tool.black]
-target-version = ["py36", "py37", "py38", "py39"]
+target-version = ["py37", "py38"]
 include = '\.pyi?$'

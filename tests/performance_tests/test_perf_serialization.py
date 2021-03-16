@@ -35,7 +35,6 @@ AUDUSD = TestStubs.audusd_id()
 
 
 class SerializationPerformanceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
