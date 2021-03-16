@@ -109,7 +109,7 @@ instrument2 = InstrumentId(
 )
 
 strategy2 = EMACrossStopEntryTrail(
-    instrument_id=instrument,
+    instrument_id=instrument2,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("100"),
     fast_ema_period=10,
