@@ -1,7 +1,7 @@
 exclude: ^(.github)/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.3.0
+    rev: v3.4.0
     hooks:
       - id: check-builtin-literals
       - id: check-byte-order-marker
@@ -29,7 +29,13 @@ repos:
     rev: 5.6.4
     hooks:
       - id: isort
-        types: [python, cython]
+        name: isort (python)
+      - id: isort
+        name: isort (cython)
+        types: [cython]
+      - id: isort
+        name: isort (pyi)
+        types: [pyi]
 
 #  - repo: https://github.com/psf/black
 #    rev: stable
@@ -37,7 +43,7 @@ repos:
 #      - id: black
 
   - repo: https://gitlab.com/pycqa/flake8
-    rev: 3.8.4
+    rev: 3.9.0
     hooks:
       - id: flake8
         additional_dependencies:
@@ -45,5 +51,5 @@ repos:
           - flake8-bugbear==20.1.4
           - flake8-rst-docstrings==0.0.14
           - pep8-naming==0.11.1
-          - darglint==1.5.5
+          - darglint==1.6.0
         types: [python, cython]
