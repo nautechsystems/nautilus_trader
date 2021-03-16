@@ -32,7 +32,6 @@ IDEALPRO = Venue("IDEALPRO")
 
 
 class DataMessageTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -72,12 +71,15 @@ class DataMessageTests(unittest.TestCase):
 
         request = DataRequest(
             provider=BINANCE.value,
-            data_type=DataType(str, metadata={  # str data type is invalid
-                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            }),
+            data_type=DataType(
+                str,
+                metadata={  # str data type is invalid
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+            ),
             callback=handler,
             request_id=request_id,
             request_timestamp=self.clock.utc_now(),
@@ -120,7 +122,10 @@ class DataMessageTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("DataResponse(<QuoteTick> {'InstrumentId': InstrumentId('AUD/USD.IDEALPRO')})", str(response))
+        self.assertEqual(
+            "DataResponse(<QuoteTick> {'InstrumentId': InstrumentId('AUD/USD.IDEALPRO')})",
+            str(response),
+        )
         self.assertEqual(
             f"DataResponse("
             f"provider=BINANCE, "

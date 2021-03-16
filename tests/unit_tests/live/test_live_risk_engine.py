@@ -46,7 +46,6 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class TestLiveRiskEngine:
-
     def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -80,7 +79,9 @@ class TestLiveRiskEngine:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        self.database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = BypassExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
@@ -137,7 +138,7 @@ class TestLiveRiskEngine:
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         strategy = TradingStrategy(order_id_tag="001")
@@ -182,7 +183,7 @@ class TestLiveRiskEngine:
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         strategy = TradingStrategy(order_id_tag="001")

@@ -52,6 +52,7 @@ from nautilus_trader.trading.trader import Trader
 
 try:
     import uvloop
+
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     uvloop_version = uvloop.__version__
 except ImportError:
@@ -123,16 +124,22 @@ class TradingNode:
         self._logger = LiveLogger(
             clock=self._clock,
             name=self.trader_id.value,
-            level_console=LogLevelParser.from_str_py(config_log.get("log_level_console")),
+            level_console=LogLevelParser.from_str_py(
+                config_log.get("log_level_console")
+            ),
             level_file=LogLevelParser.from_str_py(config_log.get("log_level_file")),
             level_store=LogLevelParser.from_str_py(config_log.get("log_level_store")),
-            run_in_process=config_log.get("run_in_process", True),  # Run logger in a separate process
+            run_in_process=config_log.get(
+                "run_in_process", True
+            ),  # Run logger in a separate process
             log_thread=config_log.get("log_thread_id", False),
             log_to_file=config_log.get("log_to_file", False),
             log_file_path=config_log.get("log_file_path", ""),
         )
 
-        self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
+        self._log = LoggerAdapter(
+            component_name=self.__class__.__name__, logger=self._logger
+        )
         self._log_header()
         self._log.info("Building...")
 
@@ -163,7 +170,7 @@ class TradingNode:
                 config={
                     "host": config_exec_db["host"],
                     "port": config_exec_db["port"],
-                }
+                },
             )
         else:
             exec_db = BypassExecutionDatabase(
@@ -216,7 +223,9 @@ class TradingNode:
 
         self._log.info("state=INITIALIZED.")
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
+        self._log.info(
+            f"Initialized in {self.time_to_initialize.total_seconds():.3f}s."
+        )
 
     @property
     def is_running(self) -> bool:
@@ -342,15 +351,19 @@ class TradingNode:
 
             self._log.info("state=DISPOSED.")
             self._logger.stop()  # Ensure process is stopped
-            time.sleep(0.1)      # Ensure final log messages
+            time.sleep(0.1)  # Ensure final log messages
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
         self._log.info(f"redis {redis.__version__}")
-        self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
+        self._log.info(
+            f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}"
+        )
         if uvloop_version:
             self._log.info(f"uvloop {uvloop_version}")
-        self._log.info("=================================================================")
+        self._log.info(
+            "================================================================="
+        )
 
     def _setup_loop(self) -> None:
         if self._loop.is_closed():
@@ -377,10 +390,12 @@ class TradingNode:
                 try:
                     import ccxtpro
                 except ImportError:
-                    raise ImportError("ccxtpro is not installed, "
-                                      "installation instructions can be found at https://ccxt.pro")
+                    raise ImportError(
+                        "ccxtpro is not installed, "
+                        "installation instructions can be found at https://ccxt.pro"
+                    )
 
-                client_cls = getattr(ccxtpro, name.partition('-')[2].lower())
+                client_cls = getattr(ccxtpro, name.partition("-")[2].lower())
 
                 if name == "ccxt-binance":
                     data_client, exec_client = BinanceClientsFactory.create(
@@ -401,7 +416,9 @@ class TradingNode:
                         logger=logger,
                     )
                 else:
-                    raise NotImplementedError(f"{name} not implemented in this version.")
+                    raise NotImplementedError(
+                        f"{name} not implemented in this version."
+                    )
                     # data_client, exec_client = CCXTClientsFactory.create(
                     #     client_cls=client_cls,
                     #     config=config,
@@ -473,8 +490,9 @@ class TradingNode:
         while True:
             await asyncio.sleep(0.1)
             if self._clock.utc_now() >= timeout:
-                self._log.error(f"Timed out ({seconds}s) waiting for "
-                                f"engines to initialize.")
+                self._log.error(
+                    f"Timed out ({seconds}s) waiting for " f"engines to initialize."
+                )
                 return False
             if not self._data_engine.check_connected():
                 continue
@@ -490,7 +508,9 @@ class TradingNode:
 
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
-            self._log.info(f"Awaiting residual state ({self._check_residuals_delay}s delay)...")
+            self._log.info(
+                f"Awaiting residual state ({self._check_residuals_delay}s delay)..."
+            )
             await asyncio.sleep(self._check_residuals_delay)
             self.trader.check_residuals()
 
@@ -524,7 +544,9 @@ class TradingNode:
         while True:
             await asyncio.sleep(0.1)
             if self._clock.utc_now() >= timeout:
-                self._log.warning(f"Timed out ({seconds}s) waiting for engines to disconnect.")
+                self._log.warning(
+                    f"Timed out ({seconds}s) waiting for engines to disconnect."
+                )
                 break
             if not self._data_engine.check_disconnected():
                 continue
@@ -559,8 +581,10 @@ class TradingNode:
             if task.cancelled():
                 continue
             if task.exception() is not None:
-                self._loop.call_exception_handler({
-                    'message': 'unhandled exception during asyncio.run() shutdown',
-                    'exception': task.exception(),
-                    'task': task,
-                })
+                self._loop.call_exception_handler(
+                    {
+                        "message": "unhandled exception during asyncio.run() shutdown",
+                        "exception": task.exception(),
+                        "task": task,
+                    }
+                )

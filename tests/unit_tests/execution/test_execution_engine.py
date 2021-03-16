@@ -65,7 +65,6 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class ExecutionEngineTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -89,7 +88,9 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        self.database = MockExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = MockExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = ExecutionEngine(
             database=self.database,
             portfolio=self.portfolio,
@@ -439,16 +440,20 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         self.exec_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(
-            order,
-            AUDUSD_SIM,
-            strategy_id=StrategyId("RANDOM", "001"),
-        ))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(
+                order,
+                AUDUSD_SIM,
+                strategy_id=StrategyId("RANDOM", "001"),
+            )
+        )
 
         # Assert (does not send to strategy)
         self.assertEqual(OrderState.FILLED, order.state)
 
-    def test_submit_bracket_order_with_all_duplicate_cl_ord_id_logs_does_not_submit(self):
+    def test_submit_bracket_order_with_all_duplicate_cl_ord_id_logs_does_not_submit(
+        self,
+    ):
         # Arrange
         self.exec_engine.start()
 
@@ -468,17 +473,11 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         stop_loss = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("0.50000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("0.50000")
         )
 
         take_profit = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("1.00000")
         )
 
         bracket = BracketOrder(
@@ -502,11 +501,19 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_bracket)  # Duplicate command
 
         # Assert
-        self.assertEqual(OrderState.INITIALIZED, entry.state)  # Did not invalidate originals
-        self.assertEqual(OrderState.INITIALIZED, stop_loss.state)  # Did not invalidate originals
-        self.assertEqual(OrderState.INITIALIZED, take_profit.state)  # Did not invalidate originals
+        self.assertEqual(
+            OrderState.INITIALIZED, entry.state
+        )  # Did not invalidate originals
+        self.assertEqual(
+            OrderState.INITIALIZED, stop_loss.state
+        )  # Did not invalidate originals
+        self.assertEqual(
+            OrderState.INITIALIZED, take_profit.state
+        )  # Did not invalidate originals
 
-    def test_submit_bracket_order_with_duplicate_take_profit_cl_ord_id_logs_does_not_submit(self):
+    def test_submit_bracket_order_with_duplicate_take_profit_cl_ord_id_logs_does_not_submit(
+        self,
+    ):
         # Arrange
         self.exec_engine.start()
 
@@ -526,17 +533,11 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         stop_loss1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("0.50000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("0.50000")
         )
 
         take_profit1 = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("1.00000")
         )
 
         bracket1 = BracketOrder(
@@ -562,10 +563,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         stop_loss2 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("0.50000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("0.50000")
         )
 
         bracket2 = BracketOrder(
@@ -598,9 +596,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(OrderState.INVALID, entry2.state)
         self.assertEqual(OrderState.ACCEPTED, entry1.state)
         self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)
-        self.assertEqual(OrderState.ACCEPTED, take_profit1.state)  # Did not invalidate original
+        self.assertEqual(
+            OrderState.ACCEPTED, take_profit1.state
+        )  # Did not invalidate original
 
-    def test_submit_bracket_order_with_duplicate_stop_loss_cl_ord_id_logs_does_not_submit(self):
+    def test_submit_bracket_order_with_duplicate_stop_loss_cl_ord_id_logs_does_not_submit(
+        self,
+    ):
         # Arrange
         self.exec_engine.start()
 
@@ -620,17 +622,11 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         stop_loss1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("0.50000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("0.50000")
         )
 
         take_profit1 = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("1.00000")
         )
 
         bracket1 = BracketOrder(
@@ -656,10 +652,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         take_profit2 = strategy.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000")
+            AUDUSD_SIM.id, OrderSide.SELL, Quantity(100000), Price("1.00000")
         )
 
         bracket2 = BracketOrder(
@@ -690,9 +683,15 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.INVALID, entry2.state)
-        self.assertEqual(OrderState.ACCEPTED, entry1.state)  # Did not invalidate original
-        self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)  # Did not invalidate original
-        self.assertEqual(OrderState.ACCEPTED, take_profit1.state)  # Did not invalidate original
+        self.assertEqual(
+            OrderState.ACCEPTED, entry1.state
+        )  # Did not invalidate original
+        self.assertEqual(
+            OrderState.ACCEPTED, stop_loss1.state
+        )  # Did not invalidate original
+        self.assertEqual(
+            OrderState.ACCEPTED, take_profit1.state
+        )  # Did not invalidate original
         self.assertEqual(OrderState.INVALID, take_profit2.state)
 
     def test_submit_order(self):
@@ -1026,7 +1025,7 @@ class ExecutionEngineTests(unittest.TestCase):
         cancelled = OrderCancelled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
-            OrderId("RANDOM_001"),     # Also a random order id the engine won't find
+            OrderId("RANDOM_001"),  # Also a random order id the engine won't find
             self.clock.utc_now(),
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -1124,11 +1123,13 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(
-            order=order,
-            instrument=AUDUSD_SIM,
-            strategy_id=StrategyId.null(),
-        ))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(
+                order=order,
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId.null(),
+            )
+        )
 
         expected_position_id = PositionId("P-19700101-000000-000-001-1")
 
@@ -1138,9 +1139,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.cache.is_position_closed(expected_position_id))
         self.assertEqual(Position, type(self.cache.position(expected_position_id)))
         self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids(strategy_id=strategy.id))
+        self.assertNotIn(
+            expected_position_id,
+            self.cache.position_closed_ids(strategy_id=strategy.id),
+        )
         self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertIn(
+            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
+        )
         self.assertIn(expected_position_id, self.cache.position_open_ids())
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
@@ -1181,11 +1187,13 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(
-            order=order,
-            instrument=AUDUSD_SIM,
-            strategy_id=StrategyId.null(),
-        ))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(
+                order=order,
+                instrument=AUDUSD_SIM,
+                strategy_id=StrategyId.null(),
+            )
+        )
 
         expected_position_id = PositionId("P-19700101-000000-000-001-1")
 
@@ -1195,9 +1203,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.cache.is_position_closed(expected_position_id))
         self.assertEqual(Position, type(self.cache.position(expected_position_id)))
         self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids(strategy_id=strategy.id))
+        self.assertNotIn(
+            expected_position_id,
+            self.cache.position_closed_ids(strategy_id=strategy.id),
+        )
         self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertIn(
+            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
+        )
         self.assertIn(expected_position_id, self.cache.position_open_ids())
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
@@ -1248,9 +1261,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.cache.is_position_closed(expected_position_id))
         self.assertEqual(Position, type(self.cache.position(expected_position_id)))
         self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids(strategy_id=strategy.id))
+        self.assertNotIn(
+            expected_position_id,
+            self.cache.position_closed_ids(strategy_id=strategy.id),
+        )
         self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertIn(
+            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
+        )
         self.assertIn(expected_position_id, self.cache.position_open_ids())
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
@@ -1293,22 +1311,22 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         expected_position_id = PositionId("P-19700101-000000-000-001-1")
 
-        self.exec_engine.process(TestStubs.event_order_filled(
-            order=order,
-            instrument=AUDUSD_SIM,
-            fill_qty=Quantity(20100)),
+        self.exec_engine.process(
+            TestStubs.event_order_filled(
+                order=order, instrument=AUDUSD_SIM, fill_qty=Quantity(20100)
+            ),
         )
 
-        self.exec_engine.process(TestStubs.event_order_filled(
-            order=order,
-            instrument=AUDUSD_SIM,
-            fill_qty=Quantity(19900)),
+        self.exec_engine.process(
+            TestStubs.event_order_filled(
+                order=order, instrument=AUDUSD_SIM, fill_qty=Quantity(19900)
+            ),
         )
 
-        self.exec_engine.process(TestStubs.event_order_filled(
-            order=order,
-            instrument=AUDUSD_SIM,
-            fill_qty=Quantity(60000)),
+        self.exec_engine.process(
+            TestStubs.event_order_filled(
+                order=order, instrument=AUDUSD_SIM, fill_qty=Quantity(60000)
+            ),
         )
 
         # Assert
@@ -1317,9 +1335,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.cache.is_position_closed(expected_position_id))
         self.assertEqual(Position, type(self.cache.position(expected_position_id)))
         self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids(strategy_id=strategy.id))
+        self.assertNotIn(
+            expected_position_id,
+            self.cache.position_closed_ids(strategy_id=strategy.id),
+        )
         self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertIn(
+            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
+        )
         self.assertIn(expected_position_id, self.cache.position_open_ids())
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
@@ -1360,9 +1383,13 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM, PositionId.null()))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order, AUDUSD_SIM, PositionId.null())
+        )
 
-        expected_id = PositionId("P-19700101-000000-000-001-1")  # Generated inside engine
+        expected_id = PositionId(
+            "P-19700101-000000-000-001-1"
+        )  # Generated inside engine
 
         # Assert
         self.assertTrue(self.cache.position_exists(expected_id))
@@ -1370,9 +1397,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertFalse(self.cache.is_position_closed(expected_id))
         self.assertEqual(Position, type(self.cache.position(expected_id)))
         self.assertIn(expected_id, self.cache.position_ids())
-        self.assertNotIn(expected_id, self.cache.position_closed_ids(strategy_id=strategy.id))
+        self.assertNotIn(
+            expected_id, self.cache.position_closed_ids(strategy_id=strategy.id)
+        )
         self.assertNotIn(expected_id, self.cache.position_closed_ids())
-        self.assertIn(expected_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertIn(
+            expected_id, self.cache.position_open_ids(strategy_id=strategy.id)
+        )
         self.assertIn(expected_id, self.cache.position_open_ids())
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
@@ -1436,7 +1467,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, expected_position_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, expected_position_id)
+        )
 
         # Assert
         self.assertTrue(self.cache.position_exists(expected_position_id))
@@ -1494,7 +1527,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id)
+        )
 
         submit_order2 = SubmitOrder(
             self.routing,
@@ -1511,20 +1546,28 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id)
+        )
 
         # # Assert
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertFalse(self.cache.is_position_open(position_id))
         self.assertTrue(self.cache.is_position_closed(position_id))
         self.assertEqual(position_id, self.cache.position(position_id).id)
-        self.assertEqual(position_id, self.cache.positions(strategy_id=strategy.id)[0].id)
+        self.assertEqual(
+            position_id, self.cache.positions(strategy_id=strategy.id)[0].id
+        )
         self.assertEqual(position_id, self.cache.positions()[0].id)
         self.assertEqual(0, len(self.cache.positions_open(strategy_id=strategy.id)))
         self.assertEqual(0, len(self.cache.positions_open()))
-        self.assertEqual(position_id, self.cache.positions_closed(strategy_id=strategy.id)[0].id)
+        self.assertEqual(
+            position_id, self.cache.positions_closed(strategy_id=strategy.id)[0].id
+        )
         self.assertEqual(position_id, self.cache.positions_closed()[0].id)
-        self.assertNotIn(position_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertNotIn(
+            position_id, self.cache.position_open_ids(strategy_id=strategy.id)
+        )
         self.assertNotIn(position_id, self.cache.position_open_ids())
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(0, self.cache.positions_open_count())
@@ -1587,18 +1630,22 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        position1_id = PositionId('P-1')
-        position2_id = PositionId('P-2')
+        position1_id = PositionId("P-1")
+        position2_id = PositionId("P-2")
 
         # Act
         self.exec_engine.execute(submit_order1)
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position1_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order1, AUDUSD_SIM, position1_id)
+        )
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position2_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position2_id)
+        )
 
         # Assert
         self.assertTrue(self.cache.position_exists(position1_id))
@@ -1620,12 +1667,20 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(2, len(self.cache.positions_open()))
         self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy1.id)))
         self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy2.id)))
-        self.assertIn(position1_id, self.cache.position_open_ids(strategy_id=strategy1.id))
-        self.assertIn(position2_id, self.cache.position_open_ids(strategy_id=strategy2.id))
+        self.assertIn(
+            position1_id, self.cache.position_open_ids(strategy_id=strategy1.id)
+        )
+        self.assertIn(
+            position2_id, self.cache.position_open_ids(strategy_id=strategy2.id)
+        )
         self.assertIn(position1_id, self.cache.position_open_ids())
         self.assertIn(position2_id, self.cache.position_open_ids())
-        self.assertNotIn(position1_id, self.cache.position_closed_ids(strategy_id=strategy1.id))
-        self.assertNotIn(position2_id, self.cache.position_closed_ids(strategy_id=strategy2.id))
+        self.assertNotIn(
+            position1_id, self.cache.position_closed_ids(strategy_id=strategy1.id)
+        )
+        self.assertNotIn(
+            position2_id, self.cache.position_closed_ids(strategy_id=strategy2.id)
+        )
         self.assertNotIn(position1_id, self.cache.position_closed_ids())
         self.assertNotIn(position2_id, self.cache.position_closed_ids())
         self.assertEqual(2, self.cache.positions_total_count())
@@ -1685,7 +1740,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        position_id1 = PositionId('P-1')
+        position_id1 = PositionId("P-1")
 
         submit_order2 = SubmitOrder(
             self.routing,
@@ -1709,23 +1764,29 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        position_id2 = PositionId('P-2')
+        position_id2 = PositionId("P-2")
 
         # Act
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id1))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id1)
+        )
 
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id1))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id1)
+        )
 
         self.exec_engine.execute(submit_order3)
         self.exec_engine.process(TestStubs.event_order_submitted(order3))
         self.exec_engine.process(TestStubs.event_order_accepted(order3))
-        self.exec_engine.process(TestStubs.event_order_filled(order3, AUDUSD_SIM, position_id2))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order3, AUDUSD_SIM, position_id2)
+        )
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above
@@ -1740,12 +1801,20 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(1, len(self.cache.positions_open()))
         self.assertEqual(1, len(self.cache.positions_closed()))
         self.assertEqual(2, len(self.cache.positions()))
-        self.assertNotIn(position_id1, self.cache.position_open_ids(strategy_id=strategy1.id))
-        self.assertIn(position_id2, self.cache.position_open_ids(strategy_id=strategy2.id))
+        self.assertNotIn(
+            position_id1, self.cache.position_open_ids(strategy_id=strategy1.id)
+        )
+        self.assertIn(
+            position_id2, self.cache.position_open_ids(strategy_id=strategy2.id)
+        )
         self.assertNotIn(position_id1, self.cache.position_open_ids())
         self.assertIn(position_id2, self.cache.position_open_ids())
-        self.assertIn(position_id1, self.cache.position_closed_ids(strategy_id=strategy1.id))
-        self.assertNotIn(position_id2, self.cache.position_closed_ids(strategy_id=strategy2.id))
+        self.assertIn(
+            position_id1, self.cache.position_closed_ids(strategy_id=strategy1.id)
+        )
+        self.assertNotIn(
+            position_id2, self.cache.position_closed_ids(strategy_id=strategy2.id)
+        )
         self.assertIn(position_id1, self.cache.position_closed_ids())
         self.assertNotIn(position_id2, self.cache.position_closed_ids())
         self.assertEqual(2, self.cache.positions_total_count())
@@ -1793,7 +1862,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id)
+        )
 
         submit_order2 = SubmitOrder(
             self.routing,
@@ -1810,7 +1881,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id)
+        )
 
         # Assert
         position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
@@ -1820,7 +1893,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(50000, position_flipped.last_event.fill_qty)
         self.assertEqual(150000, position_flipped.last_event.cum_qty)
         self.assertEqual(0, position_flipped.last_event.leaves_qty)
-        self.assertEqual(Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty)
+        self.assertEqual(
+            Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty
+        )
         self.assertEqual(0, self.cache.order(order1.cl_ord_id).last_event.leaves_qty)
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
@@ -1829,7 +1904,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertIn(position_id, self.cache.position_ids())
         self.assertIn(position_id, self.cache.position_ids(strategy_id=strategy.id))
         self.assertIn(position_id_flipped, self.cache.position_ids())
-        self.assertIn(position_id_flipped, self.cache.position_ids(strategy_id=strategy.id))
+        self.assertIn(
+            position_id_flipped, self.cache.position_ids(strategy_id=strategy.id)
+        )
         self.assertEqual(2, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(1, self.cache.positions_closed_count())
@@ -1875,7 +1952,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id)
+        )
 
         submit_order2 = SubmitOrder(
             self.routing,
@@ -1892,7 +1971,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id)
+        )
 
         # Assert
         position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
@@ -1902,7 +1983,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(50000, position_flipped.last_event.fill_qty)
         self.assertEqual(150000, position_flipped.last_event.cum_qty)
         self.assertEqual(0, position_flipped.last_event.leaves_qty)
-        self.assertEqual(Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty)
+        self.assertEqual(
+            Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty
+        )
         self.assertEqual(0, self.cache.order(order1.cl_ord_id).last_event.leaves_qty)
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
@@ -1911,7 +1994,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertIn(position_id, self.cache.position_ids())
         self.assertIn(position_id, self.cache.position_ids(strategy_id=strategy.id))
         self.assertIn(position_id_flipped, self.cache.position_ids())
-        self.assertIn(position_id_flipped, self.cache.position_ids(strategy_id=strategy.id))
+        self.assertIn(
+            position_id_flipped, self.cache.position_ids(strategy_id=strategy.id)
+        )
         self.assertEqual(2, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(1, self.cache.positions_closed_count())

@@ -61,7 +61,6 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class DataEngineTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -295,12 +294,15 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         request = DataRequest(
             provider="RANDOM",
-            data_type=DataType(QuoteTick, metadata={
-                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            }),
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+            ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
@@ -319,12 +321,15 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         request = DataRequest(
             provider=BINANCE.value,
-            data_type=DataType(str, metadata={  # str data type is invalid
-                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            }),
+            data_type=DataType(
+                str,
+                metadata={  # str data type is invalid
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+            ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
@@ -346,12 +351,15 @@ class DataEngineTests(unittest.TestCase):
 
         request1 = DataRequest(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={  # str data type is invalid
-                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            }),
+            data_type=DataType(
+                QuoteTick,
+                metadata={  # str data type is invalid
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+            ),
             callback=handler.append,
             request_id=uuid,  # Duplicate
             request_timestamp=self.clock.utc_now(),
@@ -359,12 +367,15 @@ class DataEngineTests(unittest.TestCase):
 
         request2 = DataRequest(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={  # str data type is invalid
-                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            }),
+            data_type=DataType(
+                QuoteTick,
+                metadata={  # str data type is invalid
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+            ),
             callback=handler.append,
             request_id=uuid,  # Duplicate
             request_timestamp=self.clock.utc_now(),
@@ -402,7 +413,9 @@ class DataEngineTests(unittest.TestCase):
 
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -468,7 +481,9 @@ class DataEngineTests(unittest.TestCase):
         self.assertEqual(2, self.data_engine.command_count)
         self.assertEqual(["subscribe", "unsubscribe"], self.quandl.calls)
 
-    def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(self):
+    def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(
+        self,
+    ):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
@@ -495,7 +510,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         unsubscribe = Unsubscribe(
             provider=BINANCE.value,
-            data_type=DataType(type(QuoteTick), metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                type(QuoteTick), metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -549,7 +566,9 @@ class DataEngineTests(unittest.TestCase):
 
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -569,7 +588,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -579,7 +600,9 @@ class DataEngineTests(unittest.TestCase):
 
         unsubscribe = Unsubscribe(
             provider=BINANCE.value,
-            data_type=DataType(Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -599,7 +622,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -613,7 +638,9 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual([ETHUSDT_BINANCE], handler)
 
-    def test_process_instrument_when_subscribers_then_sends_to_registered_handlers(self):
+    def test_process_instrument_when_subscribers_then_sends_to_registered_handlers(
+        self,
+    ):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
@@ -621,7 +648,9 @@ class DataEngineTests(unittest.TestCase):
         handler1 = []
         subscribe1 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -630,7 +659,9 @@ class DataEngineTests(unittest.TestCase):
         handler2 = []
         subscribe2 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                Instrument, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -654,12 +685,15 @@ class DataEngineTests(unittest.TestCase):
 
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, metadata={
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Level": 2,
-                "Depth": 10,
-                "Interval": 0,
-            }),
+            data_type=DataType(
+                OrderBook,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 10,
+                    "Interval": 0,
+                },
+            ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -678,12 +712,15 @@ class DataEngineTests(unittest.TestCase):
 
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, metadata={
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Level": 2,
-                "Depth": 25,
-                "Interval": 10,
-            }),
+            data_type=DataType(
+                OrderBook,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 25,
+                    "Interval": 10,
+                },
+            ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -703,12 +740,15 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, metadata={
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Level": 2,
-                "Depth": 25,
-                "Interval": 0,
-            }),
+            data_type=DataType(
+                OrderBook,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 25,
+                    "Interval": 0,
+                },
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -718,10 +758,13 @@ class DataEngineTests(unittest.TestCase):
 
         unsubscribe = Unsubscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, metadata={
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Interval": 0,
-            }),
+            data_type=DataType(
+                OrderBook,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Interval": 0,
+                },
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -741,12 +784,15 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, metadata={
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Level": 2,
-                "Depth": 25,
-                "Interval": 10,
-            }),
+            data_type=DataType(
+                OrderBook,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 25,
+                    "Interval": 10,
+                },
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -756,10 +802,13 @@ class DataEngineTests(unittest.TestCase):
 
         unsubscribe = Unsubscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, metadata={
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Interval": 10,
-            }),
+            data_type=DataType(
+                OrderBook,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Interval": 10,
+                },
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -771,7 +820,9 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual([], self.data_engine.subscribed_order_books)
 
-    def test_process_order_book_when_one_subscriber_then_sends_to_registered_handler(self):
+    def test_process_order_book_when_one_subscriber_then_sends_to_registered_handler(
+        self,
+    ):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
@@ -791,12 +842,15 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, {
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Level": 2,
-                "Depth": 25,
-                "Interval": 0,  # Streaming
-            }),
+            data_type=DataType(
+                OrderBook,
+                {
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 25,
+                    "Interval": 0,  # Streaming
+                },
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -810,7 +864,9 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(order_book, handler[0])
 
-    def test_process_order_book_when_multiple_subscribers_then_sends_to_registered_handlers(self):
+    def test_process_order_book_when_multiple_subscribers_then_sends_to_registered_handlers(
+        self,
+    ):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
@@ -830,12 +886,15 @@ class DataEngineTests(unittest.TestCase):
         handler1 = []
         subscribe1 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, {
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Level": 2,
-                "Depth": 25,
-                "Interval": 0,  # Streaming
-            }),
+            data_type=DataType(
+                OrderBook,
+                {
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 25,
+                    "Interval": 0,  # Streaming
+                },
+            ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -844,12 +903,15 @@ class DataEngineTests(unittest.TestCase):
         handler2 = []
         subscribe2 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(OrderBook, {
-                "InstrumentId": ETHUSDT_BINANCE.id,
-                "Level": 2,
-                "Depth": 25,
-                "Interval": 0,  # Streaming
-            }),
+            data_type=DataType(
+                OrderBook,
+                {
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 25,
+                    "Interval": 0,  # Streaming
+                },
+            ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -874,7 +936,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -893,7 +957,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -903,7 +969,9 @@ class DataEngineTests(unittest.TestCase):
 
         unsubscribe = Unsubscribe(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -923,7 +991,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -947,7 +1017,9 @@ class DataEngineTests(unittest.TestCase):
         self.assertEqual([ETHUSDT_BINANCE.id], self.data_engine.subscribed_quote_ticks)
         self.assertEqual([tick], handler)
 
-    def test_process_quote_tick_when_subscribers_then_sends_to_registered_handlers(self):
+    def test_process_quote_tick_when_subscribers_then_sends_to_registered_handlers(
+        self,
+    ):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
@@ -955,7 +1027,9 @@ class DataEngineTests(unittest.TestCase):
         handler1 = []
         subscribe1 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -964,7 +1038,9 @@ class DataEngineTests(unittest.TestCase):
         handler2 = []
         subscribe2 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                QuoteTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -998,7 +1074,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1018,7 +1096,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1028,7 +1108,9 @@ class DataEngineTests(unittest.TestCase):
 
         unsubscribe = Unsubscribe(
             provider=BINANCE.value,
-            data_type=DataType(TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1048,7 +1130,9 @@ class DataEngineTests(unittest.TestCase):
         handler = []
         subscribe = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1071,7 +1155,9 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual([tick], handler)
 
-    def test_process_trade_tick_when_subscribers_then_sends_to_registered_handlers(self):
+    def test_process_trade_tick_when_subscribers_then_sends_to_registered_handlers(
+        self,
+    ):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
@@ -1079,7 +1165,9 @@ class DataEngineTests(unittest.TestCase):
         handler1 = []
         subscribe1 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1088,7 +1176,9 @@ class DataEngineTests(unittest.TestCase):
         handler2 = []
         subscribe2 = Subscribe(
             provider=BINANCE.value,
-            data_type=DataType(TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}),
+            data_type=DataType(
+                TradeTick, metadata={"InstrumentId": ETHUSDT_BINANCE.id}
+            ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),

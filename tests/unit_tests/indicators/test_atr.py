@@ -25,7 +25,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class AverageTrueRangeTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.atr = AverageTrueRange(10)
@@ -34,14 +33,14 @@ class AverageTrueRangeTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual('AverageTrueRange', self.atr.name)
+        self.assertEqual("AverageTrueRange", self.atr.name)
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual('AverageTrueRange(10, SIMPLE, True, 0.0)', str(self.atr))
-        self.assertEqual('AverageTrueRange(10, SIMPLE, True, 0.0)', repr(self.atr))
+        self.assertEqual("AverageTrueRange(10, SIMPLE, True, 0.0)", str(self.atr))
+        self.assertEqual("AverageTrueRange(10, SIMPLE, True, 0.0)", repr(self.atr))
 
     def test_period(self):
         # Arrange

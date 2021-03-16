@@ -23,7 +23,6 @@ from tests.test_kit.performance import PerformanceHarness
 
 
 class FunctionPerformanceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.values = list(np.random.rand(10))

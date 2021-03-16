@@ -27,13 +27,14 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class WeightedMovingAverageTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.w = [round(i * 0.1, 2) for i in range(1, 11)]
         self.wma = WeightedMovingAverage(10, self.w)
         self.wma_noweights = WeightedMovingAverage(10)
-        self.wma_factory = MovingAverageFactory.create(10, MovingAverageType.WEIGHTED, weights=self.w)
+        self.wma_factory = MovingAverageFactory.create(
+            10, MovingAverageType.WEIGHTED, weights=self.w
+        )
 
     def test_name_returns_expected_string(self):
         # Arrange

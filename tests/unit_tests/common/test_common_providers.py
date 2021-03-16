@@ -27,7 +27,6 @@ AUDUSD = TestStubs.audusd_id()
 
 
 class TestInstrumentProvider:
-
     def setup(self):
         # Fixture Setup
 

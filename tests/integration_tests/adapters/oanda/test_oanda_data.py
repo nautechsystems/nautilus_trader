@@ -49,7 +49,6 @@ AUDUSD = InstrumentId(Symbol("AUD/USD"), OANDA)
 
 
 class OandaDataClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -292,12 +291,15 @@ class OandaDataClientTests(unittest.TestCase):
 
             request = DataRequest(
                 provider=OANDA.value,
-                data_type=DataType(Bar, metadata={
-                    "BarType": bar_type,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                }),
+                data_type=DataType(
+                    Bar,
+                    metadata={
+                        "BarType": bar_type,
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 1000,
+                    },
+                ),
                 callback=handler.store_2,
                 request_id=self.uuid_factory.generate(),
                 request_timestamp=self.clock.utc_now(),

@@ -25,7 +25,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class VolatilityCompressionRatioTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.vcr = VolatilityRatio(10, 100)

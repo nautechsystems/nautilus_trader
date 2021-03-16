@@ -24,7 +24,6 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 
 class BacktestLoadersTests(unittest.TestCase):
-
     def test_default_fx_with_5_dp_returns_expected_instrument(self):
         # Arrange
         loader = TestInstrumentProvider()
@@ -55,7 +54,6 @@ class BacktestLoadersTests(unittest.TestCase):
 
 
 class ParquetTickDataLoadersTests(unittest.TestCase):
-
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
         # Act
@@ -63,11 +61,11 @@ class ParquetTickDataLoadersTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(len(trade_ticks), 2001)
-        self.assertIn('trade_id', trade_ticks.columns)
-        self.assertIn('price', trade_ticks.columns)
-        self.assertIn('quantity', trade_ticks.columns)
-        self.assertIn('buyer_maker', trade_ticks.columns)
-        self.assertEqual(trade_ticks.iloc[0]['trade_id'], 553287559)
+        self.assertIn("trade_id", trade_ticks.columns)
+        self.assertIn("price", trade_ticks.columns)
+        self.assertIn("quantity", trade_ticks.columns)
+        self.assertIn("buyer_maker", trade_ticks.columns)
+        self.assertEqual(trade_ticks.iloc[0]["trade_id"], 553287559)
 
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
@@ -76,10 +74,10 @@ class ParquetTickDataLoadersTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(len(quote_ticks), 451)
-        self.assertIn('symbol', quote_ticks.columns)
-        self.assertIn('ask_size', quote_ticks.columns)
-        self.assertIn('ask', quote_ticks.columns)
-        self.assertIn('bid_size', quote_ticks.columns)
-        self.assertIn('bid', quote_ticks.columns)
-        self.assertEqual(quote_ticks.iloc[0]['ask'], 39433.62)
-        self.assertEqual(quote_ticks.iloc[0]['bid'], 39432.99)
+        self.assertIn("symbol", quote_ticks.columns)
+        self.assertIn("ask_size", quote_ticks.columns)
+        self.assertIn("ask", quote_ticks.columns)
+        self.assertIn("bid_size", quote_ticks.columns)
+        self.assertIn("bid", quote_ticks.columns)
+        self.assertEqual(quote_ticks.iloc[0]["ask"], 39433.62)
+        self.assertEqual(quote_ticks.iloc[0]["bid"], 39432.99)

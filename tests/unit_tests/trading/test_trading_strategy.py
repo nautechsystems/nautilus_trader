@@ -67,7 +67,6 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TradingStrategyTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -83,13 +82,15 @@ class TradingStrategyTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={'use_previous_close': False},  # To correctly reproduce historical data bars
+            config={
+                "use_previous_close": False
+            },  # To correctly reproduce historical data bars
         )
         self.portfolio.register_cache(self.data_engine.cache)
 
         self.analyzer = PerformanceAnalyzer()
 
-        trader_id = TraderId('TESTER', '000')
+        trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
         self.exec_db = BypassExecutionDatabase(
@@ -139,7 +140,9 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
 
-        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_SIM.id))  # Prepare market
+        self.exchange.process_tick(
+            TestStubs.quote_tick_3decimal(USDJPY_SIM.id)
+        )  # Prepare market
 
         self.data_engine.start()
         self.exec_engine.start()
@@ -162,8 +165,12 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", str(strategy))
-        self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", repr(strategy))
+        self.assertEqual(
+            "TradingStrategy(id=TradingStrategy-GBP/USD-MM)", str(strategy)
+        )
+        self.assertEqual(
+            "TradingStrategy(id=TradingStrategy-GBP/USD-MM)", repr(strategy)
+        )
 
     def test_id(self):
         # Arrange
@@ -576,7 +583,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, strategy.load, {'something': b'123456'})
+        self.assertRaises(RuntimeError, strategy.load, {"something": b"123456"})
 
     def test_load(self):
         # Arrange
@@ -665,7 +672,11 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, strategy.handle_data, GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH))
+        self.assertRaises(
+            RuntimeError,
+            strategy.handle_data,
+            GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH),
+        )
 
     def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self):
         # Arrange
@@ -1015,7 +1026,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.handle_instrument(AUDUSD_SIM)
 
         # Assert
-        self.assertEqual(['on_start', 'on_instrument'], strategy.calls)
+        self.assertEqual(["on_start", "on_instrument"], strategy.calls)
         self.assertEqual(AUDUSD_SIM, strategy.object_storer.get_store()[0])
 
     def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self):
@@ -1053,7 +1064,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.handle_quote_tick(tick)
 
         # Assert
-        self.assertEqual(['on_start', 'on_quote_tick'], strategy.calls)
+        self.assertEqual(["on_start", "on_quote_tick"], strategy.calls)
         self.assertEqual(tick, strategy.object_storer.get_store()[0])
 
     def test_handle_quote_ticks_with_no_ticks_logs_and_continues(self):
@@ -1129,7 +1140,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.handle_trade_tick(tick)
 
         # Assert
-        self.assertEqual(['on_start', 'on_trade_tick'], strategy.calls)
+        self.assertEqual(["on_start", "on_trade_tick"], strategy.calls)
         self.assertEqual(tick, strategy.object_storer.get_store()[0])
 
     def test_handle_trade_tick_updates_indicator_registered_for_trade_ticks(self):
@@ -1249,7 +1260,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.handle_bar(bar_type, bar)
 
         # Assert
-        self.assertEqual(['on_start', 'on_bar'], strategy.calls)
+        self.assertEqual(["on_start", "on_bar"], strategy.calls)
         self.assertEqual((bar_type, bar), strategy.object_storer.get_store()[0])
 
     def test_handle_bars_updates_indicator_registered_for_bars(self):
@@ -1324,7 +1335,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.handle_data(data)
 
         # Assert
-        self.assertEqual(['on_start', 'on_data'], strategy.calls)
+        self.assertEqual(["on_start", "on_data"], strategy.calls)
         self.assertEqual(data, strategy.object_storer.get_store()[0])
 
     def test_stop_cancels_a_running_time_alert(self):
@@ -1364,7 +1375,9 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
-        strategy.clock.set_timer("test_timer", timedelta(milliseconds=100), start_time, stop_time=None)
+        strategy.clock.set_timer(
+            "test_timer", timedelta(milliseconds=100), start_time, stop_time=None
+        )
 
         # Act
         strategy.start()
@@ -1665,10 +1678,12 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.request_count)
 
-    @parameterized.expand([
-        [UNIX_EPOCH, UNIX_EPOCH],
-        [UNIX_EPOCH + timedelta(milliseconds=1), UNIX_EPOCH],
-    ])
+    @parameterized.expand(
+        [
+            [UNIX_EPOCH, UNIX_EPOCH],
+            [UNIX_EPOCH + timedelta(milliseconds=1), UNIX_EPOCH],
+        ]
+    )
     def test_request_bars_with_invalid_params_raises_value_error(self, start, stop):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1773,7 +1788,9 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIn(order, strategy.execution.orders())
         self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
-        self.assertEqual(order.cl_ord_id, strategy.execution.orders_completed()[0].cl_ord_id)
+        self.assertEqual(
+            order.cl_ord_id, strategy.execution.orders_completed()[0].cl_ord_id
+        )
         self.assertNotIn(order.cl_ord_id, strategy.execution.orders_working())
         self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
         self.assertFalse(strategy.execution.is_order_working(order.cl_ord_id))

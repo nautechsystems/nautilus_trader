@@ -84,7 +84,7 @@ class VolatilityMarketMaker(TradingStrategy):
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple
-        self.instrument = None       # Request on start instead
+        self.instrument = None  # Request on start instead
         self.price_precision = None  # Initialized on start
 
         # Create the indicators for the strategy
@@ -181,8 +181,10 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]..."
+            )
             return  # Wait for indicators to warm up...
 
         last: QuoteTick = self.data.quote_tick(self.instrument_id)
@@ -212,7 +214,7 @@ class VolatilityMarketMaker(TradingStrategy):
             price=Price(price, self.price_precision),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # Default value is True
-            hidden=False,    # Default value is False
+            hidden=False,  # Default value is False
         )
 
         self.buy_order = order
@@ -229,8 +231,8 @@ class VolatilityMarketMaker(TradingStrategy):
             quantity=Quantity(self.trade_size),
             price=Price(price, self.price_precision),
             time_in_force=TimeInForce.GTC,
-            post_only=True,   # Default value is True
-            hidden=False,     # Default value is False
+            post_only=True,  # Default value is True
+            hidden=False,  # Default value is False
         )
 
         self.sell_order = order

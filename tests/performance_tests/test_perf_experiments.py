@@ -31,7 +31,6 @@ MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
 
 
 class Experiments:
-
     @staticmethod
     def built_in_arithmetic():
         x = 1 + 1
@@ -59,7 +58,6 @@ class Experiments:
 
 
 class ExperimentsPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_builtin_arithmetic():
         PerformanceHarness.profile_function(Experiments.built_in_arithmetic, 100000, 1)

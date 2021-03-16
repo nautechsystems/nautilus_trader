@@ -51,7 +51,6 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class ExecutionCacheTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
@@ -214,17 +213,28 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
 
         # Act
         self.cache.add_order(order, position_id)
 
         # Assert
         self.assertIn(order.cl_ord_id, self.cache.order_ids())
-        self.assertIn(order.cl_ord_id, self.cache.order_ids(instrument_id=order.instrument_id))
-        self.assertIn(order.cl_ord_id, self.cache.order_ids(strategy_id=self.strategy.id))
-        self.assertNotIn(order.cl_ord_id, self.cache.order_ids(strategy_id=StrategyId("S", "ZX1")))
-        self.assertIn(order.cl_ord_id, self.cache.order_ids(instrument_id=order.instrument_id, strategy_id=self.strategy.id))
+        self.assertIn(
+            order.cl_ord_id, self.cache.order_ids(instrument_id=order.instrument_id)
+        )
+        self.assertIn(
+            order.cl_ord_id, self.cache.order_ids(strategy_id=self.strategy.id)
+        )
+        self.assertNotIn(
+            order.cl_ord_id, self.cache.order_ids(strategy_id=StrategyId("S", "ZX1"))
+        )
+        self.assertIn(
+            order.cl_ord_id,
+            self.cache.order_ids(
+                instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertIn(order, self.cache.orders())
         self.assertEqual(OrderId.null(), self.cache.order_id(order.cl_ord_id))
         self.assertIsNone(self.cache.cl_ord_id(order.id))
@@ -237,7 +247,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
         # Act
@@ -254,13 +264,13 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
         order_filled = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            position_id=PositionId('P-1'),
+            position_id=PositionId("P-1"),
             fill_price=Price("1.00000"),
         )
 
@@ -274,13 +284,29 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(position.id, self.cache.position_ids())
         self.assertIn(position, self.cache.positions())
         self.assertIn(position, self.cache.positions_open())
-        self.assertIn(position, self.cache.positions_open(instrument_id=position.instrument_id))
+        self.assertIn(
+            position, self.cache.positions_open(instrument_id=position.instrument_id)
+        )
         self.assertIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
-        self.assertIn(position, self.cache.positions_open(instrument_id=position.instrument_id, strategy_id=self.strategy.id))
+        self.assertIn(
+            position,
+            self.cache.positions_open(
+                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertNotIn(position, self.cache.positions_closed())
-        self.assertNotIn(position, self.cache.positions_closed(instrument_id=position.instrument_id))
-        self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
-        self.assertNotIn(position, self.cache.positions_closed(instrument_id=position.instrument_id, strategy_id=self.strategy.id))
+        self.assertNotIn(
+            position, self.cache.positions_closed(instrument_id=position.instrument_id)
+        )
+        self.assertNotIn(
+            position, self.cache.positions_closed(strategy_id=self.strategy.id)
+        )
+        self.assertNotIn(
+            position,
+            self.cache.positions_closed(
+                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
 
     def test_load_position(self):
         # Arrange
@@ -290,13 +316,13 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
         order_filled = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            position_id=PositionId('P-1'),
+            position_id=PositionId("P-1"),
             fill_price=Price("1.00000"),
         )
 
@@ -318,7 +344,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -334,13 +360,29 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.cache.order_ids())
         self.assertIn(order, self.cache.orders())
         self.assertIn(order, self.cache.orders_working())
-        self.assertIn(order, self.cache.orders_working(instrument_id=order.instrument_id))
+        self.assertIn(
+            order, self.cache.orders_working(instrument_id=order.instrument_id)
+        )
         self.assertIn(order, self.cache.orders_working(strategy_id=self.strategy.id))
-        self.assertIn(order, self.cache.orders_working(instrument_id=order.instrument_id, strategy_id=self.strategy.id))
+        self.assertIn(
+            order,
+            self.cache.orders_working(
+                instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertNotIn(order, self.cache.orders_completed())
-        self.assertNotIn(order, self.cache.orders_completed(instrument_id=order.instrument_id))
-        self.assertNotIn(order, self.cache.orders_completed(strategy_id=self.strategy.id))
-        self.assertNotIn(order, self.cache.orders_completed(instrument_id=order.instrument_id, strategy_id=self.strategy.id))
+        self.assertNotIn(
+            order, self.cache.orders_completed(instrument_id=order.instrument_id)
+        )
+        self.assertNotIn(
+            order, self.cache.orders_completed(strategy_id=self.strategy.id)
+        )
+        self.assertNotIn(
+            order,
+            self.cache.orders_completed(
+                instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertEqual(1, self.cache.orders_working_count())
         self.assertEqual(0, self.cache.orders_completed_count())
         self.assertEqual(1, self.cache.orders_total_count())
@@ -353,7 +395,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
         order.apply(TestStubs.event_order_submitted(order))
         self.cache.update_order(order)
@@ -361,10 +403,10 @@ class ExecutionCacheTests(unittest.TestCase):
         order.apply(TestStubs.event_order_accepted(order))
         self.cache.update_order(order)
 
-        order.apply(TestStubs.event_order_filled(
-            order,
-            instrument=AUDUSD_SIM,
-            fill_price=Price("1.00001")),
+        order.apply(
+            TestStubs.event_order_filled(
+                order, instrument=AUDUSD_SIM, fill_price=Price("1.00001")
+            ),
         )
 
         # Act
@@ -375,13 +417,27 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.cache.order_ids())
         self.assertIn(order, self.cache.orders())
         self.assertIn(order, self.cache.orders_completed())
-        self.assertIn(order, self.cache.orders_completed(instrument_id=order.instrument_id))
+        self.assertIn(
+            order, self.cache.orders_completed(instrument_id=order.instrument_id)
+        )
         self.assertIn(order, self.cache.orders_completed(strategy_id=self.strategy.id))
-        self.assertIn(order, self.cache.orders_completed(instrument_id=order.instrument_id, strategy_id=self.strategy.id))
+        self.assertIn(
+            order,
+            self.cache.orders_completed(
+                instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertNotIn(order, self.cache.orders_working())
-        self.assertNotIn(order, self.cache.orders_working(instrument_id=order.instrument_id))
+        self.assertNotIn(
+            order, self.cache.orders_working(instrument_id=order.instrument_id)
+        )
         self.assertNotIn(order, self.cache.orders_working(strategy_id=self.strategy.id))
-        self.assertNotIn(order, self.cache.orders_working(instrument_id=order.instrument_id, strategy_id=self.strategy.id))
+        self.assertNotIn(
+            order,
+            self.cache.orders_working(
+                instrument_id=order.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertEqual(order.id, self.cache.order_id(order.cl_ord_id))
         self.assertEqual(0, self.cache.orders_working_count())
         self.assertEqual(1, self.cache.orders_completed_count())
@@ -395,7 +451,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.cache.add_order(order1, position_id)
         order1.apply(TestStubs.event_order_submitted(order1))
         self.cache.update_order(order1)
@@ -405,7 +461,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
-            position_id=PositionId('P-1'),
+            position_id=PositionId("P-1"),
             fill_price=Price("1.00001"),
         )
 
@@ -419,13 +475,29 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(position.id, self.cache.position_ids())
         self.assertIn(position, self.cache.positions())
         self.assertIn(position, self.cache.positions_open())
-        self.assertIn(position, self.cache.positions_open(instrument_id=position.instrument_id))
+        self.assertIn(
+            position, self.cache.positions_open(instrument_id=position.instrument_id)
+        )
         self.assertIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
-        self.assertIn(position, self.cache.positions_open(instrument_id=position.instrument_id, strategy_id=self.strategy.id))
+        self.assertIn(
+            position,
+            self.cache.positions_open(
+                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertNotIn(position, self.cache.positions_closed())
-        self.assertNotIn(position, self.cache.positions_closed(instrument_id=position.instrument_id))
-        self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
-        self.assertNotIn(position, self.cache.positions_closed(instrument_id=position.instrument_id, strategy_id=self.strategy.id))
+        self.assertNotIn(
+            position, self.cache.positions_closed(instrument_id=position.instrument_id)
+        )
+        self.assertNotIn(
+            position, self.cache.positions_closed(strategy_id=self.strategy.id)
+        )
+        self.assertNotIn(
+            position,
+            self.cache.positions_closed(
+                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertEqual(position, self.cache.position(position_id))
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(0, self.cache.positions_closed_count())
@@ -439,7 +511,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.cache.add_order(order1, position_id)
         order1.apply(TestStubs.event_order_submitted(order1))
         self.cache.update_order(order1)
@@ -449,7 +521,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
-            position_id=PositionId('P-1'),
+            position_id=PositionId("P-1"),
             fill_price=Price("1.00001"),
         )
 
@@ -470,7 +542,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order2_filled = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            position_id=PositionId('P-1'),
+            position_id=PositionId("P-1"),
             fill_price=Price("1.00001"),
         )
 
@@ -484,13 +556,31 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(position.id, self.cache.position_ids())
         self.assertIn(position, self.cache.positions())
         self.assertIn(position, self.cache.positions_closed())
-        self.assertIn(position, self.cache.positions_closed(instrument_id=position.instrument_id))
-        self.assertIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
-        self.assertIn(position, self.cache.positions_closed(instrument_id=position.instrument_id, strategy_id=self.strategy.id))
+        self.assertIn(
+            position, self.cache.positions_closed(instrument_id=position.instrument_id)
+        )
+        self.assertIn(
+            position, self.cache.positions_closed(strategy_id=self.strategy.id)
+        )
+        self.assertIn(
+            position,
+            self.cache.positions_closed(
+                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertNotIn(position, self.cache.positions_open())
-        self.assertNotIn(position, self.cache.positions_open(instrument_id=position.instrument_id))
-        self.assertNotIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
-        self.assertNotIn(position, self.cache.positions_open(instrument_id=position.instrument_id, strategy_id=self.strategy.id))
+        self.assertNotIn(
+            position, self.cache.positions_open(instrument_id=position.instrument_id)
+        )
+        self.assertNotIn(
+            position, self.cache.positions_open(strategy_id=self.strategy.id)
+        )
+        self.assertNotIn(
+            position,
+            self.cache.positions_open(
+                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+            ),
+        )
         self.assertEqual(position, self.cache.position(position_id))
         self.assertEqual(0, self.cache.positions_open_count())
         self.assertEqual(1, self.cache.positions_closed_count())
@@ -527,7 +617,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position1_id = PositionId('P-1')
+        position1_id = PositionId("P-1")
         self.cache.add_order(order1, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -554,7 +644,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Price("1.0000"),
         )
 
-        position2_id = PositionId('P-2')
+        position2_id = PositionId("P-2")
         self.cache.add_order(order2, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -577,7 +667,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position1_id = PositionId('P-1')
+        position1_id = PositionId("P-1")
         self.cache.add_order(order1, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -603,7 +693,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        position2_id = PositionId('P-2')
+        position2_id = PositionId("P-2")
         self.cache.add_order(order2, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -630,7 +720,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position1_id = PositionId('P-1')
+        position1_id = PositionId("P-1")
         self.cache.add_order(order1, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -657,7 +747,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        position2_id = PositionId('P-2')
+        position2_id = PositionId("P-2")
         self.cache.add_order(order2, position2_id)
         order2.apply(TestStubs.event_order_submitted(order2))
         self.cache.update_order(order2)
@@ -674,19 +764,28 @@ class ExecutionCacheTests(unittest.TestCase):
 
 
 class ExecutionCacheIntegrityCheckTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
-        data.add_bars(self.usdjpy.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(self.usdjpy.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(
+            self.usdjpy.id,
+            BarAggregation.MINUTE,
+            PriceType.BID,
+            TestDataProvider.usdjpy_1min_bid(),
+        )
+        data.add_bars(
+            self.usdjpy.id,
+            BarAggregation.MINUTE,
+            PriceType.ASK,
+            TestDataProvider.usdjpy_1min_ask(),
+        )
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[TradingStrategy('000')],
+            strategies=[TradingStrategy("000")],
             bypass_logging=True,  # Uncomment this to see integrity check failure messages
         )
 

@@ -61,7 +61,6 @@ async def async_magic():
 
 
 class CCXTDataClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -449,12 +448,15 @@ class CCXTDataClientTests(unittest.TestCase):
 
             request = DataRequest(
                 provider=BINANCE.value,
-                data_type=DataType(TradeTick, metadata={
-                    "InstrumentId": ETHUSDT,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 100,
-                }),
+                data_type=DataType(
+                    TradeTick,
+                    metadata={
+                        "InstrumentId": ETHUSDT,
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 100,
+                    },
+                ),
                 callback=handler.store,
                 request_id=self.uuid_factory.generate(),
                 request_timestamp=self.clock.utc_now(),
@@ -493,12 +495,15 @@ class CCXTDataClientTests(unittest.TestCase):
 
             request = DataRequest(
                 provider=BINANCE.value,
-                data_type=DataType(Bar, metadata={
-                    "BarType": bar_type,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 100,
-                }),
+                data_type=DataType(
+                    Bar,
+                    metadata={
+                        "BarType": bar_type,
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 100,
+                    },
+                ),
                 callback=handler.store_2,
                 request_id=self.uuid_factory.generate(),
                 request_timestamp=self.clock.utc_now(),

@@ -20,7 +20,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 class TestObjectCache:
-
     def test_cache_initialization(self):
         # Arrange
         cache = ObjectCache(InstrumentId, InstrumentId.from_str)
@@ -33,11 +32,13 @@ class TestObjectCache:
 
     @pytest.mark.parametrize(
         "value,ex",
-        [[None, TypeError],
-         ["", ValueError],
-         [" ", ValueError],
-         ["  ", ValueError],
-         [1234, TypeError]],
+        [
+            [None, TypeError],
+            ["", ValueError],
+            [" ", ValueError],
+            ["  ", ValueError],
+            [1234, TypeError],
+        ],
     )
     def test_get_given_none_raises_value_error(self, value, ex):
         # Arrange

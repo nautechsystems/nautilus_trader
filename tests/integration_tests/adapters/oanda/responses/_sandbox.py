@@ -36,7 +36,7 @@ def request_instruments():
     req = AccountInstruments(accountID=account_id)
     res = client.request(req)
 
-    with open("instruments.json", 'w') as json_file:
+    with open("instruments.json", "w") as json_file:
         json.dump(res, json_file)
 
 
@@ -55,7 +55,7 @@ def request_bars():
     req = InstrumentsCandles(instrument="AUD_USD", params=params)
     res = client.request(req)
 
-    with open("bars.json", 'w') as json_file:
+    with open("bars.json", "w") as json_file:
         json.dump(res, json_file)
 
 

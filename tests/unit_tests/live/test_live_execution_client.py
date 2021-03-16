@@ -40,7 +40,6 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class LiveExecutionClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         # Fresh isolated loop testing pattern

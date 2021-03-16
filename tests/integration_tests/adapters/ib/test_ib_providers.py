@@ -28,7 +28,6 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBInstrumentProvider:
-
     def test_load_futures_contract_instrument(self):
         # Arrange
         mock_client = MagicMock()

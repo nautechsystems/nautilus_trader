@@ -21,7 +21,6 @@ from tests.test_kit.stubs import TestStubs
 
 
 class ExecutionCacheFacadeTests(unittest.TestCase):
-
     def test_empty_execution_state_report(self):
         # Arrange
         venue = Venue("SIM")

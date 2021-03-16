@@ -28,7 +28,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestClockTests(unittest.TestCase):
-
     def test_instantiate_has_expected_time_and_properties(self):
         # Arrange
         init_time = UNIX_EPOCH + timedelta(minutes=1)
@@ -66,7 +65,9 @@ class TestClockTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, clock.advance_time, UNIX_EPOCH - timedelta(minutes=1))
+        self.assertRaises(
+            ValueError, clock.advance_time, UNIX_EPOCH - timedelta(minutes=1)
+        )
 
     def test_local_now(self):
         # Arrange
@@ -174,7 +175,7 @@ class TestClockTests(unittest.TestCase):
             interval=interval,
             start_time=UNIX_EPOCH + interval,
             stop_time=None,
-            handler=handler.append
+            handler=handler.append,
         )
 
         # Assert
@@ -236,7 +237,7 @@ class TestClockTests(unittest.TestCase):
             interval=interval,
             start_time=UNIX_EPOCH + interval,
             stop_time=None,
-            handler=handler.append
+            handler=handler.append,
         )
 
         event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=5))
@@ -264,7 +265,7 @@ class TestClockTests(unittest.TestCase):
             interval=interval1,
             start_time=UNIX_EPOCH,
             stop_time=None,
-            handler=handler1.append
+            handler=handler1.append,
         )
 
         clock.set_timer(
@@ -272,7 +273,7 @@ class TestClockTests(unittest.TestCase):
             interval=interval2,
             start_time=UNIX_EPOCH,
             stop_time=None,
-            handler=handler2.append
+            handler=handler2.append,
         )
 
         event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=5))

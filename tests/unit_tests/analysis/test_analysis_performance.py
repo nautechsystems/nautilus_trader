@@ -35,7 +35,6 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class AnalyzerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
@@ -164,5 +163,5 @@ class AnalyzerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, len(result))
-        self.assertEqual(6.0, result['P-1'])
-        self.assertEqual(16.0, result['P-2'])
+        self.assertEqual(6.0, result["P-1"])
+        self.assertEqual(16.0, result["P-2"])

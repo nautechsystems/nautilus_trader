@@ -30,14 +30,15 @@ from nautilus_trader.model.identifiers import Venue
 
 
 class TestIdentifiers:
-
     @pytest.mark.parametrize(
         "value, ex",
-        [[None, TypeError],
-         ["", ValueError],
-         [" ", ValueError],
-         ["  ", ValueError],
-         [1234, TypeError]],
+        [
+            [None, TypeError],
+            ["", ValueError],
+            [" ", ValueError],
+            ["  ", ValueError],
+            [1234, TypeError],
+        ],
     )
     def test_instantiate_given_various_invalid_values_raises_exception(self, value, ex):
         # Arrange
@@ -189,7 +190,7 @@ class TestIdentifiers:
         assert strategy_id1 == strategy_id1
         assert strategy_id1 != strategy_id2
         assert "NULL" == strategy_id1.name
-        assert strategy_id2 == StrategyId.from_str('SCALPER-01')
+        assert strategy_id2 == StrategyId.from_str("SCALPER-01")
 
     def test_account_identifier(self):
         # Arrange
@@ -222,7 +223,6 @@ class TestIdentifiers:
 
 
 class TestInstrumentId:
-
     def test_instrument_id_equality(self):
         # Arrange
         instrument_id1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))

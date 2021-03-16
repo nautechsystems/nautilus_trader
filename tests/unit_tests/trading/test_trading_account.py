@@ -34,7 +34,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class AccountTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -143,9 +142,18 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money("20.00000000", ETH), account.balance_free(ETH))
         self.assertEqual(Money("0.00000000", BTC), account.balance_locked(BTC))
         self.assertEqual(Money("0.00000000", ETH), account.balance_locked(ETH))
-        self.assertEqual({BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)}, account.balances())
-        self.assertEqual({BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)}, account.balances_free())
-        self.assertEqual({BTC: Money("0.00000000", BTC), ETH: Money("0.00000000", ETH)}, account.balances_locked())
+        self.assertEqual(
+            {BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)},
+            account.balances(),
+        )
+        self.assertEqual(
+            {BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)},
+            account.balances_free(),
+        )
+        self.assertEqual(
+            {BTC: Money("0.00000000", BTC), ETH: Money("0.00000000", ETH)},
+            account.balances_locked(),
+        )
         self.assertEqual(Money("0.00000000", BTC), account.unrealized_pnl(BTC))
         self.assertEqual(Money("0.00000000", ETH), account.unrealized_pnl(ETH))
         self.assertEqual(Money("10.00000000", BTC), account.equity(BTC))
@@ -256,7 +264,9 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(margin, account.maint_margin(BTC))
         self.assertEqual({BTC: margin}, account.maint_margins())
 
-    def test_unrealized_pnl_with_single_asset_account_when_no_open_positions_returns_zero(self):
+    def test_unrealized_pnl_with_single_asset_account_when_no_open_positions_returns_zero(
+        self,
+    ):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
@@ -280,7 +290,9 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(0, USD), result)
 
-    def test_unrealized_pnl_with_multi_asset_account_when_no_open_positions_returns_zero(self):
+    def test_unrealized_pnl_with_multi_asset_account_when_no_open_positions_returns_zero(
+        self,
+    ):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),

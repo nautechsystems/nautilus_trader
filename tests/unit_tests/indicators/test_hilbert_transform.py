@@ -25,7 +25,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class HilbertTransformTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.ht = HilbertTransform()
@@ -158,5 +157,5 @@ class HilbertTransformTests(unittest.TestCase):
         self.ht.reset()
 
         # Assert
-        self.assertEqual(0., self.ht.value_in_phase)  # No assertion errors.
-        self.assertEqual(0., self.ht.value_quad)
+        self.assertEqual(0.0, self.ht.value_in_phase)  # No assertion errors.
+        self.assertEqual(0.0, self.ht.value_quad)

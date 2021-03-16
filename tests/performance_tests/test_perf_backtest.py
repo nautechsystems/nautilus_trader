@@ -45,14 +45,23 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class BacktestEnginePerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_run_with_empty_strategy():
         # Arrange
         data = BacktestDataContainer()
         data.add_instrument(USDJPY_SIM)
-        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.BID,
+            TestDataProvider.usdjpy_1min_bid(),
+        )
+        data.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.ASK,
+            TestDataProvider.usdjpy_1min_ask(),
+        )
 
         strategies = [TradingStrategy("001")]
 
@@ -97,8 +106,18 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # Arrange
         data = BacktestDataContainer()
         data.add_instrument(USDJPY_SIM)
-        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.BID,
+            TestDataProvider.usdjpy_1min_bid(),
+        )
+        data.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.ASK,
+            TestDataProvider.usdjpy_1min_ask(),
+        )
 
         strategy = EMACross(
             instrument_id=USDJPY_SIM.id,
@@ -133,8 +152,18 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # Arrange
         data = BacktestDataContainer()
         data.add_instrument(USDJPY_SIM)
-        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_SIM.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.BID,
+            TestDataProvider.usdjpy_1min_bid(),
+        )
+        data.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.ASK,
+            TestDataProvider.usdjpy_1min_ask(),
+        )
 
         strategy = EMACross(
             instrument_id=USDJPY_SIM.id,
@@ -150,7 +179,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             bypass_logging=True,
         )
 
-        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        interest_rate_data = pd.read_csv(
+            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+        )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         engine.add_exchange(

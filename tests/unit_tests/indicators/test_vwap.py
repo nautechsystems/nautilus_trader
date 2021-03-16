@@ -26,7 +26,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class VolumeWeightedAveragePriceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.vwap = VolumeWeightedAveragePrice()

@@ -31,7 +31,6 @@ GBPUSD_SIM = TestStubs.gbpusd_id()
 
 
 class ExecutionDatabaseTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -99,7 +98,6 @@ class ExecutionDatabaseTests(unittest.TestCase):
 
 
 class BypassExecutionDatabaseTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -115,7 +113,9 @@ class BypassExecutionDatabaseTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = BypassExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
 
     def test_load_account_returns_none(self):
         self.assertIsNone(self.database.load_account(None))

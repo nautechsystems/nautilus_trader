@@ -41,7 +41,7 @@ class MyStrategy(TradingStrategy):
         """
         # The order_id_tag should be unique at the 'trader level', here we are
         # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace('/', ""))
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", ""))
 
         # Custom strategy variables
         self.instrument_id = instrument_id

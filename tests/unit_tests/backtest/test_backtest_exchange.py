@@ -66,7 +66,6 @@ XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 
 
 class SimulatedExchangeTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -82,7 +81,9 @@ class SimulatedExchangeTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={'use_previous_close': False},  # To correctly reproduce historical data bars
+            config={
+                "use_previous_close": False
+            },  # To correctly reproduce historical data bars
         )
 
         self.data_engine.cache.add_instrument(AUDUSD_SIM)
@@ -235,7 +236,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.REJECTED, order.state)
         self.assertEqual(2, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[1], OrderRejected))
+        self.assertTrue(
+            isinstance(self.strategy.object_storer.get_store()[1], OrderRejected)
+        )
 
     def test_submit_order_with_invalid_price_gets_rejected(self):
         # Arrange: Prepare market
@@ -279,7 +282,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(1E+8, 0),  # <-- Above maximum quantity for instrument
+            Quantity(1e8, 0),  # <-- Above maximum quantity for instrument
         )
 
         # Act
@@ -513,8 +516,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        stop_loss_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
-        take_profit_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+        stop_loss_order = self.exec_engine.cache.order(
+            ClientOrderId("O-19700101-000000-000-001-2")
+        )
+        take_profit_order = self.exec_engine.cache.order(
+            ClientOrderId("O-19700101-000000-000-001-3")
+        )
 
         self.assertEqual(OrderState.FILLED, entry_order.state)
         self.assertEqual(OrderState.ACCEPTED, stop_loss_order.state)
@@ -547,8 +554,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        stop_loss_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
-        take_profit_order = self.exec_engine.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+        stop_loss_order = self.exec_engine.cache.order(
+            ClientOrderId("O-19700101-000000-000-001-2")
+        )
+        take_profit_order = self.exec_engine.cache.order(
+            ClientOrderId("O-19700101-000000-000-001-3")
+        )
 
         self.assertEqual(OrderState.ACCEPTED, entry_order.state)
         self.assertEqual(OrderState.SUBMITTED, stop_loss_order.state)
@@ -644,8 +655,10 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
-        self.assertEqual(1, len(self.exchange.get_working_orders()))  # Order still working
-        self.assertEqual(Price("90.001"), order.price)                # Did not amend
+        self.assertEqual(
+            1, len(self.exchange.get_working_orders())
+        )  # Order still working
+        self.assertEqual(Price("90.001"), order.price)  # Did not amend
 
     def test_amend_post_only_limit_order_when_marketable_then_rejects_amendment(self):
         # Arrange: Prepare market
@@ -672,8 +685,10 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
-        self.assertEqual(1, len(self.exchange.get_working_orders()))  # Order still working
-        self.assertEqual(Price("90.001"), order.price)                # Did not amend
+        self.assertEqual(
+            1, len(self.exchange.get_working_orders())
+        )  # Order still working
+        self.assertEqual(Price("90.001"), order.price)  # Did not amend
 
     def test_amend_limit_order_when_marketable_then_fills_order(self):
         # Arrange: Prepare market
@@ -703,7 +718,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.005"), order.avg_price)
 
-    def test_amend_stop_market_order_when_price_inside_market_then_rejects_amendment(self):
+    def test_amend_stop_market_order_when_price_inside_market_then_rejects_amendment(
+        self,
+    ):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -757,7 +774,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.011"), order.price)
 
-    def test_amend_untriggered_stop_limit_order_when_price_inside_market_then_rejects_amendment(self):
+    def test_amend_untriggered_stop_limit_order_when_price_inside_market_then_rejects_amendment(
+        self,
+    ):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -813,7 +832,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.011"), order.trigger)
 
-    def test_amend_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_amendment(self):
+    def test_amend_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_amendment(
+        self,
+    ):
         # Arrange: Prepare market
         tick1 = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -953,7 +974,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Act
-        self.strategy.amend_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price("85.100"))
+        self.strategy.amend_order(
+            bracket_order.stop_loss, bracket_order.entry.quantity, Price("85.100")
+        )
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, bracket_order.stop_loss.state)
@@ -1630,7 +1653,9 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         position = self.exec_engine.cache.positions_open()[0]
-        self.assertEqual(Money(499900.00, JPY), position.unrealized_pnl(Price("100.003")))
+        self.assertEqual(
+            Money(499900.00, JPY), position.unrealized_pnl(Price("100.003"))
+        )
 
     def test_adjust_account_changes_balance(self):
         # Arrange
@@ -1710,7 +1735,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         )
 
         # Act 2
-        self.strategy.submit_order(order_reduce, PositionId("P-19700101-000000-000-001-1"))  # Generated by platform
+        self.strategy.submit_order(
+            order_reduce, PositionId("P-19700101-000000-000-001-1")
+        )  # Generated by platform
 
         # Assert
         position_open = self.exec_engine.cache.positions_open()[0]
@@ -1722,7 +1749,6 @@ class SimulatedExchangeTests(unittest.TestCase):
 
 
 class BitmexExchangeTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.strategies = [MockStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())]
@@ -1740,7 +1766,9 @@ class BitmexExchangeTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={'use_previous_close': False},  # To correctly reproduce historical data bars
+            config={
+                "use_previous_close": False
+            },  # To correctly reproduce historical data bars
         )
         self.data_engine.cache.add_instrument(XBTUSD_BITMEX)
         self.portfolio.register_cache(self.data_engine.cache)
@@ -1787,7 +1815,9 @@ class BitmexExchangeTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
-        self.strategy = MockStrategy(bar_type=TestStubs.bartype_btcusdt_binance_1min_bid())
+        self.strategy = MockStrategy(
+            bar_type=TestStubs.bartype_btcusdt_binance_1min_bid()
+        )
         self.strategy.register_trader(
             self.trader_id,
             self.clock,
@@ -1845,7 +1875,19 @@ class BitmexExchangeTests(unittest.TestCase):
         self.portfolio.update_tick(quote2)
 
         # Assert
-        self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[2].liquidity_side)
-        self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[6].liquidity_side)
-        self.assertEqual(Money("0.00652529", BTC), self.strategy.object_storer.get_store()[2].commission)
-        self.assertEqual(Money("-0.00217511", BTC), self.strategy.object_storer.get_store()[6].commission)
+        self.assertEqual(
+            LiquiditySide.TAKER,
+            self.strategy.object_storer.get_store()[2].liquidity_side,
+        )
+        self.assertEqual(
+            LiquiditySide.MAKER,
+            self.strategy.object_storer.get_store()[6].liquidity_side,
+        )
+        self.assertEqual(
+            Money("0.00652529", BTC),
+            self.strategy.object_storer.get_store()[2].commission,
+        )
+        self.assertEqual(
+            Money("-0.00217511", BTC),
+            self.strategy.object_storer.get_store()[6].commission,
+        )

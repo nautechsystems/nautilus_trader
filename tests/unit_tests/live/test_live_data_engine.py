@@ -43,7 +43,6 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class LiveDataEngineTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -87,7 +86,7 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         subscribe = Subscribe(
@@ -113,18 +112,21 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         handler = []
         request = DataRequest(
             provider="RANDOM",
-            data_type=DataType(QuoteTick, metadata={
-                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            }),
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+            ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
@@ -145,7 +147,7 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         response = DataResponse(
@@ -172,7 +174,7 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         # Act
@@ -264,12 +266,17 @@ class LiveDataEngineTests(unittest.TestCase):
             handler = []
             request = DataRequest(
                 provider="RANDOM",
-                data_type=DataType(QuoteTick, metadata={
-                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                }),
+                data_type=DataType(
+                    QuoteTick,
+                    metadata={
+                        "InstrumentId": InstrumentId(
+                            Symbol("SOMETHING"), Venue("RANDOM")
+                        ),
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 1000,
+                    },
+                ),
                 callback=handler.append,
                 request_id=self.uuid_factory.generate(),
                 request_timestamp=self.clock.utc_now(),

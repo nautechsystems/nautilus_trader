@@ -27,7 +27,6 @@ test_clock = TestClock()
 
 
 class LiveClockPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_utc_now():
         PerformanceHarness.profile_function(live_clock.utc_now, 100000, 1)
@@ -40,7 +39,6 @@ class LiveClockPerformanceTests(unittest.TestCase):
 
 
 class TestClockHarness:
-
     @staticmethod
     def advance_time():
         test_clock.advance_time(UNIX_EPOCH)
@@ -54,7 +52,6 @@ class TestClockHarness:
 
 
 class TestClockPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_advance_time():
         PerformanceHarness.profile_function(TestClockHarness.advance_time, 100000, 1)
@@ -66,5 +63,7 @@ class TestClockPerformanceTests(unittest.TestCase):
         test_clock.set_timer("test", timedelta(seconds=1), handler=store.append)
 
         iterations = 1
-        PerformanceHarness.profile_function(TestClockHarness.iteratively_advance_time, 1, iterations)
+        PerformanceHarness.profile_function(
+            TestClockHarness.iteratively_advance_time, 1, iterations
+        )
         # ~320.1ms minimum of 1 runs @ 1 iteration each run. (100000 advances)

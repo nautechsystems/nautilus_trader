@@ -26,7 +26,6 @@ from nautilus_trader.core.functions import pad_string
 
 
 class TestFunctions:
-
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange
         values = []
@@ -98,10 +97,12 @@ class TestFunctions:
 
     @pytest.mark.parametrize(
         "original, final_length, expected",
-        [["1234", 4, "1234"],
-         ["1234", 5, " 1234"],
-         ["1234", 6, "  1234"],
-         ["1234", 3, "1234"]],
+        [
+            ["1234", 4, "1234"],
+            ["1234", 5, " 1234"],
+            ["1234", 6, "  1234"],
+            ["1234", 3, "1234"],
+        ],
     )
     def test_pad_string(self, original, final_length, expected):
         # Arrange
