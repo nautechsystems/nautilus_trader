@@ -21,7 +21,8 @@ class Order:
         return self.id == other.id
 
     def __repr__(self):
-        return f"Order({self.__dict__})"
+        kw = ",".join([f"{k}={v}" for k, v in self.__dict__.items()])
+        return f"Order({kw})"
 
     # TODO
     # @property

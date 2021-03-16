@@ -1,11 +1,11 @@
 import gzip
 import json
-import logging
 
 import pytest
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.orderbook.orderbook import L3Orderbook
+
 from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.orderbook import L3Orderbook
 
 
 @pytest.fixture()
@@ -44,22 +44,26 @@ def l3_feed():
                     order=Order(price=data["price"], volume=abs(data["volume"]), side=side, id=str(data["order_id"]))
                 )
 
-    return [msg for line in gzip.open("./resources/bitfinex_L3_feed.log.gz") for msg in parser(line)]
+    return [msg for line in gzip.open("resources/bitfinex_L3_feed.log.gz") for msg in parser(line)]
 
 
 def test_l3_feed(l3_feed):
     ob = L3Orderbook()
-    skip = [
-        (33296, '60505229963')
-    ]
+    # Updates that cause the book to fail integrity checks will be deleted immediately, but we may get also delete later
+    skip_deletes = []
+
     for i, m in enumerate(l3_feed):
-        print(f"[{i}]: {m}", "\n", ob.repr(), "\n\n")
         if m['op'] == 'update':
             ob.update(order=m['order'])
-        elif m['op'] == 'delete':
+            if not ob._check_integrity(deep=False):
+                ob.delete(order=m['order'])
+                skip_deletes.append(m['order'].id)
+        elif m['op'] == 'delete' and m['order'].id not in skip_deletes:
             ob.delete(order=m['order'])
-        if (i, m['order'].id) not in skip:
-            assert ob._check_integrity(deep=False)
+        assert ob._check_integrity(deep=False)
+    assert i == 100_047
+    assert ob.best_ask.price == 61405.27923706 and ob.best_ask.volume == 0.12227
+    assert ob.best_bid.price == 61391 and ob.best_bid.volume == 1
 
 # def test_l2_feed(l2_feed):
 #     ob = Orderbook()
