@@ -17,6 +17,7 @@ import json
 
 import ccxt
 
+
 # Requirements:
 # - An internet connection
 

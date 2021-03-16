@@ -18,6 +18,7 @@ from decimal import Decimal
 import pathlib
 import sys
 
+
 sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -28,6 +29,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.

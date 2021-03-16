@@ -21,6 +21,7 @@ from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 live_clock = LiveClock()
 test_clock = TestClock()
 

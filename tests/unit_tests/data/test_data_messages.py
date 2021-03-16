@@ -26,6 +26,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
 
+
 BINANCE = Venue("BINANCE")
 IDEALPRO = Venue("IDEALPRO")
 

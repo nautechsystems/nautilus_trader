@@ -18,6 +18,7 @@ import pickle
 import ib_insync
 from ib_insync import Future
 
+
 # Requirements:
 # - An internet connection
 # - Running TWS on local host and port 7497

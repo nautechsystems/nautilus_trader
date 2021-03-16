@@ -47,6 +47,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
 
+
 BINANCE = Venue("BINANCE")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 

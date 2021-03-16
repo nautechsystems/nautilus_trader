@@ -41,6 +41,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 
+
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 OANDA = Venue("OANDA")

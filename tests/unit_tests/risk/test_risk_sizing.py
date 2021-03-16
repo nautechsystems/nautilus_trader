@@ -24,6 +24,7 @@ from nautilus_trader.risk.sizing import FixedRiskSizer
 from nautilus_trader.risk.sizing import PositionSizer
 from tests.test_kit.providers import TestInstrumentProvider
 
+
 USDJPY = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 

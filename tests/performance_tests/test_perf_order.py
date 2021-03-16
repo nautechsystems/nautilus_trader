@@ -28,6 +28,7 @@ from nautilus_trader.model.objects import Quantity
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestStubs.audusd_id()
 
 

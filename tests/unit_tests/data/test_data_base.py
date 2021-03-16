@@ -24,6 +24,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 SIM = Venue("SIM")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)

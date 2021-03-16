@@ -23,6 +23,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestStubs.audusd_id()
 GBPUSD_SIM = TestStubs.gbpusd_id()
 

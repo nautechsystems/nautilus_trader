@@ -29,6 +29,7 @@ from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 AUDUSD_SIM = TestStubs.audusd_id()
 GBPUSD_SIM = TestStubs.gbpusd_id()
 

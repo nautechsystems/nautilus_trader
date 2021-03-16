@@ -41,6 +41,7 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
