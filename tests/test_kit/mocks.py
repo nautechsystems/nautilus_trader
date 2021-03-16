@@ -390,7 +390,7 @@ class MockExecutionClient(ExecutionClient):
 
     def __init__(
         self,
-        venue,
+        name,
         account_id,
         engine,
         clock,
@@ -401,7 +401,7 @@ class MockExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        venue : Venue
+        name : str
             The venue for the client.
         account_id : AccountId
             The account_id for the client.
@@ -414,7 +414,7 @@ class MockExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            venue,
+            name,
             account_id,
             engine,
             clock,

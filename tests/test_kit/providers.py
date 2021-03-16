@@ -182,11 +182,6 @@ class TestInstrumentProvider:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
 
-        Parameters
-        ----------
-        leverage : Decimal
-            The margined leverage for the instrument.
-
         Returns
         -------
         Instrument
@@ -228,11 +223,6 @@ class TestInstrumentProvider:
     def ethusd_bitmex() -> Instrument:
         """
         Return the BitMEX ETH/USD perpetual contract for backtesting.
-
-        Parameters
-        ----------
-        leverage : Decimal
-            The margined leverage for the instrument.
 
         Returns
         -------

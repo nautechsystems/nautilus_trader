@@ -21,6 +21,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
@@ -272,7 +273,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Quantity(100000))
 
         command = SubmitOrder(
-            self.venue,
+            Routing(exchange=order.venue),
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -308,7 +309,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            self.venue,
+            Routing(exchange=entry_order.venue),
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -343,7 +344,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            self.venue,
+            Routing(exchange=entry_order.venue),
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -365,7 +366,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_amend_order_commands(self):
         # Arrange
         command = AmendOrder(
-            self.venue,
+            Routing(exchange=self.venue),
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),
@@ -387,7 +388,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
         command = CancelOrder(
-            self.venue,
+            Routing(exchange=self.venue),
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),

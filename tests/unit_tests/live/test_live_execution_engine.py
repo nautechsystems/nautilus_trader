@@ -25,6 +25,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
@@ -87,9 +88,9 @@ class LiveExecutionEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.venue = Venue("SIM")
+        self.venue = SIM
         self.client = MockExecutionClient(
-            self.venue,
+            self.venue.value,
             self.account_id,
             self.engine,
             self.clock,
@@ -97,6 +98,8 @@ class LiveExecutionEngineTests(unittest.TestCase):
         )
 
         self.engine.register_client(self.client)
+
+        self.routing = Routing(exchange=SIM)
 
     def tearDown(self):
         self.engine.dispose()
@@ -147,7 +150,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            Venue("SIM"),
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -192,7 +195,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            Venue("SIM"),
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -272,7 +275,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
             )
 
             submit_order = SubmitOrder(
-                Venue("SIM"),
+                self.routing,
                 self.trader_id,
                 self.account_id,
                 strategy.id,

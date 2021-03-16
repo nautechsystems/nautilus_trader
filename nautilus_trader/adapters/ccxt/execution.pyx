@@ -92,7 +92,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
-            Venue(client.name.upper()),
+            client.name.upper(),
             account_id,
             engine,
             instrument_provider,

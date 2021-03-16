@@ -36,7 +36,6 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -75,7 +74,7 @@ cdef class RiskEngine(Component):
             config = {}
         super().__init__(clock, logger, name="RiskEngine")
 
-        self._clients = {}  # type: dict[Venue, ExecutionClient]
+        self._clients = {}  # type: dict[str, ExecutionClient]
         self._portfolio = portfolio
         self._exec_engine = exec_engine
 
@@ -115,9 +114,9 @@ cdef class RiskEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.venue, self._clients, "client.venue", "self._clients")
+        Condition.not_in(client.name, self._clients, "client.name", "self._clients")
 
-        self._clients[client.venue] = client
+        self._clients[client.name] = client
         self._log.info(f"Registered {client}.")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -186,10 +185,10 @@ cdef class RiskEngine(Component):
             self._handle_trading_command(command)
 
     cdef inline void _handle_trading_command(self, TradingCommand command) except *:
-        cdef ExecutionClient client = self._clients.get(command.venue)
+        cdef ExecutionClient client = self._clients.get(command.routing.first().value)
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.venue}, {command}.")
+                            f"No client registered for {command.routing.first()}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):

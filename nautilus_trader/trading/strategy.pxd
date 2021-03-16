@@ -30,6 +30,7 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.commands cimport Routing
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
@@ -167,12 +168,19 @@ cdef class TradingStrategy(Component):
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
-    cpdef void submit_order(self, Order order, PositionId position_id=*) except *
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
-    cpdef void amend_order(self, PassiveOrder order, Quantity quantity=*, Price price=*) except *
-    cpdef void cancel_order(self, Order order) except *
+    cpdef void submit_order(self, Order order, PositionId position_id=*, Routing routing=*) except *
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order, Routing routing=*) except *
+    cpdef void amend_order(
+        self,
+        PassiveOrder order,
+        Quantity quantity=*,
+        Price price=*,
+        Price trigger=*,
+        Routing routing=*,
+    ) except *
+    cpdef void cancel_order(self, Order order, Routing routing=*) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *
-    cpdef void flatten_position(self, Position position) except *
+    cpdef void flatten_position(self, Position position, Routing routing=*) except *
     cpdef void flatten_all_positions(self, InstrumentId instrument_id) except *
 
 # -- HANDLERS --------------------------------------------------------------------------------------

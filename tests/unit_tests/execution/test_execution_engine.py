@@ -26,6 +26,7 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
@@ -100,14 +101,15 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
-            self.venue,
-            self.account_id,
-            self.exec_engine,
-            self.clock,
-            self.logger,
+            name=self.venue.value,
+            account_id=self.account_id,
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.exec_engine.register_client(self.exec_client)
+        self.routing = Routing(exchange=self.venue)
 
     def test_registered_venues_returns_expected(self):
         # Arrange
@@ -115,7 +117,7 @@ class ExecutionEngineTests(unittest.TestCase):
         result = self.exec_engine.registered_clients
 
         # Assert
-        self.assertEqual([Venue("SIM")], result)
+        self.assertEqual(["SIM"], result)
 
     def test_deregister_client_removes_client(self):
         # Arrange
@@ -276,7 +278,7 @@ class ExecutionEngineTests(unittest.TestCase):
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
-            self.venue,
+            self.routing,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
@@ -312,7 +314,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -350,7 +352,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            Venue("NYSE"),
+            Routing(exchange=Venue("NYSE")),  # <-- Random venue
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -387,7 +389,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -423,7 +425,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -485,7 +487,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_bracket = SubmitBracketOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -543,7 +545,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_bracket1 = SubmitBracketOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -572,7 +574,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_bracket2 = SubmitBracketOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -637,7 +639,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_bracket1 = SubmitBracketOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -666,7 +668,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_bracket2 = SubmitBracketOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -712,7 +714,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -749,7 +751,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -787,7 +789,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -851,7 +853,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -867,7 +869,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         cancel_order = CancelOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
@@ -904,7 +906,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -920,7 +922,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         amend_order = AmendOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
@@ -957,7 +959,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1006,7 +1008,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1055,7 +1057,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1106,7 +1108,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1163,7 +1165,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1220,7 +1222,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1273,7 +1275,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1342,7 +1344,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1401,7 +1403,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1419,7 +1421,7 @@ class ExecutionEngineTests(unittest.TestCase):
         expected_position_id = PositionId("P-19700101-000000-000-001-1")
 
         submit_order2 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1476,7 +1478,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1494,7 +1496,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id))
 
         submit_order2 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1563,7 +1565,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy1.id,
@@ -1574,7 +1576,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order2 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy2.id,
@@ -1672,7 +1674,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy1.id,
@@ -1685,7 +1687,7 @@ class ExecutionEngineTests(unittest.TestCase):
         position_id1 = PositionId('P-1')
 
         submit_order2 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy1.id,
@@ -1696,7 +1698,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order3 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy2.id,
@@ -1775,7 +1777,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1793,7 +1795,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id))
 
         submit_order2 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1857,7 +1859,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         submit_order1 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -1875,7 +1877,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id))
 
         submit_order2 = SubmitOrder(
-            self.venue,
+            self.routing,
             self.trader_id,
             self.account_id,
             strategy.id,

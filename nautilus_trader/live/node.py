@@ -319,7 +319,6 @@ class TradingNode:
             self._loop.stop()
             self._cancel_all_tasks()
         except RuntimeError as ex:
-            self._log.error("CCXT shutdown issues will be fixed soon...")  # TODO: Remove when fixed
             self._log.exception(ex)
         finally:
             if self._loop.is_running():

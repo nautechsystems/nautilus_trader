@@ -29,6 +29,7 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
@@ -583,7 +584,7 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_cancel_stop_order_when_order_does_not_exist_generates_cancel_reject(self):
         # Arrange
         command = CancelOrder(
-            venue=SIM,
+            routing=Routing(exchange=SIM),
             trader_id=self.trader_id,
             account_id=self.account_id,
             cl_ord_id=ClientOrderId("O-123456"),
@@ -601,7 +602,7 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_amend_stop_order_when_order_does_not_exist(self):
         # Arrange
         command = AmendOrder(
-            venue=SIM,
+            routing=Routing(exchange=SIM),
             trader_id=self.trader_id,
             account_id=self.account_id,
             cl_ord_id=ClientOrderId("O-123456"),

@@ -27,8 +27,23 @@ from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.bracket cimport BracketOrder
 
 
+cdef class Routing:
+    cdef readonly Venue broker
+    """The broker/dealer for routing.\n\n:returns: `Venue` or None"""
+    cdef readonly Venue intermediary
+    """The intermediary venue/system/dark pool for routing.\n\n:returns: `Venue` or None"""
+    cdef readonly Venue exchange
+    """The primary/native exchange for the instrument.\n\n:returns: `Venue`"""
+
+    cpdef Venue first(self)
+
+    @staticmethod
+    cdef Routing from_serializable_str_c(str value)
+    cpdef str to_serializable_str(self)
+
+
 cdef class TradingCommand(Command):
-    cdef readonly Venue venue
+    cdef readonly Routing routing
     """The venue the command relates to.\n\n:returns: `Venue`"""
 
 
