@@ -20,31 +20,22 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.bracket cimport BracketOrder
-
-
-cdef class Routing:
-    cdef readonly Venue broker
-    """The broker/dealer for routing.\n\n:returns: `Venue` or None"""
-    cdef readonly Venue intermediary
-    """The intermediary venue/system/dark pool for routing.\n\n:returns: `Venue` or None"""
-    cdef readonly Venue exchange
-    """The primary/native exchange for the instrument.\n\n:returns: `Venue`"""
-
-    cpdef Venue first(self)
-
-    @staticmethod
-    cdef Routing from_serializable_str_c(str value)
-    cpdef str to_serializable_str(self)
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class TradingCommand(Command):
-    cdef readonly Routing routing
-    """The venue the command relates to.\n\n:returns: `Venue`"""
+    cdef readonly InstrumentId instrument_id
+    """The instrument identifier for the command.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The symbol for the command.\n\n:returns: `Symbol`"""
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue`"""
 
 
 cdef class SubmitOrder(TradingCommand):

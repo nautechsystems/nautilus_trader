@@ -24,7 +24,10 @@ cdef class Symbol(Identifier):
 
 
 cdef class Venue(Identifier):
-    pass
+    cdef readonly str broker
+    """The optional broker name.\n\n:returns: `str` or None"""
+
+    cpdef str first(self)
 
 
 cdef class InstrumentId(Identifier):

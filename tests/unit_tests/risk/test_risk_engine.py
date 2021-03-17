@@ -21,7 +21,6 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
@@ -89,8 +88,6 @@ class TestRiskEngine:
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
 
-        self.routing = Routing(exchange=Venue("SIM"))
-
     def test_registered_clients_returns_expected_list(self):
         # Arrange
         # Act
@@ -110,7 +107,7 @@ class TestRiskEngine:
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
-            self.routing,
+            AUDUSD_SIM.id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
@@ -146,7 +143,7 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -188,7 +185,7 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            self.routing,
+            entry.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -223,7 +220,7 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -262,7 +259,7 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -273,7 +270,7 @@ class TestRiskEngine:
         )
 
         amend = AmendOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
@@ -311,7 +308,7 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -322,7 +319,7 @@ class TestRiskEngine:
         )
 
         cancel = CancelOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
@@ -365,7 +362,7 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            self.routing,
+            entry.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
