@@ -24,8 +24,8 @@ from itertools import accumulate
 from itertools import islice
 from operator import attrgetter
 
-from nautilus_trader.model.order_book.ladder import Ladder
-from nautilus_trader.model.order_book.order import Order
+from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orderbook.order import Order
 
 
 def cumulative(ladder, attrib="volume"):

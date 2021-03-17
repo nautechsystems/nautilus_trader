@@ -109,7 +109,7 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "ccxt"
-version = "1.43.40"
+version = "1.43.43"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -929,6 +929,17 @@ lint = ["flake8", "mypy", "docutils-stubs"]
 test = ["pytest"]
 
 [[package]]
+name = "tabulate"
+version = "0.8.9"
+description = "Pretty-print tabular data"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.extras]
+widechars = ["wcwidth"]
+
+[[package]]
 name = "toml"
 version = "0.10.2"
 description = "Python Library for Tom's Obvious, Minimal Language"
@@ -1014,7 +1025,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "a85aa5f0ce50134ce63047db5450155e4c828af9dc8f33a8e6c571155fec00a2"
+content-hash = "edd0682a78c7344c4795398a6c581f78110e9322ffdd097429ba246c84e5f155"
 
 [metadata.files]
 aiodns = [
@@ -1093,8 +1104,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 ccxt = [
-    {file = "ccxt-1.43.40-py2.py3-none-any.whl", hash = "sha256:50882d5cc9ddcaba5307fc962b7f5b75f7d0a0a34460ac6aee896965cbf9b217"},
-    {file = "ccxt-1.43.40.tar.gz", hash = "sha256:85b063f1b415ab92486475386327af0c84e1931464efcd12cf9fbe518f0a86e9"},
+    {file = "ccxt-1.43.43-py2.py3-none-any.whl", hash = "sha256:5e4602576ef8d2e9f308b7a808b00f5a75cd036eb7f3e20a996f90e4c154e213"},
+    {file = "ccxt-1.43.43.tar.gz", hash = "sha256:37d6b2621fef540730604f594e0e6d62d9ee7cf878c9cc83ceed2d170b67a605"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1756,6 +1767,10 @@ sphinxcontrib-qthelp = [
 sphinxcontrib-serializinghtml = [
     {file = "sphinxcontrib-serializinghtml-1.1.4.tar.gz", hash = "sha256:eaa0eccc86e982a9b939b2b82d12cc5d013385ba5eadcc7e4fed23f4405f77bc"},
     {file = "sphinxcontrib_serializinghtml-1.1.4-py2.py3-none-any.whl", hash = "sha256:f242a81d423f59617a8e5cf16f5d4d74e28ee9a66f9e5b637a18082991db5a9a"},
+]
+tabulate = [
+    {file = "tabulate-0.8.9-py3-none-any.whl", hash = "sha256:d7c013fe7abbc5e491394e10fa845f8f32fe54f8dc60c6622c6cf482d25d47e4"},
+    {file = "tabulate-0.8.9.tar.gz", hash = "sha256:eb1d13f25760052e8931f2ef80aaf6045a6cceb47514db8beab24cded16f13a7"},
 ]
 toml = [
     {file = "toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b"},

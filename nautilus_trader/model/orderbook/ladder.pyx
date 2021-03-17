@@ -16,8 +16,8 @@
 from bisect import bisect
 import logging
 
-from nautilus_trader.model.order_book.level import Level
-from nautilus_trader.model.order_book.order cimport Order
+from nautilus_trader.model.orderbook.level import Level
+from nautilus_trader.model.orderbook.order cimport Order
 
 
 logger = logging.getLogger(__name__)

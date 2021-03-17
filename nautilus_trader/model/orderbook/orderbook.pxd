@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.order_book.ladder cimport Ladder
-from nautilus_trader.model.order_book.order cimport Order
+from nautilus_trader.model.orderbook.ladder cimport Ladder
+from nautilus_trader.model.orderbook.order cimport Order
 
 # TODO - Some violations of DRY principal here - I can't think of a way around this with cython given the slow
 #  subclassing. The best I can come up with is this shared OrderBookProxy object which is going to mean a bunch of

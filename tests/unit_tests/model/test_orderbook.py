@@ -16,10 +16,10 @@
 import pytest
 
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.order_book.ladder import Ladder
-from nautilus_trader.model.order_book.order import Order
-from nautilus_trader.model.order_book.orderbook import L3OrderBook
-from nautilus_trader.model.order_book.orderbook import OrderBookProxy
+from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.orderbook import L3OrderBook
+from nautilus_trader.model.orderbook.orderbook import OrderBookProxy
 
 
 @pytest.fixture(scope="function")

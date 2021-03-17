@@ -19,10 +19,10 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.order_book.order import Order
-from nautilus_trader.model.order_book.orderbook import L1OrderBook
-from nautilus_trader.model.order_book.orderbook import L2OrderBook
-from nautilus_trader.model.order_book.orderbook import L3OrderBook
+from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.orderbook import L1OrderBook
+from nautilus_trader.model.orderbook.orderbook import L2OrderBook
+from nautilus_trader.model.orderbook.orderbook import L3OrderBook
 from tests.test_kit import PACKAGE_ROOT
 
 
