@@ -26,13 +26,11 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
-from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -95,7 +93,6 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         self.exec_engine.register_strategy(self.strategy)
-        self.routing = Routing(exchange=Venue("BINANCE"))
 
     def submit_order(self):
         order = self.strategy.order_factory.market(
@@ -113,9 +110,8 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
             Quantity("1.00000000"),
         )
 
-        routing = Routing(exchange=Venue("BINANCE"))
         command = SubmitOrder(
-            routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             self.strategy.id,

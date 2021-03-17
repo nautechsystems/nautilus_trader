@@ -25,7 +25,6 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
@@ -86,8 +85,6 @@ class ExecutionClientTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.routing = Routing(exchange=self.venue)
-
     def test_connect_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.client.connect)
 
@@ -109,7 +106,7 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "001"),
@@ -137,7 +134,7 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            self.routing,
+            entry_order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "001"),
@@ -154,7 +151,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = AmendOrder(
-            self.routing,
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456789"),
@@ -171,7 +168,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = CancelOrder(
-            self.routing,
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456789"),

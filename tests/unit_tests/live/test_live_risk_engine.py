@@ -25,7 +25,6 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
-from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
@@ -111,8 +110,6 @@ class TestLiveRiskEngine:
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
 
-        self.routing = Routing(exchange=Venue("SIM"))
-
     def test_start_when_loop_not_running_logs(self):
         # Arrange
         # Act
@@ -157,7 +154,7 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -202,7 +199,7 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.routing,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -282,7 +279,7 @@ class TestLiveRiskEngine:
             )
 
             submit_order = SubmitOrder(
-                self.routing,
+                order.instrument_id,
                 self.trader_id,
                 self.account_id,
                 strategy.id,

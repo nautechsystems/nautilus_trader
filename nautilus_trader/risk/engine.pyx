@@ -185,10 +185,10 @@ cdef class RiskEngine(Component):
             self._handle_trading_command(command)
 
     cdef inline void _handle_trading_command(self, TradingCommand command) except *:
-        cdef ExecutionClient client = self._clients.get(command.routing.first().value)
+        cdef ExecutionClient client = self._clients.get(command.venue.first())
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.routing.first()}, {command}.")
+                            f"No client registered for {command.venue.first()}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):

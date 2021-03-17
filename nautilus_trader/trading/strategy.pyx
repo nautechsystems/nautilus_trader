@@ -56,7 +56,6 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport Routing
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.data cimport DataType
@@ -1223,7 +1222,6 @@ cdef class TradingStrategy(Component):
         self,
         Order order,
         PositionId position_id=None,
-        Routing routing=None,
     ) except *:
         """
         Submit the given order with optional position identifier and routing instructions.
@@ -1237,8 +1235,6 @@ cdef class TradingStrategy(Component):
             The order to submit.
         position_id : PositionId, optional
             The position identifier to submit the order against.
-        routing : Routing, optional
-            The routing instructions for the command.
 
         """
         Condition.not_none(order, "order")
@@ -1249,9 +1245,6 @@ cdef class TradingStrategy(Component):
             # Null object pattern
             position_id = PositionId.null_c()
 
-        if routing is None:
-            routing = Routing(exchange=order.venue)
-
         cdef AccountId account_id = self.execution.account_id(order.venue)
         if account_id is None:
             self.log.error(f"Cannot submit order: "
@@ -1259,7 +1252,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(
-            routing,
+            order.instrument_id,
             self.trader_id,
             account_id,
             self.id,
@@ -1271,11 +1264,7 @@ cdef class TradingStrategy(Component):
 
         self._send_exec_cmd(command)
 
-    cpdef void submit_bracket_order(
-        self,
-        BracketOrder bracket_order,
-        Routing routing=None,
-    ) except *:
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
         """
         Submit the given bracket order with optional routing instructions.
 
@@ -1286,16 +1275,11 @@ cdef class TradingStrategy(Component):
         ----------
         bracket_order : BracketOrder
             The bracket order to submit.
-        routing : Routing, optional
-            The routing instructions for the command.
 
         """
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._exec_engine, "self._exec_engine")
-
-        if routing is None:
-            routing = Routing(exchange=bracket_order.entry.venue)
 
         cdef AccountId account_id = self.execution.account_id(bracket_order.entry.instrument_id.venue)
         if account_id is None:
@@ -1304,7 +1288,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
-            routing,
+            bracket_order.entry.instrument_id,
             self.trader_id,
             account_id,
             self.id,
@@ -1321,7 +1305,6 @@ cdef class TradingStrategy(Component):
         Quantity quantity=None,
         Price price=None,
         Price trigger=None,
-        Routing routing=None,
     ) except *:
         """
         Amend the given order with optional parameters and routing instructions.
@@ -1345,8 +1328,6 @@ cdef class TradingStrategy(Component):
             The amended price for the given order.
         trigger : Price, optional
             The amended trigger price for the given order.
-        routing : Routing, optional
-            The routing instructions for the command.
 
         Raises
         ------
@@ -1390,15 +1371,12 @@ cdef class TradingStrategy(Component):
             )
             return
 
-        if routing is None:
-            routing = Routing(exchange=order.venue)
-
         if order.account_id is None:
             self.log.error(f"Cannot amend order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
         cdef AmendOrder command = AmendOrder(
-            routing,
+            order.instrument_id,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
@@ -1410,7 +1388,7 @@ cdef class TradingStrategy(Component):
 
         self._send_exec_cmd(command)
 
-    cpdef void cancel_order(self, Order order, Routing routing=None) except *:
+    cpdef void cancel_order(self, Order order) except *:
         """
         Cancel the given order with optional routing instructions.
 
@@ -1421,8 +1399,6 @@ cdef class TradingStrategy(Component):
         ----------
         order : Order
             The order to cancel.
-        routing : Routing, optional
-            The routing instructions for the command.
 
         """
         Condition.not_none(order, "order")
@@ -1437,11 +1413,8 @@ cdef class TradingStrategy(Component):
             self.log.error(f"Cannot cancel order (no order_id assigned yet), {order}.")
             return  # Cannot send command
 
-        if routing is None:
-            routing = Routing(exchange=order.venue)
-
         cdef CancelOrder command = CancelOrder(
-            routing,
+            order.instrument_id,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
@@ -1480,7 +1453,7 @@ cdef class TradingStrategy(Component):
         for order in working_orders:
             self.cancel_order(order)
 
-    cpdef void flatten_position(self, Position position, Routing routing=None) except *:
+    cpdef void flatten_position(self, Position position) except *:
         """
         Flatten the given position.
 
@@ -1491,8 +1464,6 @@ cdef class TradingStrategy(Component):
         ----------
         position : Position
             The position to flatten.
-        routing : Routing, optional
-            The routing instructions for the command.
 
         """
         Condition.not_none(position, "position")
@@ -1514,12 +1485,9 @@ cdef class TradingStrategy(Component):
             position.quantity,
         )
 
-        if routing is None:
-            routing = Routing(exchange=order.venue)
-
         # Create command
         cdef SubmitOrder command = SubmitOrder(
-            routing,
+            position.instrument_id,
             self.trader_id,
             position.account_id,
             self.id,

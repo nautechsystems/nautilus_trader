@@ -18,7 +18,6 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
@@ -54,7 +53,7 @@ class SerializationPerformanceTests(unittest.TestCase):
         )
 
         self.command = SubmitOrder(
-            Routing(exchange=Venue("SIM")),
+            AUDUSD,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),

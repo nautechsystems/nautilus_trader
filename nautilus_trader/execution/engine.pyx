@@ -61,7 +61,6 @@ from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
@@ -486,10 +485,10 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._clients.get(command.routing.first().value)
+        cdef ExecutionClient client = self._clients.get(command.venue.first())
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.routing.first().value}, {command}.")
+                            f"No client registered for {command.venue.first()}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):

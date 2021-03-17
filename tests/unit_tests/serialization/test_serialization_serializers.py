@@ -21,7 +21,6 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import Routing
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
@@ -270,7 +269,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            Routing(exchange=order.venue),
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -307,7 +306,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            Routing(exchange=entry_order.venue),
+            entry_order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -344,7 +343,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            Routing(exchange=entry_order.venue),
+            entry_order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -366,7 +365,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_amend_order_commands(self):
         # Arrange
         command = AmendOrder(
-            Routing(exchange=self.venue),
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),
@@ -388,7 +387,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
         command = CancelOrder(
-            Routing(exchange=self.venue),
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),

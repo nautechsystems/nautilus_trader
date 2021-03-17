@@ -63,7 +63,6 @@ cdef str TRIGGER
 cdef str CURRENCY
 cdef str TIME_IN_FORCE
 cdef str LIQUIDITY_SIDE
-cdef str ROUTING
 cdef str ACCOUNT_NUMBER
 cdef str BALANCE
 cdef str MARGIN_BALANCE

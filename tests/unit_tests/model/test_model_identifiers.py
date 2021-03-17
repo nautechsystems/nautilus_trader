@@ -222,6 +222,38 @@ class TestIdentifiers:
         assert "NULL" == order_id.value
 
 
+class TestVenue:
+    def test_instrument_id_equality(self):
+        # Arrange
+        venue1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        venue2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO", broker="IB"))
+        venue3 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
+
+        # Act
+        # Assert
+        assert venue1 == venue1
+        assert venue1 != venue2
+        assert venue1 != venue3
+
+    def test_instrument_id_str(self):
+        # Arrange
+        venue1 = Venue("SIM")
+        venue2 = Venue("IDEALPRO", broker="IB")
+
+        # Act
+        # Assert
+        assert str(venue1) == "SIM"
+        assert str(venue2) == "IB-IDEALPRO"
+
+    def test_venue_repr(self):
+        # Arrange
+        venue = Venue("NYMEX", broker="IB")
+
+        # Act
+        # Assert
+        assert repr(venue) == "Venue('IB-NYMEX')"
+
+
 class TestInstrumentId:
     def test_instrument_id_equality(self):
         # Arrange
@@ -251,7 +283,7 @@ class TestInstrumentId:
         # Assert
         assert "InstrumentId('AUD/USD.SIM')" == repr(instrument_id)
 
-    def test_parse_instrument_id_from_str(self):
+    def test_parse_instrument_id_from_str1(self):
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
@@ -260,3 +292,13 @@ class TestInstrumentId:
 
         # Assert
         assert instrument_id == result
+
+    def test_parse_instrument_id_from_str2(self):
+        # Arrange
+        instrument_id = InstrumentId(Symbol("CL"), Venue("NYMEX", broker="IB"))
+
+        # Act
+        result = InstrumentId.from_str(str(instrument_id))
+
+        # Assert
+        assert result == instrument_id
