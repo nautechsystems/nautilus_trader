@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.core.correctness cimport Condition
 
 
 cdef class ExecutionStateReport:
@@ -23,7 +23,7 @@ cdef class ExecutionStateReport:
 
     def __init__(
         self,
-        Venue venue not None,
+        str name not None,
         AccountId account_id not None,
         dict order_states not None,
         dict order_filled not None,
@@ -34,8 +34,8 @@ cdef class ExecutionStateReport:
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the report.
+        name : str
+            The client name for the report.
         account_id : AccountId
             The account identifier for the report.
         order_states : dict[OrderId, OrderState]
@@ -45,8 +45,15 @@ cdef class ExecutionStateReport:
         position_states : dict[InstrumentId, Decimal]
             The position states for the venue.
 
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
         """
-        self.venue = venue
+        Condition.valid_string(name, "name")
+
+        self.name = name
         self.account_id = account_id
         self.order_states = order_states
         self.order_filled = order_filled

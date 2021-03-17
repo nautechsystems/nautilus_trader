@@ -184,7 +184,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         if not active_orders:
             # Nothing to resolve
             return ExecutionStateReport(
-                venue=self.venue,
+                name=self.name,
                 account_id=self.account_id,
                 order_states=order_states,
                 order_filled=order_filled,
@@ -271,7 +271,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
 
         return ExecutionStateReport(
-            venue=self.venue,
+            name=self.name,
             account_id=self.account_id,
             order_states=order_states,
             order_filled=order_filled,

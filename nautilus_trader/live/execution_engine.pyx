@@ -19,7 +19,6 @@ from asyncio import CancelledError
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -145,52 +144,51 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef list open_orders = [order for order in orders if not order.is_completed_c()]
 
         # Initialize order state map
-        cdef dict client_orders = {}   # type: dict[str, list[Order]]
-        for name in self._clients.keys():
-            client_orders[name] = []
+        cdef dict client_orders = {name: [] for name in self._clients.keys()}   # type: dict[str, list[Order]]
 
-        # TODO: Currently broken due routing
-        # # Build order state map
-        # cdef Order order
-        # for order in open_orders:
-        #     if order.venue in venue_orders:
-        #         venue_orders[order.venue].append(order)
-        #     else:
-        #         self._log.error(f"Cannot resolve state. No registered"
-        #                         f"execution client for active {order}.")
-        #         continue
-        #
-        # cdef dict venue_reports = {}  # type: dict[Venue, ExecutionStateReport]
-        #
-        # cdef LiveExecutionClient client
-        # # Get state report from each client
-        # for venue, client in self._clients.items():
-        #     venue_reports[venue] = await client.state_report(venue_orders[venue])
-        #
-        # cdef int seconds = 10  # Hard coded for now
-        # cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
-        # cdef OrderState target_state
-        # cdef bint resolved
-        # while True:
-        #     if self._clock.utc_now() >= timeout:
-        #         self._log.error(f"Timed out ({seconds}s) waiting for "
-        #                         f"execution states to resolve.")
-        #         return False
-        #
-        #     resolved = True
-        #     for order in open_orders:
-        #         target_state = venue_reports[order.venue].order_states.get(order.id, 0)
-        #         if order.state_c() != target_state:
-        #             resolved = False  # Incorrect state
-        #         if target_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
-        #             filled_qty = venue_reports[order.venue].order_filled[order.id]
-        #             if order.filled_qty != filled_qty:
-        #                 resolved = False  # Incorrect filled quantity
-        #     if resolved:
-        #         break
-        #     await asyncio.sleep(0.001)  # One millisecond sleep
-        #
-        # self._log.info(f"State reconciled.", LogColor.GREEN)
+        # Build order state map
+        cdef Order order
+        for order in open_orders:
+            name = order.venue.first()
+            if name in client_orders:
+                client_orders[name].append(order)
+            else:
+                self._log.error(f"Cannot resolve state. No registered"
+                                f"execution client for {name} for active {order}.")
+                continue
+
+        cdef dict client_reports = {}  # type: dict[str, ExecutionStateReport]
+
+        cdef LiveExecutionClient client
+        # Get state report from each client
+        for name, client in self._clients.items():
+            client_reports[name] = await client.state_report(client_orders[name])
+
+        cdef int seconds = 10  # Hard coded for now
+        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
+        cdef OrderState target_state
+        cdef bint resolved
+        while True:
+            if self._clock.utc_now() >= timeout:
+                self._log.error(f"Timed out ({seconds}s) waiting for "
+                                f"execution states to resolve.")
+                return False
+
+            resolved = True
+            for order in open_orders:
+                name = order.venue.first()
+                target_state = client_reports[name].order_states.get(order.id, 0)
+                if order.state_c() != target_state:
+                    resolved = False  # Incorrect state
+                if target_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
+                    filled_qty = client_reports[name].order_filled[order.id]
+                    if order.filled_qty != filled_qty:
+                        resolved = False  # Incorrect filled quantity
+            if resolved:
+                break
+            await asyncio.sleep(0.001)  # One millisecond sleep
+
+        self._log.info(f"State reconciled.", LogColor.GREEN)
         return True  # Execution states resolved
 
     cpdef void kill(self) except *:

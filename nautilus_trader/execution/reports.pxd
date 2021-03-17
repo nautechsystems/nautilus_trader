@@ -14,12 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class ExecutionStateReport:
-    cdef readonly Venue venue
-    """The venue for the report.\n\n:returns: `Venue`"""
+    cdef readonly str name
+    """The client name for the report.\n\n:returns: `str`"""
     cdef readonly AccountId account_id
     """The account identifier for the venue.\n\n:returns: `AccountId`"""
     cdef readonly dict order_states
