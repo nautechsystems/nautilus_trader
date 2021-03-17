@@ -28,7 +28,7 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
 
         # Act
         report = ExecutionStateReport(
-            venue=venue,
+            name=venue.value,
             account_id=account_id,
             order_states={},
             order_filled={},
@@ -36,7 +36,7 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(venue, report.venue)
+        self.assertEqual(venue.value, report.name)
         self.assertEqual(account_id, report.account_id)
         self.assertEqual({}, report.order_states)
         self.assertEqual({}, report.order_filled)

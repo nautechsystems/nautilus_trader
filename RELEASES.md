@@ -9,7 +9,8 @@
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
 
 ## Enhancements
-- Add optional `Routing` instructions.
+- Add Betfair adaptor.
+- Add optional `broker` property to `Venue` to assist with routing.
 
 ## Fixes
 None
