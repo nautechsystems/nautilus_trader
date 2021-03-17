@@ -33,7 +33,8 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-ccxt = "^1.43.43"
+betfairlightweight = "^2.12.1"
+ccxt = "^1.43.46"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 ib_insync = "^0.9.65"

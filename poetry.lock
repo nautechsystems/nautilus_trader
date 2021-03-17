@@ -108,8 +108,22 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 pytz = ">=2015.7"
 
 [[package]]
+name = "betfairlightweight"
+version = "2.12.1"
+description = "Lightweight python wrapper for Betfair API-NG"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.dependencies]
+requests = "<2.26.0"
+
+[package.extras]
+speed = ["ciso8601 (==2.1.3)", "orjson (==3.5.1)"]
+
+[[package]]
 name = "ccxt"
-version = "1.43.43"
+version = "1.43.46"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -1025,7 +1039,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "edd0682a78c7344c4795398a6c581f78110e9322ffdd097429ba246c84e5f155"
+content-hash = "70477bf1f9619b53f66ceeba380a7ffbcdeb6adc09e852f98961e2d7b4ee6c3f"
 
 [metadata.files]
 aiodns = [
@@ -1103,9 +1117,13 @@ babel = [
     {file = "Babel-2.9.0-py2.py3-none-any.whl", hash = "sha256:9d35c22fcc79893c3ecc85ac4a56cde1ecf3f19c540bba0922308a6c06ca6fa5"},
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
+betfairlightweight = [
+    {file = "betfairlightweight-2.12.1-py3-none-any.whl", hash = "sha256:60d5ce569ff05263da083e8c3d85e168fd8cd4ee4b49336f5d99edc52935efcc"},
+    {file = "betfairlightweight-2.12.1.tar.gz", hash = "sha256:70df4cfe216f1857e9d7b12244afeb87b4fdc21afc090c3363e83a9479f00487"},
+]
 ccxt = [
-    {file = "ccxt-1.43.43-py2.py3-none-any.whl", hash = "sha256:5e4602576ef8d2e9f308b7a808b00f5a75cd036eb7f3e20a996f90e4c154e213"},
-    {file = "ccxt-1.43.43.tar.gz", hash = "sha256:37d6b2621fef540730604f594e0e6d62d9ee7cf878c9cc83ceed2d170b67a605"},
+    {file = "ccxt-1.43.46-py2.py3-none-any.whl", hash = "sha256:715a957a67ed585e9f1a6b41f602cf142a668619e54ad4bf55c52cf3dcf2ac9b"},
+    {file = "ccxt-1.43.46.tar.gz", hash = "sha256:5b3c6326a0db55d04cb01762f3208d38bba00bd815650eae2deba173111e4eb9"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
