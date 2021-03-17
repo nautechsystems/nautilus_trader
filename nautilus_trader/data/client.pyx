@@ -36,7 +36,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.order_book cimport OrderBook
+from nautilus_trader.model.order_book_old cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 

@@ -29,7 +29,7 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order_book import OrderBook
+from nautilus_trader.model.order_book_old import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
