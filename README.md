@@ -104,6 +104,7 @@ The documentation for the latest version of the package is available at _readthe
 | [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | ccxt-`exchange_id` | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
 | [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | ccxt-binance | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
 | [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | ccxt-bitmex | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
+| [![betfair](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/betfair-logo.png?raw=true)](https://www.betfair.com/) | betfair | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
 
 An integration adapter for CCXT Pro is currently under active development.
 The adapter requires the `ccxtpro` package, which in turn requires a license.
