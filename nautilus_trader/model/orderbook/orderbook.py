@@ -16,8 +16,8 @@
 import logging
 
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.order_book.ladder import Ladder
-from nautilus_trader.model.order_book.level import Level
+from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orderbook.level import Level
 
 
 class OrderBookProxy:
@@ -134,7 +134,7 @@ class OrderBookMixin:
             return ask.volume
 
     def repr(self):
-        from nautilus_trader.model.order_book.util import pprint_ob
+        from nautilus_trader.model.orderbook.util import pprint_ob
 
         return pprint_ob(self)
 

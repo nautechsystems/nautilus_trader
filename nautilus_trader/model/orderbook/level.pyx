@@ -16,7 +16,7 @@
 # TODO - Instead of a Level.orders being a list (python-land) could use structured arrays?
 # https://docs.scipy.org/doc/numpy-1.13.0/user/basics.rec.html
 import logging
-from nautilus_trader.model.order_book.order cimport Order
+from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class Level:

@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.order_book.ladder import Ladder
-from nautilus_trader.model.order_book.order import Order
+from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orderbook.order import Order
 
 
 def test_init():
