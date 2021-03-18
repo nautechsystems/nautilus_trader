@@ -18,7 +18,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.bitmex.execution import BitmexExecutionClient
+from nautilus_trader.adaptors.bitmex.execution import BitmexExecutionClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
@@ -34,7 +34,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adaptors/ccxt/responses/"
 
 BITMEX = Venue("BITMEX")
 BTCUSDT = InstrumentId(Symbol("BTC/USD"), BITMEX)

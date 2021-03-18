@@ -17,7 +17,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
+from nautilus_trader.adaptors.oanda.providers import OandaInstrumentProvider
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AssetClass
@@ -29,7 +29,7 @@ from nautilus_trader.model.instrument import Instrument
 from tests import TESTS_PACKAGE_ROOT
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adaptors/oanda/responses/"
 
 
 class OandaInstrumentProviderTests(unittest.TestCase):

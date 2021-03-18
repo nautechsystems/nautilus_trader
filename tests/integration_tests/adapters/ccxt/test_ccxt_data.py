@@ -18,7 +18,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.ccxt.data import CCXTDataClient
+from nautilus_trader.adaptors.ccxt.data import CCXTDataClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
@@ -43,7 +43,7 @@ from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adaptors/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
 BTCUSDT = InstrumentId(Symbol("BTC/USDT"), BINANCE)

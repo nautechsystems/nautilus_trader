@@ -1,13 +1,13 @@
 CCXT Pro
 ========
 
-.. automodule:: nautilus_trader.adapters.ccxt
+.. automodule:: nautilus_trader.adaptors.ccxt
 
 
 Data
 ----
 
-.. automodule:: nautilus_trader.adapters.ccxt.data
+.. automodule:: nautilus_trader.adaptors.ccxt.data
    :show-inheritance:
    :inherited-members:
    :members:
@@ -16,7 +16,7 @@ Data
 Execution
 ---------
 
-.. automodule:: nautilus_trader.adapters.ccxt.execution
+.. automodule:: nautilus_trader.adaptors.ccxt.execution
    :show-inheritance:
    :inherited-members:
    :members:
@@ -25,7 +25,7 @@ Execution
 Factory
 -------
 
-.. automodule:: nautilus_trader.adapters.ccxt.factory
+.. automodule:: nautilus_trader.adaptors.ccxt.factory
    :show-inheritance:
    :inherited-members:
    :members:
@@ -34,7 +34,7 @@ Factory
 Providers
 ---------
 
-.. automodule:: nautilus_trader.adapters.ccxt.providers
+.. automodule:: nautilus_trader.adaptors.ccxt.providers
    :show-inheritance:
    :inherited-members:
    :members:

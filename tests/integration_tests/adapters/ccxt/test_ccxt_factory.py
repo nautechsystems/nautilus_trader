@@ -17,9 +17,9 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.ccxt.data import CCXTDataClient
-from nautilus_trader.adapters.ccxt.execution import CCXTExecutionClient
-from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
+from nautilus_trader.adaptors.ccxt.data import CCXTDataClient
+from nautilus_trader.adaptors.ccxt.execution import CCXTExecutionClient
+from nautilus_trader.adaptors.ccxt.factory import CCXTClientsFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory

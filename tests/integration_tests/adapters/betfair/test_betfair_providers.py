@@ -16,14 +16,14 @@ import json
 
 import pytest
 
-from adapters.betfair.parsing import load_markets
-from adapters.betfair.parsing import load_markets_metadata
-from adapters.betfair.parsing import make_instrument
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from adaptors.betfair.parsing import load_markets
+from adaptors.betfair.parsing import load_markets_metadata
+from adaptors.betfair.parsing import make_instrument
+from nautilus_trader.adaptors.betfair.providers import BetfairInstrumentProvider
 from tests import TESTS_PACKAGE_ROOT
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adaptors/betfair/responses/"
 
 
 @pytest.fixture(autouse=True)

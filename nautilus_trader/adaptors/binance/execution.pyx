@@ -16,7 +16,7 @@
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
-from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
+from nautilus_trader.adaptors.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition

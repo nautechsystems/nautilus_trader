@@ -17,7 +17,7 @@ import os
 
 import oandapyV20
 
-from nautilus_trader.adapters.oanda.data cimport OandaDataClient
+from nautilus_trader.adaptors.oanda.data cimport OandaDataClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.data.engine cimport DataEngine

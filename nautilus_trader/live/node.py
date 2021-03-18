@@ -25,9 +25,9 @@ import warnings
 import msgpack
 import redis
 
-from nautilus_trader.adapters.binance.factory import BinanceClientsFactory
-from nautilus_trader.adapters.bitmex.factory import BitmexClientsFactory
-from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
+from nautilus_trader.adaptors.binance.factory import BinanceClientsFactory
+from nautilus_trader.adaptors.bitmex.factory import BitmexClientsFactory
+from nautilus_trader.adaptors.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
@@ -100,7 +100,7 @@ class TradingNode:
         config_exec_db = config.get("exec_database", {})
         config_risk = config.get("risk", {})
         config_strategy = config.get("strategy", {})
-        config_adapters = config.get("adapters", {})
+        config_adapters = config.get("adaptors", {})
 
         self._uuid_factory = UUIDFactory()
         self._loop = asyncio.get_event_loop()

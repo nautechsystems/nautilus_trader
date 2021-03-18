@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
-
-
-cdef class BitmexExecutionClient(CCXTExecutionClient):
-    pass
+"""
+The `adaptors` sub-package provides integrations for data providers, brokerages, and exchanges.
+"""

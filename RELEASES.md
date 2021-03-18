@@ -174,7 +174,7 @@ integration, and begin adding platform capabilities to support this effort.
 - `from_serializable_string` methods changed to `from_serializable_str`.
 
 ## Enhancements
-- Scaffold Interactive Brokers integration in `adapters/ib`.
+- Scaffold Interactive Brokers integration in `adaptors/ib`.
 - Add the `Future` instrument type.
 - Add the `StopLimitOrder` order type.
 - Add the `Data` and `DataType` types to support custom data handling.

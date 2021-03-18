@@ -24,7 +24,7 @@ from oandapyV20.endpoints.instruments import InstrumentsCandles
 from oandapyV20.endpoints.pricing import PricingStream
 import pandas as pd
 
-from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
+from nautilus_trader.adaptors.oanda.providers import OandaInstrumentProvider
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger

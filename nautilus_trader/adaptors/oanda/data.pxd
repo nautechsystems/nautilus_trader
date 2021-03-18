@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 import threading
 
-from nautilus_trader.adapters.oanda.providers cimport OandaInstrumentProvider
+from nautilus_trader.adaptors.oanda.providers cimport OandaInstrumentProvider
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.bar cimport Bar

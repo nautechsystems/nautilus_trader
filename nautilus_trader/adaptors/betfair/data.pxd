@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
+from nautilus_trader.adaptors.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
@@ -22,10 +22,8 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class CCXTDataClient(LiveMarketDataClient):
+cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
-    cdef CCXTInstrumentProvider _instrument_provider
-
     cdef set _subscribed_instruments
     cdef dict _subscribed_order_books
     cdef dict _subscribed_quote_ticks
@@ -34,53 +32,53 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cdef object _update_instruments_task
 
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *
+    cdef inline void _log_betfair_error(self, ex, str method_name) except *
     cdef inline void _on_quote_tick(
-        self,
-        InstrumentId instrument_id,
-        double best_bid,
-        double best_ask,
-        double best_bid_size,
-        double best_ask_size,
-        long timestamp,
-        int price_precision,
-        int size_precision,
+            self,
+            InstrumentId instrument_id,
+            double best_bid,
+            double best_ask,
+            double best_bid_size,
+            double best_ask_size,
+            long timestamp,
+            int price_precision,
+            int size_precision,
     ) except *
     cdef inline void _on_trade_tick(
-        self,
-        InstrumentId instrument_id,
-        double price,
-        double amount,
-        str order_side,
-        str liquidity_side,
-        str trade_match_id,
-        long timestamp,
-        int price_precision,
-        int size_precision,
+            self,
+            InstrumentId instrument_id,
+            double price,
+            double amount,
+            str order_side,
+            str liquidity_side,
+            str trade_match_id,
+            long timestamp,
+            int price_precision,
+            int size_precision,
     ) except *
     cdef inline void _on_bar(
-        self,
-        BarType bar_type,
-        double open_price,
-        double high_price,
-        double low_price,
-        double close_price,
-        double volume,
-        long timestamp,
-        int price_precision,
-        int size_precision,
+            self,
+            BarType bar_type,
+            double open_price,
+            double high_price,
+            double low_price,
+            double close_price,
+            double volume,
+            long timestamp,
+            int price_precision,
+            int size_precision,
     ) except *
     cdef inline TradeTick _parse_trade_tick(
-        self,
-        InstrumentId instrument_id,
-        dict trade,
-        int price_precision,
-        int size_precision,
+            self,
+            InstrumentId instrument_id,
+            dict trade,
+            int price_precision,
+            int size_precision,
     )
     cdef inline Bar _parse_bar(
-        self,
-        list values,
-        int price_precision,
-        int size_precision,
+            self,
+            list values,
+            int price_precision,
+            int size_precision,
     )
     cdef str _make_timeframe(self, BarSpecification bar_spec)

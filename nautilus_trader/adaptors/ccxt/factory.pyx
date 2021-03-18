@@ -16,8 +16,8 @@
 import os
 import sys
 
-from nautilus_trader.adapters.bitmex.execution cimport BitmexExecutionClient
-from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
+from nautilus_trader.adaptors.ccxt.data cimport CCXTDataClient
+from nautilus_trader.adaptors.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_engine cimport LiveDataEngine
@@ -36,7 +36,7 @@ except ImportError:
                           "installation instructions can be found at https://ccxt.pro")
 
 
-cdef class BitmexClientsFactory:
+cdef class CCXTClientsFactory:
     """
     Provides data and execution clients for the unified CCXT Pro API.
     """
@@ -51,7 +51,7 @@ cdef class BitmexClientsFactory:
         LiveLogger logger not None,
     ):
         """
-        Create new Bitmex clients.
+        Create new CCXT unified clients.
 
         Parameters
         ----------
@@ -70,7 +70,7 @@ cdef class BitmexClientsFactory:
 
         Returns
         -------
-        CCXTDataClient, BitmexExecutionClient
+        CCXTDataClient, CCXTExecClient
 
         """
         # Create client
@@ -144,7 +144,7 @@ cdef class BitmexClientsFactory:
             account_id = AccountId(client.name.upper(), account_id_env_var)
 
             # Create client
-            exec_client = BitmexExecutionClient(
+            exec_client = CCXTExecutionClient(
                 client=client,
                 account_id=account_id,
                 engine=exec_engine,

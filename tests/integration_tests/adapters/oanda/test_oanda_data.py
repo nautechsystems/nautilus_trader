@@ -19,7 +19,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.oanda.data import OandaDataClient
+from nautilus_trader.adaptors.oanda.data import OandaDataClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
@@ -42,7 +42,7 @@ from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adaptors/oanda/responses/"
 
 OANDA = Venue("OANDA")
 AUDUSD = InstrumentId(Symbol("AUD/USD"), OANDA)

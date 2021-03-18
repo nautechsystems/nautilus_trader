@@ -64,7 +64,7 @@ config = {
         "load_state": True,  # Strategy state is loaded from the database on start
         "save_state": True,  # Strategy state is saved to the database on shutdown
     },
-    "adapters": {
+    "adaptors": {
         "ccxt-binance": {
             "data_client": True,  # If a data client should be created
             "exec_client": True,  # If a exec client should be created

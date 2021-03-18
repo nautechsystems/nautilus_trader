@@ -21,7 +21,7 @@ from ccxt.base.errors import BaseError as CCXTError
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
+from nautilus_trader.adaptors.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger

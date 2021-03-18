@@ -18,7 +18,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
+from nautilus_trader.adaptors.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
@@ -34,7 +34,7 @@ from tests import TESTS_PACKAGE_ROOT
 # import ccxt  # uncomment to test against real API
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adaptors/ccxt/responses/"
 
 
 # Monkey patch magic mock
