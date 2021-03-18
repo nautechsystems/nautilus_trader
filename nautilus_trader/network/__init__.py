@@ -16,6 +16,6 @@
 """
 The `network` sub-package provides generic components for networking clients.
 
-The base classes can be inherited to assist with writing adaptors for integrations with exchanges,
+The base classes can be inherited to assist with writing adapters for integrations with exchanges,
 brokerages, data providers/feeds and other venues or services.
 """

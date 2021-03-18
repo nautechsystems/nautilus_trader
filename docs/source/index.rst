@@ -13,7 +13,7 @@ NautilusTrader is AI/ML first, designed to deploy models for algorithmic trading
 using the Python ecosystem - within a highly performant and robust Python native environment.
 
 The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular
-adaptors. Thus the platform can handle high-frequency trading operations for any asset classes
+adapters. Thus the platform can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
 - **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.

@@ -1,13 +1,13 @@
 Oanda
 =====
 
-.. automodule:: nautilus_trader.adaptors.oanda
+.. automodule:: nautilus_trader.adapters.oanda
 
 
 Data
 ----
 
-.. automodule:: nautilus_trader.adaptors.oanda.data
+.. automodule:: nautilus_trader.adapters.oanda.data
    :show-inheritance:
    :inherited-members:
    :members:
@@ -16,7 +16,7 @@ Data
 Execution
 ---------
 
-.. automodule:: nautilus_trader.adaptors.oanda.execution
+.. automodule:: nautilus_trader.adapters.oanda.execution
    :show-inheritance:
    :inherited-members:
    :members:
@@ -25,7 +25,7 @@ Execution
 Factory
 -------
 
-.. automodule:: nautilus_trader.adaptors.oanda.factory
+.. automodule:: nautilus_trader.adapters.oanda.factory
    :show-inheritance:
    :inherited-members:
    :members:
@@ -34,7 +34,7 @@ Factory
 Providers
 ---------
 
-.. automodule:: nautilus_trader.adaptors.oanda.providers
+.. automodule:: nautilus_trader.adapters.oanda.providers
    :show-inheritance:
    :inherited-members:
    :members:
