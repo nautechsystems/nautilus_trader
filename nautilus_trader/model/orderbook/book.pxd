@@ -17,6 +17,10 @@ from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
+cdef union MaybeDouble:
+    double price
+    bint has_price
+
 
 cdef class OrderBook:
     cdef readonly Ladder bids
@@ -30,21 +34,22 @@ cdef class OrderBook:
     cdef inline void _add(self, Order order) except *
     cdef inline void _update(self, Order order) except *
     cdef inline void _delete(self, Order order) except *
-    cdef inline bint _check_integrity(self, bint deep=*) except *
+    cdef inline void _check_integrity(self) except *
     cpdef void clear_bids(self) except *
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
-    cpdef bint check_integrity(self, bint deep=*) except *
+    cpdef void check_integrity(self) except *
 
     cpdef Ladder bids(self)
     cpdef Ladder asks(self)
-    cpdef Level best_bid(self)
-    cpdef Level best_ask(self)
-    cpdef double spread(self) except *
+    cpdef Level best_bid_level(self)
+    cpdef Level best_ask_level(self)
     cpdef double best_bid_price(self) except *
     cpdef double best_ask_price(self) except *
     cpdef double best_bid_qty(self) except *
     cpdef double best_ask_qty(self) except *
+    cpdef double spread(self) except *
+    cpdef MaybeDouble my_method(self)
 
 
 cdef class L3OrderBook(OrderBook):

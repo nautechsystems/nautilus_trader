@@ -38,6 +38,9 @@ cdef class Ladder:
         self.levels = []           # type: list[Level]
         self.order_id_levels = {}  # type: dict[str, Level]
 
+    def __repr__(self):
+        return f"Ladder({self.levels})"
+
     cpdef void add(self, Order order) except *:
         """
         Add the given order to the ladder.
@@ -53,14 +56,16 @@ cdef class Ladder:
         # Level exists, add new order
         cdef int price_idx
         cdef Level level
-        if order.price in self.prices():
-            price_idx = tuple(self.prices()).index(order.price)
+        existing_prices = self.prices()
+        if order.price in existing_prices:
+            price_idx = existing_prices.index(order.price)
             level = self.levels[price_idx]
             level.add(order=order)
         # New price, create Level
         else:
             level = Level(orders=[order])
-            self.levels.insert(bisect(self.levels, level), level)
+            price_idx = bisect(existing_prices, level.price())
+            self.levels.insert(price_idx, level)
         self.order_id_levels[order.id] = level
 
     cpdef void update(self, Order order) except *:

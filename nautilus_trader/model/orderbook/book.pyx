@@ -21,6 +21,7 @@ from nautilus_trader.model.orderbook.order cimport Order
 from nautilus_trader.model.orderbook.util import pprint_ob
 
 
+
 cdef class OrderBook:
     """
     Provides a L1/L2/L3 order book.
@@ -72,7 +73,7 @@ cdef class OrderBook:
         """
         self._delete(order=order)
 
-    cpdef bint check_integrity(self, bint deep=True) except *:
+    cpdef void check_integrity(self) except *:
         """
         Return a value indicating whether the order book integrity test passes.
 
@@ -82,7 +83,7 @@ cdef class OrderBook:
             True if check passes, else False.
 
         """
-        return self._check_integrity(deep=deep)
+        self._check_integrity()
 
     cpdef void clear_bids(self) except *:
         """
@@ -132,6 +133,8 @@ cdef class OrderBook:
             self.bids.update(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.update(order=order)
+        print(f"BIDS {self.bids}")  # TODO!
+        print(f"ASKS {self.asks}")  # TODO!
 
     cdef inline void _delete(self, Order order) except *:
         """
@@ -148,7 +151,7 @@ cdef class OrderBook:
         elif order.side == OrderSide.SELL:
             self.asks.delete(order=order)
 
-    cdef inline bint _check_integrity(self, bint deep=True) except *:
+    cdef inline void _check_integrity(self) except *:
         """
         Return a value indicating whether the order book integrity test passes.
 
@@ -161,22 +164,15 @@ cdef class OrderBook:
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level is None or top_ask_level is None:
-            return True
-        if not top_bid_level.price() < top_ask_level.price():
-            # TODO: logging.warning("Price in cross")
-            return False
-        if deep:
-            if not [lvl.price() for lvl in self.bids.price_levels] == sorted(
-                    [lvl.price() for lvl in self.bids.price_levels]
-            ):
-                return False
-            if not [lvl.price() for lvl in self.asks.price_levels] == sorted(
-                    [lvl.price() for lvl in self.asks.price_levels], reverse=True
-            ):
-                return False
-        return True
+            return
 
-    cpdef Level best_bid(self):
+        cdef double best_bid = top_bid_level.price()
+        cdef double best_ask = top_ask_level.price()
+        if best_bid == 0. or best_ask == 0.:
+            return
+        assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
+
+    cpdef Level best_bid_level(self):
         """
         Return the best bid level.
 
@@ -187,7 +183,7 @@ cdef class OrderBook:
         """
         return self.bids.top()
 
-    cpdef Level best_ask(self):
+    cpdef Level best_ask_level(self):
         """
         Return the best ask level.
 
@@ -197,6 +193,73 @@ cdef class OrderBook:
 
         """
         return self.asks.top()
+
+    cpdef double best_bid_price(self) except *:
+        """
+        Return the best bid price in the book (if no bids then returns zero).
+
+        Returns
+        -------
+        double
+
+        """
+        cdef Level top_bid_level = self.bids.top()
+        if top_bid_level:
+            return top_bid_level.price()
+        else:
+            # TODO: What is the correct behaviour here?
+            return 0.
+
+    cpdef double best_ask_price(self) except *:
+        """
+        Return the best ask price in the book (if no asks then returns zero).
+
+        Returns
+        -------
+        double
+
+        """
+        cdef Level top_ask_level = self.asks.top()
+        if top_ask_level:
+            return top_ask_level.price()
+        else:
+            # TODO: What is the correct behaviour here?
+            return 0.
+
+    cpdef double best_bid_qty(self) except *:
+        """
+        Return the best bid quantity in the book (if no bids then returns zero).
+
+        Returns
+        -------
+        double
+
+        """
+        cdef Level top_bid_level = self.bids.top()
+        if top_bid_level:
+            return top_bid_level.volume()
+        else:
+            # TODO: What is the correct behaviour here?
+            return 0.
+
+    cpdef double best_ask_qty(self) except *:
+        """
+        Return the best ask quantity in the book (if no asks then returns zero).
+
+        Returns
+        -------
+        double
+
+        """
+        cdef Level top_ask_level = self.asks.top()
+        if top_ask_level:
+            return top_ask_level.volume()
+        else:
+            # TODO: What is the correct behaviour here?
+            return 0.
+
+    def __repr__(self):
+        return pprint_ob(self)
 
     cpdef double spread(self) except *:
         """
@@ -215,72 +278,8 @@ cdef class OrderBook:
             # TODO: What is the correct behaviour here?
             return 0
 
-    cpdef double best_bid_price(self) except *:
-        """
-        Return the best bid price in the book (if no bids then returns zero).
-
-        Returns
-        -------
-        double
-
-        """
-        cdef Level top_bid_level = self.bids.top()
-        if top_bid_level:
-            return top_bid_level.price()
-        else:
-            # TODO: What is the correct behaviour here?
-            return 0
-
-    cpdef double best_ask_price(self) except *:
-        """
-        Return the best ask price in the book (if no asks then returns zero).
-
-        Returns
-        -------
-        double
-
-        """
-        cdef Level top_ask_level = self.asks.top()
-        if top_ask_level:
-            return top_ask_level.price()
-        else:
-            # TODO: What is the correct behaviour here?
-            return 0
-
-    cpdef double best_bid_qty(self) except *:
-        """
-        Return the best bid quantity in the book (if no bids then returns zero).
-
-        Returns
-        -------
-        double
-
-        """
-        cdef Level top_bid_level = self.bids.top()
-        if top_bid_level:
-            return top_bid_level.volume()
-        else:
-            # TODO: What is the correct behaviour here?
-            return 0
-
-    cpdef double best_ask_qty(self) except *:
-        """
-        Return the best ask quantity in the book (if no asks then returns zero).
-
-        Returns
-        -------
-        double
-
-        """
-        cdef Level top_ask_level = self.asks.top()
-        if top_ask_level:
-            return top_ask_level.volume()
-        else:
-            # TODO: What is the correct behaviour here?
-            return 0
-
-    def __repr__(self):
-        return pprint_ob(self)
+    cpdef MaybeDouble my_method(self):
+        return MaybeDouble(has_price=False)
 
 
 cdef class L3OrderBook(OrderBook):
@@ -289,16 +288,11 @@ cdef class L3OrderBook(OrderBook):
 
     Should map directly to functionality of the OrderBook base class.
     """
-
-    def __init__(self):
-        super().__init__()
+    pass
 
 
 cdef class L2OrderBook(OrderBook):
     """ A L2 Orderbook. An Orderbook where price `Levels` are only made up of a single order """
-
-    def __init__(self):
-        super().__init__()
 
     cpdef void add(self, Order order) except *:
         """
@@ -340,7 +334,7 @@ cdef class L2OrderBook(OrderBook):
         self._process_order(order=order)
         self._delete(order=order)
 
-    cpdef bint check_integrity(self, bint deep=True) except *:
+    cpdef void check_integrity(self) except *:
         """
         Return a value indicating whether the order book integrity test passes.
 
@@ -352,11 +346,10 @@ cdef class L2OrderBook(OrderBook):
         """
         # For L2 Orderbook, ensure only one order per level in addition to
         # normal orderbook checks.
-        if not self._check_integrity(deep=deep):
-            return False
+        self._check_integrity()
+
         for level in self.bids.levels + self.asks.levels:
-            assert len(level.orders) == 1
-        return True
+            assert len(level.orders) == 1, f"Number of orders on {level} > 1"
 
     cdef inline Order _process_order(self, Order order):
         # Because L2 Orderbook only has one order per level, we replace the
@@ -378,9 +371,6 @@ cdef class L2OrderBook(OrderBook):
 cdef class L1OrderBook(OrderBook):
     """ A L1 Orderbook that has only has a single (top) level """
 
-    def __init__(self):
-        super().__init__()
-
     cpdef void add(self, Order order) except *:
         """
         NotImplemented (Use `update(order)` for L1Orderbook).
@@ -397,20 +387,20 @@ cdef class L1OrderBook(OrderBook):
             The order to update.
 
         """
-        # Because of the way we typically get updates from a L1 orderbook (bid
+        # Because of the way we typically get updates from a L1 order book (bid
         # and ask updates at the same time), its quite probable that the last
         # bid is now the ask price we are trying to insert (or vice versa). We
         # just need to add some extra protection against this if we are calling
         # `check_integrity` on each individual update .
         if (
             order.side == OrderSide.BUY
-            and self.best_ask()
+            and self.best_ask_level()
             and order.price >= self.best_ask_price()
         ):
             self.clear_asks()
         elif (
             order.side == OrderSide.SELL
-            and self.best_bid()
+            and self.best_bid_level()
             and order.price <= self.best_bid_price()
         ):
             self.clear_bids()
@@ -428,7 +418,7 @@ cdef class L1OrderBook(OrderBook):
         """
         self._delete(order=self._process_order(order=order))
 
-    cpdef bint check_integrity(self, bint deep=True) except *:
+    cpdef void check_integrity(self) except *:
         """
         Return a value indicating whether the order book integrity test passes.
 
@@ -438,17 +428,15 @@ cdef class L1OrderBook(OrderBook):
             True if check passes, else False.
 
         """
-        # For L1 Orderbook, ensure only one level per side in addition to normal
-        # orderbook checks.
-        if not self._check_integrity(deep=deep):
-            return False
-        assert len(self.bids.levels) <= 1
-        assert len(self.asks.levels) <= 1
-        return True
+        # For an L1OrderBook, ensure only one level per side in addition to
+        # normal orderbook checks.
+        self._check_integrity()
+        assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
+        assert len(self.asks.levels) <= 1, "Number of ask levels > 1"
 
     cdef inline Order _process_order(self, Order order):
-        # Because L1 Orderbook only has one level per side, we replace the
+        # Because a L1OrderBook only has one level per side, we replace the
         # order.id with the name of the side, which will let us easily process
-        # the order in the proxy orderbook.
+        # the order.
         order.id = OrderSideParser.to_str(order.side)
         return order
