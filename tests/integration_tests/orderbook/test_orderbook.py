@@ -115,7 +115,7 @@ def test_l3_feed(l3_feed):
     skip_deletes = []
 
     for i, m in enumerate(l3_feed):
-        # print(f"[{i}]", m, ob.repr(), "\n") # Print ob summary
+        # print(f"[{i}]", m, ob, "\n") # Print ob summary
         if m["op"] == "update":
             ob.update(order=m["order"])
             try:
@@ -146,8 +146,8 @@ def test_l2_feed(l2_feed):
     for i, m in enumerate(l2_feed):
         if not m or (i, m["order"].id) in skip:
             continue
-        print(f"[{i}]", "\n", m, "\n", ob, "\n")
-        print("")
+        # print(f"[{i}]", "\n", m, "\n", ob, "\n")
+        # print("")
         if m["op"] == "update":
             ob.update(order=m["order"])
         elif m["op"] == "delete":
@@ -174,8 +174,8 @@ def l1_feed():
 def test_l1_orderbook(l1_feed):
     ob = L1OrderBook()
     for i, m in enumerate(l1_feed):
-        print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
-        print("")
+        # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
+        # print("")
         if m["op"] == "update":
             ob.update(order=m["order"])
         else:

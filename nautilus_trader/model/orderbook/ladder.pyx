@@ -106,7 +106,7 @@ cdef class Ladder:
         Condition.not_none(order, "order")
 
         cdef Level level = self.order_id_levels[order.id]
-        cdef int price_idx = self.levels.index(level)
+        cdef int price_idx = self.prices().index(level.price())
         level.delete(order=order)
         del self.order_id_levels[order.id]
         if not level.orders:

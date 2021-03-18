@@ -133,8 +133,6 @@ cdef class OrderBook:
             self.bids.update(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.update(order=order)
-        print(f"BIDS {self.bids}")  # TODO!
-        print(f"ASKS {self.asks}")  # TODO!
 
     cdef inline void _delete(self, Order order) except *:
         """
