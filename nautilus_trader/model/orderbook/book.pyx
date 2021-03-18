@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
@@ -449,5 +450,5 @@ cdef class L1OrderBook(OrderBook):
         # Because L1 Orderbook only has one level per side, we replace the
         # order.id with the name of the side, which will let us easily process
         # the order in the proxy orderbook.
-        order.id = str(order.side)
+        order.id = OrderSideParser.to_str(order.side)
         return order
