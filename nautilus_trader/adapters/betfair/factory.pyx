@@ -34,20 +34,18 @@ cdef class BetfairClientsFactory:
 
     @staticmethod
     def create(
-        client_cls not None,
         dict config not None,
         LiveDataEngine data_engine not None,
         LiveExecutionEngine exec_engine not None,
         LiveClock clock not None,
         LiveLogger logger not None,
+        bint login = True,
     ):
         """
         Create new Betfair clients.
 
         Parameters
         ----------
-        client_cls : class
-            The class to call to return a new Betfair client.
         config : dict
             The configuration dictionary.
         data_engine : LiveDataEngine
@@ -66,24 +64,16 @@ cdef class BetfairClientsFactory:
         """
         # Create client
         # TODO: Change the below based on config options?
-        client: betfairlightweight.APIClient = client_cls({
-            "apiKey": os.getenv(config.get("api_key", ""), ""),
-            "secret": os.getenv(config.get("api_secret", ""), ""),
-            "timeout": 10000,         # Hard coded for now
-            "enableRateLimit": True,  # Hard coded for now
-            "asyncio_loop": data_engine.get_event_loop(),
-
-            # Set cache limits
-            "options": {
-                "OHLCVLimit": 1,
-                "balancesLimit": 1,
-                "tradesLimit": 1,
-                "ordersLimit": 1,
-            },
-        })
+        client: betfairlightweight.APIClient = betfairlightweight.APIClient(
+            username=os.getenv(config.get("username", ""), ""),
+            password=os.getenv(config.get("password", ""), ""),
+            app_key=os.getenv(config.get("app_key", ""), ""),
+            certs=os.getenv(config.get("cert_location", ""), ""),
+        )
+        if login:
+            client.login()
 
         if config.get("data_client", True):
-
             # Create client
             data_client = BetfairDataClient(
                 client=client,

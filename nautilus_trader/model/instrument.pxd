@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -122,3 +122,22 @@ cdef class Future(Instrument):
     cdef readonly str trading_hours
     cdef readonly str liquid_hours
     cdef readonly str last_trade_time
+
+
+cdef class BettingInstrument(Instrument):
+    cdef readonly str event_type_id
+    cdef readonly str event_type_name
+    cdef readonly str competition_id
+    cdef readonly str competition_name
+    cdef readonly str event_id
+    cdef readonly str event_name
+    cdef readonly str event_country_code
+    cdef readonly datetime event_open_date
+    cdef readonly str betting_type
+    cdef readonly str market_id
+    cdef readonly str market_name
+    cdef readonly datetime market_start_time
+    cdef readonly str market_type
+    cdef readonly str selection_id
+    cdef readonly str selection_name
+    cdef readonly str selection_handicap
