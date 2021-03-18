@@ -519,3 +519,57 @@ cdef class Future(Instrument):
         self.trading_hours = trading_hours
         self.liquid_hours = liquid_hours
         self.last_trade_time = last_trade_time
+
+
+cdef class BettingInstrument:
+    def __init__(
+        self,
+        str venue_name not None,
+        str event_type_id not None,
+        str event_type_name not None,
+        str competition_id not None,
+        str competition_name not None,
+        str event_id not None,
+        str event_name not None,
+        str event_country_code not None,
+        datetime event_open_date not None,
+        str betting_type not None,
+        str market_id not None,
+        str market_name not None,
+        datetime market_start_time not None,
+        str market_type not None,
+        str selection_id not None,
+        str selection_name not None,
+        str selection_handicap not None,
+    ):
+        # Event type (Sport) info e.g. Basketball
+        self.event_type_id = event_type_id
+        self.event_type_name = event_type_name
+
+        # Competition e.g. NBA
+        self.competition_id = competition_id
+        self.competition_name = competition_name
+
+        # Event info e.g. Utah Jazz @ Boston Celtics Wed 17 Mar, 10:40
+        self.event_id = event_id
+        self.event_name = event_name
+        self.event_country_code = event_country_code
+        self.event_open_date = event_open_date
+
+        # Market Info e.g. Match odds / Handicap
+        self.betting_type = betting_type
+        self.market_id = market_id
+        self.market_type = market_type
+        self.market_name = market_name
+        self.market_start_time = market_start_time
+
+        # Selection/Runner (individual selection/runner) e.g. (LA Lakers)
+        self.selection_id = selection_id
+        self.selection_name = selection_name
+        self.selection_handicap = selection_handicap
+        self.id = InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name))
+
+    def make_symbol(self):
+        keys = ("event_type_name", "competition_name", "event_name", "event_open_date", "betting_type", "market_type",
+                "market_name", "selection_name", "selection_handicap")
+        return Symbol(value="|".join([str(getattr(self, k)) for k in keys]))
