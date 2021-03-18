@@ -54,21 +54,23 @@ def test_top(empty_book):
     empty_book.add(Order(price=25, volume=5, side=OrderSide.SELL))
     empty_book.add(Order(price=30, volume=5, side=OrderSide.SELL))
     empty_book.add(Order(price=21, volume=5, side=OrderSide.SELL))
-    assert empty_book.best_bid().price() == 20
-    assert empty_book.best_ask().price() == 21
+    assert empty_book.best_bid_level().price() == 20
+    assert empty_book.best_ask_level().price() == 21
 
 
 def test_check_integrity_shallow(empty_book):
     empty_book.add(Order(price=10, volume=5, side=OrderSide.SELL))
-    assert empty_book.check_integrity()
+    empty_book.check_integrity()
     empty_book.add(Order(price=20, volume=5, side=OrderSide.BUY))
-    assert not empty_book.check_integrity()
+
+    with pytest.raises(AssertionError):
+        empty_book.check_integrity()
 
 
 def test_check_integrity_deep(empty_book):
     empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
     empty_book.add(Order(price=5, volume=5, side=OrderSide.BUY))
-    assert empty_book.check_integrity()
+    empty_book.check_integrity()
 
 
 # def test_auction_match_match_orders():

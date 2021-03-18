@@ -118,15 +118,19 @@ def test_l3_feed(l3_feed):
         # print(f"[{i}]", m, ob.repr(), "\n") # Print ob summary
         if m["op"] == "update":
             ob.update(order=m["order"])
-            if not ob.check_integrity(deep=False):
+            try:
+                ob.check_integrity()
+            except AssertionError:
                 ob.delete(order=m["order"])
                 skip_deletes.append(m["order"].id)
         elif m["op"] == "delete" and m["order"].id not in skip_deletes:
             ob.delete(order=m["order"])
-        assert ob.check_integrity(deep=False)
+        ob.check_integrity(), f"Failed integrity check on {i}"
     assert i == 100_047
-    assert ob.best_ask().price() == 61405.27923706 and ob.best_ask().volume() == 0.12227
-    assert ob.best_bid().price() == 61391 and ob.best_bid().volume() == 1
+    assert ob.best_ask_level().price() == 61405.27923706
+    assert ob.best_ask_level().volume() == 0.12227
+    assert ob.best_bid_level().price() == 61391
+    assert ob.best_bid_level().volume() == 1
 
 
 def test_l2_feed(l2_feed):
@@ -142,13 +146,13 @@ def test_l2_feed(l2_feed):
     for i, m in enumerate(l2_feed):
         if not m or (i, m["order"].id) in skip:
             continue
-        # print(f"[{i}]", "\n",  m, "\n", ob.repr(), "\n")
-        #     print('')
+        print(f"[{i}]", "\n", m, "\n", ob, "\n")
+        print("")
         if m["op"] == "update":
             ob.update(order=m["order"])
         elif m["op"] == "delete":
             ob.delete(order=m["order"])
-        assert ob.check_integrity(deep=False)
+        ob.check_integrity(), f"Failed integrity check on {i}"
     assert i == 68462
 
 
@@ -176,4 +180,4 @@ def test_l1_orderbook(l1_feed):
             ob.update(order=m["order"])
         else:
             raise KeyError
-        assert ob.check_integrity(deep=False)
+        ob.check_integrity()

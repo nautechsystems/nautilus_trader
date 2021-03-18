@@ -256,12 +256,16 @@ def pprint_ob(orderbook, num_levels=3):
     data = [
         {
             "bids": [
-                order.id for order in level.orders if level in orderbook.bids.levels
+                order.id
+                for order in level.orders
+                if level.price() in orderbook.bids.prices()
             ]
             or None,
             "price": level.price(),
             "asks": [
-                order.id for order in level.orders if level in orderbook.asks.levels
+                order.id
+                for order in level.orders
+                if level.price() in orderbook.asks.prices()
             ]
             or None,
         }
