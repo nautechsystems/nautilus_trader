@@ -6,7 +6,7 @@ Architectural Overview
 The package offers a framework comprising of an extensive assortment of modular
 components, which can be arranged into a complete trading platform and system.
 
-The platform is structured around a simple ports and adaptors style
+The platform is structured around a simple ports and adapters style
 architecture, allowing pluggable implementations of key components with a
 feature rich yet straight forward API. `Domain Driven Design` (DDD) and message passing
 have been central philosophies in the design.

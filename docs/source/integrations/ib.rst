@@ -1,13 +1,13 @@
 Interactive Brokers
 ===================
 
-.. automodule:: nautilus_trader.adaptors.ib
+.. automodule:: nautilus_trader.adapters.ib
 
 
 Data
 ----
 
-.. automodule:: nautilus_trader.adaptors.ib.data
+.. automodule:: nautilus_trader.adapters.ib.data
    :show-inheritance:
    :inherited-members:
    :members:
@@ -16,7 +16,7 @@ Data
 Execution
 ---------
 
-.. automodule:: nautilus_trader.adaptors.ib.execution
+.. automodule:: nautilus_trader.adapters.ib.execution
    :show-inheritance:
    :inherited-members:
    :members:
@@ -25,7 +25,7 @@ Execution
 Providers
 ---------
 
-.. automodule:: nautilus_trader.adaptors.ib.providers
+.. automodule:: nautilus_trader.adapters.ib.providers
    :show-inheritance:
    :inherited-members:
    :members:

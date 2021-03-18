@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `network` sub-package provides generic components for networking clients.
+from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 
-The base classes can be inherited to assist with writing adapters for integrations with exchanges,
-brokerages, data providers/feeds and other venues or services.
-"""
+
+cdef class BitmexExecutionClient(CCXTExecutionClient):
+    pass
