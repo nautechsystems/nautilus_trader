@@ -5,7 +5,6 @@
 ## Breaking Changes
 - Remove `Instrument.leverage` (incorrect place for concept).
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
-- `adapter` renamed to `adaptor`.
 
 ## Enhancements
 - Add Betfair adaptor.
@@ -173,7 +172,7 @@ integration, and begin adding platform capabilities to support this effort.
 - `from_serializable_string` methods changed to `from_serializable_str`.
 
 ## Enhancements
-- Scaffold Interactive Brokers integration in `adaptors/ib`.
+- Scaffold Interactive Brokers integration in `adapters/ib`.
 - Add the `Future` instrument type.
 - Add the `StopLimitOrder` order type.
 - Add the `Data` and `DataType` types to support custom data handling.
