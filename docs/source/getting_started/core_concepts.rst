@@ -23,7 +23,7 @@ One of the primary benefits of this platform is that the machinery used inside
 the backtest engine is identical for live trading, apart from the live versions
 of the data and execution engines closer to the periphery of the system (they
 add asyncio queues on top of the common implementations), and integrations with
-external endpoints through adaptors provided with this package (and/or developed
+external endpoints through adapters provided with this package (and/or developed
 by end users).
 
 This helps ensure consistency when seeking to capitalize on alpha through a large
