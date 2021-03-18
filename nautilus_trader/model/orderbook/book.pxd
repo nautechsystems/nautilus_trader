@@ -17,11 +17,8 @@ from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
-# TODO - Some violations of DRY principal here - I can't think of a way around this with cython given the slow
-#  subclassing. The best I can come up with is this shared OrderBookProxy object which is going to mean a bunch of
-#  duplicated accessor code for the L1/L2/L3 Orderbook classes. Possible some code generation might be worthwhile here?
 
-cdef class OrderBookProxy:
+cdef class OrderBook:
     cdef readonly Ladder bids
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
@@ -30,21 +27,15 @@ cdef class OrderBookProxy:
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
+    cdef inline void _add(self, Order order) except *
+    cdef inline void _update(self, Order order) except *
+    cdef inline void _delete(self, Order order) except *
+    cdef inline bint _check_integrity(self, bint deep=*) except *
     cpdef void clear_bids(self) except *
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
-    cpdef Level best_bid(self)
-    cpdef Level best_ask(self)
     cpdef bint check_integrity(self, bint deep=*) except *
 
-
-cdef class OrderBook:
-    cdef OrderBookProxy _orderbook
-
-    cpdef void add(self, Order order) except *
-    cpdef void update(self, Order order) except *
-    cpdef void delete(self, Order order) except *
-    cpdef bint check_integrity(self, bint deep=*) except *
     cpdef Ladder bids(self)
     cpdef Ladder asks(self)
     cpdef Level best_bid(self)

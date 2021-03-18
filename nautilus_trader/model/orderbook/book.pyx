@@ -20,16 +20,16 @@ from nautilus_trader.model.orderbook.order cimport Order
 from nautilus_trader.model.orderbook.util import pprint_ob
 
 
-cdef class OrderBookProxy:
+cdef class OrderBook:
     """
-    Provides an order book proxy.
+    Provides a L1/L2/L3 order book.
 
-    A L3 order book that can be proxied to L3/L2/L1 `OrderBook` classes.
+    A L3 order book that can be proxied to L2 or L1 `OrderBook` classes.
     """
 
     def __init__(self):
         """
-        Initialize a new instance of the `OrderBookProxy` class.
+        Initialize a new instance of the `OrderBook` class.
 
         """
         self.bids = Ladder(reverse=True)
@@ -45,12 +45,79 @@ cdef class OrderBookProxy:
             The order to add.
 
         """
+        self._add(order=order)
+
+    cpdef void update(self, Order order) except *:
+        """
+        Update the given order in the book.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update.
+
+        """
+        self._update(order=order)
+
+    cpdef void delete(self, Order order) except *:
+        """
+        Delete the given order in the book.
+
+        Parameters
+        ----------
+        order : Order
+            The order to delete.
+
+        """
+        self._delete(order=order)
+
+    cpdef bint check_integrity(self, bint deep=True) except *:
+        """
+        Return a value indicating whether the order book integrity test passes.
+
+        Returns
+        -------
+        bool
+            True if check passes, else False.
+
+        """
+        return self._check_integrity(deep=deep)
+
+    cpdef void clear_bids(self) except *:
+        """
+        Clear the bids from the book.
+        """
+        self.bids = Ladder(reverse=True)
+
+    cpdef void clear_asks(self) except *:
+        """
+        Clear the asks from the book.
+        """
+        self.asks = Ladder(reverse=False)
+
+    cpdef void clear(self) except *:
+        """
+        Clear the entire orderbook.
+        """
+        self.clear_bids()
+        self.clear_asks()
+
+    cdef inline void _add(self, Order order) except *:
+        """
+        Add the given order to the book.
+
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+
+        """
         if order.side == OrderSide.BUY:
             self.bids.add(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.add(order=order)
 
-    cpdef void update(self, Order order) except *:
+    cdef inline void _update(self, Order order) except *:
         """
         Update the given order in the book.
 
@@ -65,7 +132,7 @@ cdef class OrderBookProxy:
         elif order.side == OrderSide.SELL:
             self.asks.update(order=order)
 
-    cpdef void delete(self, Order order) except *:
+    cdef inline void _delete(self, Order order) except *:
         """
         Delete the given order in the book.
 
@@ -80,48 +147,7 @@ cdef class OrderBookProxy:
         elif order.side == OrderSide.SELL:
             self.asks.delete(order=order)
 
-    cpdef void clear_bids(self) except *:
-        """
-        Clear the bids from the book.
-        """
-        self.bids = Ladder(reverse=True)
-
-    cpdef void clear_asks(self) except *:
-        """
-        Clear the asks from the book.
-        """
-        self.asks = Ladder(reverse=True)
-
-    cpdef void clear(self) except *:
-        """
-        Clear the entire orderbook.
-        """
-        self.clear_bids()
-        self.clear_asks()
-
-    cpdef Level best_bid(self):
-        """
-        Return the top of the book bids.
-
-        Returns
-        -------
-        Level
-
-        """
-        return self.bids.top()
-
-    cpdef Level best_ask(self):
-        """
-        Return the top of the book asks.
-
-        Returns
-        -------
-        Level
-
-        """
-        return self.asks.top()
-
-    cpdef bint check_integrity(self, bint deep=True) except *:
+    cdef inline bint _check_integrity(self, bint deep=True) except *:
         """
         Return a value indicating whether the order book integrity test passes.
 
@@ -131,103 +157,23 @@ cdef class OrderBookProxy:
             True if check passes, else False.
 
         """
-        if self.best_bid() is None or self.best_ask() is None:
+        cdef Level top_bid_level = self.bids.top()
+        cdef Level top_ask_level = self.asks.top()
+        if top_bid_level is None or top_ask_level is None:
             return True
-        if not self.best_bid().price() < self.best_ask().price():
+        if not top_bid_level.price() < top_ask_level.price():
             # TODO: logging.warning("Price in cross")
             return False
         if deep:
             if not [lvl.price() for lvl in self.bids.price_levels] == sorted(
-                [lvl.price() for lvl in self.bids.price_levels]
+                    [lvl.price() for lvl in self.bids.price_levels]
             ):
                 return False
             if not [lvl.price() for lvl in self.asks.price_levels] == sorted(
-                [lvl.price() for lvl in self.asks.price_levels], reverse=True
+                    [lvl.price() for lvl in self.asks.price_levels], reverse=True
             ):
                 return False
         return True
-
-
-cdef class OrderBook:
-    """
-    Provides a L1/L2/L3 order book.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the `OrderBook` class.
-        """
-        self._orderbook = OrderBookProxy()
-
-    cpdef void add(self, Order order) except *:
-        """
-        Add the given order to the book.
-
-        Parameters
-        ----------
-        order : Order
-            The order to add.
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void update(self, Order order) except *:
-        """
-        Update the given order in the book.
-
-        Parameters
-        ----------
-        order : Order
-            The order to update.
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void delete(self, Order order) except *:
-        """
-        Delete the given order in the book.
-
-        Parameters
-        ----------
-        order : Order
-            The order to delete.
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef bint check_integrity(self, bint deep=True) except *:
-        """
-        Return a value indicating whether the order book integrity test passes.
-
-        Returns
-        -------
-        bool
-            True if check passes, else False.
-
-        """
-        raise NotImplementedError()
-
-    cpdef Ladder bids(self):
-        """
-        Return the bids ladder.
-
-        Returns
-        -------
-        Ladder
-
-        """
-        return self._orderbook.bids
-
-    cpdef Ladder asks(self):
-        """
-        Return the asks ladder.
-
-        Returns
-        -------
-        Ladder
-
-        """
-        return self._orderbook.asks
 
     cpdef Level best_bid(self):
         """
@@ -238,7 +184,7 @@ cdef class OrderBook:
         Level
 
         """
-        return self._orderbook.best_bid()
+        return self.bids.top()
 
     cpdef Level best_ask(self):
         """
@@ -249,7 +195,7 @@ cdef class OrderBook:
         Level
 
         """
-        return self._orderbook.best_ask()
+        return self.asks.top()
 
     cpdef double spread(self) except *:
         """
@@ -260,10 +206,10 @@ cdef class OrderBook:
         double
 
         """
-        cdef Level bid = self.best_bid()
-        cdef Level ask = self.best_ask()
-        if bid and ask:
-            return ask.price() - bid.price()
+        cdef Level top_bid_level = self.bids.top()
+        cdef Level top_ask_level = self.asks.top()
+        if top_bid_level and top_ask_level:
+            return top_ask_level.price() - top_bid_level.price()
         else:
             # TODO: What is the correct behaviour here?
             return 0
@@ -277,9 +223,9 @@ cdef class OrderBook:
         double
 
         """
-        cdef Level bid = self.best_bid()
-        if bid:
-            return bid.price()
+        cdef Level top_bid_level = self.bids.top()
+        if top_bid_level:
+            return top_bid_level.price()
         else:
             # TODO: What is the correct behaviour here?
             return 0
@@ -293,9 +239,9 @@ cdef class OrderBook:
         double
 
         """
-        cdef Level ask = self.best_ask()
-        if ask:
-            return ask.price()
+        cdef Level top_ask_level = self.asks.top()
+        if top_ask_level:
+            return top_ask_level.price()
         else:
             # TODO: What is the correct behaviour here?
             return 0
@@ -309,9 +255,9 @@ cdef class OrderBook:
         double
 
         """
-        cdef Level bid = self.best_bid()
-        if bid:
-            return bid.volume()
+        cdef Level top_bid_level = self.bids.top()
+        if top_bid_level:
+            return top_bid_level.volume()
         else:
             # TODO: What is the correct behaviour here?
             return 0
@@ -325,9 +271,9 @@ cdef class OrderBook:
         double
 
         """
-        cdef Level ask = self.best_ask()
-        if ask:
-            return ask.volume()
+        cdef Level top_ask_level = self.asks.top()
+        if top_ask_level:
+            return top_ask_level.volume()
         else:
             # TODO: What is the correct behaviour here?
             return 0
@@ -337,58 +283,14 @@ cdef class OrderBook:
 
 
 cdef class L3OrderBook(OrderBook):
-    """ A L3 OrderBook. Should map directly to functionality of the OrderBookProxy """
+    """
+    A L3 OrderBook.
+
+    Should map directly to functionality of the OrderBook base class.
+    """
 
     def __init__(self):
         super().__init__()
-
-    cpdef void add(self, Order order) except *:
-        """
-        Add the given order to the book.
-
-        Parameters
-        ----------
-        order : Order
-            The order to add.
-
-        """
-        self._orderbook.add(order=order)
-
-    cpdef void update(self, Order order) except *:
-        """
-        Update the given order in the book.
-
-        Parameters
-        ----------
-        order : Order
-            The order to update.
-
-        """
-        self._orderbook.update(order=order)
-
-    cpdef void delete(self, Order order) except *:
-        """
-        Delete the given order in the book.
-
-        Parameters
-        ----------
-        order : Order
-            The order to delete.
-
-        """
-        self._orderbook.delete(order=order)
-
-    cpdef bint check_integrity(self, bint deep=True) except *:
-        """
-        Return a value indicating whether the order book integrity test passes.
-
-        Returns
-        -------
-        bool
-            True if check passes, else False.
-
-        """
-        return self._orderbook.check_integrity(deep=deep)
 
 
 cdef class L2OrderBook(OrderBook):
@@ -408,7 +310,7 @@ cdef class L2OrderBook(OrderBook):
 
         """
         self._process_order(order=order)
-        self._orderbook.add(order=order)
+        self._add(order=order)
 
     cpdef void update(self, Order order) except *:
         """
@@ -422,7 +324,7 @@ cdef class L2OrderBook(OrderBook):
         """
         self._process_order(order=order)
         self._remove_if_exists(order)
-        self._orderbook.update(order=order)
+        self._update(order=order)
 
     cpdef void delete(self, Order order) except *:
         """
@@ -435,7 +337,7 @@ cdef class L2OrderBook(OrderBook):
 
         """
         self._process_order(order=order)
-        self._orderbook.delete(order=order)
+        self._delete(order=order)
 
     cpdef bint check_integrity(self, bint deep=True) except *:
         """
@@ -449,9 +351,9 @@ cdef class L2OrderBook(OrderBook):
         """
         # For L2 Orderbook, ensure only one order per level in addition to
         # normal orderbook checks.
-        if not self._orderbook.check_integrity(deep=deep):
+        if not self._check_integrity(deep=deep):
             return False
-        for level in self._orderbook.bids.levels + self._orderbook.asks.levels:
+        for level in self.bids.levels + self.asks.levels:
             assert len(level.orders) == 1
         return True
 
@@ -466,9 +368,9 @@ cdef class L2OrderBook(OrderBook):
         # For a L2 orderbook, an order update means a whole level update. If
         # this level exists, remove it so we can insert the new level.
 
-        if order.side == OrderSide.BUY and order.price in self.bids().prices():
+        if order.side == OrderSide.BUY and order.price in self.bids.prices():
             self.delete(order)
-        elif order.side == OrderSide.SELL and order.price in self.asks().prices():
+        elif order.side == OrderSide.SELL and order.price in self.asks.prices():
             self.delete(order)
 
 
@@ -480,13 +382,7 @@ cdef class L1OrderBook(OrderBook):
 
     cpdef void add(self, Order order) except *:
         """
-        Add the given order to the book.
-
-        Parameters
-        ----------
-        order : Order
-            The order to add.
-
+        NotImplemented (Use `update(order)` for L1Orderbook).
         """
         raise NotImplementedError("Use `update(order)` for L1Orderbook")
 
@@ -510,14 +406,14 @@ cdef class L1OrderBook(OrderBook):
             and self.best_ask()
             and order.price >= self.best_ask_price()
         ):
-            self._orderbook.clear_asks()
+            self.clear_asks()
         elif (
             order.side == OrderSide.SELL
             and self.best_bid()
             and order.price <= self.best_bid_price()
         ):
-            self._orderbook.clear_bids()
-        self._orderbook.update(order=self._process_order(order=order))
+            self.clear_bids()
+        self._update(order=self._process_order(order=order))
 
     cpdef void delete(self, Order order) except *:
         """
@@ -529,7 +425,7 @@ cdef class L1OrderBook(OrderBook):
             The order to delete.
 
         """
-        self._orderbook.delete(order=self._process_order(order=order))
+        self._delete(order=self._process_order(order=order))
 
     cpdef bint check_integrity(self, bint deep=True) except *:
         """
@@ -543,10 +439,10 @@ cdef class L1OrderBook(OrderBook):
         """
         # For L1 Orderbook, ensure only one level per side in addition to normal
         # orderbook checks.
-        if not self._orderbook.check_integrity(deep=deep):
+        if not self._check_integrity(deep=deep):
             return False
-        assert len(self._orderbook.bids().levels) <= 1
-        assert len(self._orderbook.asks().levels) <= 1
+        assert len(self.bids.levels) <= 1
+        assert len(self.asks.levels) <= 1
         return True
 
     cdef inline Order _process_order(self, Order order):

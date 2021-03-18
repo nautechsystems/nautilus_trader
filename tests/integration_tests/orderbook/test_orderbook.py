@@ -110,7 +110,8 @@ def l3_feed():
 
 def test_l3_feed(l3_feed):
     ob = L3OrderBook()
-    # Updates that cause the book to fail integrity checks will be deleted immediately, but we may get also delete later
+    # Updates that cause the book to fail integrity checks will be deleted
+    # immediately, but we may get also delete later.
     skip_deletes = []
 
     for i, m in enumerate(l3_feed):
@@ -124,8 +125,8 @@ def test_l3_feed(l3_feed):
             ob.delete(order=m["order"])
         assert ob.check_integrity(deep=False)
     assert i == 100_047
-    assert ob.best_ask().price() == 61405.27923706 and ob.best_ask().volume == 0.12227
-    assert ob.best_bid().price() == 61391 and ob.best_bid().volume == 1
+    assert ob.best_ask().price() == 61405.27923706 and ob.best_ask().volume() == 0.12227
+    assert ob.best_bid().price() == 61391 and ob.best_bid().volume() == 1
 
 
 def test_l2_feed(l2_feed):

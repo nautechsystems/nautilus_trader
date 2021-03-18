@@ -47,7 +47,7 @@ cdef class Order:
         self.price = price
         self.volume = volume
         self.side = side
-        self.id = id or str(uuid4)
+        self.id = id or str(uuid4())
 
     cpdef void update_price(self, double price) except *:
         self.price = price
