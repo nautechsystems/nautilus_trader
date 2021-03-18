@@ -17,14 +17,14 @@ import pytest
 
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.book import L3OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookProxy
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
 
 
 @pytest.fixture(scope="function")
 def empty_book():
-    return OrderBookProxy()
+    return OrderBook()
 
 
 @pytest.fixture(scope="function")
@@ -37,7 +37,7 @@ def sample_book():
 
 
 def test_init():
-    ob = OrderBookProxy()
+    ob = OrderBook()
     assert isinstance(ob.bids, Ladder) and isinstance(ob.asks, Ladder)
     assert ob.bids.reverse and not ob.asks.reverse
 
