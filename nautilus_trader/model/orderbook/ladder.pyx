@@ -14,26 +14,48 @@
 # -------------------------------------------------------------------------------------------------
 
 from bisect import bisect
-import logging
 
-from nautilus_trader.model.orderbook.level import Level
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
 
-logger = logging.getLogger(__name__)
-
-
 cdef class Ladder:
-    def __init__(self, reverse):
-        self.levels = []  # type: list[Level]
+    """
+    Represents a ladder of orders in a book.
+    """
+    def __init__(self, bint reverse):
+        """
+        Initialize a new instance of the `Ladder` class.
+
+        Parameters
+        ----------
+        reverse : bool
+            If the ladder should be represented in reverse order of price.
+
+        """
         self.reverse = reverse
-        self.order_id_levels = {}
+        self.levels = []           # type: list[Level]
+        self.order_id_levels = {}  # type: dict[str, Level]
 
     cpdef void add(self, Order order) except *:
+        """
+        Add the given order to the ladder.
+
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+
+        """
+        Condition.not_none(order, "order")
+
         # Level exists, add new order
-        if order.price in self.prices:
-            idx = tuple(self.prices).index(order.price)
-            level = self.levels[idx]
+        cdef int price_idx
+        cdef Level level
+        if order.price in self.prices():
+            price_idx = tuple(self.prices()).index(order.price)
+            level = self.levels[price_idx]
             level.add(order=order)
         # New price, create Level
         else:
@@ -42,12 +64,24 @@ cdef class Ladder:
         self.order_id_levels[order.id] = level
 
     cpdef void update(self, Order order) except *:
+        """
+        Update the given order in the ladder.
+
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+
+        """
+        Condition.not_none(order, "order")
+
         if order.id not in self.order_id_levels:
             self.add(order=order)
             return
+
         # Find the existing order
-        level = self.order_id_levels[order.id]
-        if order.price == level.price:
+        cdef Level level = self.order_id_levels[order.id]
+        if order.price == level.price():
             # This update contains a volume update
             level.update(order=order)
         else:
@@ -56,36 +90,73 @@ cdef class Ladder:
             self.add(order=order)
 
     cpdef void delete(self, Order order) except *:
-        level = self.order_id_levels[order.id]
-        price_idx = self.levels.index(level)
+        """
+        Delete the given order in the ladder.
+
+        Parameters
+        ----------
+        order : Order
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef Level level = self.order_id_levels[order.id]
+        cdef int price_idx = self.levels.index(level)
         level.delete(order=order)
         del self.order_id_levels[order.id]
         if not level.orders:
             del self.levels[price_idx]
 
     cpdef list depth(self, int n=1):
+        """
+        Return the levels in the ladder to the given depth.
+
+        Parameters
+        ----------
+        n : int
+            The maximum level to query.
+
+        Returns
+        -------
+        list[Level]
+
+        """
         if not self.levels:
             return []
         n = n or len(self.levels)
         return list(reversed(self.levels[-n:])) if self.reverse else self.levels[:n]
 
-    def _get_level(self, price):
-        return self.levels[self.levels.index(Level(price))]
+    cpdef list prices(self):
+        """
+        The prices in the ladder.
 
-    @property
-    def prices(self):
-        return [level.price for level in self.levels]
+        Returns
+        -------
+        list[double]
 
-    @property
-    def volumes(self):
-        return [level.volume for level in self.levels]
+        """
+        return [level.price() for level in self.levels]
 
-    @property
-    def exposures(self):
-        return [level.exposure for level in self.levels]
+    cpdef list volumes(self):
+        """
+        The volumes in the ladder.
 
-    @property
-    def top(self):
-        top = self.depth(1)
-        if top:
+        Returns
+        -------
+        list[double]
+
+        """
+        return [level.volume() for level in self.levels]
+
+    cpdef Level top(self):
+        """
+        The exposures in the ladder.
+
+        Returns
+        -------
+        Level
+
+        """
+        cdef list top = self.depth(1)
+        if len(top) > 0:
             return top[0]

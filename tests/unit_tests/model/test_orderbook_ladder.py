@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
 
@@ -32,16 +32,16 @@ def test_insert():
     ladder = Ladder(reverse=False)
     for order in orders:
         ladder.add(order=order)
-    ladder.add(order=Order(price=100, volume=10, side=OrderSide.BUY))
-    ladder.add(order=Order(price=101, volume=5, side=OrderSide.BUY))
-    ladder.add(order=Order(price=101, volume=5, side=OrderSide.BUY))
+    ladder.add(order=Order(price=100.0, volume=10.0, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101.0, volume=5.0, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101.0, volume=5.0, side=OrderSide.BUY))
 
     expected = [
         (100, 21),
         (101, 10),
         (105, 20),
     ]
-    result = [(level.price, level.volume) for level in ladder.levels]
+    result = [(level.price(), level.volume()) for level in ladder.levels]
     assert result == expected
 
 

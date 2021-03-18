@@ -15,79 +15,113 @@
 
 # TODO - Instead of a Level.orders being a list (python-land) could use structured arrays?
 # https://docs.scipy.org/doc/numpy-1.13.0/user/basics.rec.html
-import logging
+
+
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class Level:
-    """ A Orderbook level; A price level on one side of the Orderbook with one or more individual Orders"""
+    """
+    Represents an `OrderBook` level.
+
+    A price level on one side of the `OrderBook` with one or more individual orders.
+    """
 
     def __init__(self, list orders=None):
+        """
+        Initialize a new instance of the `Level` class.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The initial orders for the level.
+
+        """
         self.orders = []
         for order in orders or []:
             self.add(order)
 
+    def __eq__(self, Level other) -> bool:
+        return self.price == other.price
+
+    def __lt__(self, Level other) -> bool:
+        return self.price < other.price
+
+    def __le__(self, Level other) -> bool:
+        return self.price <= other.price
+
+    def __gt__(self, Level other) -> bool:
+        return self.price > other.price
+
+    def __ge__(self, Level other) -> bool:
+        return self.price >= other.price
+
+    def __repr__(self):
+        return f"Level(price={self.price()}, orders={self.orders[:5]})"
+
     cpdef void add(self, Order order) except *:
         """
-        Add an order to this level.
-        :param order: New order
-        :return:
+        Add the given order to this level.
+
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+
         """
+        Condition.not_none(order, "order")
+
         self._check_price(order=order)
         self.orders.append(order)
 
     cpdef void update(self, Order order) except *:
         """
-        Update an order on this level.
-        :param order: New order
-        :return:
+        Update the given order on this level.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update.
+
         """
-        self._check_price(order=order)
+        Condition.not_none(order, "order")
+        assert self._check_price(order=order), "Order passed to `update` has wrong price! " \
+                                               "Should be handled in Ladder"
         if order.volume == 0:
             self.delete(order=order)
         else:
             existing = self.orders[self.orders.index(order)]
             if existing is None:
-                logging.warning(f"Tried to update unknown order: {order}")
+                # TODO: logging.warning(f"Tried to update unknown order: {order}")
                 return
             existing.update_volume(volume=order.volume)
 
     cpdef void delete(self, Order order) except *:
         """
-        Delete an Order from this level
-        :param order: Quantity of volume to delete
-        :return:
+        Delete the given order from this level.
+
+        Parameters
+        ----------
+        order : Order
+            The order to delete.
+
         """
+        Condition.not_none(order, "order")
+
         self.orders.remove(order)
 
-    cdef bint _check_price(self, Order order) except *:
-        if not self.orders:
-            return True
-        err = "Order passed to `update` has wrong price! Should be handled in Ladder"
-        assert order.price == self.orders[0].price, err
-
-    @property
-    def volume(self):
+    cpdef double volume(self):
         return sum([order.volume for order in self.orders])
 
-    @property
-    def price(self):
-        return self.orders[0].price
+    cpdef double price(self):
+        if len(self.orders) > 0:
+            return self.orders[0].price
+        else:
+            # TODO: What is the correct behaviour here?
+            return 0
 
-    def __eq__(self, other) -> bool:
-        return self.price == other.price
-
-    def __lt__(self, other) -> bool:
-        return self.price < other.price
-
-    def __le__(self, other) -> bool:
-        return self.price <= other.price
-
-    def __gt__(self, other) -> bool:
-        return self.price > other.price
-
-    def __ge__(self, other) -> bool:
-        return self.price >= other.price
-
-    def __repr__(self):
-        return f"Level(price={self.price}, orders={self.orders[:5]})"
+    cdef inline bint _check_price(self, Order order) except *:
+        if not self.orders:
+            return True
+        return order.price == self.orders[0].price

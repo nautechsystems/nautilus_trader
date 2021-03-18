@@ -18,10 +18,13 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 
 cdef class Order:
     cdef readonly double price
+    """The orders price.\n\n:returns: `double`"""
     cdef readonly double volume
+    """The orders volume.\n\n:returns: `volume`"""
     cdef readonly OrderSide side
+    """The orders side.\n\n:returns: `OrderSide`"""
     cdef public str id
+    """The orders identifier.\n\n:returns: `str`"""
 
     cpdef void update_price(self, double price) except *
     cpdef void update_volume(self, double volume) except *
-    # cpdef inline double exposure(self)

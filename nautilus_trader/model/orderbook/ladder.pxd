@@ -14,17 +14,21 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.orderbook.order cimport Order
+from nautilus_trader.model.orderbook.level cimport Level
 
 
 cdef class Ladder:
-    cdef readonly list levels
     cdef readonly bint reverse
-
-    cdef dict price_levels
-    cdef dict order_id_levels
-    cdef dict order_id_prices
+    """If the ladder is in reverse order.\n\n:returns: `bool`"""
+    cdef readonly list levels
+    """The ladders levels.\n\n:returns: `list[Level]`"""
+    cdef readonly dict order_id_levels
+    """The ladders levels.\n\n:returns: `dict[str, Level]`"""
 
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
     cpdef list depth(self, int n=*)
+    cpdef list prices(self)
+    cpdef list volumes(self)
+    cpdef Level top(self)

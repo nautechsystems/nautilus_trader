@@ -15,21 +15,16 @@
 
 from nautilus_trader.model.orderbook.order cimport Order
 
+
 cdef class Level:
     cdef readonly list orders
-    cdef readonly dict order_index
+    """The orders at the level.\n\n:returns: `list[Order]`"""
 
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
-    cdef bint _check_price(self, Order order) except *
 
-    # cpdef _get_order(self, str order_id)
+    cpdef double volume(self)
+    cpdef double price(self)
 
-    # #TODO - make property?
-    # cpdef public double volume(self)
-    # cpdef public double price(self)
-
-    # @property
-    # cdef inline double exposure(self):
-    #     return sum([order.exposure for order in self.orders])
+    cdef inline bint _check_price(self, Order order) except *
