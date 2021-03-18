@@ -13,17 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
-from decimal import Decimal
 
 from betfairlightweight import APIClient
 
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
 
 from adaptors.betfair.parsing import load_markets, load_instruments
 
