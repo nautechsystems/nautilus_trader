@@ -1,12 +1,11 @@
 # NautilusTrader 1.112.0 Beta - Release Notes
 
-[WIP] Fix `reconcile_state` before release...
-
 [WIP] Update dependencies before release...
 
 ## Breaking Changes
 - Remove `Instrument.leverage` (incorrect place for concept).
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
+- `adapter` renamed to `adaptor`.
 
 ## Enhancements
 - Add Betfair adaptor.
