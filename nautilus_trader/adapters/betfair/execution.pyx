@@ -20,7 +20,6 @@ import betfairlightweight
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -51,6 +50,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
@@ -85,13 +85,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             The logger for the client.
 
         """
-        # cdef InstrumentProvider instrument_provider = CCXTInstrumentProvider(
-        #     client=client,
-        #     load_all=False,
-        # )
-
-        # TODO: Temp
-        instrument_provider = None
+        cdef InstrumentProvider instrument_provider = BetfairInstrumentProvider(
+            client=client,
+            load_all=False,
+        )
 
         super().__init__(
             "BETFAIR",

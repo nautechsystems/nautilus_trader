@@ -69,6 +69,8 @@ pytest-cov = "^2.10.1"
 pytest-xdist = { version = "^2.2.0", extras = ["psutil"] }
 sphinx = { version = "^3.4.3", optional = true }
 sphinx-rtd-theme = { version = "^0.5.1", optional = true }
+pytest-mock = "^3.5.1"
+pytest-asyncio = "^0.14.0"
 
 [tool.poetry.extras]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
