@@ -14,17 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
 
 cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef object _client
-    cdef object _currencies
+    cdef dict market_filter
 
     cdef readonly venue
 
-    cpdef Currency currency(self, str code)
     cdef void _load_instruments(self) except *
-    cdef void _load_currencies(self) except *
-    cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values)
+    cpdef list search_markets(self, dict market_filter=*)

@@ -16,9 +16,9 @@ import json
 
 import pytest
 
-from adaptors.betfair.parsing import load_markets
-from adaptors.betfair.parsing import load_markets_metadata
-from adaptors.betfair.parsing import make_instrument
+from nautilus_trader.adaptors.betfair.parsing import load_markets
+from nautilus_trader.adaptors.betfair.parsing import load_markets_metadata
+from nautilus_trader.adaptors.betfair.parsing import make_instrument
 from nautilus_trader.adaptors.betfair.providers import BetfairInstrumentProvider
 from tests import TESTS_PACKAGE_ROOT
 
@@ -44,25 +44,33 @@ def mocks(mocker):
 @pytest.fixture()
 def provider(betfair_client) -> BetfairInstrumentProvider:
     # TODO Mock client login
-    return BetfairInstrumentProvider(client=betfair_client)
+    return BetfairInstrumentProvider(
+        client=betfair_client, market_filter={"event_type_name": "Tennis"}
+    )
 
 
 @pytest.fixture()
 def market_metadata(betfair_client):
-    markets = load_markets(betfair_client, filter={"event_type_name": "Basketball"})
+    markets = load_markets(
+        betfair_client, market_filter={"event_type_name": "Basketball"}
+    )
     return load_markets_metadata(client=betfair_client, markets=markets)
 
 
 def test_load_markets(provider, betfair_client):
-    markets = load_markets(betfair_client, filter={})
+    markets = load_markets(betfair_client, market_filter={})
     assert len(markets) == 13227
 
-    markets = load_markets(betfair_client, filter={"event_type_name": "Basketball"})
+    markets = load_markets(
+        betfair_client, market_filter={"event_type_name": "Basketball"}
+    )
     assert len(markets) == 302
 
 
 def test_load_markets_metadata(betfair_client):
-    markets = load_markets(betfair_client, filter={"event_type_name": "Basketball"})
+    markets = load_markets(
+        betfair_client, market_filter={"event_type_name": "Basketball"}
+    )
     market_metadata = load_markets_metadata(client=betfair_client, markets=markets)
     assert isinstance(market_metadata, dict)
     assert len(market_metadata) == 12035
@@ -77,10 +85,10 @@ def test_load_instruments(market_metadata):
     assert len(instruments) == 172535
 
 
-# def test_load_all(provider):
-#     provider.load_all()
+def test_load_all(provider):
+    provider.load_all()
 
 
 def test_search_instruments(provider):
-    # instruments = provider.search()
-    pass
+    markets = provider.search_markets(market_filter={"market_marketType": "MATCH_ODDS"})
+    assert len(markets) == 1000
