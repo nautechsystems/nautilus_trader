@@ -19,7 +19,7 @@ from betfairlightweight import APIClient
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.identifiers cimport Venue
 
-from adaptors.betfair.parsing import load_markets, load_instruments
+from nautilus_trader.adaptors.betfair.parsing import load_markets, load_instruments
 
 VENUE = "betfair"
 
