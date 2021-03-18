@@ -15,9 +15,9 @@
 
 import pytest
 
-from adapters.betfair.data import BetfairDataClient
-from adapters.betfair.execution import BetfairExecutionClient
-from adapters.betfair.factory import BetfairClientsFactory
+from adaptors.betfair.data import BetfairDataClient
+from adaptors.betfair.execution import BetfairExecutionClient
+from adaptors.betfair.factory import BetfairClientsFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.execution.database import BypassExecutionDatabase

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `adapters` sub-package provides integrations for data providers, brokerages, and exchanges.
-"""
+from nautilus_trader.adaptors.ccxt.execution cimport CCXTExecutionClient
+
+
+cdef class BinanceExecutionClient(CCXTExecutionClient):
+    pass

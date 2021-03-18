@@ -50,7 +50,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adaptors.betfair.providers import BetfairInstrumentProvider
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 

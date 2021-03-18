@@ -65,7 +65,7 @@ def load_markets(client, filter=None):
 def chunk(list_like, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(list_like), n):
-        yield list_like[i: i + n]
+        yield list_like[i : i + n]
 
 
 def load_markets_metadata(client: APIClient, markets: List[Dict]):

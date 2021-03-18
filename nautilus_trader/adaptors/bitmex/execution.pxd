@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
+from nautilus_trader.adaptors.ccxt.execution cimport CCXTExecutionClient
 
 
-cdef class BinanceExecutionClient(CCXTExecutionClient):
+cdef class BitmexExecutionClient(CCXTExecutionClient):
     pass

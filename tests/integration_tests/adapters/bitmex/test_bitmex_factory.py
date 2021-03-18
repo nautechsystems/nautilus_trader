@@ -17,9 +17,9 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.bitmex.execution import BitmexExecutionClient
-from nautilus_trader.adapters.bitmex.factory import BitmexClientsFactory
-from nautilus_trader.adapters.ccxt.data import CCXTDataClient
+from nautilus_trader.adaptors.bitmex.execution import BitmexExecutionClient
+from nautilus_trader.adaptors.bitmex.factory import BitmexClientsFactory
+from nautilus_trader.adaptors.ccxt.data import CCXTDataClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory

@@ -17,14 +17,14 @@ from decimal import Decimal
 import pickle
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
+from nautilus_trader.adaptors.ib.providers import IBInstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests import TESTS_PACKAGE_ROOT
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adaptors/ib/responses/"
 
 
 class TestIBInstrumentProvider:
