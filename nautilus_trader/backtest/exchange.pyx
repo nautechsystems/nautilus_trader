@@ -108,6 +108,19 @@ cdef class SimulatedExchange:
         logger : TestLogger
             The logger for the component.
 
+        Raises
+        ------
+        ValueError
+            If instruments is empty.
+        ValueError
+            If instruments contains a type other than Instrument.
+        ValueError
+            If starting_balances is empty.
+        ValueError
+            If starting_balances contains a type other than Money.
+        ValueError
+            If modules contains a type other than SimulationModule.
+
         """
         Condition.not_empty(instruments, "instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
@@ -128,7 +141,6 @@ cdef class SimulatedExchange:
 
         self.is_frozen_account = is_frozen_account
         self.starting_balances = starting_balances
-        # noinspection PyUnresolvedReferences
         self.default_currency = None if len(starting_balances) > 1 else starting_balances[0].currency
         self.account_balances = {b.currency: b for b in starting_balances}
         self.account_balances_free = {b.currency: b for b in starting_balances}
@@ -681,6 +693,8 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError(f"Invalid order type")
 
+        instrument.margin_init()
+
     cdef inline void _process_market_order(self, MarketOrder order, Price bid, Price ask) except *:
         self._accept_order(order)
 
@@ -1042,7 +1056,7 @@ cdef class SimulatedExchange:
         else:
             currency = instrument.settlement_currency
             if pnl is None:
-                pnl = Money(0, currency)
+                pnl = commission
 
             total_commissions = self.total_commissions.get(currency, Decimal()) + commission
             self.total_commissions[currency] = Money(total_commissions, currency)
