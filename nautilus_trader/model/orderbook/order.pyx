@@ -13,19 +13,41 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-
-
-uuid_factory = UUIDFactory()
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 
 
 cdef class Order:
-    def __init__(self, double price, double volume, OrderSide side, str id=None):
+    """
+    Represents an order in a book.
+    """
+    def __init__(
+        self,
+        double price,
+        double volume,
+        OrderSide side,
+        str id=None,
+    ):
+        """
+        Initialize a new instance of the `Order` class.
+
+        Parameters
+        ----------
+        price : double
+            The order price.
+        volume : double
+            The order volume.
+        side : OrderSide
+            The order side.
+        id : str
+            The order identifier.
+
+        """
         self.price = price
         self.volume = volume
         self.side = side
-        self.id = id or str(uuid_factory.generate())
+        self.id = id or str(uuid4)
 
     cpdef void update_price(self, double price) except *:
         self.price = price
@@ -33,8 +55,8 @@ cdef class Order:
     cpdef void update_volume(self, double volume) except *:
         self.volume = volume
 
-    def __eq__(self, other):
+    def __eq__(self, Order other):
         return self.id == other.id
 
     def __repr__(self):
-        return f"Order({self.price}, {self.volume}, {self.side}, {self.id})"
+        return f"Order({self.price}, {self.volume}, {OrderSideParser.to_str(self.side)}, {self.id})"

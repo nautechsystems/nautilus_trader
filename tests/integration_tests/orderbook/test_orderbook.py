@@ -19,10 +19,10 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.orderbook.book import L1OrderBook
+from nautilus_trader.model.orderbook.book import L2OrderBook
+from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.order import Order
-from nautilus_trader.model.orderbook.orderbook import L1OrderBook
-from nautilus_trader.model.orderbook.orderbook import L2OrderBook
-from nautilus_trader.model.orderbook.orderbook import L3OrderBook
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -117,15 +117,15 @@ def test_l3_feed(l3_feed):
         # print(f"[{i}]", m, ob.repr(), "\n") # Print ob summary
         if m["op"] == "update":
             ob.update(order=m["order"])
-            if not ob._check_integrity(deep=False):
+            if not ob.check_integrity(deep=False):
                 ob.delete(order=m["order"])
                 skip_deletes.append(m["order"].id)
         elif m["op"] == "delete" and m["order"].id not in skip_deletes:
             ob.delete(order=m["order"])
-        assert ob._check_integrity(deep=False)
+        assert ob.check_integrity(deep=False)
     assert i == 100_047
-    assert ob.best_ask.price == 61405.27923706 and ob.best_ask.volume == 0.12227
-    assert ob.best_bid.price == 61391 and ob.best_bid.volume == 1
+    assert ob.best_ask().price() == 61405.27923706 and ob.best_ask().volume == 0.12227
+    assert ob.best_bid().price() == 61391 and ob.best_bid().volume == 1
 
 
 def test_l2_feed(l2_feed):
@@ -147,7 +147,7 @@ def test_l2_feed(l2_feed):
             ob.update(order=m["order"])
         elif m["op"] == "delete":
             ob.delete(order=m["order"])
-        assert ob._check_integrity(deep=False)
+        assert ob.check_integrity(deep=False)
     assert i == 68462
 
 
@@ -169,10 +169,10 @@ def l1_feed():
 def test_l1_orderbook(l1_feed):
     ob = L1OrderBook()
     for i, m in enumerate(l1_feed):
-        print(f"[{i}]", "\n", m, "\n", ob.repr(), "\n")
+        print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         print("")
         if m["op"] == "update":
             ob.update(order=m["order"])
         else:
             raise KeyError
-        assert ob._check_integrity(deep=False)
+        assert ob.check_integrity(deep=False)

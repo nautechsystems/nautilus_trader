@@ -58,7 +58,9 @@ def check_for_trade(orderbook, order: Order):
     remaining_order = None
     if order.volume != traded_volume:
         remaining_order = Order(
-            price=order.price, volume=order.volume - traded_volume, side=order.side
+            price=order.price,
+            volume=order.volume - traded_volume,
+            side=order.side,
         )
 
     return ladder_trades, remaining_order
@@ -144,12 +146,13 @@ def depth_for_volume(ladder, value, depth_type="volume"):
 
     if len(orders) == 0:
         return ()
-    if (
+    elif (
         len(orders) == 1
     ):  # We are totally filled within the first order, just take our value
         remaining_volume = value
     else:  # We have multiple orders, but we won't necessarily take the full volume on the last order
         remaining_volume = value - depth[idx - 1]
+
     if (
         depth_type == "exposure"
     ):  # Can't set a value for exposure, need to adjust via volume
@@ -246,19 +249,19 @@ def pprint_ob(orderbook, num_levels=3):
     levels = reversed(
         [
             lvl
-            for lvl in orderbook.bids.levels[-num_levels:]
+            for lvl in orderbook.bids().levels[-num_levels:]
             + orderbook.asks.levels[:num_levels]
         ]
     )
     data = [
         {
             "bids": [
-                order.id for order in level.orders if level in orderbook.bids.levels
+                order.id for order in level.orders if level in orderbook.bids().levels
             ]
             or None,
             "price": level.price,
             "asks": [
-                order.id for order in level.orders if level in orderbook.asks.levels
+                order.id for order in level.orders if level in orderbook.asks().levels
             ]
             or None,
         }

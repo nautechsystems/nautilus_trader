@@ -38,10 +38,10 @@ def test_add(empty_level):
 def test_update():
     order = Order(price=10, volume=100, side=OrderSide.BUY)
     level = Level(orders=[order])
-    assert level.volume == 100
+    assert level.volume() == 100
     order.update_volume(volume=50)
     level.update(order=order)
-    assert level.volume == 50
+    assert level.volume() == 50
 
 
 # def test_init_orders():

@@ -16,10 +16,10 @@
 import pytest
 
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.orderbook.book import L3OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookProxy
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
-from nautilus_trader.model.orderbook.orderbook import L3OrderBook
-from nautilus_trader.model.orderbook.orderbook import OrderBookProxy
 
 
 @pytest.fixture(scope="function")
@@ -44,7 +44,7 @@ def test_init():
 
 def test_add(empty_book):
     empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
-    assert empty_book.bids.top.price == 10.0
+    assert empty_book.bids.top().price() == 10.0
 
 
 def test_top(empty_book):
@@ -54,21 +54,21 @@ def test_top(empty_book):
     empty_book.add(Order(price=25, volume=5, side=OrderSide.SELL))
     empty_book.add(Order(price=30, volume=5, side=OrderSide.SELL))
     empty_book.add(Order(price=21, volume=5, side=OrderSide.SELL))
-    assert empty_book.best_bid.price == 20
-    assert empty_book.best_ask.price == 21
+    assert empty_book.best_bid().price() == 20
+    assert empty_book.best_ask().price() == 21
 
 
 def test_check_integrity_shallow(empty_book):
     empty_book.add(Order(price=10, volume=5, side=OrderSide.SELL))
-    assert empty_book._check_integrity()
+    assert empty_book.check_integrity()
     empty_book.add(Order(price=20, volume=5, side=OrderSide.BUY))
-    assert not empty_book._check_integrity()
+    assert not empty_book.check_integrity()
 
 
 def test_check_integrity_deep(empty_book):
     empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
     empty_book.add(Order(price=5, volume=5, side=OrderSide.BUY))
-    assert empty_book._check_integrity()
+    assert empty_book.check_integrity()
 
 
 # def test_auction_match_match_orders():
