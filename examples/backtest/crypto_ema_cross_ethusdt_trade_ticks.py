@@ -27,7 +27,7 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
-from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
+from nautilus_trader.adaptors.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
