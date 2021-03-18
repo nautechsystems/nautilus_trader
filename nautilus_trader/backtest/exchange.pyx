@@ -693,8 +693,6 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError(f"Invalid order type")
 
-        instrument.margin_init()
-
     cdef inline void _process_market_order(self, MarketOrder order, Price bid, Price ask) except *:
         self._accept_order(order)
 
