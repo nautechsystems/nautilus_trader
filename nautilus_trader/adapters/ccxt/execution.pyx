@@ -46,7 +46,6 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order.base cimport Order
@@ -518,8 +517,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef dict event_total = event["total"]
 
         if event_free == self._account_last_free \
-                and event_used == self._account_last_used \
-                and event_total == self._account_last_used:
+            and event_used == self._account_last_used \
+            and event_total == self._account_last_used:
             return  # No updates
 
         self._account_last_free = event_free
