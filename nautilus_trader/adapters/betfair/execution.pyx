@@ -32,6 +32,8 @@ from nautilus_trader.model.identifiers cimport AccountId
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 
+from adapters.betfair.common import order_submit_to_betfair, order_amend_to_betfair, order_cancel_to_betfair
+
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
@@ -90,13 +92,19 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._client.login()
         self._log.info("APIClient login successful.", LogColor.GREEN)
 
-        # Schedule instruments update
         self._log.info("Loading Instruments.")
         self._instrument_provider.load_all()
         self._log.info(f"Loaded {len(self._instrument_provider._instruments)} Instruments.")
 
         self.is_connected = True
         self._log.info("Connected.")
+
+    def _connect_order_stream(self):
+        """
+
+        :return:
+        """
+        pass
 
     cpdef void disconnect(self) except *:
         self._client.client_logout()
@@ -106,24 +114,20 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # TODO - Add support for bulk updates - betfair allows up to 200 inserts / 60 updates / 60 cancels per request
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        task = self._loop.create_task(self._submit_order(command.order))
-
-    # async def _submit_order(self, SubmitOrder command):
-    #     try:
-    #         place_order = partial(self.api.betting.place_orders, **params, lightweight=True)
-    #         task = asyncio.create_task(self._insert(place_order=place_order, message=message))
-    #         self.foreign_order_ids[custom_ref] = message.order.order_id
-    #         return task
-    #     except APIError as e:
-    #         logger.error(f"Order from strategy [{message.source}] caused {e}")
+        instrument = self._instrument_provider._instruments[command.instrument_id]
+        kw = order_submit_to_betfair(command=command, instrument=instrument)
+        self._client.betting.place_orders(**kw)
 
     cpdef void amend_order(self, AmendOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        # TODO - Need to know instrument_id
+        instrument = self._instrument_provider._instruments[command.instrument_id]
+        kw = order_amend_to_betfair(command=command)
+        self._client.betting.replace_orders(**kw)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        instrument = self._instrument_provider._instruments[command.instrument_id]
+        kw = order_cancel_to_betfair(command=command)
+        self._client.betting.cancel_orders(**kw)
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
