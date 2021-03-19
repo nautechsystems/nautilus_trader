@@ -1,10 +1,14 @@
+from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
 from betfairlightweight.filters import place_instruction
+from betfairlightweight.filters import replace_instruction
 import numpy as np
 
 from model.instrument import BettingInstrument
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.commands import AmendOrder
+from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.order.base import Order
@@ -80,8 +84,10 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
     order = command.order  # type: Order
     return {
         "market_id": instrument.market_id,
-        "customer_ref": order.cl_ord_id.value,
-        "customer_strategy_ref": command.strategy_id.value,
+        # Used to de-dupe orders on betfair server side
+        "customer_ref": command.id.value,
+        "customer_strategy_ref": order.cl_ord_id.value,
+        "async": True,  # Order updates will be sent via stream API
         "instructions": [
             place_instruction(
                 order_type="LIMIT",
@@ -98,4 +104,27 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 customer_order_ref=order.cl_ord_id.value,
             )
         ],
+    }
+
+
+def order_amend_to_betfair(command: AmendOrder, instrument: BettingInstrument):
+    """ Convert an AmendOrder command into the data required by betfairlightweight """
+    return {
+        "market_id": instrument.market_id,
+        "customer_ref": command.id.value,
+        "async": True,  # Order updates will be sent via stream API
+        "instructions": [
+            replace_instruction(
+                bet_id=command.cl_ord_id.value, new_price=float(command.price)
+            )
+        ],
+    }
+
+
+def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):
+    """ Convert a SubmitOrder command into the data required by betfairlightweight """
+    return {
+        "market_id": instrument.market_id,
+        "customer_ref": command.id.value,
+        "instructions": [cancel_instruction(bet_id=command.cl_ord_id.value)],
     }

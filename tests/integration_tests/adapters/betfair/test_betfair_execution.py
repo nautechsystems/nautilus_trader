@@ -17,11 +17,16 @@ import datetime
 
 import pytest
 
+from adapters.betfair.common import order_amend_to_betfair
+from adapters.betfair.common import order_cancel_to_betfair
 from adapters.betfair.common import order_submit_to_betfair
+from nautilus_trader.model.commands import AmendOrder
+from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
@@ -68,23 +73,86 @@ def test_order_submit_to_betfair(
         command_timestamp=datetime.datetime.now(),
     )
     result = order_submit_to_betfair(command=command, instrument=betting_instrument)
+    assert len(result["customer_ref"]) == 36  # Check uuid
     expected = {
-        "market_id": "1.179082386",
-        "customer_ref": "1",
-        "customer_strategy_ref": "Test-1",
+        "async": True,
+        "customer_ref": result["customer_ref"],
+        "customer_strategy_ref": "1",
         "instructions": [
             {
+                "customerOrderRef": "1",
+                "handicap": "0.0",
+                "limitOrder": {
+                    "minFillSize": 0,
+                    "persistenceType": "PERSIST",
+                    "price": 95.0,
+                    "size": 10.0,
+                },
                 "orderType": "LIMIT",
                 "selectionId": 50214,
                 "side": "Back",
-                "handicap": "0.0",
-                "limitOrder": {
-                    "price": 95.0,
-                    "persistenceType": "PERSIST",
-                    "size": 10.0,
-                    "minFillSize": 0,
-                },
-                "customerOrderRef": "1",
+            }
+        ],
+        "market_id": "1.179082386",
+    }
+    assert result == expected
+
+
+def test_order_amend_to_betfair(
+    trader_id,
+    account_id,
+    strategy_id,
+    position_id,
+    instrument_id,
+    uuid,
+    betting_instrument,
+):
+    command = AmendOrder(
+        instrument_id=instrument_id,
+        trader_id=trader_id,
+        account_id=account_id,
+        cl_ord_id=ClientOrderId("1"),
+        quantity=Quantity(50),
+        price=Price(20),
+        command_id=uuid,
+        command_timestamp=datetime.datetime.now(),
+    )
+    result = order_amend_to_betfair(command=command, instrument=betting_instrument)
+    expected = {
+        "market_id": "1.179082386",
+        "customer_ref": result["customer_ref"],
+        "async": True,
+        "instructions": [{"betId": "1", "newPrice": 20.0}],
+    }
+
+    assert result == expected
+
+
+def test_order_cancel_to_betfair(
+    trader_id,
+    account_id,
+    instrument_id,
+    uuid,
+    betting_instrument,
+):
+    cl_orr_id = ClientOrderId("1")
+    order_id = OrderId("1")
+    command = CancelOrder(
+        instrument_id,
+        trader_id,
+        account_id,
+        cl_orr_id,
+        order_id,
+        uuid,
+        datetime.datetime.now(),
+    )
+    result = order_cancel_to_betfair(command=command, instrument=betting_instrument)
+    expected = {
+        "market_id": "1.179082386",
+        "customer_ref": result["customer_ref"],
+        "instructions": [
+            {
+                "betId": "1",
             }
         ],
     }

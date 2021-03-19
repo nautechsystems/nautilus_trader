@@ -103,6 +103,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Disconnected.")
 
     # -- COMMAND HANDLERS ------------------------------------------------------------------------------
+    # TODO - Add support for bulk updates - betfair allows up to 200 inserts / 60 updates / 60 cancels per request
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         task = self._loop.create_task(self._submit_order(command.order))
@@ -133,6 +134,3 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     cdef void _handle_event(self, Event event) except *:
         self._engine.process(event)
-
-
-#TODO Naming?

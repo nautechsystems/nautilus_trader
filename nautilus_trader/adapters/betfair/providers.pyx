@@ -162,9 +162,7 @@ def make_instrument(market_definition: Dict) -> BettingInstrument:
             betting_type=market_definition["description"]["bettingType"],
             market_id=market_definition["marketId"],
             market_name=market_definition["marketName"],
-            market_start_time=_parse_date(
-                market_definition["description"]["marketTime"]
-            ),
+            market_start_time=_parse_date(market_definition["description"]["marketTime"]),
             market_type=market_definition["description"]["marketType"],
             selection_id=str(runner["selectionId"]),
             selection_name=runner.get("runnerName"),

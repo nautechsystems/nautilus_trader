@@ -1,11 +1,13 @@
 import json
 
 import betfairlightweight
+import pandas as pd
 import pytest
 
 from adapters.betfair.common import BETFAIR_VENUE
 from adapters.betfair.providers import BetfairInstrumentProvider
 from model.identifiers import InstrumentId
+from model.instrument import BettingInstrument
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -43,7 +45,9 @@ def mocks(mocker):
 @pytest.fixture()
 def provider(betfair_client) -> BetfairInstrumentProvider:
     return BetfairInstrumentProvider(
-        client=betfair_client, market_filter={"event_type_name": "Tennis"}
+        client=betfair_client,
+        market_filter={"event_type_name": "Tennis"},
+        load_all=False,
     )
 
 
@@ -143,6 +147,22 @@ def execution_client(betfair_client, account_id, exec_engine, clock, live_logger
 
 @pytest.fixture()
 def betting_instrument(provider):
-    return provider.search_instruments(
-        instrument_filter={"event_type_name": "American Football"}
-    )[0]
+    return BettingInstrument(
+        venue_name=BETFAIR_VENUE.value,
+        betting_type="ODDS",
+        competition_id="12282733",
+        competition_name="NFL",
+        event_country_code="GB",
+        event_id="29678534",
+        event_name="NFL",
+        event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+        event_type_id="6423",
+        event_type_name="American Football",
+        market_id="1.179082386",
+        market_name="AFC Conference Winner",
+        market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+        market_type="SPECIAL",
+        selection_handicap="0.0",
+        selection_id="50214",
+        selection_name="Kansas City Chiefs",
+    )
