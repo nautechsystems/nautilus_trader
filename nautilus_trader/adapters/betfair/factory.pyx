@@ -39,7 +39,6 @@ cdef class BetfairClientsFactory:
         LiveExecutionEngine exec_engine not None,
         LiveClock clock not None,
         LiveLogger logger not None,
-        bint login = True,
     ):
         """
         Create new Betfair clients.
@@ -70,8 +69,6 @@ cdef class BetfairClientsFactory:
             app_key=os.getenv(config.get("app_key", ""), ""),
             certs=os.getenv(config.get("cert_location", ""), ""),
         )
-        if login:
-            client.login()
 
         if config.get("data_client", True):
             # Create client

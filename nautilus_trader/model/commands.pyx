@@ -73,7 +73,7 @@ cdef class SubmitOrder(TradingCommand):
         Order order not None,
         UUID command_id not None,
         datetime command_timestamp not None,
-    ):
+    ) -> object:
         """
         Initialize a new instance of the `SubmitOrder` class.
 

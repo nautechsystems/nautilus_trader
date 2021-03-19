@@ -12,41 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import json
 
 import pytest
 
-from nautilus_trader.adapters.betfair.parsing import load_markets
-from nautilus_trader.adapters.betfair.parsing import load_markets_metadata
-from nautilus_trader.adapters.betfair.parsing import make_instrument
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from tests import TESTS_PACKAGE_ROOT
-
-
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
-
-
-@pytest.fixture(autouse=True)
-def mocks(mocker):
-    mock_list_nav = mocker.patch(
-        "betfairlightweight.endpoints.navigation.Navigation.list_navigation"
-    )
-    mock_list_nav.return_value = json.loads(open(TEST_PATH + "navigation.json").read())
-
-    mock_market_catalogue = mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.list_market_catalogue"
-    )
-    mock_market_catalogue.return_value = json.loads(
-        open(TEST_PATH + "market_metadata.json").read()
-    )
-
-
-@pytest.fixture()
-def provider(betfair_client) -> BetfairInstrumentProvider:
-    # TODO Mock client login
-    return BetfairInstrumentProvider(
-        client=betfair_client, market_filter={"event_type_name": "Tennis"}
-    )
+from nautilus_trader.adapters.betfair.providers import load_markets
+from nautilus_trader.adapters.betfair.providers import load_markets_metadata
+from nautilus_trader.adapters.betfair.providers import make_instrument
 
 
 @pytest.fixture()
