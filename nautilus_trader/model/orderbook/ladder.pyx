@@ -159,9 +159,11 @@ cdef class Ladder:
 
         Returns
         -------
-        Level
+        Level or None
 
         """
         cdef list top = self.depth(1)
         if len(top) > 0:
             return top[0]
+        else:
+            return None
