@@ -14,11 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import json
 
-from adapters.betfair.common import betfair_account_to_account_state
-from adapters.betfair.common import order_amend_to_betfair
-from adapters.betfair.common import order_cancel_to_betfair
-from adapters.betfair.common import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.common import betfair_account_to_account_state
+from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
+from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.common import order_submit_to_betfair
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
@@ -33,6 +34,10 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
+from tests import TESTS_PACKAGE_ROOT
+
+
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
 
 
 def test_order_submit_to_betfair(
@@ -172,7 +177,13 @@ def test_account_statement(betfair_client, uuid):
     assert result == expected
 
 
-#
+def test_order_stream_full_image(execution_client):
+    raw = json.loads(open(TEST_PATH + "streaming_ocm_EMPTY_IMAGE.json").read())
+    result = execution_client._geeparse_order_stream(raw)
+    expected = ""
+    assert result == expected
+
+
 # def test_connect(self):
 #     # Arrange
 #     # Act

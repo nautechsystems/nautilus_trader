@@ -94,7 +94,7 @@ def trader_id():
 
 @pytest.fixture()
 def account_id():
-    return AccountId("Betfair", "001")
+    return AccountId(BETFAIR_VENUE.value, "001")
 
 
 @pytest.fixture()

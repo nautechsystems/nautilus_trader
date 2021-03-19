@@ -32,7 +32,8 @@ from nautilus_trader.model.identifiers cimport AccountId
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 
-from adapters.betfair.common import order_submit_to_betfair, order_amend_to_betfair, order_cancel_to_betfair
+from adapters.betfair.common import order_submit_to_betfair, order_amend_to_betfair, order_cancel_to_betfair, \
+    BETFAIR_VENUE
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
@@ -73,7 +74,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
-            "BETFAIR",
+            BETFAIR_VENUE.value,
             account_id,
             engine,
             instrument_provider,
