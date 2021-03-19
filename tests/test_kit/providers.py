@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from decimal import Decimal
+import json
+from typing import List
 
 from pandas import DataFrame
 
@@ -30,6 +31,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -37,6 +39,7 @@ from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -89,6 +92,101 @@ class TestDataProvider:
         return ParquetTickDataLoader.load(
             PACKAGE_ROOT + "/data/binance-btcusdt-quotes.parquet"
         )
+
+    @staticmethod
+    def l1_feed():
+        updates = []
+        for _, row in TestDataProvider.usdjpy_ticks().iterrows():
+            for side, order_side in zip(
+                ("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)
+            ):
+                updates.append(
+                    {
+                        "op": "update",
+                        "order": Order(price=row[side], volume=1e9, side=order_side),
+                    }
+                )
+        return updates
+
+    @staticmethod
+    def l2_feed() -> List:
+        def parse_line(d):
+            if "status" in d:
+                return {}
+            elif "close_price" in d:
+                # return {'timestamp': d['remote_timestamp'], "close_price": d['close_price']}
+                return {}
+            if "trade" in d:
+                return {}
+                # data = TradeTick()
+            elif "level" in d and d["level"]["orders"][0]["volume"] == 0:
+                op = "delete"
+            else:
+                op = "update"
+            order_like = d["level"]["orders"][0] if op != "trade" else d["trade"]
+            return {
+                "timestamp": d["remote_timestamp"],
+                "op": op,
+                "order": Order(
+                    price=order_like["price"],
+                    volume=abs(order_like["volume"]),
+                    # Betting sides are reversed
+                    side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
+                    id=str(order_like["order_id"]),
+                ),
+            }
+
+        return [
+            parse_line(line)
+            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+        ]
+
+    @staticmethod
+    def l3_feed():
+        def parser(data):
+            parsed = data
+            if not isinstance(parsed, list):
+                # print(parsed)
+                return
+            elif isinstance(parsed, list):
+                channel, updates = parsed
+                if not isinstance(updates[0], list):
+                    updates = [updates]
+            else:
+                raise KeyError()
+            if isinstance(updates, int):
+                print("Err", updates)
+                return
+            for values in updates:
+                keys = ("order_id", "price", "volume")
+                data = dict(zip(keys, values))
+                side = OrderSide.BUY if data["volume"] >= 0 else OrderSide.SELL
+                if data["price"] == 0:
+                    yield dict(
+                        op="delete",
+                        order=Order(
+                            price=data["price"],
+                            volume=abs(data["volume"]),
+                            side=side,
+                            id=str(data["order_id"]),
+                        ),
+                    )
+                else:
+                    yield dict(
+                        op="update",
+                        order=Order(
+                            price=data["price"],
+                            volume=abs(data["volume"]),
+                            side=side,
+                            id=str(data["order_id"]),
+                        ),
+                    )
+
+        return [
+            msg
+            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for msg in parser(data)
+        ]
 
 
 class TestInstrumentProvider:
