@@ -1,3 +1,5 @@
+import datetime
+
 from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
 from betfairlightweight.filters import place_instruction
@@ -5,11 +7,15 @@ from betfairlightweight.filters import replace_instruction
 import numpy as np
 
 from model.instrument import BettingInstrument
+from model.objects import Money
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.order.base import Order
 
@@ -128,3 +134,22 @@ def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument)
         "customer_ref": command.id.value,
         "instructions": [cancel_instruction(bet_id=command.cl_ord_id.value)],
     }
+
+
+def betfair_account_to_account_state(
+    account_detail, account_funds, event_id
+) -> AccountState:
+    account_id = f"{account_detail['firstName']}-{account_detail['lastName']}"
+    currency = Currency.from_str(account_detail["currencyCode"])
+    balance = float(account_funds["availableToBetBalance"])
+    balance_locked = -float(account_funds["exposure"])
+    balance_free = balance - balance_locked
+    return AccountState(
+        AccountId(issuer="betfair", identifier=account_id),
+        [Money(value=balance, currency=currency)],
+        [Money(value=balance_free, currency=currency)],
+        [Money(value=balance_locked, currency=currency)],
+        {"funds": account_funds, "detail": account_detail},
+        event_id,
+        datetime.datetime.now(),
+    )

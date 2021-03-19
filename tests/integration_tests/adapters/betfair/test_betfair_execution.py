@@ -15,31 +15,24 @@
 
 import datetime
 
-import pytest
-
+from adapters.betfair.common import betfair_account_to_account_state
 from adapters.betfair.common import order_amend_to_betfair
 from adapters.betfair.common import order_cancel_to_betfair
 from adapters.betfair.common import order_submit_to_betfair
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
-from tests import TESTS_PACKAGE_ROOT
-
-
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
-
-
-@pytest.mark.fixture(autouse=True)
-def setup():
-    # TODO Mock betfairlightweight request/response
-    pass
 
 
 def test_order_submit_to_betfair(
@@ -159,8 +152,24 @@ def test_order_cancel_to_betfair(
     assert result == expected
 
 
-def test_account_statement():
-    pass
+def test_account_statement(betfair_client, uuid):
+    detail = betfair_client.account.get_account_details()
+    funds = betfair_client.account.get_account_funds()
+    result = betfair_account_to_account_state(
+        account_detail=detail,
+        account_funds=funds,
+        event_id=uuid,
+    )
+    expected = AccountState(
+        AccountId(issuer="betfair", identifier="Testy-McTest"),
+        [Money(1000.0, Currency.from_str("AUD"))],
+        [Money(1000.0, Currency.from_str("AUD"))],
+        [Money(-0.00, Currency.from_str("AUD"))],
+        {"funds": funds, "detail": detail},
+        uuid,
+        result.timestamp,
+    )
+    assert result == expected
 
 
 #

@@ -28,17 +28,35 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/
 
 
 @pytest.fixture(autouse=True)
-def mocks(mocker):
+def betfairlightweight_mocks(mocker):
+    # Navigation.list_navigation
     mock_list_nav = mocker.patch(
         "betfairlightweight.endpoints.navigation.Navigation.list_navigation"
     )
     mock_list_nav.return_value = json.loads(open(TEST_PATH + "navigation.json").read())
 
+    # Betting.list_market_catalogue
     mock_market_catalogue = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_market_catalogue"
     )
     mock_market_catalogue.return_value = json.loads(
         open(TEST_PATH + "market_metadata.json").read()
+    )
+
+    # Account.get_account_details
+    mock_account_detail = mocker.patch(
+        "betfairlightweight.endpoints.account.Account.get_account_details"
+    )
+    mock_account_detail.return_value = json.loads(
+        open(TEST_PATH + "account_detail.json").read()
+    )
+
+    # Account.get_account_funds
+    mock_account_funds = mocker.patch(
+        "betfairlightweight.endpoints.account.Account.get_account_funds"
+    )
+    mock_account_funds.return_value = json.loads(
+        open(TEST_PATH + "account_funds_no_exposure.json").read()
     )
 
 
