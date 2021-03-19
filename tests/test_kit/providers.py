@@ -18,7 +18,6 @@ from typing import List
 
 from pandas import DataFrame
 
-from model.orderbook.order import Order
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.loaders import ParquetTickDataLoader
@@ -40,6 +39,7 @@ from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import UNIX_EPOCH
 
