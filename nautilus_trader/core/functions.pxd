@@ -16,6 +16,8 @@
 import pandas as pd
 
 
+cpdef int bisect_double_left(list a, double x, int lo=*, hi=*) except *
+cpdef int bisect_double_right(list a, double x, int lo=*, hi=*) except *
 cpdef double fast_mean(list values) except *
 cpdef double fast_mean_iterated(
     list values,

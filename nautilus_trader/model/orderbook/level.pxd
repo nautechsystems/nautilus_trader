@@ -16,6 +16,11 @@
 from nautilus_trader.model.orderbook.order cimport Order
 
 
+# cdef union MaybeDouble:
+#     double value
+#     bint has_value
+
+
 cdef class Level:
     cdef readonly list orders
     """The orders at the level.\n\n:returns: `list[Order]`"""
@@ -24,7 +29,10 @@ cdef class Level:
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
 
-    cpdef double volume(self)
+    cpdef double volume(self) except *
     cpdef price(self)
+
+    # cdef double volume_c(self) except *
+    # cdef MaybeDouble price_c(self) except *
 
     cdef inline bint _check_price(self, Order order) except *

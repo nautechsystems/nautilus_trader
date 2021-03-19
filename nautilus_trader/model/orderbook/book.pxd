@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class OrderBook:
+    cdef readonly InstrumentId instrument_id
+    """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly Ladder bids
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
@@ -27,6 +30,7 @@ cdef class OrderBook:
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
+    cpdef void apply_snapshot(self, list bids, list asks) except *
     cpdef void clear_bids(self) except *
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *

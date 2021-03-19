@@ -32,12 +32,22 @@ def test_order_id():
     assert len(order.id) == 36
 
 
-def test_update():
+def test_update_price():
     order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
     order.update_price(price=90)
     assert order.price == 90.0
+
+
+def test_update_volume():
+    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
     order.update_volume(volume=5)
     assert order.volume == 5.0
+
+
+def test_update_id():
+    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY, id="1")
+    order.update_id(value="2")
+    assert order.id == "2"
 
 
 # def test_exposure():

@@ -26,7 +26,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.market import MarketOrder
-from nautilus_trader.model.order_book_old import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -97,7 +97,7 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_order_book(self.instrument_id, level=2, depth=20, interval=5)  # For debugging
+        # self.subscribe_order_book(self.instrument_id, level=2, depth=25, interval=5)  # For debugging
         # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 

@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-# -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from tests.test_kit.providers import TestDataProvider
 
@@ -27,7 +27,8 @@ def run_l3_test(ob, feed):
 
 
 def test_orderbook_updates(benchmark):
-    # We only care about the actual updates here, so instantiate orderbook and load updates outside of benchmark
+    # We only care about the actual updates here, so instantiate orderbook and
+    # load updates outside of benchmark
     ob = L3OrderBook()
     feed = TestDataProvider.l3_feed()
     assert len(feed) == 100048  # 100k updates
