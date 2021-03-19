@@ -13,20 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from tabulate import tabulate
+
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
-from nautilus_trader.model.orderbook.util import pprint_ob
-
 
 
 cdef class OrderBook:
     """
     Provides a L1/L2/L3 order book.
 
-    A L3 order book that can be proxied to L2 or L1 `OrderBook` classes.
+    The base class for all order books.
+
+    An L3 order book can be proxied to L2 or L1 `OrderBook` classes.
     """
 
     def __init__(self):
@@ -192,9 +194,9 @@ cdef class OrderBook:
         """
         return self.asks.top()
 
-    cpdef double best_bid_price(self) except *:
+    cpdef best_bid_price(self):
         """
-        Return the best bid price in the book (if no bids then returns zero).
+        Return the best bid price in the book (if no bids then returns None).
 
         Returns
         -------
@@ -205,12 +207,11 @@ cdef class OrderBook:
         if top_bid_level:
             return top_bid_level.price()
         else:
-            # TODO: What is the correct behaviour here?
-            return 0.
+            return None
 
-    cpdef double best_ask_price(self) except *:
+    cpdef best_ask_price(self):
         """
-        Return the best ask price in the book (if no asks then returns zero).
+        Return the best ask price in the book (if no asks then returns None).
 
         Returns
         -------
@@ -221,12 +222,11 @@ cdef class OrderBook:
         if top_ask_level:
             return top_ask_level.price()
         else:
-            # TODO: What is the correct behaviour here?
-            return 0.
+            return None
 
-    cpdef double best_bid_qty(self) except *:
+    cpdef best_bid_qty(self):
         """
-        Return the best bid quantity in the book (if no bids then returns zero).
+        Return the best bid quantity in the book (if no bids then returns None).
 
         Returns
         -------
@@ -237,31 +237,29 @@ cdef class OrderBook:
         if top_bid_level:
             return top_bid_level.volume()
         else:
-            # TODO: What is the correct behaviour here?
-            return 0.
+            return None
 
-    cpdef double best_ask_qty(self) except *:
+    cpdef best_ask_qty(self):
         """
-        Return the best ask quantity in the book (if no asks then returns zero).
+        Return the best ask quantity in the book (if no asks then returns None).
 
         Returns
         -------
-        double
+        double or None
 
         """
         cdef Level top_ask_level = self.asks.top()
         if top_ask_level:
             return top_ask_level.volume()
         else:
-            # TODO: What is the correct behaviour here?
-            return 0.
+            return None
 
     def __repr__(self):
-        return pprint_ob(self)
+        return self.pprint()
 
-    cpdef double spread(self) except *:
+    cpdef spread(self):
         """
-        Return the top of book spread (if no bids or asks then returns zero).
+        Return the top of book spread (if no bids or asks then returns None).
 
         Returns
         -------
@@ -273,24 +271,54 @@ cdef class OrderBook:
         if top_bid_level and top_ask_level:
             return top_ask_level.price() - top_bid_level.price()
         else:
-            # TODO: What is the correct behaviour here?
-            return 0
+            return None
 
-    cpdef MaybeDouble my_method(self):
-        return MaybeDouble(has_price=False)
+    cpdef str pprint(self, int num_levels=3):
+        levels = reversed(
+            [
+                lvl
+                for lvl in self.bids.levels[-num_levels:]
+                           + self.asks.levels[:num_levels]
+            ]
+        )
+        data = [
+            {
+                "bids": [
+                            order.id
+                            for order in level.orders
+                            if level.price() in self.bids.prices()
+                        ]
+                        or None,
+                "price": level.price(),
+                "asks": [
+                            order.id
+                            for order in level.orders
+                            if level.price() in self.asks.prices()
+                        ]
+                        or None,
+            }
+            for level in levels
+        ]
+        return tabulate(
+            data, headers="keys", numalign="center", floatfmt=".2f", tablefmt="fancy"
+        )
 
 
 cdef class L3OrderBook(OrderBook):
     """
-    A L3 OrderBook.
+    Provides an L3 order book.
 
-    Should map directly to functionality of the OrderBook base class.
+    Maps directly to functionality of the `OrderBook` base class.
     """
     pass
 
 
 cdef class L2OrderBook(OrderBook):
-    """ A L2 Orderbook. An Orderbook where price `Levels` are only made up of a single order """
+    """
+    Provides an L2 order book.
+
+    An L2 order book `Levels` are only made up of a single order.
+    """
 
     cpdef void add(self, Order order) except *:
         """
@@ -367,7 +395,11 @@ cdef class L2OrderBook(OrderBook):
 
 
 cdef class L1OrderBook(OrderBook):
-    """ A L1 Orderbook that has only has a single (top) level """
+    """
+    Provides an L1 order book.
+
+    An L1 order book has a single (top) `Level`.
+    """
 
     cpdef void add(self, Order order) except *:
         """
