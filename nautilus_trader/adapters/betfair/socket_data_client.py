@@ -29,7 +29,7 @@ class SocketClient:
         for msg in self.connection_messages:
             if not isinstance(msg, str):
                 msg = json.dumps(msg)
-            self.logger.info("Sending connection message %s" % msg)
+            logger.info("Sending connection message %s" % msg)
             byte_msg = msg.encode(encoding=self.encoding) + self.crlf
             self.writer.write(byte_msg)
 
@@ -62,8 +62,8 @@ class SocketClient:
                     yield line
 
     async def data_received(self, data):
-        self.logger.info(data)
-        await asyncio.ensure_future(self.iris.publish(data))
+        logger.info(data)
+        await asyncio.ensure_future(self.publish(data))
 
 
 class BetfairSocketClient(SocketClient):
