@@ -153,3 +153,109 @@ def betfair_account_to_account_state(
         event_id,
         datetime.datetime.now(),
     )
+
+
+def parse_order_stream(raw):
+    return
+    # for market in raw.get("oc", []):
+    #     market_id = market["id"]
+    #     for runner in market.get("orc", []):
+    #         for order in runner.get("uo", []):
+    #             l = len(orders + trades)
+    #             if order["sm"] != 0:
+    #                 trades.append(
+    #                     messages.TradeConfirm(
+    #                         instrument_id=str(instrument.id),
+    #                         trade=BetTrade(
+    #                             price=order["avp"],
+    #                             volume=order["sm"],
+    #                             side=BET_SIDE[order["side"]],
+    #                             trade_id=order["id"],
+    #                         ),
+    #                         remote_timestamp=remote_timestamp,
+    #                         extra_headers={
+    #                             "channel_suffix": instrument_to_channel(instrument)
+    #                         },
+    #                     )
+    #                 )
+    #             elif order["sm"] == 0 and any(
+    #                 order[x] != 0 for x in ("sc", "sl", "sv")
+    #             ):
+    #                 orders.append(
+    #                     messages.CancelConfirm(
+    #                         source=SOURCE,
+    #                         instrument_id=str(instrument.id),
+    #                         order=Order(
+    #                             price=order["p"],
+    #                             volume=order["sc"],
+    #                             side=BET_SIDE[order["side"]],
+    #                         ),
+    #                         remote_timestamp=remote_timestamp,
+    #                         extra_headers={
+    #                             "channel_suffix": instrument_to_channel(instrument)
+    #                         },
+    #                     )
+    #                 )
+    #             elif order["sr"] != 0 and order["sr"] == order["s"]:
+    #                 orders.append(
+    #                     messages.InsertConfirm(
+    #                         source=SOURCE,
+    #                         instrument_id=str(instrument.id),
+    #                         order=Order(
+    #                             price=order["p"],
+    #                             volume=order["s"],
+    #                             side=BET_SIDE[order["side"]],
+    #                         ),
+    #                         remote_timestamp=remote_timestamp,
+    #                         extra_headers={
+    #                             "channel_suffix": instrument_to_channel(instrument)
+    #                         },
+    #                     )
+    #                 )
+    #             else:
+    #                 raise MessageParsingError("Missing order type", raw, None)
+    #
+    #             # Check that we only have one type of confirmation - confirm/cancel/lapse/remaining
+    #             assert (len(orders + trades) - l) <= 1
+    #
+    #         for trade in runner.get("mb", []):
+    #             trades.append(
+    #                 messages.TradeConfirm(
+    #                     source=SOURCE,
+    #                     instrument_id=str(instrument.id),
+    #                     trade=BetTrade(
+    #                         price=trade[0], volume=trade[1], side=BetOrderSide.BACK
+    #                     ),
+    #                     extra_headers={
+    #                         "channel_suffix": instrument_to_channel(instrument)
+    #                     },
+    #                 )
+    #             )
+    #         for trade in runner.get("ml", []):
+    #             trades.append(
+    #                 messages.TradeConfirm(
+    #                     source=SOURCE,
+    #                     instrument_id=str(instrument.id),
+    #                     trade=BetTrade(
+    #                         price=trade[0], volume=trade[1], side=BetOrderSide.LAY
+    #                     ),
+    #                     extra_headers={
+    #                         "channel_suffix": instrument_to_channel(instrument)
+    #                     },
+    #                 )
+    #             )
+    #
+    #         if runner.get("fullImage", False):
+    #             position = BetPosition.from_trades(
+    #                 instrument_id=str(instrument.id), trades=[m.trade for m in trades]
+    #             )
+    #             yield messages.PositionUpdate(
+    #                 source=SOURCE,
+    #                 instrument_id=str(instrument.id),
+    #                 position=position,
+    #                 remote_timestamp=remote_timestamp,
+    #                 extra_headers={"channel_suffix": instrument_to_channel(instrument)},
+    #             )
+    #             yield from orders
+    #         else:
+    #             yield from orders + trades
