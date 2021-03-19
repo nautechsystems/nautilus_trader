@@ -638,8 +638,10 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderEvent):
             self._handle_order_event(event)
+            self._send_to_risk_engine(event)
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
+            self._send_to_risk_engine(event)
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
         else:
@@ -906,3 +908,8 @@ cdef class ExecutionEngine(Component):
             return  # Cannot send to strategy
 
         strategy.handle_event_c(event)
+
+    cdef inline void _send_to_risk_engine(self, Event event) except *:
+        # If a `RiskEngine` is registered then send the event there
+        if self._risk_engine is not None:
+            self._risk_engine.process(event)

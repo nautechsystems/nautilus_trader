@@ -115,3 +115,4 @@ cdef class ExecutionEngine(Component):
     cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+    cdef inline void _send_to_risk_engine(self, Event event) except *
