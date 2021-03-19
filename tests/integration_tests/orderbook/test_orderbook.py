@@ -13,108 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
-
-import pandas as pd
-import pytest
-
-from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
-from nautilus_trader.model.orderbook.order import Order
-from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.providers import TestDataProvider
 
 
-@pytest.fixture()
-def l2_feed():
-    def parse_line(d):
-        if "status" in d:
-            return {}
-        elif "close_price" in d:
-            # return {'timestamp': d['remote_timestamp'], "close_price": d['close_price']}
-            return {}
-        if "trade" in d:
-            return {}
-            # data = TradeTick()
-        elif "level" in d and d["level"]["orders"][0]["volume"] == 0:
-            op = "delete"
-        else:
-            op = "update"
-        order_like = d["level"]["orders"][0] if op != "trade" else d["trade"]
-        return {
-            "timestamp": d["remote_timestamp"],
-            "op": op,
-            "order": Order(
-                price=order_like["price"],
-                volume=abs(order_like["volume"]),
-                # Betting sides are reversed
-                side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
-                id=str(order_like["order_id"]),
-            ),
-        }
-
-    return [
-        parse_line(line)
-        for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
-    ]
-
-
-@pytest.fixture()
-def l3_feed():
-    def parser(data):
-        parsed = data
-        if not isinstance(parsed, list):
-            # print(parsed)
-            return
-        elif isinstance(parsed, list):
-            channel, updates = parsed
-            if not isinstance(updates[0], list):
-                updates = [updates]
-        else:
-            raise KeyError()
-        if isinstance(updates, int):
-            print("Err", updates)
-            return
-        for values in updates:
-            keys = ("order_id", "price", "volume")
-            data = dict(zip(keys, values))
-            side = OrderSide.BUY if data["volume"] >= 0 else OrderSide.SELL
-            if data["price"] == 0:
-                yield dict(
-                    op="delete",
-                    order=Order(
-                        price=data["price"],
-                        volume=abs(data["volume"]),
-                        side=side,
-                        id=str(data["order_id"]),
-                    ),
-                )
-            else:
-                yield dict(
-                    op="update",
-                    order=Order(
-                        price=data["price"],
-                        volume=abs(data["volume"]),
-                        side=side,
-                        id=str(data["order_id"]),
-                    ),
-                )
-
-    return [
-        msg
-        for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
-        for msg in parser(data)
-    ]
-
-
-def test_l3_feed(l3_feed):
+def test_l3_feed():
     ob = L3OrderBook()
     # Updates that cause the book to fail integrity checks will be deleted
     # immediately, but we may get also delete later.
     skip_deletes = []
 
-    for i, m in enumerate(l3_feed):
+    for i, m in enumerate(TestDataProvider.l3_feed()):
         # print(f"[{i}]", m, ob, "\n") # Print ob summary
         if m["op"] == "update":
             ob.update(order=m["order"])
@@ -133,7 +44,7 @@ def test_l3_feed(l3_feed):
     assert ob.best_bid_level().volume() == 1
 
 
-def test_l2_feed(l2_feed):
+def test_l2_feed():
     ob = L2OrderBook()
 
     # Duplicate delete messages
@@ -143,7 +54,7 @@ def test_l2_feed(l2_feed):
         (68431, "8913f4bf-cc49-4e23-b05d-5eeed948a454"),
     ]
 
-    for i, m in enumerate(l2_feed):
+    for i, m in enumerate(TestDataProvider.l2_feed()):
         if not m or (i, m["order"].id) in skip:
             continue
         # print(f"[{i}]", "\n", m, "\n", ob, "\n")
@@ -156,24 +67,9 @@ def test_l2_feed(l2_feed):
     assert i == 68462
 
 
-@pytest.fixture()
-def l1_feed():
-    df = pd.read_csv(PACKAGE_ROOT + "/data/truefx-usdjpy-ticks.csv")
-    updates = []
-    for _, row in df.iterrows():
-        for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
-            updates.append(
-                {
-                    "op": "update",
-                    "order": Order(price=row[side], volume=1e9, side=order_side),
-                }
-            )
-    return updates
-
-
-def test_l1_orderbook(l1_feed):
+def test_l1_orderbook():
     ob = L1OrderBook()
-    for i, m in enumerate(l1_feed):
+    for i, m in enumerate(TestDataProvider.l1_feed()):
         # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         # print("")
         if m["op"] == "update":
