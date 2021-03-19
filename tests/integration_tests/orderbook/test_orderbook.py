@@ -13,15 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
-import pytest
-
-from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
-from nautilus_trader.model.orderbook.order import Order
-from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 
 
@@ -73,25 +67,9 @@ def test_l2_feed():
     assert i == 68462
 
 
-@pytest.fixture()
-def l1_feed():
-    # TODO - Replace with TestDataProvider ?
-    df = pd.read_csv(PACKAGE_ROOT + "/data/truefx-usdjpy-ticks.csv")
-    updates = []
-    for _, row in df.iterrows():
-        for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
-            updates.append(
-                {
-                    "op": "update",
-                    "order": Order(price=row[side], volume=1e9, side=order_side),
-                }
-            )
-    return updates
-
-
-def test_l1_orderbook(l1_feed):
+def test_l1_orderbook():
     ob = L1OrderBook()
-    for i, m in enumerate(l1_feed):
+    for i, m in enumerate(TestDataProvider.l1_feed()):
         # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         # print("")
         if m["op"] == "update":

@@ -94,6 +94,21 @@ class TestDataProvider:
         )
 
     @staticmethod
+    def l1_feed():
+        updates = []
+        for _, row in TestDataProvider.usdjpy_ticks().iterrows():
+            for side, order_side in zip(
+                ("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)
+            ):
+                updates.append(
+                    {
+                        "op": "update",
+                        "order": Order(price=row[side], volume=1e9, side=order_side),
+                    }
+                )
+        return updates
+
+    @staticmethod
     def l2_feed() -> List:
         def parse_line(d):
             if "status" in d:
