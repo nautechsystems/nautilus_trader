@@ -111,7 +111,7 @@ cdef class Level:
 
         self.orders.remove(order)
 
-    cpdef double volume(self):
+    cpdef double volume(self)  except *:
         """
         Return the volume at this level.
 
@@ -140,3 +140,15 @@ cdef class Level:
         if not self.orders:
             return True
         return order.price == self.orders[0].price
+
+    # cdef MaybeDouble price_c(self) except *:
+    #     cdef MaybeDouble price
+    #     if self.orders:
+    #         price = MaybeDouble(value=self.orders[0].price)
+    #         price.has_value = True
+    #         return price
+    #     else:
+    #         return MaybeDouble(has_value=False)
+    #
+    # cdef double volume_c(self)  except *:
+    #     return sum([order.volume for order in self.orders])

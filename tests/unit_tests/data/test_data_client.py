@@ -29,7 +29,7 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order_book_old import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
@@ -343,17 +343,7 @@ class MarketDataClientTests(unittest.TestCase):
 
     def test_handle_order_book_sends_to_data_engine(self):
         # Arrange
-        order_book = OrderBook(
-            instrument_id=ETHUSDT_BINANCE.id,
-            level=2,
-            depth=25,
-            price_precision=2,
-            size_precision=5,
-            bids=[],
-            asks=[],
-            update_id=0,
-            timestamp=0,
-        )
+        order_book = OrderBook(instrument_id=ETHUSDT_BINANCE.id)
 
         # Act
         self.client._handle_order_book_py(order_book)

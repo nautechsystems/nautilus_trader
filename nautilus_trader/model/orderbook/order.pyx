@@ -73,6 +73,18 @@ cdef class Order:
         """
         self.volume = volume
 
+    cpdef void update_id(self, str value) except *:
+        """
+        Update the orders identifier to the given value.
+
+        Parameters
+        ----------
+        value : str
+            The updated identifier.
+
+        """
+        self.id = value
+
     def __eq__(self, Order other):
         return self.id == other.id
 

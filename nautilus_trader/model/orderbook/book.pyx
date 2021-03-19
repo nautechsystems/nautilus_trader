@@ -31,11 +31,12 @@ cdef class OrderBook:
     An L3 order book can be proxied to L2 or L1 `OrderBook` classes.
     """
 
-    def __init__(self):
+    def __init__(self, InstrumentId instrument_id=None):
         """
         Initialize a new instance of the `OrderBook` class.
 
         """
+        self.instrument_id = instrument_id
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
 
@@ -74,6 +75,30 @@ cdef class OrderBook:
 
         """
         self._delete(order=order)
+
+    cpdef void apply_snapshot(
+        self,
+        list bids,
+        list asks,
+    ) except *:
+        """
+        Update this orderbook from a new snapshot.
+
+        Parameters
+        ----------
+        bids : list
+            The snapshot bids.
+        asks : list
+            The snapshot asks.
+
+        """
+        self.clear()
+        cdef list bid
+        for bid in bids:
+            self.add(order=Order(price=bid[0], volume=bid[1], side=OrderSide.BUY))
+        cdef list ask
+        for ask in asks:
+            self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
 
     cpdef void check_integrity(self) except *:
         """
