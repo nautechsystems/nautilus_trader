@@ -32,6 +32,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+
 VENUE = "betfair"
 
 

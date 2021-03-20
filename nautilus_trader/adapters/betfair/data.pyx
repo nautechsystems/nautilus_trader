@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+
 import betfairlightweight
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
