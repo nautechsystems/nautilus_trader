@@ -128,6 +128,17 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         """
         self._log.info("Connecting...")
 
+        # Re-cache orders
+        cdef dict venue_orders = {}
+        cdef list orders_all = self._engine.cache.orders()
+        cdef Order order
+        for order in orders_all:
+            if order.is_completed_c():
+                continue
+            if order.venue.first() == self.name:
+                self._cached_orders[order.id] = order
+                self._cached_filled[order.id] = order.filled_qty.as_decimal()
+
         if self._client.check_required_credentials():
             self._log.info("API credentials validated.", LogColor.GREEN)
         else:
@@ -191,7 +202,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef int count = len(active_orders)
         self._log.info(
-            f"Resolving state: {count} active order{'s' if count > 1 else ''}...",
+            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
             LogColor.BLUE,
         )
 
@@ -203,12 +214,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef list order_trades
         for order in active_orders:
             if order.id.is_null():
-                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                self._log.error(f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
                                 f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
-            instrument = self._instrument_provider.find_c(order.symbol)
+            instrument = self._instrument_provider.find_c(order.instrument_id)
             if instrument is None:
-                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                self._log.error(f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
                                 f"instrument for {order.instrument_id} not found.")
                 continue  # Cannot resolve order
 
@@ -217,11 +228,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     id=order.id.value,
                     symbol=order.symbol.value,
                 )
-                trades = await self._client.fetch_my_trades(
-                    symbol=order.symbol.value,
-                    since=to_unix_time_ms(order.timestamp),
-                )
-                order_trades = [trade for trade in trades if trade["order"] == order.id.value]
 
             except CCXTError as ex:
                 self._log_ccxt_error(ex, self._update_balances.__name__)
@@ -232,26 +238,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
 
             cum_qty = order.filled_qty.as_decimal()
-            for trade in order_trades:
-                execution_id = ExecutionId(str(response["id"]))
-                if execution_id in order.execution_ids_c():
-                    continue  # Trade already applied
-                self._generate_order_filled(
-                    cl_ord_id=order.cl_ord_id,
-                    order_id=order.id,
-                    execution_id=ExecutionId(str(response["id"])),
-                    instrument_id=order.instrument_id,
-                    order_side=order.side,
-                    fill_qty=Decimal(f"{trade['amount']:.{instrument.size_precision}}"),
-                    cum_qty=cum_qty,
-                    leaves_qty=order.quantity - cum_qty,
-                    avg_px=Decimal(trade["price"]),
-                    commission_amount=trade["fee"]["cost"],
-                    commission_currency=trade["fee"]["currency"],
-                    liquidity_side=LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-                    timestamp=from_unix_time_ms(trade["timestamp"]),
-                )
-
             status = response["status"]
             if status == "open":
                 if cum_qty > 0:
@@ -275,6 +261,63 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order_filled=order_filled,
             position_states=position_states,
         )
+
+    async def reconcile_state(self, Order order):
+        """
+        Reconcile state.
+
+        """
+        # Get Instrument
+        cdef Instrument instrument = self._instrument_provider.find_c(order.symbol)
+        if instrument is None:
+            inst_id = order.instrument_id.value
+            self._log.error(
+                f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
+                f"instrument for {inst_id} not found.")
+            return  # Cannot reconcile state
+
+        cdef dict response
+        cdef list trades
+        try:
+            response = await self._client.fetch_order(
+                id=order.id.value,
+                symbol=order.symbol.value,
+            )
+            trades = await self._client.fetch_my_trades(
+                symbol=order.symbol.value,
+                since=to_unix_time_ms(order.timestamp),
+            )
+            order_trades = [trade for trade in trades if trade["order"] == order.id.value]
+
+        except CCXTError as ex:
+            self._log_ccxt_error(ex, self.reconcile_state.__name__)
+            return
+        if response is None:
+            self._log.error(
+                f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
+                f"response was None.")
+            return  # Cannot reconcile state
+
+        cum_qty: Decimal = order.filled_qty.as_decimal()
+        for trade in order_trades:
+            execution_id = ExecutionId(str(response["id"]))
+            if execution_id in order.execution_ids_c():
+                continue  # Trade already applied
+            self._generate_order_filled(
+                cl_ord_id=order.cl_ord_id,
+                order_id=order.id,
+                execution_id=execution_id,
+                instrument_id=order.instrument_id,
+                order_side=order.side,
+                fill_qty=Decimal(f"{trade['amount']:.{instrument.size_precision}}"),
+                cum_qty=cum_qty,
+                leaves_qty=order.quantity - cum_qty,
+                avg_px=Decimal(trade["price"]),
+                commission_amount=trade["fee"]["cost"],
+                commission_currency=trade["fee"]["currency"],
+                liquidity_side=LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
+                timestamp=from_unix_time_ms(trade["timestamp"]),
+            )
 
     cpdef void disconnect(self) except *:
         """
@@ -609,10 +652,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             self._cache_order(order_id, order)
 
-        prev_cum_qty: Decimal = self._cached_filled.get(order_id)
+        prev_cum_qty: Decimal = self._cached_filled.get(order_id, Decimal())
         fill_qty: Decimal = Decimal(f"{event['amount']:.{order.quantity.precision_c()}f}")
         cum_qty: Decimal = prev_cum_qty + fill_qty
-        self._cached_filled[order.cl_ord_id] = cum_qty
+        self._cached_filled[order.id] = cum_qty
         leaves_qty: Decimal = order.quantity - cum_qty
         if leaves_qty == 0:
             self._decache_order(order_id)

@@ -190,7 +190,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         cdef int count = len(active_orders)
         self._log.info(
-            f"Resolving state: {count} active order{'s' if count > 1 else ''}...",
+            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
             LogColor.BLUE,
         )
 
@@ -202,12 +202,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         cdef list order_trades
         for order in active_orders:
             if order.id.is_null():
-                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                self._log.error(f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
                                 f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
             instrument = self._instrument_provider.find_c(order.symbol)
             if instrument is None:
-                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                self._log.error(f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
                                 f"instrument for {order.instrument_id} not found.")
                 continue  # Cannot resolve order
 
