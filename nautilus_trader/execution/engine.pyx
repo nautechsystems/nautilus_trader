@@ -703,8 +703,9 @@ cdef class ExecutionEngine(Component):
             self._confirm_position_id(event)
 
         try:
+            # Protected against duplicate OrderFilled
             order.apply_c(event)
-        except (ValueError, KeyError, InvalidStateTrigger)  as ex:
+        except (KeyError, InvalidStateTrigger)  as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 
@@ -786,8 +787,9 @@ cdef class ExecutionEngine(Component):
             return  # Handled in flip
 
         try:
+            # Protected against duplicate OrderFilled
             position.apply_c(fill)
-        except ValueError as ex:
+        except KeyError as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 
