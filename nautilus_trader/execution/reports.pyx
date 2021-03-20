@@ -13,7 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class ExecutionStateReport:
@@ -25,9 +34,7 @@ cdef class ExecutionStateReport:
         self,
         str client not None,
         AccountId account_id not None,
-        dict order_states not None,
-        dict order_filled not None,
-        dict position_states not None,
+        datetime timestamp not None,
     ):
         """
         Initializes a new instance of the `ExecutionStateReport` class.
@@ -38,12 +45,8 @@ cdef class ExecutionStateReport:
             The client name for the report.
         account_id : AccountId
             The account identifier for the report.
-        order_states : dict[OrderId, OrderState]
-            The order states for the venue.
-        order_filled : dict[OrderId, OrderEvent]
-            The order fill info for the venue.
-        position_states : dict[InstrumentId, Decimal]
-            The position states for the venue.
+        timestamp : datetime
+            The report timestamp.
 
         Raises
         ------
@@ -55,6 +58,139 @@ cdef class ExecutionStateReport:
 
         self.client = client
         self.account_id = account_id
-        self.order_states = order_states
-        self.order_filled = order_filled
-        self.position_states = position_states
+        self.timestamp = timestamp
+
+        self._order_states = {}     # type: dict[ClientOrderId, OrderStateReport]
+        self._position_states = {}  # type: dict[InstrumentId, PositionStateReport]
+
+    cpdef dict order_states(self):
+        """
+        Return the order state reports.
+
+        Returns
+        -------
+        dict[ClientOrderId, OrderStateReport]
+
+        """
+        return self._order_states.copy()
+
+    cpdef dict position_states(self):
+        """
+        Return the position state reports.
+
+        Returns
+        -------
+        dict[InstrumentId, PositionStateReport]
+
+        """
+        return self._position_states.copy()
+
+    cpdef void add_order_report(self, OrderStateReport report) except *:
+        """
+        Add the order state report.
+
+        Parameters
+        ----------
+        report : OrderStateReport
+            The report to add.
+
+        """
+        Condition.not_none(report, "report")
+
+        self._order_states[report.cl_ord_id] = report
+
+    cpdef void add_position_report(self, PositionStateReport report) except *:
+        """
+        Add the position state report.
+
+        Parameters
+        ----------
+        report : PositionStateReport
+            The report to add.
+
+        """
+        Condition.not_none(report, "report")
+
+        self._position_states[report.instrument_id] = report
+
+
+cdef class OrderStateReport:
+    """
+    Represents an orders state at a point in time.
+    """
+    def __init__(
+        self,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        OrderState order_state,
+        Quantity filled_qty not None,
+        datetime timestamp not None,
+    ):
+        """
+        Initializes a new instance of the `OrderStateReport` class.
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The reported client order identifier.
+        order_id : OrderId
+            The reported order identifier.
+        order_state : OrderState
+            The reported order state at the exchange.
+        filled_qty : Quantity
+            The reported filled quantity at the exchange.
+        timestamp : datetime
+            The report timestamp.
+
+        Raises
+        ------
+        ValueError
+            If order_state is UNDEFINED.
+
+        """
+        Condition.not_equal(order_state, OrderState.UNDEFINED, "order_state", "UNDEFINED")
+
+        self.cl_ord_id = cl_ord_id
+        self.order_id = order_id
+        self.order_state = order_state
+        self.filled_qty = filled_qty
+        self.timestamp = timestamp
+
+
+cdef class PositionStateReport:
+    """
+    Represents a positions state at a point in time.
+    """
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        PositionSide position_side,
+        Quantity qty not None,
+        datetime timestamp not None,
+    ):
+        """
+        Initializes a new instance of the `PositionStateReport` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The reported instrument identifier.
+        position_side : PositionSide
+            The reported position side at the exchange.
+        qty : Quantity
+            The reported position quantity at the exchange.
+        timestamp : datetime
+            The report timestamp.
+
+        Raises
+        ------
+        ValueError
+            If position_side is UNDEFINED.
+
+        """
+        Condition.not_equal(position_side, PositionSide.UNDEFINED, "position_side", "UNDEFINED")
+
+        self.instrument_id = instrument_id
+        self.side = position_side
+        self.qty = qty
+        self.timestamp = timestamp
