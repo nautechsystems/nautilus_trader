@@ -43,6 +43,7 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -174,14 +175,14 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         """
         Condition.not_none(active_orders, "active_orders")
 
-        cdef dict order_states = {}
-        cdef dict order_filled = {}
-        cdef dict position_states = {}
+        cdef dict order_states = {}     # type: dict[OrderId, OrderState]
+        cdef dict order_filled = {}     # type: dict[OrderId, Decimal]
+        cdef dict position_states = {}  # type: dict[InstrumentId, Decimal]
 
         if not active_orders:
             # Nothing to resolve
             return ExecutionStateReport(
-                name=self.name,
+                client=self.name,
                 account_id=self.account_id,
                 order_states=order_states,
                 order_filled=order_filled,
@@ -268,7 +269,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
 
         return ExecutionStateReport(
-            name=self.name,
+            client=self.name,
             account_id=self.account_id,
             order_states=order_states,
             order_filled=order_filled,
