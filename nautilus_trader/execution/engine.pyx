@@ -704,7 +704,7 @@ cdef class ExecutionEngine(Component):
 
         try:
             order.apply_c(event)
-        except InvalidStateTrigger as ex:
+        except (ValueError, KeyError, InvalidStateTrigger)  as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 
@@ -785,7 +785,12 @@ cdef class ExecutionEngine(Component):
             self._flip_position(position, fill)
             return  # Handled in flip
 
-        position.apply_c(fill)
+        try:
+            position.apply_c(fill)
+        except ValueError as ex:
+            self._log.exception(ex)
+            return  # Not re-raising to avoid crashing engine
+
         self.cache.update_position(position)
 
         cdef PositionEvent position_event

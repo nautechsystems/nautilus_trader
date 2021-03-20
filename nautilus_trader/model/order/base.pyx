@@ -473,9 +473,10 @@ cdef class Order:
         elif isinstance(event, OrderFilled):
             if self.id.not_null():
                 Condition.equal(self.id, event.order_id, "id", "event.order_id")
+                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
             else:
                 self.id = event.order_id
-            if self.quantity - self.filled_qty - event.fill_qty > 0:
+            if self.filled_qty + event.fill_qty < self.quantity:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
                 self._fsm.trigger(OrderState.FILLED)

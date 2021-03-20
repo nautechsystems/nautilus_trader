@@ -259,12 +259,15 @@ class TestStubs:
     def event_order_filled(
         order,
         instrument,
+        execution_id=None,
         position_id=None,
         strategy_id=None,
         fill_price=None,
         fill_qty=None,
         liquidity_side=LiquiditySide.TAKER,
     ) -> OrderFilled:
+        if execution_id is None:
+            execution_id = ExecutionId(order.cl_ord_id.value.replace("O", "E"))
         if position_id is None:
             position_id = order.position_id
         if strategy_id is None:
@@ -284,7 +287,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             cl_ord_id=order.cl_ord_id,
             order_id=order.id,
-            execution_id=ExecutionId(order.cl_ord_id.value.replace("O", "E")),
+            execution_id=execution_id,
             position_id=position_id,
             strategy_id=strategy_id,
             instrument_id=order.instrument_id,
