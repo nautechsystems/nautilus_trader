@@ -426,6 +426,8 @@ cdef class Order:
             If event.order_id not equal to self.id (if assigned and not being amended).
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
+        KeyError
+            If event is OrderFilled and event.execution_id already applied to the order.
 
         """
         self.apply_c(event)
@@ -433,9 +435,6 @@ cdef class Order:
     cdef void apply_c(self, OrderEvent event) except *:
         Condition.not_none(event, "event")
         Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
-
-        # Update events
-        self._events.append(event)
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInvalid):
@@ -473,13 +472,17 @@ cdef class Order:
         elif isinstance(event, OrderFilled):
             if self.id.not_null():
                 Condition.equal(self.id, event.order_id, "id", "event.order_id")
+                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
             else:
                 self.id = event.order_id
-            if self.quantity - self.filled_qty - event.fill_qty > 0:
+            if self.filled_qty + event.fill_qty < self.quantity:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
                 self._fsm.trigger(OrderState.FILLED)
             self._filled(event)
+
+        # Update events last as FSM may raise InvalidStateTrigger
+        self._events.append(event)
 
     cdef void _invalid(self, OrderInvalid event) except *:
         pass  # Do nothing else

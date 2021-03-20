@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from bisect import bisect
-
+from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
@@ -64,7 +63,7 @@ cdef class Ladder:
         # New price, create Level
         else:
             level = Level(orders=[order])
-            price_idx = bisect(existing_prices, level.price())
+            price_idx = bisect_double_right(existing_prices, level.price())
             self.levels.insert(price_idx, level)
         self.order_id_levels[order.id] = level
 
@@ -159,9 +158,11 @@ cdef class Ladder:
 
         Returns
         -------
-        Level
+        Level or None
 
         """
         cdef list top = self.depth(1)
-        if len(top) > 0:
+        if top:
             return top[0]
+        else:
+            return None

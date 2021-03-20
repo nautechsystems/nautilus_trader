@@ -17,7 +17,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 
 
 cdef class ExecutionStateReport:
-    cdef readonly str name
+    cdef readonly str client
     """The client name for the report.\n\n:returns: `str`"""
     cdef readonly AccountId account_id
     """The account identifier for the venue.\n\n:returns: `AccountId`"""

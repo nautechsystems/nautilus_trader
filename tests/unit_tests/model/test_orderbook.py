@@ -42,6 +42,13 @@ def test_init():
     assert ob.bids.reverse and not ob.asks.reverse
 
 
+def test_pprint_when_no_orders():
+    ob = OrderBook()
+    result = ob.pprint()
+
+    assert "" == result
+
+
 def test_add(empty_book):
     empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
     assert empty_book.bids.top().price() == 10.0

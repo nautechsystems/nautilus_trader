@@ -50,7 +50,8 @@ cdef class Position:
         Condition.true(event.position_id.not_null(), "event.position_id.value was 'NULL'")
         Condition.true(event.strategy_id.not_null(), "event.strategy_id.value was 'NULL'")
 
-        self._events = []  # type: list[OrderFilled]
+        self._events = []         # type: list[OrderFilled]
+        self._execution_ids = []  # type: list[ExecutionId]
         self._buy_quantity = Decimal()
         self._sell_quantity = Decimal()
 
@@ -323,14 +324,21 @@ cdef class Position:
         event : OrderFillEvent
             The order fill event to apply.
 
+        Raises
+        ------
+        KeyError
+            If event.execution_id already applied to the position.
+
         """
         # Fast C method to avoid overhead of subclassing
         self.apply_c(event)
 
     cdef void apply_c(self, OrderFilled event) except *:
         Condition.not_none(event, "event")
+        Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
 
         self._events.append(event)
+        self._execution_ids.append(event.execution_id)
 
         # Calculate cumulative commission
         cdef Currency currency = event.commission.currency

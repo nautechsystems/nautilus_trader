@@ -50,10 +50,40 @@ cdef class Order:
         self.id = id or str(uuid4())
 
     cpdef void update_price(self, double price) except *:
+        """
+        Update the orders price.
+
+        Parameters
+        ----------
+        price : double
+            The updated price.
+
+        """
         self.price = price
 
     cpdef void update_volume(self, double volume) except *:
+        """
+        Update the orders volume.
+
+        Parameters
+        ----------
+        volume : double
+            The updated volume.
+
+        """
         self.volume = volume
+
+    cpdef void update_id(self, str value) except *:
+        """
+        Update the orders identifier to the given value.
+
+        Parameters
+        ----------
+        value : str
+            The updated identifier.
+
+        """
+        self.id = value
 
     def __eq__(self, Order other):
         return self.id == other.id

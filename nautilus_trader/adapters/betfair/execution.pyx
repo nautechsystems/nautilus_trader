@@ -105,7 +105,108 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         :return:
         """
-        pass
+        Condition.not_none(active_orders, "active_orders")
+
+        cdef dict order_states = {}
+        cdef dict order_filled = {}
+        cdef dict position_states = {}
+
+        if not active_orders:
+            # Nothing to resolve
+            return ExecutionStateReport(
+                client=self.name,
+                account_id=self.account_id,
+                order_states=order_states,
+                order_filled=order_filled,
+                position_states=position_states,
+            )
+
+        cdef int count = len(active_orders)
+        self._log.info(
+            f"Resolving state: {count} active order{'s' if count > 1 else ''}...",
+            LogColor.BLUE,
+        )
+
+        cdef Instrument instrument
+        cdef Order order
+        cdef str status
+        cdef dict response
+        cdef list trades
+        cdef list order_trades
+        for order in active_orders:
+            if order.id.is_null():
+                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                                f"OrderId was 'NULL'.")
+                continue  # Cannot resolve order
+            instrument = self._instrument_provider.find_c(order.symbol)
+            if instrument is None:
+                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                                f"instrument for {order.instrument_id} not found.")
+                continue  # Cannot resolve order
+
+            try:
+                response = await self._client.fetch_order(
+                    id=order.id.value,
+                    symbol=order.symbol.value,
+                )
+                trades = await self._client.fetch_my_trades(
+                    symbol=order.symbol.value,
+                    since=to_unix_time_ms(order.timestamp),
+                )
+                order_trades = [trade for trade in trades if trade["order"] == order.id.value]
+
+            except betfairlightweight.BetfairError as ex:
+                self._log_ccxt_error(ex, self._update_balances.__name__)
+                continue
+            if response is None:
+                self._log.error(f"No order found for {order.id.value}.")
+                continue
+            # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
+
+            cum_qty = order.filled_qty.as_decimal()
+            for trade in order_trades:
+                execution_id = ExecutionId(str(response["id"]))
+                if execution_id in order.execution_ids_c():
+                    continue  # Trade already applied
+                self._generate_order_filled(
+                    cl_ord_id=order.cl_ord_id,
+                    order_id=order.id,
+                    execution_id=ExecutionId(str(response["id"])),
+                    instrument_id=order.instrument_id,
+                    order_side=order.side,
+                    fill_qty=Decimal(f"{trade['amount']:.{instrument.size_precision}}"),
+                    cum_qty=cum_qty,
+                    leaves_qty=order.quantity - cum_qty,
+                    avg_px=Decimal(trade["price"]),
+                    commission_amount=trade["fee"]["cost"],
+                    commission_currency=trade["fee"]["currency"],
+                    liquidity_side=LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
+                    timestamp=from_unix_time_ms(trade["timestamp"]),
+                )
+
+            status = response["status"]
+            if status == "open":
+                if cum_qty > 0:
+                    order_states[order.id] = OrderState.PARTIALLY_FILLED
+                    order_filled[order.id] = cum_qty
+            elif status == "closed":
+                order_states[order.id] = OrderState.FILLED
+                order_filled[order.id] = cum_qty
+            elif status == "canceled":
+                order_states[order.id] = OrderState.CANCELLED
+                timestamp = from_unix_time_ms(<long>response["timestamp"])
+                self._generate_order_cancelled(order.cl_ord_id, order.id, timestamp)
+            elif status == "expired":
+                order_states[order.id] = OrderState.EXPIRED
+                self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
+
+        return ExecutionStateReport(
+            client=self.name,
+            account_id=self.account_id,
+            order_states=order_states,
+            order_filled=order_filled,
+            position_states=position_states,
+        )
 
     cpdef void disconnect(self) except *:
         self._client.client_logout()

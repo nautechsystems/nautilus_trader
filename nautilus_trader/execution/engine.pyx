@@ -638,8 +638,10 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderEvent):
             self._handle_order_event(event)
+            self._send_to_risk_engine(event)
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
+            self._send_to_risk_engine(event)
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
         else:
@@ -701,8 +703,9 @@ cdef class ExecutionEngine(Component):
             self._confirm_position_id(event)
 
         try:
+            # Protected against duplicate OrderFilled
             order.apply_c(event)
-        except InvalidStateTrigger as ex:
+        except (KeyError, InvalidStateTrigger)  as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 
@@ -783,7 +786,13 @@ cdef class ExecutionEngine(Component):
             self._flip_position(position, fill)
             return  # Handled in flip
 
-        position.apply_c(fill)
+        try:
+            # Protected against duplicate OrderFilled
+            position.apply_c(fill)
+        except KeyError as ex:
+            self._log.exception(ex)
+            return  # Not re-raising to avoid crashing engine
+
         self.cache.update_position(position)
 
         cdef PositionEvent position_event
@@ -906,3 +915,8 @@ cdef class ExecutionEngine(Component):
             return  # Cannot send to strategy
 
         strategy.handle_event_c(event)
+
+    cdef inline void _send_to_risk_engine(self, Event event) except *:
+        # If a `RiskEngine` is registered then send the event there
+        if self._risk_engine is not None:
+            self._risk_engine.process(event)

@@ -191,9 +191,9 @@ class ExecutionClientTests(unittest.TestCase):
         fill = TestStubs.event_order_filled(
             order,
             AUDUSD_SIM,
-            PositionId("P-123456"),
-            StrategyId("S", "001"),
-            Price("1.00001"),
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("1.00001"),
         )
 
         # Act

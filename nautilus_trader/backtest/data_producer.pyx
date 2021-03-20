@@ -17,7 +17,6 @@
 This module provides a data producer for backtesting.
 """
 
-from bisect import bisect_left
 import gc
 import time
 
@@ -27,6 +26,7 @@ import pandas as pd
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -484,8 +484,8 @@ cdef class CachedProducer(DataProducerFacade):
         self._producer.setup(start, stop)
 
         # Set indexing
-        self._tick_index = bisect_left(self._ts_cache, start.timestamp())
-        self._tick_index_last = bisect_left(self._ts_cache, stop.timestamp())
+        self._tick_index = bisect_double_left(self._ts_cache, start.timestamp())
+        self._tick_index_last = bisect_double_left(self._ts_cache, stop.timestamp())
         self._init_start_tick_index = self._tick_index
         self._init_stop_tick_index = self._tick_index_last
         self.has_data = True

@@ -13,16 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
-cdef union MaybeDouble:
-    double price
-    bint has_price
-
 
 cdef class OrderBook:
+    cdef readonly InstrumentId instrument_id
+    """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly Ladder bids
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
@@ -31,25 +30,24 @@ cdef class OrderBook:
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
-    cdef inline void _add(self, Order order) except *
-    cdef inline void _update(self, Order order) except *
-    cdef inline void _delete(self, Order order) except *
-    cdef inline void _check_integrity(self) except *
+    cpdef void apply_snapshot(self, list bids, list asks) except *
     cpdef void clear_bids(self) except *
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
     cpdef void check_integrity(self) except *
+    cdef inline void _add(self, Order order) except *
+    cdef inline void _update(self, Order order) except *
+    cdef inline void _delete(self, Order order) except *
+    cdef inline void _check_integrity(self) except *
 
-    cpdef Ladder bids(self)
-    cpdef Ladder asks(self)
     cpdef Level best_bid_level(self)
     cpdef Level best_ask_level(self)
-    cpdef double best_bid_price(self) except *
-    cpdef double best_ask_price(self) except *
-    cpdef double best_bid_qty(self) except *
-    cpdef double best_ask_qty(self) except *
-    cpdef double spread(self) except *
-    cpdef MaybeDouble my_method(self)
+    cpdef best_bid_price(self)
+    cpdef best_ask_price(self)
+    cpdef best_bid_qty(self)
+    cpdef best_ask_qty(self)
+    cpdef spread(self)
+    cpdef str pprint(self, int num_levels=*)
 
 
 cdef class L3OrderBook(OrderBook):

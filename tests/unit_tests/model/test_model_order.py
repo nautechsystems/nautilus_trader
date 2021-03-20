@@ -768,6 +768,7 @@ class OrderTests(unittest.TestCase):
         fill1 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
+            execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -777,6 +778,7 @@ class OrderTests(unittest.TestCase):
         fill2 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
+            execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
@@ -810,6 +812,7 @@ class OrderTests(unittest.TestCase):
         fill1 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
+            execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -819,6 +822,7 @@ class OrderTests(unittest.TestCase):
         fill2 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
+            execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
@@ -828,6 +832,7 @@ class OrderTests(unittest.TestCase):
         fill3 = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
+            execution_id=ExecutionId("3"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00003"),
