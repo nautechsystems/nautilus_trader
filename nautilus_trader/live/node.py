@@ -25,8 +25,7 @@ import warnings
 import msgpack
 import redis
 
-from nautilus_trader.adapters.binance.factory import BinanceClientsFactory
-from nautilus_trader.adapters.bitmex.factory import BitmexClientsFactory
+from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
 from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
@@ -397,36 +396,14 @@ class TradingNode:
 
                 client_cls = getattr(ccxtpro, name.partition("-")[2].lower())
 
-                if name == "ccxt-binance":
-                    data_client, exec_client = BinanceClientsFactory.create(
-                        client_cls=client_cls,
-                        config=config,
-                        data_engine=self._data_engine,
-                        exec_engine=self._exec_engine,
-                        clock=self._clock,
-                        logger=logger,
-                    )
-                elif name == "ccxt-bitmex":
-                    data_client, exec_client = BitmexClientsFactory.create(
-                        client_cls=client_cls,
-                        config=config,
-                        data_engine=self._data_engine,
-                        exec_engine=self._exec_engine,
-                        clock=self._clock,
-                        logger=logger,
-                    )
-                else:
-                    raise NotImplementedError(
-                        f"{name} not implemented in this version."
-                    )
-                    # data_client, exec_client = CCXTClientsFactory.create(
-                    #     client_cls=client_cls,
-                    #     config=config,
-                    #     data_engine=self._data_engine,
-                    #     exec_engine=self._exec_engine,
-                    #     clock=self._clock,
-                    #     logger=logger,
-                    # )
+                data_client, exec_client = CCXTClientsFactory.create(
+                    client_cls=client_cls,
+                    config=config,
+                    data_engine=self._data_engine,
+                    exec_engine=self._exec_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
             elif name == "oanda":
                 data_client = OandaDataClientFactory.create(
                     config=config,

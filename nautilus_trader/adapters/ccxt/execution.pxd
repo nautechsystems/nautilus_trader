@@ -40,3 +40,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef inline void _on_exec_report(self, dict event) except *
     cdef inline void _cache_order(self, OrderId order_id, Order order) except *
     cdef inline void _decache_order(self, OrderId order_id) except *
+
+
+cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
+    pass
+
+
+cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
+    pass
