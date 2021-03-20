@@ -23,7 +23,7 @@ cdef class ExecutionStateReport:
 
     def __init__(
         self,
-        str name not None,
+        str client not None,
         AccountId account_id not None,
         dict order_states not None,
         dict order_filled not None,
@@ -34,7 +34,7 @@ cdef class ExecutionStateReport:
 
         Parameters
         ----------
-        name : str
+        client : str
             The client name for the report.
         account_id : AccountId
             The account identifier for the report.
@@ -48,12 +48,12 @@ cdef class ExecutionStateReport:
         Raises
         ------
         ValueError
-            If name is not a valid string.
+            If client is not a valid string.
 
         """
-        Condition.valid_string(name, "name")
+        Condition.valid_string(client, "client")
 
-        self.name = name
+        self.client = client
         self.account_id = account_id
         self.order_states = order_states
         self.order_filled = order_filled
