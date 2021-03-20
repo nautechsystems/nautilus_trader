@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 

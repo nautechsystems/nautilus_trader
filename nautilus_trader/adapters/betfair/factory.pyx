@@ -17,14 +17,13 @@ import os
 
 import betfairlightweight
 
+from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
+from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
-from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
-
 
 
 cdef class BetfairClientsFactory:

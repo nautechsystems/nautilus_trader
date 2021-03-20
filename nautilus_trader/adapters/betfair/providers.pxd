@@ -18,6 +18,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
+
 cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef object _client
     cdef object _currencies
