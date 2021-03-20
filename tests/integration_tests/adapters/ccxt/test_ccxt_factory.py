@@ -76,7 +76,7 @@ class CCXTClientFactoryTests(unittest.TestCase):
 
         # Mock client
         mock_bitmex = MagicMock()
-        mock_bitmex.name = "bitmex"
+        mock_bitmex.name = "bitstamp"
 
         # Mock constructor method to return the mock client
         client_cls = MagicMock()

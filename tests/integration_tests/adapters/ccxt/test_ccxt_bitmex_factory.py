@@ -17,9 +17,9 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.bitmex.execution import BitmexExecutionClient
-from nautilus_trader.adapters.bitmex.factory import BitmexClientsFactory
 from nautilus_trader.adapters.ccxt.data import CCXTDataClient
+from nautilus_trader.adapters.ccxt.execution import BitmexCCXTExecutionClient
+from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -83,7 +83,7 @@ class BitmexClientFactoryTests(unittest.TestCase):
         client_cls.return_value = mock_bitmex
 
         # Act
-        data_client, exec_client = BitmexClientsFactory.create(
+        data_client, exec_client = CCXTClientsFactory.create(
             client_cls=client_cls,
             config=config,
             data_engine=self.data_engine,
@@ -94,4 +94,4 @@ class BitmexClientFactoryTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(CCXTDataClient, type(data_client))
-        self.assertEqual(BitmexExecutionClient, type(exec_client))
+        self.assertEqual(BitmexCCXTExecutionClient, type(exec_client))

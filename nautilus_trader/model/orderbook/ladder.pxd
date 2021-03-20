@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.orderbook.order cimport Order
 from nautilus_trader.model.orderbook.level cimport Level
+from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class Ladder:

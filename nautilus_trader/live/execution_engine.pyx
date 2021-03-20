@@ -19,6 +19,7 @@ from asyncio import CancelledError
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger

@@ -18,7 +18,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.binance.execution import BinanceExecutionClient
+from nautilus_trader.adapters.ccxt.execution import BinanceCCXTExecutionClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
@@ -114,7 +114,7 @@ class BinanceExecutionClientTests(unittest.TestCase):
         self.mock_ccxt.fetch_balance = fetch_balance
         self.mock_ccxt.watch_balance = watch_balance
 
-        self.client = BinanceExecutionClient(
+        self.client = BinanceCCXTExecutionClient(
             client=self.mock_ccxt,
             account_id=self.account_id,
             engine=self.exec_engine,

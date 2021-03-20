@@ -26,10 +26,10 @@ import pandas as pd
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe

@@ -18,6 +18,8 @@ import sys
 
 from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
+from nautilus_trader.adapters.ccxt.execution cimport BinanceCCXTExecutionClient
+from nautilus_trader.adapters.ccxt.execution cimport BitmexCCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_engine cimport LiveDataEngine
@@ -90,6 +92,10 @@ cdef class CCXTClientsFactory:
             },
         })
 
+        # Initialize variables
+        data_client = None
+        exec_client = None
+
         if config.get("sandbox_mode", False):
             client.set_sandbox_mode(True)
 
@@ -118,9 +124,6 @@ cdef class CCXTClientsFactory:
                 clock=clock,
                 logger=logger,
             )
-        else:
-            # The data client was not enabled
-            data_client = None
 
         if config.get("exec_client", True):
             # Check required CCXT methods are available
@@ -144,15 +147,29 @@ cdef class CCXTClientsFactory:
             account_id = AccountId(client.name.upper(), account_id_env_var)
 
             # Create client
-            exec_client = CCXTExecutionClient(
-                client=client,
-                account_id=account_id,
-                engine=exec_engine,
-                clock=clock,
-                logger=logger,
-            )
-        else:
-            # The execution client not enabled
-            exec_client = None
+            if client.name == "binance":
+                exec_client = BinanceCCXTExecutionClient(
+                    client=client,
+                    account_id=account_id,
+                    engine=exec_engine,
+                    clock=clock,
+                    logger=logger,
+                )
+            elif client.name == "bitmex":
+                exec_client = BitmexCCXTExecutionClient(
+                    client=client,
+                    account_id=account_id,
+                    engine=exec_engine,
+                    clock=clock,
+                    logger=logger,
+                )
+            else:
+                exec_client = CCXTExecutionClient(
+                    client=client,
+                    account_id=account_id,
+                    engine=exec_engine,
+                    clock=clock,
+                    logger=logger,
+                )
 
         return data_client, exec_client
