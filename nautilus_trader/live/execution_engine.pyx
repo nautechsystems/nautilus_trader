@@ -138,7 +138,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             True if states resolve within timeout, else False.
 
         """
-        self._log.info("Resolving states...")
+        self._log.info("Reconciling states...")
 
         cdef list orders = self.cache.orders()
         cdef list open_orders = [order for order in orders if not order.is_completed_c()]
@@ -153,7 +153,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             if name in client_orders:
                 client_orders[name].append(order)
             else:
-                self._log.error(f"Cannot resolve state. No registered"
+                self._log.error(f"Cannot reconcile state. No registered"
                                 f"execution client for {name} for active {order}.")
                 continue
 

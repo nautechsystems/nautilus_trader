@@ -1084,7 +1084,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert (order was found and OrderCancelled event was applied)
         self.assertEqual(OrderState.CANCELLED, order.state)
-        self.assertEqual(5, order.event_count)
+        self.assertEqual(4, order.event_count)
 
     def test_handle_order_fill_event_with_no_strategy_id_correctly_handles_fill(self):
         # Arrange
