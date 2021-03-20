@@ -29,6 +29,9 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/
 
 @pytest.fixture(autouse=True)
 def betfairlightweight_mocks(mocker):
+    # Betfair client login
+    mocker.patch("betfairlightweight.endpoints.login.Login.__call__")
+
     # Navigation.list_navigation
     mock_list_nav = mocker.patch(
         "betfairlightweight.endpoints.navigation.Navigation.list_navigation"
@@ -159,6 +162,7 @@ def execution_client(betfair_client, account_id, exec_engine, clock, live_logger
         clock=clock,
         logger=live_logger,
     )
+    client.connect()
     exec_engine.register_client(client)
     return client
 

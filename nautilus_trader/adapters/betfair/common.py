@@ -16,6 +16,8 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.order.base import Order
 
@@ -155,107 +157,107 @@ def betfair_account_to_account_state(
     )
 
 
-def parse_order_stream(raw):
-    return
-    # for market in raw.get("oc", []):
-    #     market_id = market["id"]
-    #     for runner in market.get("orc", []):
-    #         for order in runner.get("uo", []):
-    #             l = len(orders + trades)
-    #             if order["sm"] != 0:
-    #                 trades.append(
-    #                     messages.TradeConfirm(
-    #                         instrument_id=str(instrument.id),
-    #                         trade=BetTrade(
-    #                             price=order["avp"],
-    #                             volume=order["sm"],
-    #                             side=BET_SIDE[order["side"]],
-    #                             trade_id=order["id"],
-    #                         ),
-    #                         remote_timestamp=remote_timestamp,
-    #                         extra_headers={
-    #                             "channel_suffix": instrument_to_channel(instrument)
-    #                         },
-    #                     )
-    #                 )
-    #             elif order["sm"] == 0 and any(
-    #                 order[x] != 0 for x in ("sc", "sl", "sv")
-    #             ):
-    #                 orders.append(
-    #                     messages.CancelConfirm(
-    #                         source=SOURCE,
-    #                         instrument_id=str(instrument.id),
-    #                         order=Order(
-    #                             price=order["p"],
-    #                             volume=order["sc"],
-    #                             side=BET_SIDE[order["side"]],
-    #                         ),
-    #                         remote_timestamp=remote_timestamp,
-    #                         extra_headers={
-    #                             "channel_suffix": instrument_to_channel(instrument)
-    #                         },
-    #                     )
-    #                 )
-    #             elif order["sr"] != 0 and order["sr"] == order["s"]:
-    #                 orders.append(
-    #                     messages.InsertConfirm(
-    #                         source=SOURCE,
-    #                         instrument_id=str(instrument.id),
-    #                         order=Order(
-    #                             price=order["p"],
-    #                             volume=order["s"],
-    #                             side=BET_SIDE[order["side"]],
-    #                         ),
-    #                         remote_timestamp=remote_timestamp,
-    #                         extra_headers={
-    #                             "channel_suffix": instrument_to_channel(instrument)
-    #                         },
-    #                     )
-    #                 )
-    #             else:
-    #                 raise MessageParsingError("Missing order type", raw, None)
-    #
-    #             # Check that we only have one type of confirmation - confirm/cancel/lapse/remaining
-    #             assert (len(orders + trades) - l) <= 1
-    #
-    #         for trade in runner.get("mb", []):
-    #             trades.append(
-    #                 messages.TradeConfirm(
-    #                     source=SOURCE,
-    #                     instrument_id=str(instrument.id),
-    #                     trade=BetTrade(
-    #                         price=trade[0], volume=trade[1], side=BetOrderSide.BACK
-    #                     ),
-    #                     extra_headers={
-    #                         "channel_suffix": instrument_to_channel(instrument)
-    #                     },
-    #                 )
-    #             )
-    #         for trade in runner.get("ml", []):
-    #             trades.append(
-    #                 messages.TradeConfirm(
-    #                     source=SOURCE,
-    #                     instrument_id=str(instrument.id),
-    #                     trade=BetTrade(
-    #                         price=trade[0], volume=trade[1], side=BetOrderSide.LAY
-    #                     ),
-    #                     extra_headers={
-    #                         "channel_suffix": instrument_to_channel(instrument)
-    #                     },
-    #                 )
-    #             )
-    #
-    #         if runner.get("fullImage", False):
-    #             position = BetPosition.from_trades(
-    #                 instrument_id=str(instrument.id), trades=[m.trade for m in trades]
-    #             )
-    #             yield messages.PositionUpdate(
-    #                 source=SOURCE,
-    #                 instrument_id=str(instrument.id),
-    #                 position=position,
-    #                 remote_timestamp=remote_timestamp,
-    #                 extra_headers={"channel_suffix": instrument_to_channel(instrument)},
-    #             )
-    #             yield from orders
-    #         else:
-    #             yield from orders + trades
+# TODO - replace execution client with self when tests passing and add this function back onto BetfairExecutionClient
+def parse_order_stream(execution_client, raw):
+    """
+    Full list of betfair definitions, as per https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
+
+    id / Bet Id - the id of the order
+    p / Price - the original placed price of the order
+    s / Size - the original placed size of the order
+    bsp / BSP Liability - the BSP liability of the order (null if the order is not a BSP order)
+    side / Side - the side of the order
+    status / Status - the status of the order (E = EXECUTABLE, EC = EXECUTION_COMPLETE)
+    pt / Persistence Type - whether the order will persist at in play or not (L = LAPSE, P = PERSIST, MOC = Market On Close)
+    ot / Order Type - the type of the order (L = LIMIT, MOC = MARKET_ON_CLOSE, LOC = LIMIT_ON_CLOSE)
+    pd / Placed Date - the date the order was placed
+    md / Matched Date - the date the order was matched (null if the order is not matched)
+    cd / Cancelled Date - the date the order was cancelled (null if the order is not cancelled)
+    ld / Lapsed Date - the date the order was lapsed (null if the order is not lapsed)
+    lsrc/Lapse Status Reason Code - the reason that some or all of this order has been lapsed (null if no portion of the order is lapsed)
+    avp / Average Price Matched - the average price the order was matched at (null if the order is not matched
+    sm / Size Matched - the amount of the order that has been matched
+    sr / Size Remaining - the amount of the order that is remaining unmatched
+    sl / Size Lapsed - the amount of the order that has been lapsed
+    sc / Size Cancelled - the amount of the order that has been cancelled
+    sv / Size Voided - the amount of the order that has been voided
+    rac / Regulator Auth Code - the auth code returned by the regulator
+    rc / Regulator Code - the regulator of the order
+    rfo / Reference Order - the customer supplied order reference
+    rfs / Reference Strategy - the customer supplied strategy reference used to group orders together - default is ""
+    Price point / full depth Ladders (price, size - tuples - keyed by price) of matches:
+    mb / Matched Backs - matched amounts by distinct matched price on the Back side for this runner
+    ml / Matched Lays - matched amounts by distinct matched price on the Lay side for this runner
+
+    :param execution_client:
+    :param raw:
+    :return:
+    """
+    from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
+
+    execution_client = execution_client  # type: BetfairExecutionClient
+    for market in raw.get("oc", []):
+        market_id = market["id"]
+        for selection in market.get("orc", []):
+            instrument = execution_client.get_betting_instrument(
+                market_id=market_id,
+                selection_id=str(selection["id"]),
+                handicap=str(selection["hc"]),
+            )
+            for order in selection.get("uo", []):
+                if order["sm"] != 0:  # Sized matched
+                    execution_client._generate_order_filled(
+                        cl_ord_id="",
+                        order_id=order["id"],
+                        execution_id="",
+                        instrument_id=instrument.id,
+                        order_side="",
+                        fill_qty="",
+                        cum_qty="",
+                        leaves_qty="",
+                        avg_px="",
+                        commission_amount="",
+                        commission_currency="",
+                        liquidity_side="",
+                        timestamp="",
+                    )
+                elif order["sm"] == 0 and any(
+                    order[x] != 0 for x in ("sc", "sl", "sv")
+                ):
+                    execution_client._generate_order_cancelled(
+                        cl_ord_id="",
+                        order_id=order["id"],
+                        execution_id="",
+                        instrument_id=instrument.id,
+                        order_side="",
+                        fill_qty="",
+                        cum_qty="",
+                        leaves_qty="",
+                        avg_px="",
+                        commission_amount="",
+                        commission_currency="",
+                        liquidity_side="",
+                        timestamp="",
+                    )
+                elif order["sr"] != 0 and order["sr"] == order["s"]:
+                    execution_client._generate_order_accepted(
+                        cl_ord_id=ClientOrderId(),
+                        order_id=OrderId(),
+                        timestamp=datetime,
+                    )
+                else:
+                    raise KeyError("Unknown order type", raw, None)
+
+            for trade in selection.get("mb", []):
+                execution_client._generate_order_filled(
+                    order_side=OrderSide.BUY,
+                )
+
+            for trade in selection.get("ml", []):
+                execution_client._generate_order_filled(
+                    order_side=OrderSide.SELL,
+                )
+
+            if selection.get("fullImage", False):
+                # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
+                pass

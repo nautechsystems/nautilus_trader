@@ -16,6 +16,7 @@
 import datetime
 import json
 
+from adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.common import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
@@ -178,9 +179,37 @@ def test_account_statement(betfair_client, uuid):
     assert result == expected
 
 
-def test_order_stream_full_image(execution_client):
+def test_order_stream_full_image(mocker, execution_client):
+    raw = json.loads(open(TEST_PATH + "streaming_ocm_FULL_IMAGE.json").read())
+    mocker.patch.object(BetfairExecutionClient, "generate_order_filled")
+    parse_order_stream(execution_client=execution_client, raw=raw)
+    # assert mock_method.called_with()
+
+
+def test_order_stream_empty_image(execution_client):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_EMPTY_IMAGE.json").read())
-    result = parse_order_stream(raw)
+    result = parse_order_stream(execution_client=execution_client, raw=raw)
+    expected = ""
+    assert result == expected
+
+
+def test_order_stream_new_full_image(execution_client):
+    raw = json.loads(open(TEST_PATH + "streaming_ocm_NEW_FULL_IMAGE.json").read())
+    result = parse_order_stream(execution_client=execution_client, raw=raw)
+    expected = ""
+    assert result == expected
+
+
+def test_order_stream_sub_image(execution_client):
+    raw = json.loads(open(TEST_PATH + "streaming_ocm_SUB_IMAGE.json").read())
+    result = parse_order_stream(execution_client=execution_client, raw=raw)
+    expected = ""
+    assert result == expected
+
+
+def test_order_stream_update(execution_client):
+    raw = json.loads(open(TEST_PATH + "streaming_ocm_UPDATE.json").read())
+    result = parse_order_stream(execution_client=execution_client, raw=raw)
     expected = ""
     assert result == expected
 
