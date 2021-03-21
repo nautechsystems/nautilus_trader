@@ -17,9 +17,9 @@ import os
 import sys
 
 from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
-from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.adapters.ccxt.execution cimport BinanceCCXTExecutionClient
 from nautilus_trader.adapters.ccxt.execution cimport BitmexCCXTExecutionClient
+from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_engine cimport LiveDataEngine

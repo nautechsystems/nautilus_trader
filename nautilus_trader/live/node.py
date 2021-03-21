@@ -111,7 +111,7 @@ class TradingNode:
         self._is_running = False
 
         # Uncomment for debugging
-        # self._loop.set_debug(True)
+        # self._loop.set_debug(True)  # TODO: Development
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -325,8 +325,8 @@ class TradingNode:
                 self._executor.shutdown(wait=True)
 
             self._log.info("Stopping event loop...")
-            self._loop.stop()
             self._cancel_all_tasks()
+            self._loop.stop()
         except RuntimeError as ex:
             self._log.exception(ex)
         finally:
@@ -455,7 +455,10 @@ class TradingNode:
             self._log.error(str(ex))
 
     async def _await_engines_connected(self) -> bool:
-        self._log.info("Waiting for engines to initialize...")
+        self._log.info(
+            f"Waiting for engines to initialize "
+            f"({self._connection_timeout}s timeout)..."
+        )
 
         # The data engine clients will be set as connected when all
         # instruments are received and updated with the data engine.
@@ -465,10 +468,10 @@ class TradingNode:
         seconds = self._connection_timeout
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0)
             if self._clock.utc_now() >= timeout:
                 self._log.error(
-                    f"Timed out ({seconds}s) waiting for " f"engines to initialize."
+                    f"Timed out ({seconds}s) waiting for engines to connect."
                 )
                 return False
             if not self._data_engine.check_connected():
@@ -477,7 +480,7 @@ class TradingNode:
                 continue
             break
 
-        return True  # Engines initialized
+        return True  # Engines connected
 
     async def _stop(self) -> None:
         self._is_stopping = True
@@ -514,14 +517,17 @@ class TradingNode:
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> None:
-        self._log.info("Waiting for engines to disconnect...")
+        self._log.info(
+            f"Waiting for engines to disconnect "
+            f"({self._disconnection_timeout}s timeout)..."
+        )
 
         seconds = self._disconnection_timeout
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0)
             if self._clock.utc_now() >= timeout:
-                self._log.warning(
+                self._log.error(
                     f"Timed out ({seconds}s) waiting for engines to disconnect."
                 )
                 break
@@ -529,7 +535,7 @@ class TradingNode:
                 continue
             if not self._exec_engine.check_disconnected():
                 continue
-            break  # Engines initialized
+            break
 
     def _cancel_all_tasks(self) -> None:
         to_cancel = asyncio.tasks.all_tasks(self._loop)
