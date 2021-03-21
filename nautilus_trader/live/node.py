@@ -61,7 +61,7 @@ except ImportError:
 
 class TradingNode:
     """
-    Provides an asynchronous network node for live trading.
+    Provides an asynchronous data node for live trading.
     """
 
     def __init__(
@@ -461,7 +461,7 @@ class TradingNode:
         # instruments are received and updated with the data engine.
         # The execution engine clients will be set as connected when all
         # accounts are updated and the current order and position status is
-        # reconciled. Thus any delay here will be due to blocking network IO.
+        # reconciled. Thus any delay here will be due to blocking data IO.
         seconds = self._connection_timeout
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
