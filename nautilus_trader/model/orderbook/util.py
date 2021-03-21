@@ -144,7 +144,7 @@ def depth_for_volume(ladder, value, depth_type="volume"):
     orders = sum(map(attrgetter("orders"), levels[: idx + 1]), [])
     orders = [copy.copy(order) for order in orders]
 
-    if len(orders) == 0:
+    if not orders:
         return ()
     elif (
         len(orders) == 1

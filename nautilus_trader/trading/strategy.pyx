@@ -708,7 +708,7 @@ cdef class TradingStrategy(Component):
 
         self._check_trader_registered()
 
-        if len(state) == 0:
+        if not state:
             self.log.info("No user state to load.", LogColor.BLUE)
             return
 

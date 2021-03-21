@@ -609,7 +609,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
             return
 
         cdef list data = res.get("candles", [])
-        if len(data) == 0:
+        if not data:
             self._log.error(f"No data returned for {bar_type}.")
             return
 

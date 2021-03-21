@@ -232,10 +232,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self._subscribed_instruments = set()
 
         # Check all tasks have been popped and cancelled
-        assert len(self._subscribed_order_books) == 0
-        assert len(self._subscribed_quote_ticks) == 0
-        assert len(self._subscribed_trade_ticks) == 0
-        assert len(self._subscribed_bars) == 0
+        assert not self._subscribed_order_books
+        assert not self._subscribed_quote_ticks
+        assert not self._subscribed_trade_ticks
+        assert not self._subscribed_bars
 
         self._log.info("Reset.")
 

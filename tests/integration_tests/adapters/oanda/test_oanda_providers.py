@@ -60,7 +60,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertTrue(len(instruments) == 0)
+        self.assertEqual({}, instruments)
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
