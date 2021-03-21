@@ -544,6 +544,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 side=OrderSideParser.to_str(order.side).lower(),
                 amount=str(order.quantity),
                 price=str(order.price) if isinstance(order, PassiveOrder) else None,
+                params={'clientOrderId': order.cl_ord_id.value},
             )
         except CCXTError as ex:
             self._generate_order_rejected(
