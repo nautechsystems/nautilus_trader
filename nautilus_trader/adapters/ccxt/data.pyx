@@ -197,24 +197,15 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     async def _disconnect(self):
         self._log.info("Disconnecting...")
 
-        stop_tasks = []
-
         # Cancel update instruments
         if self._update_instruments_task:
             self._update_instruments_task.cancel()
-            # TODO: This task is not finishing
-            # stop_tasks.append(self._update_instruments_task)
 
         # Cancel residual tasks
         for task in self._subscribed_trade_ticks.values():
             if not task.cancelled():
                 self._log.debug(f"Cancelling {task}...")
                 task.cancel()
-                # TODO: CCXT Pro issues for exchange.close()
-                # stop_tasks.append(task)
-
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks)
 
         # Ensure ccxt closed
         self._log.info("Closing WebSocket(s)...")
@@ -233,7 +224,6 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._log.info("Resetting...")
 
-        # TODO: Reset client
         self._instrument_provider = CCXTInstrumentProvider(
             client=self._client,
             load_all=False,

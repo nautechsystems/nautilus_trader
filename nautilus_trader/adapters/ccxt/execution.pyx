@@ -21,41 +21,42 @@ from ccxt.base.errors import BaseError as CCXTError
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.execution.reports cimport OrderStateReport
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_unix_time_ms
 from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.execution.reports cimport ExecutionStateReport
+from nautilus_trader.execution.reports cimport OrderStateReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
+from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
-from nautilus_trader.model.objects cimport Quantity
+
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
@@ -284,6 +285,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot reconcile state
 
         if report.order_state == OrderState.REJECTED:
+            # No OrderId would have been assigned from the exchange
             self._generate_order_rejected(report.cl_ord_id, "unknown", report.timestamp)
             return
         elif report.order_state == OrderState.EXPIRED:
