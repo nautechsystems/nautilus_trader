@@ -753,7 +753,7 @@ cdef class ExecutionEngine(Component):
 
         # Check for open positions
         positions_open = self.cache.positions_open(instrument_id=fill.instrument_id)
-        if len(positions_open) == 0:
+        if not positions_open:
             # Assign new identifier to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
         elif len(positions_open) == 1:

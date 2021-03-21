@@ -753,7 +753,7 @@ cdef class DataEngine(Component):
                 return
 
             handlers.remove(handler)
-            if len(handlers) == 0:
+            if not handlers:
                 timer_name = f"OrderBookSnapshot-{instrument_id}-{interval}"
                 self._clock.cancel_timer(timer_name)
                 self._log.debug(f"Cancelled timer {timer_name}.")

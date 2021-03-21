@@ -52,9 +52,9 @@ cdef class PerformanceAnalyzer:
         """
         Initialize a new instance of the `PerformanceAnalyzer` class.
         """
-        self._account_balances_starting = {}
-        self._account_balances = {}
-        self._realized_pnls = {}
+        self._account_balances_starting = {}  # type: dict[Currency, Money]
+        self._account_balances = {}           # type: dict[Currency, Money]
+        self._realized_pnls = {}              # type: dict[Currency, list[float]]
         self._daily_returns = pd.Series(dtype=float64)
 
     cpdef void calculate_statistics(self, Account account, list positions) except *:
@@ -156,8 +156,8 @@ cdef class PerformanceAnalyzer:
         pd.Series or None
 
         """
-        if len(self._realized_pnls) == 0:
-            return pd.Series(dtype=float64)
+        if not self._realized_pnls:
+            return None
         if currency is None:
             return next(iter(self._realized_pnls.values()))
         return self._realized_pnls.get(currency)
@@ -171,8 +171,8 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if len(self._account_balances) == 0:
-            return 0.0
+        if not self._account_balances:
+            return 0.
         if currency is None:
             account_balance = next(iter(self._account_balances.values()))
             account_balance_starting = next(iter(self._account_balances_starting.values()))
@@ -217,11 +217,8 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
-
-        if len(realized_pnls.index) == 0:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
         return max(realized_pnls)
 
@@ -235,11 +232,8 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
-
-        if len(realized_pnls.index) == 0:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
         return min(realized_pnls)
 
@@ -253,12 +247,12 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
-        cdef list winners = [x for x in realized_pnls if x > 0]
-        if realized_pnls is None or len(winners) == 0:
-            return 0
+        cdef list winners = [x for x in realized_pnls if x > 0.]
+        if realized_pnls is None or not winners:
+            return 0.
 
         return min(winners)
 
@@ -272,12 +266,12 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
-        cdef list losers = [x for x in realized_pnls if x <= 0]
-        if len(losers) == 0:
-            return 0
+        cdef list losers = [x for x in realized_pnls if x <= 0.]
+        if not losers:
+            return 0.
 
         return max(losers)  # max is least loser
 
@@ -291,12 +285,12 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
-        cdef list winners = [x for x in realized_pnls if x > 0]
-        if len(winners) == 0:
-            return 0
+        cdef list winners = [x for x in realized_pnls if x > 0.]
+        if not winners:
+            return 0.
 
         return fast_mean(winners)
 
@@ -310,12 +304,12 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
-        cdef list losers = [x for x in realized_pnls if x <= 0]
-        if len(losers) == 0:
-            return 0
+        cdef list losers = [x for x in realized_pnls if x <= 0.]
+        if not losers:
+            return 0.
 
         return fast_mean(losers)
 
@@ -329,14 +323,11 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
-        if len(realized_pnls) == 0:
-            return 0
-
-        cdef list winners = [x for x in realized_pnls if x > 0]
-        cdef list losers = [x for x in realized_pnls if x <= 0]
+        cdef list winners = [x for x in realized_pnls if x > 0.]
+        cdef list losers = [x for x in realized_pnls if x <= 0.]
 
         return len(winners) / float(max(1, (len(winners) + len(losers))))
 
@@ -350,14 +341,11 @@ cdef class PerformanceAnalyzer:
 
         """
         realized_pnls = self.get_realized_pnls(currency)
-        if realized_pnls is None:
-            return 0
-
-        if len(realized_pnls) == 0:
-            return 0
+        if realized_pnls is None or realized_pnls.empty:
+            return 0.
 
         cdef double win_rate = self.win_rate()
-        cdef double loss_rate = 1 - win_rate
+        cdef double loss_rate = 1.0 - win_rate
 
         return (self.avg_winner() * win_rate) + (self.avg_loser() * loss_rate)
 
