@@ -164,14 +164,12 @@ cdef class CCXTClientsFactory:
                     logger=logger,
                 )
             else:
-                raise RuntimeError(f"CCXT implementation for for {client.name} "
-                                   f"not supported in this version.")
-                # exec_client = CCXTExecutionClient(
-                #     client=client,
-                #     account_id=account_id,
-                #     engine=exec_engine,
-                #     clock=clock,
-                #     logger=logger,
-                # )
+                exec_client = CCXTExecutionClient(
+                    client=client,
+                    account_id=account_id,
+                    engine=exec_engine,
+                    clock=clock,
+                    logger=logger,
+                )
 
         return data_client, exec_client

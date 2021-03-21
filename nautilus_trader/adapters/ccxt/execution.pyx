@@ -21,19 +21,15 @@ from ccxt.base.errors import BaseError as CCXTError
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.execution.reports cimport OrderStateReport
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
-from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_unix_time_ms
 from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.execution.reports cimport ExecutionStateReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.commands cimport AmendOrder
@@ -42,16 +38,11 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
-from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -64,6 +55,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.objects cimport Quantity
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
@@ -181,9 +173,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.is_connected = True
         self._log.info("Connected.")
 
-    async def state_report(self, list active_orders):
+    async def generate_state_report(self, list active_orders):
         """
-        Return an execution state report based on the given list of active
+        Generate an execution state report based on the given list of active
         orders.
 
         Parameters
@@ -198,25 +190,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         """
         Condition.not_none(active_orders, "active_orders")
 
-        cdef dict order_states = {}     # type: dict[OrderId, OrderState]
-        cdef dict order_filled = {}     # type: dict[OrderId, Decimal]
-        cdef dict position_states = {}  # type: dict[InstrumentId, Decimal]
+        self._log.info("Generating ExecutionStateReport...")
+
+        cdef ExecutionStateReport exec_state_report = ExecutionStateReport(
+            client=self.name,
+            account_id=self.account_id,
+            timestamp=self._clock.utc_now(),
+            )
 
         if not active_orders:
             # Nothing to resolve
-            return ExecutionStateReport(
-                client=self.name,
-                account_id=self.account_id,
-                order_states=order_states,
-                order_filled=order_filled,
-                position_states=position_states,
-            )
+            return exec_state_report
 
-        cdef int count = len(active_orders)
-        self._log.info(
-            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
-            LogColor.BLUE,
-        )
+        # TODO: Get all open orders
 
         cdef Instrument instrument
         cdef Order order
@@ -240,47 +226,80 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     id=order.id.value,
                     symbol=order.symbol.value,
                 )
-
+                # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
             except CCXTError as ex:
                 self._log_ccxt_error(ex, self._update_balances.__name__)
                 continue
+
             if response is None:
                 self._log.error(f"No order found for {order.id.value}.")
                 continue
-            # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
 
-            cum_qty = order.filled_qty.as_decimal()
+            filled_qty = Decimal(f"{response['filled']:.{instrument.price_precision}f}")
+            leaves_qty = Decimal(f"{response['remaining']:.{instrument.price_precision}f}")
+
+            # Determine state
             status = response["status"]
             if status == "open":
-                if cum_qty > 0:
-                    order_states[order.id] = OrderState.PARTIALLY_FILLED
-                    order_filled[order.id] = cum_qty
+                if filled_qty > 0 and leaves_qty > 0:
+                    state = OrderState.PARTIALLY_FILLED
+                else:
+                    state = OrderState.ACCEPTED
             elif status == "closed":
-                order_states[order.id] = OrderState.FILLED
-                order_filled[order.id] = cum_qty
+                state = OrderState.FILLED
             elif status == "canceled":
-                order_states[order.id] = OrderState.CANCELLED
-                timestamp = from_unix_time_ms(<long>response["timestamp"])
-                self._generate_order_cancelled(order.cl_ord_id, order.id, timestamp)
+                state = OrderState.CANCELLED
             elif status == "expired":
-                order_states[order.id] = OrderState.EXPIRED
-                self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
+                state = OrderState.EXPIRED
 
-        return ExecutionStateReport(
-            client=self.name,
-            account_id=self.account_id,
-            order_states=order_states,
-            order_filled=order_filled,
-            position_states=position_states,
-        )
+            report = OrderStateReport(
+                cl_ord_id=order.cl_ord_id,
+                order_id=order.id,
+                order_state=state,
+                filled_qty=Quantity(filled_qty),
+                timestamp=from_unix_time_ms(<long>response["timestamp"]),  # TODO: of last state change
+            )
 
-    async def reconcile_state(self, Order order):
+            exec_state_report.add_order_report(report)
+
+        return exec_state_report
+
+    async def reconcile_state(self, OrderStateReport report, Order order):
         """
-        Reconcile state.
+        Reconcile the given orders state based on the given report.
+
+        Parameters
+        ----------
+        report : OrderStateReport
+            The order state report for reconciliation.
+        order : Order
+            The order to reconcile the trades for.
 
         """
+        Condition.not_none(order, "order")
+
+        if order.is_completed_c():
+            self._log.warning(
+                f"No reconciliation required for completed order {order}.")
+            return  # Cannot reconcile state
+
+        if report.order_state == OrderState.REJECTED:
+            self._generate_order_rejected(report.cl_ord_id, "unknown", report.timestamp)
+            return
+        elif report.order_state == OrderState.EXPIRED:
+            self._generate_order_expired(report.cl_ord_id, report.order_id, report.timestamp)
+            return
+        elif report.order_state == OrderState.CANCELLED:
+            self._generate_order_cancelled(report.cl_ord_id, report.order_id, report.timestamp)
+            return
+        elif report.order_state == OrderState.ACCEPTED:
+            if order.state_c() == OrderState.SUBMITTED:
+                self._generate_order_accepted(report.cl_ord_id, report.order_id, report.timestamp)
+            return
+            # TODO: Consider other scenarios
+
         # Get Instrument
-        cdef Instrument instrument = self._instrument_provider.find_c(order.symbol)
+        cdef Instrument instrument = self._instrument_provider.find_c(order.instrument_id)
         if instrument is None:
             inst_id = order.instrument_id.value
             self._log.error(
@@ -288,31 +307,23 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 f"instrument for {inst_id} not found.")
             return  # Cannot reconcile state
 
-        cdef dict response
         cdef list trades
         try:
-            response = await self._client.fetch_order(
-                id=order.id.value,
-                symbol=order.symbol.value,
-            )
             trades = await self._client.fetch_my_trades(
                 symbol=order.symbol.value,
                 since=to_unix_time_ms(order.timestamp),
             )
             order_trades = [trade for trade in trades if trade["order"] == order.id.value]
 
+            # self._log.info(str(trades), LogColor.GREEN)  # TODO: Development
         except CCXTError as ex:
             self._log_ccxt_error(ex, self.reconcile_state.__name__)
             return
-        if response is None:
-            self._log.error(
-                f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
-                f"response was None.")
-            return  # Cannot reconcile state
 
         cum_qty: Decimal = order.filled_qty.as_decimal()
         for trade in order_trades:
-            execution_id = ExecutionId(str(response["id"]))
+            # self._log.info("Generating OrderFilled from " + str(trade), LogColor.GREEN)  # TODO: Development
+            execution_id = ExecutionId(str(trade["id"]))
             if execution_id in order.execution_ids_c():
                 continue  # Trade already applied
             self._generate_order_filled(
@@ -350,16 +361,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Cancel streaming tasks
         if self._watch_balances_task:
             self._watch_balances_task.cancel()
-            # TODO: CCXT Pro issues for exchange.close()
-            # stop_tasks.append(self._watch_balances_task)
+            stop_tasks.append(self._watch_balances_task)
         if self._watch_orders_task:
             self._watch_orders_task.cancel()
-            # TODO: CCXT Pro issues for exchange.close()
-            # stop_tasks.append(self._watch_orders_task)
+            stop_tasks.append(self._watch_orders_task)
         if self._watch_exec_reports_task:
             self._watch_exec_reports_task.cancel()
-            # TODO: CCXT Pro issues for exchange.close()
-            # stop_tasks.append(self._watch_exec_reports_task)
+            stop_tasks.append(self._watch_exec_reports_task)
 
         # Wait for all tasks to complete
         if stop_tasks:
@@ -739,7 +747,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             logger,
         )
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+    # -- COMMANDS ----------------------------------------------------------------------------------
 
     async def _submit_order(self, Order order):
         # Common arguments
@@ -838,7 +846,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             logger,
         )
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+    # -- COMMANDS ----------------------------------------------------------------------------------
 
     async def _submit_order(self, Order order):
         if order.time_in_force == TimeInForce.GTD:
