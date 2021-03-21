@@ -47,7 +47,13 @@ cpdef long to_unix_time_ms(datetime timestamp) except *:
     -------
     long
 
+    Raises
+    ------
+    TypeError
+        If timestamp is None.
+
     """
+    # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
     return <long>((timestamp - UNIX_EPOCH).total_seconds() * 1000)
 
 
@@ -65,7 +71,51 @@ cpdef datetime from_unix_time_ms(long timestamp):
     datetime
 
     """
-    return UNIX_EPOCH + timedelta(milliseconds=timestamp)  # Round off thousands
+    return UNIX_EPOCH + timedelta(milliseconds=timestamp)
+
+
+cpdef maybe_to_unix_time_ms(datetime timestamp):
+    """
+    Return the Unix millisecond timestamp from the given datetime, or None.
+
+    If timestamp is None, then will return None.
+
+    Parameters
+    ----------
+    timestamp : datetime
+        The datetime for the timestamp.
+
+    Returns
+    -------
+    long or None
+
+    """
+    if timestamp is None:
+        return None
+    else:
+        return to_unix_time_ms(timestamp)
+
+
+cpdef maybe_from_unix_time_ms(timestamp):
+    """
+    Return the datetime in UTC from the given Unix millisecond timestamp, or None.
+
+    If timestamp is None, then will return None.
+
+    Parameters
+    ----------
+    timestamp : long
+        The timestamp to convert.
+
+    Returns
+    -------
+    datetime or None
+
+    """
+    if timestamp is None:
+        return None
+    else:
+        return from_unix_time_ms(<long>timestamp)
 
 
 cpdef bint is_datetime_utc(datetime timestamp) except *:
