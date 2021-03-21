@@ -29,8 +29,8 @@ from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.execution.reports cimport ExecutionStateReport
-from nautilus_trader.execution.reports cimport OrderStateReport
+from nautilus_trader.execution.messages cimport ExecutionMassStatus
+from nautilus_trader.execution.messages cimport OrderStateReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
@@ -170,20 +170,21 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                                 f"execution client for {name} for active {order}.")
                 continue
 
-        cdef dict client_reports = {}  # type: dict[str, ExecutionStateReport]
+        cdef dict client_mass_status = {}  # type: dict[str, ExecutionMassStatus]
 
         cdef LiveExecutionClient client
         # Generate state report for each client
         for name, client in self._clients.items():
-            exec_state_report = await client.generate_state_report(client_orders[name])
-            client_reports[name] = exec_state_report
+            client_mass_status[name] = await client.generate_mass_status(client_orders[name])
 
         # Reconcile states
-        cdef ExecutionStateReport exec_report
-        for name, exec_report in client_reports.items():
-            for order_report in exec_report.order_states().values():
-                order = active_orders.get(order_report.cl_ord_id)
-                await self._clients[name].reconcile_state(order_report, order)
+        cdef ExecutionMassStatus mass_status
+        cdef OrderStateReport order_state_report
+        for name, mass_status in client_mass_status.items():
+            for order_state_report in mass_status.order_reports().values():
+                order = active_orders.get(order_state_report.cl_ord_id)
+                trades = mass_status.trades().get(order.id, [])
+                await self._clients[name].reconcile_state(order_state_report, order, trades)
 
         # Wait for state resolution until timeout...
         cdef int seconds = 10  # Hard coded for now
@@ -198,16 +199,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             resolved = True
             for order in active_orders.values():
                 name = order.venue.first()
-                state_report = client_reports[name].order_states().get(order.id)
-                if state_report is None:
-                    resolved = False
-                    continue  # Will not resolve
-                if order.state_c() != state_report.order_state:
-                    resolved = False
-                    continue  # Incorrect state
-                if state_report.order_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
-                    if order.filled_qty != state_report.filled_qty:
-                        resolved = False  # Incorrect filled quantity
+                report = client_mass_status[name].order_reports().get(order.id)
+                if report is None:
+                    return False  # Will never resolve
+                if order.state_c() != report.order_state:
+                    resolved = False  # Incorrect state on this loop
+                if report.order_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
+                    if order.filled_qty != report.filled_qty:
+                        resolved = False  # Incorrect filled quantity on this loop
             if resolved:
                 break
             await asyncio.sleep(0.001)  # One millisecond sleep
