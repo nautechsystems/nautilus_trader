@@ -1,6 +1,6 @@
 import pytest
 
-from nautilus_trader.network.socket_base import SocketClient
+from nautilus_trader.data.socket import SocketClient
 
 
 @pytest.mark.asyncio
