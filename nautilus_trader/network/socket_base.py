@@ -1,11 +1,13 @@
 import asyncio
 import json
 
+from nautilus_trader.data.client import DataClient
+
 
 DEFAULT_CRLF = b"\r\n"
 
 
-class SocketClient:
+class SocketClient(DataClient):
     def __init__(
         self,
         loop,
@@ -38,12 +40,15 @@ class SocketClient:
         self.ssl = ssl
         self.reader = None
         self.write = None
+        self.connected = False
 
     async def connect(self):
-        self.reader, self.writer = await asyncio.open_connection(
-            host=self.host, port=self.port, loop=self.loop, ssl=self.ssl
-        )
-        await self.post_connect()
+        if not self.connected:
+            self.reader, self.writer = await asyncio.open_connection(
+                host=self.host, port=self.port, loop=self.loop, ssl=self.ssl
+            )
+            await self.post_connect()
+            self.connected = True
 
     async def post_connect(self):
         """
@@ -56,11 +61,13 @@ class SocketClient:
         for msg in self.connection_messages:
             if not isinstance(msg, str):
                 msg = json.dumps(msg)
-            # logger.info("Sending connection message %s" % msg)
+            print(f"Sending connection message {msg}")
             byte_msg = msg.encode(encoding=self.encoding) + self.crlf
             self.writer.write(byte_msg)
 
-    async def listen(self):
+    async def start(self):
+        if not self.connected:
+            await self.connect()
         while True:
             try:
                 async for raw in self.read_line():
@@ -108,6 +115,9 @@ class BetfairSocketClient(SocketClient):
             loop=loop,
             host=host,
             port=port,
+            connection_messages=self.make_connection_messages(
+                app_key=app_key, session_token=session_token
+            ),
             message_handler=message_handler,
             crlf=crlf,
             encoding=encoding,
@@ -115,7 +125,8 @@ class BetfairSocketClient(SocketClient):
         self.app_key = app_key
         self.session_token = session_token
 
-    def connection_messages(self):
+    @staticmethod
+    def make_connection_messages(app_key, session_token):
         from betfairlightweight.filters import streaming_order_filter
 
         order_filter = streaming_order_filter(include_overall_position=True)
@@ -123,8 +134,8 @@ class BetfairSocketClient(SocketClient):
             {
                 "op": "authentication",
                 "id": 2,
-                "appKey": self.app_key,
-                "session": self.session_token,
+                "appKey": app_key,
+                "session": session_token,
             },
             {
                 "op": "orderSubscription",
@@ -136,24 +147,27 @@ class BetfairSocketClient(SocketClient):
         ]
 
 
-if __name__ == "__main__":
+async def main():
     import os
 
     from betfairlightweight import APIClient
 
     def handler(raw):
-        import logging
-
-        logging.info(raw)
+        print(raw)
 
     client = APIClient(
         username=os.environ["BETFAIR_USERNAME"],
-        password=os.environ["BETFAIR_PASSWORD"],
+        password=os.environ["BETFAIR_PW"],
         app_key=os.environ["BETFAIR_APP_KEY"],
-        certs=os.environ["BETFAIR_CERTS"],
+        certs=os.environ["BETFAIR_CERT_DIR"],
     )
     bfs = BetfairSocketClient(
         app_key=client.app_key,
         session_token=client.session_token,
         message_handler=handler,
     )
+    await bfs.start()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
