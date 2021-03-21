@@ -60,7 +60,7 @@ cdef class ExecutionStateReport:
         self.account_id = account_id
         self.timestamp = timestamp
 
-        self._order_states = {}     # type: dict[ClientOrderId, OrderStateReport]
+        self._order_states = {}     # type: dict[OrderId, OrderStateReport]
         self._position_states = {}  # type: dict[InstrumentId, PositionStateReport]
 
     cpdef dict order_states(self):
@@ -97,7 +97,7 @@ cdef class ExecutionStateReport:
         """
         Condition.not_none(report, "report")
 
-        self._order_states[report.cl_ord_id] = report
+        self._order_states[report.order_id] = report
 
     cpdef void add_position_report(self, PositionStateReport report) except *:
         """

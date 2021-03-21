@@ -56,10 +56,10 @@ class TestExecutionStateReport:
             timestamp=UNIX_EPOCH,
         )
 
-        cl_ord_id = ClientOrderId("O-123456")
+        order_id = OrderId("1")
         order_report = OrderStateReport(
-            cl_ord_id=cl_ord_id,
-            order_id=OrderId("1"),
+            cl_ord_id=ClientOrderId("O-123456"),
+            order_id=order_id,
             order_state=OrderState.REJECTED,
             filled_qty=Quantity(0),
             timestamp=UNIX_EPOCH,
@@ -69,7 +69,7 @@ class TestExecutionStateReport:
         report.add_order_report(order_report)
 
         # Assert
-        assert report.order_states()[cl_ord_id] == order_report
+        assert report.order_states()[order_id] == order_report
 
     def test_add_position_state_report(self):
         report = ExecutionStateReport(
