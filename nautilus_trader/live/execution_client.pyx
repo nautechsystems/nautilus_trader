@@ -17,12 +17,19 @@ import asyncio
 from decimal import Decimal
 
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.messages cimport ExecutionMassStatus
+from nautilus_trader.execution.messages cimport ExecutionReport
+from nautilus_trader.execution.messages cimport OrderStateReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelled
@@ -42,6 +49,7 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order.base cimport Order
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -134,6 +142,147 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         # Nothing to dispose yet
         self._log.info("Disposed.")
+
+    async def generate_mass_status(self, list active_orders):
+        """
+        Generate an execution state report based on the given list of active
+        orders.
+
+        Parameters
+        ----------
+        active_orders : list[Order]
+            The orders which currently have an 'active' status.
+
+        Returns
+        -------
+        ExecutionMassStatus
+
+        """
+        Condition.not_none(active_orders, "active_orders")
+
+        self._log.info(f"Generating ExecutionMassStatus for {self.name}...")
+
+        cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
+            client=self.name,
+            account_id=self.account_id,
+            timestamp=self._clock.utc_now(),
+        )
+
+        if not active_orders:
+            # Nothing to resolve
+            return mass_status
+
+        cdef Instrument instrument
+        cdef Order order
+        cdef str status
+        cdef dict response
+        cdef list trades
+        cdef list order_trades
+        for order in active_orders:
+            report = await self.generate_order_status_report(order)
+            if report:
+                mass_status.add_order_report(report)
+
+            if report.order_state in (OrderState.PARTIALLY_FILLED, OrderState.FILLED):
+                trades = await self.generate_trades_list(
+                    order_id=order.id,
+                    symbol=order.symbol,
+                    since=order.timestamp,
+                )
+                mass_status.add_trades(order.id, trades)
+
+        return mass_status
+
+    async def reconcile_state(
+        self, OrderStateReport report,
+        Order order=None,
+        list trades=None,
+    ):
+        """
+        Reconcile the given orders state based on the given report.
+
+        Parameters
+        ----------
+        report : OrderStateReport
+            The order state report for reconciliation.
+        order : Order, optional
+            The order for reconciliation. If not supplied then will try to be
+            fetched from cache.
+        trades : list[ExecutionReport]
+            The list of trades relating to the order.
+
+        Raises
+        ------
+        ValueError
+            If report.cl_ord_id is not equal to order.cl_ord_id.
+        ValueError
+            If report.order_id is not equal to order.id.
+
+        """
+        Condition.not_none(report, "report")
+        Condition.equal(report.cl_ord_id, order.cl_ord_id, "report.cl_ord_id", "order.cl_ord_id")
+        Condition.equal(report.order_id, order.id, "report.order_id", "order.id")
+
+        if order is None:
+            order = self._engine.cache(report.cl_ord_id)
+            if order is None:
+                self._log.warning(
+                    f"No reconciliation required for completed order {order}.")
+                return  # Cannot reconcile state
+
+        if order.is_completed_c():
+            self._log.warning(
+                f"No reconciliation required for completed order {order}.")
+            return  # Cannot reconcile state
+
+        self._log.info(f"Reconciling state for {repr(order.id)}...", LogColor.BLUE)
+
+        if report.order_state == OrderState.REJECTED:
+            # No OrderId would have been assigned from the exchange
+            self._log.info("Generating OrderRejected event...", LogColor.GREEN)
+            self._generate_order_rejected(report.cl_ord_id, "unknown", report.timestamp)
+            return
+        elif report.order_state == OrderState.EXPIRED:
+            self._log.info("Generating OrderExpired event...", LogColor.GREEN)
+            self._generate_order_expired(report.cl_ord_id, report.order_id, report.timestamp)
+            return
+        elif report.order_state == OrderState.CANCELLED:
+            self._log.info("Generating OrderCancelled event...", LogColor.GREEN)
+            self._generate_order_cancelled(report.cl_ord_id, report.order_id, report.timestamp)
+            return
+        elif report.order_state == OrderState.ACCEPTED:
+            if order.state_c() == OrderState.SUBMITTED:
+                self._log.info("Generating OrderAccepted event...", LogColor.GREEN)
+                self._generate_order_accepted(report.cl_ord_id, report.order_id, report.timestamp)
+            return
+            # TODO: Consider other scenarios
+
+        if trades is None:
+            self._log.error(
+                f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
+                f"not trades given for {OrderStateParser.to_str(order.state_c())} order.")
+            return  # Cannot reconcile state
+
+        cdef ExecutionReport trade
+        for trade in trades:
+            if trade.id in order.execution_ids_c():
+                continue  # Trade already applied
+            self._log.info(f"Generating OrderFilled event for {repr(trade.id)}...", LogColor.GREEN)
+            self._generate_order_filled(
+                cl_ord_id=order.cl_ord_id,
+                order_id=order.id,
+                execution_id=trade.id,
+                instrument_id=order.instrument_id,
+                order_side=order.side,
+                fill_qty=trade.last_qty,
+                cum_qty=Decimal(),     # TODO: use hot cache
+                leaves_qty=Decimal(),  # TODO: use hot cache
+                avg_px=trade.last_px,
+                commission_amount=trade.commission_amount,
+                commission_currency=trade.commission_currency,
+                liquidity_side=trade.liquidity_side,
+                timestamp=trade.timestamp,
+            )
 
     cdef inline void _generate_order_invalid(
         self,

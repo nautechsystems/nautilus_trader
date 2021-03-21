@@ -21,12 +21,12 @@ from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Command
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.datetime cimport from_unix_time_ms
-from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.core.datetime cimport maybe_from_unix_time_ms
 from nautilus_trader.core.datetime cimport maybe_to_unix_time_ms
+from nautilus_trader.core.datetime cimport to_unix_time_ms
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
