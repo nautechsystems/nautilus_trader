@@ -24,6 +24,7 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data import DataType
@@ -536,3 +537,24 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def update_strategy(self, strategy: TradingStrategy) -> None:
         pass  # Would persist the user state dict
+
+
+class MockLiveExecutionEngine(LiveExecutionEngine):
+    def __init__(
+        self,
+        loop,
+        database,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(loop, database, portfolio, clock, logger, config)
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)

@@ -43,25 +43,4 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # cdef inline void _on_exec_report(self, dict event) except *
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)
-
-    # TODO - for testing purposes
-    cpdef generate_order_invalid(self, ClientOrderId cl_ord_id, str reason)
-    cpdef generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp)
-    cpdef generate_order_rejected(self, ClientOrderId cl_ord_id, str reason, datetime timestamp)
-    cpdef generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp)
-    cpdef generate_order_filled(
-        self,
-        ClientOrderId cl_ord_id,
-        OrderId order_id,
-        ExecutionId execution_id,
-        InstrumentId instrument_id,
-        OrderSide order_side,
-        fill_qty: Decimal,
-        cum_qty: Decimal,
-        leaves_qty: Decimal,
-        avg_px: Decimal,
-        commission_amount: Decimal,
-        str commission_currency,
-        LiquiditySide liquidity_side,
-        datetime timestamp
-    )
+    cpdef void _handle_order_stream_update(self, dict raw)

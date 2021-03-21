@@ -22,7 +22,7 @@ from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
+# from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 
 
@@ -72,12 +72,13 @@ cdef class BetfairClientsFactory:
 
         if config.get("data_client", True):
             # Create client
-            data_client = BetfairDataClient(
-                client=client,
-                engine=data_engine,
-                clock=clock,
-                logger=logger,
-            )
+            # data_client = BetfairDataClient(
+            #     client=client,
+            #     engine=data_engine,
+            #     clock=clock,
+            #     logger=logger,
+            # )
+            pass
         else:
             # The data client was not enabled
             data_client = None

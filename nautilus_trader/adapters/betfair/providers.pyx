@@ -15,7 +15,6 @@
 import logging
 
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.model.identifiers cimport Venue
 
 from typing import Dict, List
 
@@ -23,7 +22,7 @@ from betfairlightweight import APIClient
 from betfairlightweight.filters import market_filter
 import pandas as pd
 
-from adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
 from nautilus_trader.model.instrument import BettingInstrument

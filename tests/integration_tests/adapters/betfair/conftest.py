@@ -4,24 +4,24 @@ import betfairlightweight
 import pandas as pd
 import pytest
 
-from adapters.betfair.common import BETFAIR_VENUE
-from adapters.betfair.providers import BetfairInstrumentProvider
-from model.identifiers import InstrumentId
-from model.instrument import BettingInstrument
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
+from tests.test_kit.mocks import MockLiveExecutionEngine
 
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
@@ -134,7 +134,7 @@ def data_engine(event_loop, clock, live_logger, portfolio):
 @pytest.mark.asyncio()
 def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
     database = BypassExecutionDatabase(trader_id=trader_id, logger=live_logger)
-    return LiveExecutionEngine(
+    return MockLiveExecutionEngine(
         loop=event_loop,
         database=database,
         portfolio=portfolio,
