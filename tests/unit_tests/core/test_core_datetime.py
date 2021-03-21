@@ -27,6 +27,8 @@ from nautilus_trader.core.datetime import from_unix_time_ms
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
+from nautilus_trader.core.datetime import maybe_from_unix_time_ms
+from nautilus_trader.core.datetime import maybe_to_unix_time_ms
 from nautilus_trader.core.datetime import to_unix_time_ms
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -44,15 +46,15 @@ class TestDatetimeFunctions:
             ],
         ],
     )
-    def test_to_posix_ms_with_various_values_returns_expected_long(
+    def test_to_unix_ms_with_various_values_returns_expected_long(
         self, value, expected
     ):
         # Arrange
         # Act
-        posix = to_unix_time_ms(value)
+        result = to_unix_time_ms(value)
 
         # Assert
-        assert expected == posix
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
@@ -63,15 +65,50 @@ class TestDatetimeFunctions:
             [1577934120001, datetime(2020, 1, 2, 3, 2, 0, 1000, tzinfo=pytz.utc)],
         ],
     )
-    def test_from_posix_ms_with_various_values_returns_expected_datetime(
+    def test_from_unix_ms_with_various_values_returns_expected_datetime(
         self, value, expected
     ):
         # Arrange
         # Act
-        dt = from_unix_time_ms(value)
+        result = from_unix_time_ms(value)
 
         # Assert
-        assert expected == dt
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), 0],
+            [None, None],
+        ],
+    )
+    def test_maybe_to_unix_ms_with_various_values_returns_expected_long(
+        self, value, expected
+    ):
+        # Arrange
+        # Act
+        result = maybe_to_unix_time_ms(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [0, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
+            [1357002000000, datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)],
+            [None, None],
+        ],
+    )
+    def test_maybe_from_unix_ms_with_various_values_returns_expected_datetime(
+        self, value, expected
+    ):
+        # Arrange
+        # Act
+        result = maybe_from_unix_time_ms(value)
+
+        # Assert
+        assert result == expected
 
     def test_is_datetime_utc_given_tz_naive_datetime_returns_false(self):
         # Arrange
@@ -144,12 +181,12 @@ class TestDatetimeFunctions:
         result5 = format_iso8601(dt5)
 
         # Assert
-        assert "1970-01-01 00:00:00+00:00" == str(pd.to_datetime(dt1, utc=True))
-        assert "1970-01-01T00:00:00.000Z" == result1
-        assert "1970-01-01T00:00:00.000Z" == result2
-        assert "1970-01-01T00:00:00.001Z" == result3
-        assert "1970-01-01T00:00:01.000Z" == result4
-        assert "1970-01-01T01:01:02.003Z" == result5
+        assert str(pd.to_datetime(dt1, utc=True)) == "1970-01-01 00:00:00+00:00"
+        assert result1 == "1970-01-01T00:00:00.000Z"
+        assert result2 == "1970-01-01T00:00:00.000Z"
+        assert result3 == "1970-01-01T00:00:00.001Z"
+        assert result4 == "1970-01-01T00:00:01.000Z"
+        assert result5 == "1970-01-01T01:01:02.003Z"
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
@@ -178,8 +215,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_given_tz_naive_pandas_timestamp(self):
         # Arrange
@@ -189,8 +226,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_datetime(self):
         # Arrange
@@ -200,8 +237,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_pandas(self):
         # Arrange
@@ -211,8 +248,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_equality(self):
         # Arrange
@@ -254,7 +291,7 @@ class TestDatetimeFunctions:
         result = as_utc_index(data)
 
         # Assert
-        assert pytz.utc == result.index.tz
+        assert result.index.tz == pytz.utc
 
     def test_with_utc_index_given_tz_aware_dataframe(self):
         # Arrange
@@ -268,7 +305,7 @@ class TestDatetimeFunctions:
         result = as_utc_index(data)
 
         # Assert
-        assert pytz.utc == result.index.tz
+        assert result.index.tz == pytz.utc
 
     def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
         # Arrange

@@ -21,6 +21,8 @@ cdef datetime UNIX_EPOCH
 
 cpdef long to_unix_time_ms(datetime timestamp) except *
 cpdef datetime from_unix_time_ms(long timestamp)
+cpdef maybe_to_unix_time_ms(datetime timestamp)
+cpdef maybe_from_unix_time_ms(timestamp)
 cpdef bint is_datetime_utc(datetime timestamp) except *
 cpdef bint is_tz_aware(time_object) except *
 cpdef bint is_tz_naive(time_object) except *
