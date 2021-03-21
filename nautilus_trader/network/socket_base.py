@@ -10,10 +10,10 @@ DEFAULT_CRLF = b"\r\n"
 class SocketClient(DataClient):
     def __init__(
         self,
-        loop,
         host,
         port,
         message_handler,
+        loop=None,
         connection_messages=None,
         crlf=None,
         encoding="utf-8",
@@ -30,10 +30,10 @@ class SocketClient(DataClient):
         :param encoding: Encoding to use when sending messages
         :param ssl: Use SSL for socket connection
         """
-        self.loop = loop
         self.host = host
         self.port = port
         self.message_handler = message_handler
+        self.loop = loop or asyncio.get_event_loop()
         self.connection_messages = connection_messages
         self.crlf = crlf or DEFAULT_CRLF
         self.encoding = encoding
@@ -41,6 +41,7 @@ class SocketClient(DataClient):
         self.reader = None
         self.write = None
         self.connected = False
+        self.stop = False
 
     async def connect(self):
         if not self.connected:
@@ -68,16 +69,17 @@ class SocketClient(DataClient):
     async def start(self):
         if not self.connected:
             await self.connect()
-        while True:
+        while not self.stop:
             try:
                 async for raw in self.read_line():
                     if raw is None:
-                        return
-
+                        break
                     self.message_handler(raw)
-                    await asyncio.sleep(0)
+                    if self.stop:
+                        break
             except ConnectionResetError:
                 await self.connect()
+        await self.shutdown()
 
     async def read_line(self):
         data, part = b"", b""
@@ -96,6 +98,10 @@ class SocketClient(DataClient):
 
                 for line in lines[:-1]:
                     yield line
+
+    async def shutdown(self):
+        self.writer.close()
+        await self.writer.wait_closed()
 
 
 class BetfairSocketClient(SocketClient):
