@@ -147,7 +147,7 @@ cdef class CCXTClientsFactory:
             account_id = AccountId(client.name.upper(), account_id_env_var)
 
             # Create client
-            if client.name == "binance":
+            if client.name.lower() == "binance":
                 exec_client = BinanceCCXTExecutionClient(
                     client=client,
                     account_id=account_id,
@@ -155,7 +155,7 @@ cdef class CCXTClientsFactory:
                     clock=clock,
                     logger=logger,
                 )
-            elif client.name == "bitmex":
+            elif client.name.lower() == "bitmex":
                 exec_client = BitmexCCXTExecutionClient(
                     client=client,
                     account_id=account_id,
