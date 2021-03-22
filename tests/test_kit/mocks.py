@@ -15,7 +15,7 @@
 
 from datetime import datetime
 import inspect
-from typing import Optional
+from typing import List, Optional
 
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
@@ -522,7 +522,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def add_order_status_report(self, report: OrderStatusReport) -> None:
         self._order_status_reports[report.order_id] = report
 
-    def add_trades_list(self, order_id: OrderId, trades: list[ExecutionReport]) -> None:
+    def add_trades_list(self, order_id: OrderId, trades: List[ExecutionReport]) -> None:
         self._trades_lists[order_id] = trades
 
     def connect(self) -> None:
