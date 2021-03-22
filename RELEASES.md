@@ -5,10 +5,13 @@
 ## Breaking Changes
 - Remove `Instrument.leverage` (incorrect place for concept).
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
+- Change serialization of timestamps to ints.
+- Rename `COMMISSION` constant to `COMMISSION_AMOUNT`.
 
 ## Enhancements
-- Add Betfair adaptor.
+- Add Betfair adapter.
 - Add optional `broker` property to `Venue` to assist with routing.
+- Enhance state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`.
 
 ## Fixes
 None

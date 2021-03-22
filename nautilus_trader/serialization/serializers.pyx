@@ -568,7 +568,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LEAVES_QTY] = str(event.leaves_qty)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
-            package[COMMISSION] = str(event.commission)
+            package[COMMISSION_AMOUNT] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_str(event.liquidity_side)
             package[EXECUTION_TIME] = to_unix_time_ms(event.execution_time)
@@ -748,7 +748,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Price(unpacked[FILL_PRICE]),
                 Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
-                Money(unpacked[COMMISSION], commission_currency),
+                Money(unpacked[COMMISSION_AMOUNT], commission_currency),
                 LiquiditySideParser.from_str(unpacked[LIQUIDITY_SIDE]),
                 from_unix_time_ms(unpacked[EXECUTION_TIME]),
                 event_id,
