@@ -132,7 +132,7 @@ cdef class Order:
         self.time_in_force = event.time_in_force
         self.filled_qty = Quantity()
         self.filled_timestamp = None  # Can be None
-        self.avg_price = None         # Can be None
+        self.avg_px = None         # Can be None
         self.slippage = Decimal()
         self.init_id = event.id
 
@@ -517,12 +517,12 @@ cdef class Order:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
-    cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity):
-        if self.avg_price is None:
+    cdef object _calculate_avg_px(self, Price fill_price, Quantity fill_quantity):
+        if self.avg_px is None:
             return fill_price
 
         total_quantity: Decimal = self.filled_qty + fill_quantity
-        return ((self.avg_price * self.filled_qty) + (fill_price * fill_quantity)) / total_quantity
+        return ((self.avg_px * self.filled_qty) + (fill_price * fill_quantity)) / total_quantity
 
 
 cdef class PassiveOrder(Order):
@@ -646,11 +646,11 @@ cdef class PassiveOrder(Order):
         self.liquidity_side = event.liquidity_side
         self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
         self.filled_timestamp = event.timestamp
-        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
+        self.avg_px = self._calculate_avg_px(event.fill_price, event.fill_qty)
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
-            self.slippage = self.avg_price - self.price
+            self.slippage = self.avg_px - self.price
         else:  # self.side == OrderSide.SELL:
-            self.slippage = self.price - self.avg_price
+            self.slippage = self.price - self.avg_px

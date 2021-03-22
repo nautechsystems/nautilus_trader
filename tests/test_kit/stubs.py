@@ -279,7 +279,7 @@ class TestStubs:
 
         commission = instrument.calculate_commission(
             quantity=order.quantity,
-            avg_price=fill_price,
+            avg_px=fill_price,
             liquidity_side=liquidity_side,
         )
 

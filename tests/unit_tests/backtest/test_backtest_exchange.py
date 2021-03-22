@@ -312,7 +312,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Decimal("90.005"), order.avg_price)  # No slippage
+        self.assertEqual(Decimal("90.005"), order.avg_px)  # No slippage
 
     def test_submit_post_only_limit_order_when_marketable_then_rejects(self):
         # Arrange: Prepare market
@@ -715,7 +715,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
-        self.assertEqual(Price("90.005"), order.avg_price)
+        self.assertEqual(Price("90.005"), order.avg_px)
 
     def test_amend_stop_market_order_when_price_inside_market_then_rejects_amendment(
         self,
@@ -1011,7 +1011,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Decimal("90.006"), order.avg_price)
+        self.assertEqual(Decimal("90.006"), order.avg_px)
 
     def test_order_fills_gets_commissioned(self):
         # Arrange: Prepare market
@@ -1143,7 +1143,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Price("96.711"), order.avg_price)
+        self.assertEqual(Price("96.711"), order.avg_px)
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
         # Arrange: Prepare market
@@ -1307,7 +1307,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
-        self.assertEqual(Price("90.001"), order.avg_price)
+        self.assertEqual(Price("90.001"), order.avg_px)
 
     def test_process_quote_tick_fills_sell_stop_order(self):
         # Arrange: Prepare market
@@ -1343,7 +1343,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
-        self.assertEqual(Price("90.000"), order.avg_price)
+        self.assertEqual(Price("90.000"), order.avg_px)
 
     def test_process_quote_tick_fills_sell_limit_order(self):
         # Arrange: Prepare market
@@ -1379,7 +1379,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
-        self.assertEqual(Price("90.100"), order.avg_price)
+        self.assertEqual(Price("90.100"), order.avg_px)
 
     def test_process_quote_tick_fills_buy_limit_entry_with_bracket(self):
         # Arrange: Prepare market
