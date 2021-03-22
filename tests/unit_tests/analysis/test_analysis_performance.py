@@ -19,6 +19,7 @@ import unittest
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -52,13 +53,21 @@ class AnalyzerTests(unittest.TestCase):
         # Assert
         self.assertTrue(result.empty)
 
-    def test_get_realized_pnls_when_no_data_returns_empty_series(self):
+    def test_get_realized_pnls_when_no_data_returns_none(self):
         # Arrange
         # Act
         result = self.analyzer.get_realized_pnls()
 
         # Assert
-        self.assertTrue(result.empty)
+        self.assertIsNone(result)
+
+    def test_get_realized_pnls_with_currency_when_no_data_returns_none(self):
+        # Arrange
+        # Act
+        result = self.analyzer.get_realized_pnls(AUD)
+
+        # Assert
+        self.assertIsNone(result)
 
     def test_analyzer_tracks_daily_returns(self):
         # Arrange

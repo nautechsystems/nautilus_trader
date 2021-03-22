@@ -188,7 +188,7 @@ cdef class Trader(Component):
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
-        if len(strategies) == 0:
+        if not strategies:
             self._log.warning(f"No strategies to initialize.")
             return
 

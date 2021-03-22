@@ -76,22 +76,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         self._load_currencies()
         self._load_instruments()
 
-    cpdef Currency currency(self, str code):
-        """
-        Return the currency with the given code (if found).
-
-        Parameters
-        ----------
-        code : str
-            The currency code.
-
-        Returns
-        -------
-        Currency or None
-
-        """
-        return self._currencies.get(code)
-
     cdef void _load_instruments(self) except *:
         cdef str k
         cdef dict v

@@ -116,7 +116,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         AssetClass asset_class,
         list details_list,
     ):
-        if len(details_list) == 0:
+        if not details_list:
             raise ValueError(f"No contract details found for the given instrument identifier {instrument_id}")
         elif len(details_list) > 1:
             raise ValueError(f"Multiple contract details found for the given instrument identifier {instrument_id}")

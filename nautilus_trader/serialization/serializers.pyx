@@ -21,6 +21,10 @@ from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport from_unix_time_ms
+from nautilus_trader.core.datetime cimport maybe_from_unix_time_ms
+from nautilus_trader.core.datetime cimport maybe_to_unix_time_ms
+from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
@@ -68,7 +72,6 @@ from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
-from nautilus_trader.serialization.parsing cimport ObjectParser
 
 
 cdef class MsgPackSerializer:
@@ -130,14 +133,14 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         self.instrument_id_cache = ObjectCache(InstrumentId, InstrumentId.from_str_c)
 
-    cpdef bytes serialize(self, Order order):  # Can be None
+    cpdef bytes serialize(self, Order order):
         """
         Return the serialized MessagePack specification bytes from the given order.
 
         Parameters
         ----------
         order : Order
-            The order to serialize.
+            The order to serialize (can be None).
 
         Returns
         -------
@@ -156,13 +159,12 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             QUANTITY: str(order.quantity),
             TIME_IN_FORCE: TimeInForceParser.to_str(order.time_in_force),
             INIT_ID: order.init_id.value,
-            TIMESTAMP: ObjectParser.datetime_to_str(order.timestamp),
+            TIMESTAMP: to_unix_time_ms(order.timestamp),
         }
 
         if isinstance(order, PassiveOrder):
             package[PRICE] = str(order.price)
-            if order.expire_time is not None:
-                package[EXPIRE_TIME] = ObjectParser.datetime_to_str(order.expire_time)
+            package[EXPIRE_TIME] = maybe_to_unix_time_ms(order.expire_time)
 
         if isinstance(order, LimitOrder):
             package[POST_ONLY] = order.is_post_only
@@ -212,7 +214,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef Quantity quantity = Quantity(unpacked[QUANTITY])
         cdef TimeInForce time_in_force = TimeInForceParser.from_str(unpacked[TIME_IN_FORCE])
         cdef UUID init_id = UUID.from_str_c(unpacked[INIT_ID])
-        cdef datetime timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
+        cdef datetime timestamp = from_unix_time_ms(unpacked[TIMESTAMP])
 
         if order_type == OrderType.MARKET:
             return MarketOrder(
@@ -226,10 +228,6 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 timestamp=timestamp,
             )
 
-        cdef str expire_time_str = unpacked.get(EXPIRE_TIME)
-        cdef datetime expire_time = None
-        if expire_time_str is not None:
-            expire_time = ObjectParser.string_to_datetime(expire_time_str)
         if order_type == OrderType.LIMIT:
             return LimitOrder(
                 cl_ord_id=cl_ord_id,
@@ -239,7 +237,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 quantity=quantity,
                 price=Price(unpacked[PRICE]),
                 time_in_force=time_in_force,
-                expire_time=expire_time,
+                expire_time=maybe_from_unix_time_ms(unpacked[EXPIRE_TIME]),
                 init_id=init_id,
                 timestamp=timestamp,
                 post_only=unpacked[POST_ONLY],
@@ -256,7 +254,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 quantity=quantity,
                 price=Price(unpacked[PRICE]),
                 time_in_force=time_in_force,
-                expire_time=expire_time,
+                expire_time=maybe_from_unix_time_ms(unpacked[EXPIRE_TIME]),
                 init_id=init_id,
                 timestamp=timestamp,
                 reduce_only=unpacked[REDUCE_ONLY],
@@ -272,7 +270,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 price=Price(unpacked[PRICE]),
                 trigger=Price(unpacked[TRIGGER]),
                 time_in_force=time_in_force,
-                expire_time=expire_time,
+                expire_time=maybe_from_unix_time_ms(unpacked[EXPIRE_TIME]),
                 init_id=init_id,
                 timestamp=timestamp,
                 post_only=unpacked[POST_ONLY],
@@ -323,7 +321,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef dict package = {
             TYPE: type(command).__name__,
             ID: command.id.value,
-            TIMESTAMP: ObjectParser.datetime_to_str(command.timestamp),
+            TIMESTAMP: to_unix_time_ms(command.timestamp),
         }
 
         if isinstance(command, TradingCommand):
@@ -385,7 +383,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         cdef str command_type = unpacked[TYPE]
         cdef UUID command_id = UUID.from_str_c(unpacked[ID])
-        cdef datetime command_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
+        cdef datetime command_timestamp = from_unix_time_ms(unpacked[TIMESTAMP])
 
         if command_type == SubmitOrder.__name__:
 
@@ -475,7 +473,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict package = {
             TYPE: type(event).__name__,
             ID: event.id.value,
-            TIMESTAMP: ObjectParser.datetime_to_str(event.timestamp),
+            TIMESTAMP: to_unix_time_ms(event.timestamp),
         }
 
         if isinstance(event, AccountState):
@@ -514,7 +512,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[SUBMITTED_TIME] = ObjectParser.datetime_to_str(event.submitted_time)
+            package[SUBMITTED_TIME] = to_unix_time_ms(event.submitted_time)
         elif isinstance(event, OrderInvalid):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[REASON] = event.reason
@@ -525,36 +523,36 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[ACCEPTED_TIME] = ObjectParser.datetime_to_str(event.accepted_time)
+            package[ACCEPTED_TIME] = to_unix_time_ms(event.accepted_time)
         elif isinstance(event, OrderRejected):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[REJECTED_TIME] = ObjectParser.datetime_to_str(event.rejected_time)
+            package[REJECTED_TIME] = to_unix_time_ms(event.rejected_time)
             package[REASON] = event.reason
         elif isinstance(event, OrderCancelReject):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[REJECTED_TIME] = ObjectParser.datetime_to_str(event.rejected_time)
+            package[REJECTED_TIME] = to_unix_time_ms(event.rejected_time)
             package[RESPONSE_TO] = event.response_to
             package[REASON] = event.reason
         elif isinstance(event, OrderCancelled):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[CANCELLED_TIME] = ObjectParser.datetime_to_str(event.cancelled_time)
+            package[CANCELLED_TIME] = to_unix_time_ms(event.cancelled_time)
         elif isinstance(event, OrderAmended):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[AMENDED_TIME] = ObjectParser.datetime_to_str(event.amended_time)
+            package[AMENDED_TIME] = to_unix_time_ms(event.amended_time)
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
         elif isinstance(event, OrderExpired):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[EXPIRED_TIME] = ObjectParser.datetime_to_str(event.expired_time)
+            package[EXPIRED_TIME] = to_unix_time_ms(event.expired_time)
         elif isinstance(event, OrderFilled):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -570,10 +568,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LEAVES_QTY] = str(event.leaves_qty)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
-            package[COMMISSION] = str(event.commission)
+            package[COMMISSION_AMOUNT] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_str(event.liquidity_side)
-            package[EXECUTION_TIME] = ObjectParser.datetime_to_str(event.execution_time)
+            package[EXECUTION_TIME] = to_unix_time_ms(event.execution_time)
         else:
             raise RuntimeError(f"Cannot serialize event: unrecognized event {event}")
 
@@ -606,7 +604,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef str event_type = unpacked[TYPE]
         cdef UUID event_id = UUID.from_str_c(unpacked[ID])
-        cdef datetime event_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
+        cdef datetime event_timestamp = from_unix_time_ms(unpacked[TIMESTAMP])
 
         cdef dict options          # typing for OrderInitialized
         cdef OrderType order_type  # typing for OrderInitialized
@@ -657,7 +655,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return OrderSubmitted(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
-                ObjectParser.string_to_datetime(unpacked[SUBMITTED_TIME]),
+                from_unix_time_ms(unpacked[SUBMITTED_TIME]),
                 event_id,
                 event_timestamp,
             )
@@ -680,7 +678,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
-                ObjectParser.string_to_datetime(unpacked[ACCEPTED_TIME]),
+                from_unix_time_ms(unpacked[ACCEPTED_TIME]),
                 event_id,
                 event_timestamp,
             )
@@ -688,7 +686,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return OrderRejected(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
-                ObjectParser.string_to_datetime(unpacked[REJECTED_TIME]),
+                from_unix_time_ms(unpacked[REJECTED_TIME]),
                 unpacked[REASON],
                 event_id,
                 event_timestamp,
@@ -698,7 +696,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
-                ObjectParser.string_to_datetime(unpacked[CANCELLED_TIME]),
+                from_unix_time_ms(unpacked[CANCELLED_TIME]),
                 event_id,
                 event_timestamp,
             )
@@ -707,7 +705,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
-                ObjectParser.string_to_datetime(unpacked[REJECTED_TIME]),
+                from_unix_time_ms(unpacked[REJECTED_TIME]),
                 unpacked[RESPONSE_TO],
                 unpacked[REASON],
                 event_id,
@@ -720,7 +718,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderId(unpacked[ORDER_ID]),
                 Quantity(unpacked[QUANTITY]),
                 Price(unpacked[PRICE]),
-                ObjectParser.string_to_datetime(unpacked[AMENDED_TIME]),
+                from_unix_time_ms(unpacked[AMENDED_TIME]),
                 event_id,
                 event_timestamp,
             )
@@ -729,7 +727,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
-                ObjectParser.string_to_datetime(unpacked[EXPIRED_TIME]),
+                from_unix_time_ms(unpacked[EXPIRED_TIME]),
                 event_id,
                 event_timestamp,
             )
@@ -750,9 +748,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Price(unpacked[FILL_PRICE]),
                 Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
-                Money(unpacked[COMMISSION], commission_currency),
+                Money(unpacked[COMMISSION_AMOUNT], commission_currency),
                 LiquiditySideParser.from_str(unpacked[LIQUIDITY_SIDE]),
-                ObjectParser.string_to_datetime(unpacked[EXECUTION_TIME]),
+                from_unix_time_ms(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp,
             )

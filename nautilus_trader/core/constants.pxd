@@ -57,7 +57,8 @@ cdef str FILL_PRICE
 cdef str CUM_QTY
 cdef str LEAVES_QTY
 cdef str QUANTITY
-cdef str COMMISSION
+cdef str COMMISSION_AMOUNT
+cdef str COMMISSION_CURRENCY
 cdef str PRICE
 cdef str TRIGGER
 cdef str CURRENCY
@@ -83,7 +84,6 @@ cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
 cdef str SETTLEMENT_CURRENCY
 cdef str IS_INVERSE
-cdef str COMMISSION_CURRENCY
 cdef str BROKER_SYMBOL
 cdef str ASSET_TYPE
 cdef str PRICE_PRECISION

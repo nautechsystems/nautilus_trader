@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.reports import ExecutionStateReport
-from nautilus_trader.execution.reports import OrderStateReport
-from nautilus_trader.execution.reports import PositionStateReport
+from nautilus_trader.execution.messages import ExecutionMassStatus
+from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.messages import PositionStatusReport
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -35,7 +35,7 @@ class TestExecutionStateReport:
         account_id = TestStubs.account_id()
 
         # Act
-        report = ExecutionStateReport(
+        report = ExecutionMassStatus(
             client=client,
             account_id=account_id,
             timestamp=UNIX_EPOCH,
@@ -45,21 +45,21 @@ class TestExecutionStateReport:
         assert report.client == client
         assert report.account_id == account_id
         assert report.timestamp == UNIX_EPOCH
-        assert report.order_states() == {}
-        assert report.position_states() == {}
+        assert report.order_reports() == {}
+        assert report.position_reports() == {}
 
     def test_add_order_state_report(self):
         # Arrange
-        report = ExecutionStateReport(
+        report = ExecutionMassStatus(
             client="IB",
             account_id=TestStubs.account_id(),
             timestamp=UNIX_EPOCH,
         )
 
-        cl_ord_id = ClientOrderId("O-123456")
-        order_report = OrderStateReport(
-            cl_ord_id=cl_ord_id,
-            order_id=OrderId("1"),
+        order_id = OrderId("1")
+        order_report = OrderStatusReport(
+            cl_ord_id=ClientOrderId("O-123456"),
+            order_id=order_id,
             order_state=OrderState.REJECTED,
             filled_qty=Quantity(0),
             timestamp=UNIX_EPOCH,
@@ -69,16 +69,16 @@ class TestExecutionStateReport:
         report.add_order_report(order_report)
 
         # Assert
-        assert report.order_states()[cl_ord_id] == order_report
+        assert report.order_reports()[order_id] == order_report
 
     def test_add_position_state_report(self):
-        report = ExecutionStateReport(
+        report = ExecutionMassStatus(
             client="IB",
             account_id=TestStubs.account_id(),
             timestamp=UNIX_EPOCH,
         )
 
-        position_report = PositionStateReport(
+        position_report = PositionStatusReport(
             instrument_id=AUDUSD_SIM,
             position_side=PositionSide.FLAT,
             qty=Quantity(0),
@@ -89,4 +89,4 @@ class TestExecutionStateReport:
         report.add_position_report(position_report)
 
         # Assert
-        assert report.position_states()[AUDUSD_SIM] == position_report
+        assert report.position_reports()[AUDUSD_SIM] == position_report
