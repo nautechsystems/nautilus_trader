@@ -21,7 +21,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -30,7 +29,7 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OrderStateReport:
+cdef class OrderStatusReport:
     """
     Represents an orders state at a point in time.
     """
@@ -43,7 +42,7 @@ cdef class OrderStateReport:
         datetime timestamp not None,
     ):
         """
-        Initializes a new instance of the `OrderStateReport` class.
+        Initializes a new instance of the `OrderStatusReport` class.
 
         Parameters
         ----------
@@ -73,7 +72,7 @@ cdef class OrderStateReport:
         self.timestamp = timestamp
 
 
-cdef class PositionStateReport:
+cdef class PositionStatusReport:
     """
     Represents a positions state at a point in time.
     """
@@ -85,7 +84,7 @@ cdef class PositionStateReport:
         datetime timestamp not None,
     ):
         """
-        Initializes a new instance of the `PositionStateReport` class.
+        Initializes a new instance of the `PositionStatusReport` class.
 
         Parameters
         ----------
@@ -124,8 +123,8 @@ cdef class ExecutionReport:
         OrderId order_id not None,
         last_qty not None: Decimal,
         last_px not None: Decimal,
-        commission_amount: Decimal,  # Can be None
-        str commission_currency,     # Can be None
+        commission_amount: Decimal,    # Can be None
+        str commission_currency,  # Can be None
         LiquiditySide liquidity_side,
         datetime timestamp not None,
     ):
@@ -204,9 +203,9 @@ cdef class ExecutionMassStatus:
         self.account_id = account_id
         self.timestamp = timestamp
 
-        self._order_states = {}     # type: dict[OrderId, OrderStateReport]
+        self._order_states = {}     # type: dict[OrderId, OrderStatusReport]
         self._trades = {}           # type: dict[OrderId, list[ExecutionReport]]
-        self._position_states = {}  # type: dict[InstrumentId, PositionStateReport]
+        self._position_states = {}  # type: dict[InstrumentId, PositionStatusReport]
 
     cpdef dict order_reports(self):
         """
@@ -214,7 +213,7 @@ cdef class ExecutionMassStatus:
 
         Returns
         -------
-        dict[OrderId, OrderStateReport]
+        dict[OrderId, OrderStatusReport]
 
         """
         return self._order_states.copy()
@@ -236,18 +235,18 @@ cdef class ExecutionMassStatus:
 
         Returns
         -------
-        dict[InstrumentId, PositionStateReport]
+        dict[InstrumentId, PositionStatusReport]
 
         """
         return self._position_states.copy()
 
-    cpdef void add_order_report(self, OrderStateReport report) except *:
+    cpdef void add_order_report(self, OrderStatusReport report) except *:
         """
         Add the order state report.
 
         Parameters
         ----------
-        report : OrderStateReport
+        report : OrderStatusReport
             The report to add.
 
         """
@@ -277,13 +276,13 @@ cdef class ExecutionMassStatus:
 
         self._trades[order_id] = trades
 
-    cpdef void add_position_report(self, PositionStateReport report) except *:
+    cpdef void add_position_report(self, PositionStatusReport report) except *:
         """
         Add the position state report.
 
         Parameters
         ----------
-        report : PositionStateReport
+        report : PositionStatusReport
             The report to add.
 
         """

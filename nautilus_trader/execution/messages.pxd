@@ -28,7 +28,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class OrderStateReport:
+cdef class OrderStatusReport:
     cdef readonly ClientOrderId cl_ord_id
     """The reported client order identifier.\n\n:returns: `ClientOrderId`"""
     cdef readonly OrderId order_id
@@ -41,7 +41,7 @@ cdef class OrderStateReport:
     """The report timestamp.\n\n:returns: `datetime`"""
 
 
-cdef class PositionStateReport:
+cdef class PositionStatusReport:
     cdef readonly InstrumentId instrument_id
     """The reported instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly PositionSide side
@@ -83,6 +83,6 @@ cdef class ExecutionMassStatus:
     cpdef dict trades(self)
     cpdef dict position_reports(self)
 
-    cpdef void add_order_report(self, OrderStateReport report) except *
+    cpdef void add_order_report(self, OrderStatusReport report) except *
     cpdef void add_trades(self, OrderId order_id, list trades) except *
-    cpdef void add_position_report(self, PositionStateReport report) except *
+    cpdef void add_position_report(self, PositionStatusReport report) except *
