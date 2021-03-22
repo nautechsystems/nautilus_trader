@@ -24,7 +24,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport ExecutionReport
-from nautilus_trader.execution.messages cimport OrderStateReport
+from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -45,6 +45,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -143,6 +144,46 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Nothing to dispose yet
         self._log.info("Disposed.")
 
+    async def generate_order_status_report(self, Order order):
+        """
+        Generate an order status report for the given order.
+
+        If an error occurs then logs and returns None.
+
+        Parameters
+        ----------
+        order : Order
+            The order for the report.
+
+        Returns
+        -------
+        OrderStatusReport or None
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    async def generate_trades_list(self, OrderId order_id, Symbol symbol, datetime since=None):
+        """
+        Generate a list of trades for the given parameters.
+
+        The returned list may be empty if no trades match the given parameters.
+
+        Parameters
+        ----------
+        order_id : OrderId
+            The order identifier for the trades.
+        symbol : Symbol
+            The symbol for the trades.
+        since : datetime, optional
+            The timestamp to filter trades on.
+
+        Returns
+        -------
+        list[ExecutionReport]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
+
     async def generate_mass_status(self, list active_orders):
         """
         Generate an execution state report based on the given list of active
@@ -194,7 +235,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         return mass_status
 
     async def reconcile_state(
-        self, OrderStateReport report,
+        self, OrderStatusReport report,
         Order order=None,
         list trades=None,
     ):
@@ -203,7 +244,7 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        report : OrderStateReport
+        report : OrderStatusReport
             The order state report for reconciliation.
         order : Order, optional
             The order for reconciliation. If not supplied then will try to be
@@ -362,7 +403,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         LiquiditySide liquidity_side,
         datetime timestamp
     ) except *:
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot fill order with {repr(order_id)}, "
                             f"instrument for {instrument_id} not found.")
