@@ -1,9 +1,9 @@
-from nautilus_trader.data.socket import SocketClient
+from betfairlightweight.filters import streaming_market_data_filter
+from betfairlightweight.filters import streaming_market_filter
 from betfairlightweight.filters import streaming_order_filter
-from betfairlightweight.filters import (
-    streaming_market_filter,
-    streaming_market_data_filter,
-)
+
+from nautilus_trader.data.socket import SocketClient
+
 
 HOST = "stream-api.betfair.com"
 PORT = 443
@@ -193,7 +193,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
 
         self.subscription_message = message
 
-    def post_connection(self):
+    async def post_connection(self):
         err = "Must call `set_subscription_message` before attempting connection"
         assert self.subscription_message is not None, err
         await self.send(raw=self.auth_message)

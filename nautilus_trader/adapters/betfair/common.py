@@ -17,7 +17,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.order.base import Order
+from nautilus_trader.model.order.limit import LimitOrder
 
 
 BETFAIR_VENUE = Venue("betfair")
@@ -88,16 +88,18 @@ def round_price_to_betfair(price, side):
         return all_prices[idx - 1]
 
 
-def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
+# TODO - Investigate more order types
+def order_submit_to_betfair(
+    account_id: str, trader_id: str, command: SubmitOrder, instrument: BettingInstrument
+):
     """ Convert a SubmitOrder command into the data required by betfairlightweight """
-    # TODO - Investigate more order types
 
-    order = command.order  # type: Order
+    order = command.order  # type: LimitOrder
     return {
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
-        "customer_ref": command.id.value,
-        "customer_strategy_ref": order.cl_ord_id.value,
+        "customer_ref": order.cl_ord_id.value,
+        "customer_strategy_ref": f"{account_id}-{trader_id}",
         "async": True,  # Order updates will be sent via stream API
         "instructions": [
             place_instruction(
@@ -122,7 +124,7 @@ def order_amend_to_betfair(command: AmendOrder, instrument: BettingInstrument):
     """ Convert an AmendOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.id.value,
+        "customer_ref": command.order.cl_ord_id.value,
         "async": True,  # Order updates will be sent via stream API
         "instructions": [
             replace_instruction(

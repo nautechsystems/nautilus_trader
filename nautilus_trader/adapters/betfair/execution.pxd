@@ -12,21 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from cpython.datetime cimport datetime
-from decimal import Decimal
-
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.model.identifiers import ClientOrderId, OrderId, ExecutionId
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.instrument cimport BettingInstrument
-from nautilus_trader.model.identifiers import InstrumentId
+
 
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
@@ -43,4 +33,4 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # cdef inline void _on_exec_report(self, dict event) except *
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)
-    # cpdef void _handle_order_stream_update(self, dict raw)
+    cpdef void handle_order_stream_update(self, dict raw)

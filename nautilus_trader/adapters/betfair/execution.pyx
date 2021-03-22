@@ -14,24 +14,26 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict, Tuple
 
 import betfairlightweight
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.common import order_submit_to_betfair, order_amend_to_betfair, \
-    order_cancel_to_betfair, \
-    BETFAIR_VENUE, ORDER_STREAM_SIDE_MAPPING
+from nautilus_trader.model.identifiers cimport ClientOrderId, OrderId
+from nautilus_trader.model.order.limit import LimitOrder
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE, ORDER_STREAM_SIDE_MAPPING, order_cancel_to_betfair, \
+    order_amend_to_betfair, order_submit_to_betfair
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
@@ -85,6 +87,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         self._client = client # type: betfairlightweight.APIClient
         self.is_connected = False
+        # dict of orders pending inserts that we don't have an id for yet
+        self._pending_inserts = {}  # type: Dict[str, LimitOrder]
 
     cpdef void connect(self) except *:
         self._log.info("Connecting...")
@@ -226,13 +230,28 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Disconnected.")
 
     # -- COMMAND HANDLERS ------------------------------------------------------------------------------
-    # TODO - Add support for bulk updates - betfair allows up to 200 inserts / 60 updates / 60 cancels per request
+    # TODO - Add support for bulk updates - betfair allows up to 200 inserts / 60 updates / 60 cancels per request,
+    #  we might want to throttle updates if they're coming faster than x / sec? Maybe this is for risk engine? We could
+    #  use some heuristics about the avg network latency and add an optional flag for bulk inserts etc.
+
+
+    cpdef void _add_to_pending_inserts(self, LimitOrder order):
+        key = (order.account_id, order.strategy_id, order.instrument_id, order.price, order.quantity)
+        self._pending_inserts[key] = order
+
+    cpdef LimitOrder _pop_from_pending_insert(self, account_id, strategy_id, instrument_id, price, quantity):
+        try:
+            return self._pending_inserts.pop((account_id, strategy_id, instrument_id, price, quantity))
+        except KeyError:
+            self._log.error("Received an order not in the cache!")
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_submit_to_betfair(command=command, instrument=instrument)
-        # TODO - Send order confirmation
-        # self._generate_order_accepted(ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp)
+        self._add_to_pending_inserts(order=command.order)
+        self._generate_order_submitted(
+            cl_ord_id=command.order.cl_ord_id, order_id=command.order.id, timestamp=self._clock.utc_now_c(),
+        )
         resp = self._client.betting.place_orders(**kw)
 
     cpdef void amend_order(self, AmendOrder command) except *:
@@ -281,81 +300,90 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         return instruments[0]
 
     # TODO - ERROR `closures inside cpdef functions not yet supported`
-    # cpdef void _handle_order_stream_update(self, dict raw):
-    #     """ Handle an update from the order stream socket """
-    #     for market in raw.get("oc", []):
-    #         market_id = market["id"]
-    #         for selection in market.get("orc", []):
-    #             instrument = self.get_betting_instrument(
-    #                 market_id=market_id,
-    #                 selection_id=str(selection["id"]),
-    #                 handicap=str(selection.get("hc", "0.0")),
-    #             )
-    #             for order in selection.get("uo", []):
-    #                 if (
-    #                         order["status"] == "EC" and order["sm"] != 0
-    #                 ):
-    #                     # Execution complete, The entire order has traded or been cancelled
-    #                     self._generate_order_filled(
-    #                         cl_ord_id="", # TODO - Where does this come from on reconnect? From the exec cache?
-    #                         order_id=order["id"],
-    #                         execution_id="",
-    #                         instrument_id=instrument.id,
-    #                         order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
-    #                         fill_qty=order['sm'],
-    #                         cum_qty="",  # TODO - Can I leave this?
-    #                         leaves_qty=order['sr'],
-    #                         avg_px=order['avp'],
-    #                         timestamp=order['md'],
-    #                     )
-    #                 elif order["sm"] == 0 and any(
-    #                         order[x] != 0 for x in ("sc", "sl", "sv")
-    #                 ):
-    #                     self._generate_order_cancelled(
-    #                         cl_ord_id='',
-    #                         order_id=order['id'],
-    #                         timestamp=order['cd'],
-    #                     )
-    #                 # This is a full order, none has traded yet (size_remaining = original placed size)
-    #                 elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
-    #                     self._generate_order_accepted(
-    #                         cl_ord_id=ClientOrderId(), # TODO
-    #                         order_id=OrderId(order['id']),
-    #                         timestamp=order['pd'],
-    #                     )
-    #                 # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
-    #                 elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
-    #                     self._generate_order_accepted(
-    #                         cl_ord_id=ClientOrderId(),  # TODO
-    #                         order_id=OrderId(order['id']),
-    #                         timestamp=order['pd'],
-    #                     )
-    #                     self._generate_order_filled(
-    #                         cl_ord_id="",  # TODO - Where does this come from on reconnect? From the exec cache?
-    #                         order_id=order["id"],
-    #                         execution_id="",
-    #                         instrument_id=instrument.id,
-    #                         order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
-    #                         fill_qty=order['sm'],
-    #                         cum_qty="",  # TODO - Can I leave this?
-    #                         leaves_qty=order['sr'],
-    #                         avg_px=order['avp'],
-    #                         timestamp=order['md'],
-    #                     )
-    #                 else:
-    #                     self._log.error("Unknown order state: {order}")
-    #                     # raise KeyError("Unknown order type", order, None)
-    #
-    #             # TODO - These should be covered by filled orders above, but potentially we should add a checksum against
-    #             # these values?
-    #             for trade in selection.get("mb", []):
-    #                 pass
-    #             for trade in selection.get("ml", []):
-    #                 pass
-    #
-    #             # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
-    #             if selection.get("fullImage", False):
-    #                 pass
+    cpdef void handle_order_stream_update(self, dict raw):
+        """ Handle an update from the order stream socket """
+        for market in raw.get("oc", []):
+            market_id = market["id"]
+            for selection in market.get("orc", []):
+                instrument = self.get_betting_instrument(
+                    market_id=market_id,
+                    selection_id=str(selection["id"]),
+                    handicap=str(selection.get("hc", "0.0")),
+                )
+                for update in selection.get("uo", []):
+                    # We need to find this order in our internal cache
+                    account_id, strategy_id = update.get("rfs", "-").split("-")
+                    orignal_order = self._pop_from_pending_insert(
+                        account_id=account_id, strategy_id=strategy_id, instrument_id=instrument.id.value,
+                        price=update['p'], quantity=update['s']
+                    )
+                    if (
+                            order["status"] == "EC" and order["sm"] != 0
+                    ):
+                        # Execution complete, The entire order has traded or been cancelled
+                        self._generate_order_filled(
+                            cl_ord_id=orignal_order.
+                            order_id=order["id"],
+                            execution_id="",
+                            instrument_id=instrument.id,
+                            order_side=ORDER_STREAM_SIDE_MAPPING[update['side']],
+                            fill_qty=update['sm'],
+                            cum_qty=update['s'] - update['sr'],
+                            leaves_qty=update['sr'],
+                            avg_px=update['avp'],
+                            timestamp=update['md'],
+                            commission_amount=Decimal(0.0),
+                            commission_currency="AUD",  # TODO - look up on account
+                            liquidity_side=LiquiditySide.NONE,
+                        )
+                    # elif order["sm"] == 0 and any(
+                    #         order[x] != 0 for x in ("sc", "sl", "sv")
+                    # ):
+                    #     self._generate_order_cancelled(
+                    #         cl_ord_id=ClientOrderId(''),
+                    #         order_id=order['id'],
+                    #         timestamp=order['cd'],
+                    #     )
+                    # # This is a full order, none has traded yet (size_remaining = original placed size)
+                    # elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
+                    #     self._generate_order_accepted(
+                    #         cl_ord_id=ClientOrderId(''), # TODO
+                    #         order_id=OrderId(order['id']),
+                    #         timestamp=order['pd'],
+                    #     )
+                    # # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
+                    # elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
+                    #     self._generate_order_accepted(
+                    #         cl_ord_id=ClientOrderId(''),  # TODO
+                    #         order_id=OrderId(order['id']),
+                    #         timestamp=order['pd'],
+                    #     )
+                    #     self._generate_order_filled(
+                    #         cl_ord_id="",  # TODO - Where does this come from on reconnect? From the exec cache?
+                    #         order_id=order["id"],
+                    #         execution_id="",
+                    #         instrument_id=instrument.id,
+                    #         order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
+                    #         fill_qty=order['sm'],
+                    #         cum_qty="",  # TODO - Can I leave this?
+                    #         leaves_qty=order['sr'],
+                    #         avg_px=order['avp'],
+                    #         timestamp=order['md'],
+                    #     )
+                #     else:
+                #         self._log.error("Unknown order state: {order}")
+                #         # raise KeyError("Unknown order type", order, None)
+
+                # TODO - These should be covered by filled orders above, but potentially we should add a checksum against
+                # these values?
+                for trade in selection.get("mb", []):
+                    pass
+                for trade in selection.get("ml", []):
+                    pass
+
+                # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
+                if selection.get("fullImage", False):
+                    pass
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
