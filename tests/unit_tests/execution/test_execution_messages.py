@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.execution.messages import ExecutionMassStatus
-from nautilus_trader.execution.messages import OrderStateReport
-from nautilus_trader.execution.messages import PositionStateReport
+from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.execution.messages import PositionStatusReport
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -57,7 +57,7 @@ class TestExecutionStateReport:
         )
 
         order_id = OrderId("1")
-        order_report = OrderStateReport(
+        order_report = OrderStatusReport(
             cl_ord_id=ClientOrderId("O-123456"),
             order_id=order_id,
             order_state=OrderState.REJECTED,
@@ -78,7 +78,7 @@ class TestExecutionStateReport:
             timestamp=UNIX_EPOCH,
         )
 
-        position_report = PositionStateReport(
+        position_report = PositionStatusReport(
             instrument_id=AUDUSD_SIM,
             position_side=PositionSide.FLAT,
             qty=Quantity(0),
