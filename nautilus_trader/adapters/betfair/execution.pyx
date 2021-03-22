@@ -94,6 +94,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.order_id_to_cl_ord_id = {}  # type: Dict[str, ClientOrderId]
 
     cpdef void connect(self) except *:
+        self._loop.create_task(self._connect())
+
+    async def _connect(self):
         self._log.info("Connecting...")
         self._client.login()
         self._log.info("APIClient login successful.", LogColor.GREEN)
@@ -102,7 +105,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._instrument_provider.load_all()
         self._log.info(f"Loaded {len(self._instrument_provider._instruments)} Instruments.")
 
-        self._sock
+        await self._stream.connect()
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -269,17 +272,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         kw = order_cancel_to_betfair(command=command)
         self._client.betting.cancel_orders(**kw)
 
-    # -- Instrument helpers ---------------------------------------------------------
-
-    cpdef BetfairInstrumentProvider instrument_provider(self):
-        return self._instrument_provider
-
-    cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
-        instrument_filter = {'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': handicap}
-        instruments = self._instrument_provider.search_instruments(instrument_filter=instrument_filter)
-        assert len(instruments) == 1
-        return instruments[0]
-
     # -- Order stream API ---------------------------------------------------------
 
     cpdef void handle_order_stream_update(self, dict raw):
@@ -287,7 +279,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         for market in raw.get("oc", []):
             market_id = market["id"]
             for selection in market.get("orc", []):
-                instrument = self.get_betting_instrument(
+                instrument = self._instrument_provider.get_betting_instrument(
                     market_id=market_id,
                     selection_id=str(selection["id"]),
                     handicap=str(selection.get("hc", "0.0")),

@@ -9,5 +9,4 @@ def test_unique_id(betfair_client):
         BetfairMarketStreamClient(client=betfair_client, message_handler=len),
     ]
     result = [c.unique_id for c in clients]
-    expected = [1, 2, 3]
-    assert result == expected
+    assert result == sorted(set(result))

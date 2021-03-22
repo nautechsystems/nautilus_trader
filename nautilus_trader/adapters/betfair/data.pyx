@@ -35,6 +35,7 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
+from nautilus_trader.adapters.betfair.common import on_market_update
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
@@ -145,17 +146,13 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     async def _connect(self):
         # Load & handle instruments
-        try:
-            await self._load_instruments()
-        except BetfairError as ex:
-            self._log_betfair_error(ex, self._connect.__name__)
-            return
+        self._load_instruments()
 
         for instrument in self._instrument_provider.get_all().values():
             self._handle_instrument(instrument)
 
         # Start market data stream
-        await self._socket.connect()
+        await self._stream.connect()
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -403,7 +400,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     cpdef _on_market_update(self, dict update):
-        pass
+        return on_market_update(self, update)
 
     cdef inline void _on_quote_tick(
         self,
@@ -462,7 +459,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     def _load_instruments(self):
         self._instrument_provider.load_all()
-        self._log.info(f"Updated {self._instrument_provider.count} instruments.")
+        self._log.info(f"Updated {len(self._instrument_provider._instruments)} instruments.")
 
     async def _request_instrument(self, InstrumentId instrument_id, UUID correlation_id):
         await self._load_instruments()

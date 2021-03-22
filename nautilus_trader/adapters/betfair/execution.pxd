@@ -14,10 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 
-from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.model.instrument cimport BettingInstrument
-
-
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
@@ -34,6 +30,4 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # cdef inline void _on_account_state(self, dict event) except *
     # cdef inline void _on_order_status(self, dict event) except *
     # cdef inline void _on_exec_report(self, dict event) except *
-    cpdef BetfairInstrumentProvider instrument_provider(self)
-    cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)
     cpdef void handle_order_stream_update(self, dict raw)

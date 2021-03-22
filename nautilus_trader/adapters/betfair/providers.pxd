@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.model.instrument cimport BettingInstrument
 
 cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef object _client
     cdef dict market_filter
+    cdef dict _cache
 
     cdef readonly venue
 
@@ -26,3 +28,4 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cpdef list search_markets(self, dict market_filter=*)
     cpdef list search_instruments(self, dict instrument_filter=*)
     cpdef list list_instruments(self)
+    cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)

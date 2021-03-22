@@ -22,7 +22,9 @@ from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
-# from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
+
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 
 
@@ -72,13 +74,12 @@ cdef class BetfairClientsFactory:
 
         if config.get("data_client", True):
             # Create client
-            # data_client = BetfairDataClient(
-            #     client=client,
-            #     engine=data_engine,
-            #     clock=clock,
-            #     logger=logger,
-            # )
-            pass
+            data_client = BetfairDataClient(
+                client=client,
+                engine=data_engine,
+                clock=clock,
+                logger=logger,
+            )
         else:
             # The data client was not enabled
             data_client = None
@@ -88,7 +89,7 @@ cdef class BetfairClientsFactory:
             account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 
             # Set account identifier
-            account_id = AccountId("BETFAIR", account_id_env_var)
+            account_id = AccountId(BETFAIR_VENUE.value, account_id_env_var)
 
             # Create client
             exec_client = BetfairExecutionClient(

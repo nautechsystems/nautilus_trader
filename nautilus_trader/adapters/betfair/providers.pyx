@@ -55,6 +55,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self.market_filter = market_filter or {}
         self.venue = BETFAIR_VENUE
         self._instruments = {}
+        self._cache = {}
 
         if load_all:
             self.load_all()
@@ -66,28 +67,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._load_instruments()
 
     cdef void _load_instruments(self) except *:
-        """
-        Load available BettingInstruments from Betfair. The full list of fields available are:
-
-        :param market_filters: A list of filters to apply before requesting instrument metadata.
-            Example:
-                _load_instruments(market_filters={"event_type_name": "Basketball", "betting_type": "MATCH_ODDS"})
-            The full list of fields available are:
-                - event_type_name
-                - event_type_id
-                - event_name
-                - event_id
-                - event_countryCode
-                - market_name
-                - market_id
-                - market_exchangeId
-                - market_marketType
-                - market_marketStartTime
-                - market_numberOfWinners
-        :return:
-        """
-        cdef str k
-        cdef dict v
         cdef list instruments = load_instruments(client=self._client, market_filter=self.market_filter)
 
         for ins in instruments:
@@ -106,6 +85,16 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         return [
             ins for ins in self.list_instruments() if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
         ]
+
+    cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
+        """ Performance friendly instrument lookup """
+        key = (market_id, selection_id, handicap)
+        if key not in self._cache:
+            instrument_filter = {'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': handicap}
+            instruments = self.search_instruments(instrument_filter=instrument_filter)
+            assert len(instruments) == 1
+            self._cache[key] = instruments[0]
+        return self._cache[key]
 
     cpdef list list_instruments(self):
         self._assert_loaded_instruments()

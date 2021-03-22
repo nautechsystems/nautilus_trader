@@ -35,11 +35,11 @@ class BetfairStreamClient(SocketClient):
         self.client = client
         self.unique_id = self.new_unique_id()
 
-    def connect(self):
+    async def connect(self):
         assert (
             self.client.session_token
         ), f"Must login to APIClient before calling connect on {self.__class__}"
-        return super().connect()
+        return await super().connect()
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID
