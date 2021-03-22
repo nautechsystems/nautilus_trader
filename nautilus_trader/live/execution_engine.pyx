@@ -30,7 +30,7 @@ from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
-from nautilus_trader.execution.messages cimport OrderStateReport
+from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
@@ -179,7 +179,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Reconcile states
         cdef ExecutionMassStatus mass_status
-        cdef OrderStateReport order_state_report
+        cdef OrderStatusReport order_state_report
         for name, mass_status in client_mass_status.items():
             for order_state_report in mass_status.order_reports().values():
                 order = active_orders.get(order_state_report.cl_ord_id)
@@ -189,7 +189,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Wait for state resolution until timeout...
         cdef int seconds = 10  # Hard coded for now
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
-        cdef OrderStateReport state_report
+        cdef OrderStatusReport state_report
         while True:
             if self._clock.utc_now() >= timeout:
                 self._log.error(f"Timed out ({seconds}s) waiting for "
