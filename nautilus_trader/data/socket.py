@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Optional
 
 from nautilus_trader.data.client import DataClient
 
@@ -14,7 +15,6 @@ class SocketClient(DataClient):
         port,
         message_handler,
         loop=None,
-        connection_messages=None,
         crlf=None,
         encoding="utf-8",
         ssl=True,
@@ -25,7 +25,6 @@ class SocketClient(DataClient):
         :param host: host to connect to
         :param port: Port to connect on
         :param message_handler: A callable to process the raw bytes read from the socket
-        :param connection_messages: A list of messages to send on connection
         :param crlf: Carriage Return, Line Feed; Delimiter on which to split messages
         :param encoding: Encoding to use when sending messages
         :param ssl: Use SSL for socket connection
@@ -34,12 +33,11 @@ class SocketClient(DataClient):
         self.port = port
         self.message_handler = message_handler
         self.loop = loop or asyncio.get_event_loop()
-        self.connection_messages = connection_messages
         self.crlf = crlf or DEFAULT_CRLF
         self.encoding = encoding
         self.ssl = ssl
-        self.reader = None
-        self.write = None
+        self.reader = None  # type: Optional[asyncio.StreamReader]
+        self.writer = None  # type: Optional[asyncio.StreamWriter]
         self.connected = False
         self.stop = False
 
@@ -48,56 +46,35 @@ class SocketClient(DataClient):
             self.reader, self.writer = await asyncio.open_connection(
                 host=self.host, port=self.port, loop=self.loop, ssl=self.ssl
             )
-            await self.post_connect()
+            await self.post_connection()
             self.connected = True
 
-    async def post_connect(self):
-        """
-        Called straight after connection, sends `connection_messages` one by one.
+    async def post_connection(self):
+        """ Overridable hook for any post-connection duties, i.e. sending further connection messages """
+        await asyncio.sleep(0)
 
-        Can be overriden for more custom workflows.
-
-        :return:
-        """
-        for msg in self.connection_messages:
-            if not isinstance(msg, str):
-                msg = json.dumps(msg)
-            print(f"Sending connection message {msg}")
-            byte_msg = msg.encode(encoding=self.encoding) + self.crlf
-            self.writer.write(byte_msg)
+    async def send(self, raw):
+        if not isinstance(raw, (bytes, str)):
+            raw = json.dumps(raw)
+        if not isinstance(raw, bytes):
+            raw = raw.encode(self.encoding)
+        self.writer.write(raw + self.crlf)
+        await self.writer.drain()
 
     async def start(self):
         if not self.connected:
             await self.connect()
         while not self.stop:
             try:
-                async for raw in self.read_line():
-                    if raw is None:
-                        break
-                    self.message_handler(raw)
-                    if self.stop:
-                        break
+                raw = await self.reader.readuntil(separator=self.crlf)
+                if raw is not None:
+                    self.message_handler(raw.rstrip(self.crlf))
+                await asyncio.sleep(0)
+                if self.stop:
+                    break
             except ConnectionResetError:
                 await self.connect()
         await self.shutdown()
-
-    async def read_line(self):
-        data, part = b"", b""
-        while True:
-            part = await self.reader.read(1024)
-
-            if not part and self.reader.at_eof:
-                yield
-
-            if part:
-                data += part
-
-            if self.crlf in data:
-                lines = data.split(self.crlf)
-                data, part = lines[-1], b""
-
-                for line in lines[:-1]:
-                    yield line
 
     async def shutdown(self):
         self.writer.close()

@@ -43,4 +43,4 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # cdef inline void _on_exec_report(self, dict event) except *
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)
-    cpdef void _handle_order_stream_update(self, dict raw)
+    # cpdef void _handle_order_stream_update(self, dict raw)

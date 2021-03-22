@@ -35,8 +35,6 @@ from nautilus_trader.adapters.betfair.common import order_submit_to_betfair, ord
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
-#TODO betfair integration endpoint - stream-api-integration.betfair.com
-
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
     """
@@ -276,87 +274,88 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
 
-    cdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
+    cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
         instrument_filter = {'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': handicap}
         instruments = self._instrument_provider.search_instruments(instrument_filter=instrument_filter)
         assert len(instruments) == 1
         return instruments[0]
 
-    cpdef void _handle_order_stream_update(self, dict raw):
-        """ Handle an update from the order stream socket """
-        for market in raw.get("oc", []):
-            market_id = market["id"]
-            for selection in market.get("orc", []):
-                instrument = self.get_betting_instrument(
-                    market_id=market_id,
-                    selection_id=str(selection["id"]),
-                    handicap=str(selection.get("hc", "0.0")),
-                )
-                for order in selection.get("uo", []):
-                    if (
-                            order["status"] == "EC" and order["sm"] != 0
-                    ):
-                        # Execution complete, The entire order has traded or been cancelled
-                        self._generate_order_filled(
-                            cl_ord_id="", # TODO - Where does this come from on reconnect? From the exec cache?
-                            order_id=order["id"],
-                            execution_id="",
-                            instrument_id=instrument.id,
-                            order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
-                            fill_qty=order['sm'],
-                            cum_qty="",  # TODO - Can I leave this?
-                            leaves_qty=order['sr'],
-                            avg_px=order['avp'],
-                            timestamp=order['md'],
-                        )
-                    elif order["sm"] == 0 and any(
-                            order[x] != 0 for x in ("sc", "sl", "sv")
-                    ):
-                        self._generate_order_cancelled(
-                            cl_ord_id='',
-                            order_id=order['id'],
-                            timestamp=order['cd'],
-                        )
-                    # This is a full order, none has traded yet (size_remaining = original placed size)
-                    elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
-                        self._generate_order_accepted(
-                            cl_ord_id=ClientOrderId(), # TODO
-                            order_id=OrderId(order['id']),
-                            timestamp=order['pd'],
-                        )
-                    # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
-                    elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
-                        self._generate_order_accepted(
-                            cl_ord_id=ClientOrderId(),  # TODO
-                            order_id=OrderId(order['id']),
-                            timestamp=order['pd'],
-                        )
-                        self._generate_order_filled(
-                            cl_ord_id="",  # TODO - Where does this come from on reconnect? From the exec cache?
-                            order_id=order["id"],
-                            execution_id="",
-                            instrument_id=instrument.id,
-                            order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
-                            fill_qty=order['sm'],
-                            cum_qty="",  # TODO - Can I leave this?
-                            leaves_qty=order['sr'],
-                            avg_px=order['avp'],
-                            timestamp=order['md'],
-                        )
-                    else:
-                        self._log.error("Unknown order state: {order}")
-                        # raise KeyError("Unknown order type", order, None)
-
-                # TODO - These should be covered by filled orders above, but potentially we should add a checksum against
-                # these values?
-                for trade in selection.get("mb", []):
-                    pass
-                for trade in selection.get("ml", []):
-                    pass
-
-                # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
-                if selection.get("fullImage", False):
-                    pass
+    # TODO - ERROR `closures inside cpdef functions not yet supported`
+    # cpdef void _handle_order_stream_update(self, dict raw):
+    #     """ Handle an update from the order stream socket """
+    #     for market in raw.get("oc", []):
+    #         market_id = market["id"]
+    #         for selection in market.get("orc", []):
+    #             instrument = self.get_betting_instrument(
+    #                 market_id=market_id,
+    #                 selection_id=str(selection["id"]),
+    #                 handicap=str(selection.get("hc", "0.0")),
+    #             )
+    #             for order in selection.get("uo", []):
+    #                 if (
+    #                         order["status"] == "EC" and order["sm"] != 0
+    #                 ):
+    #                     # Execution complete, The entire order has traded or been cancelled
+    #                     self._generate_order_filled(
+    #                         cl_ord_id="", # TODO - Where does this come from on reconnect? From the exec cache?
+    #                         order_id=order["id"],
+    #                         execution_id="",
+    #                         instrument_id=instrument.id,
+    #                         order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
+    #                         fill_qty=order['sm'],
+    #                         cum_qty="",  # TODO - Can I leave this?
+    #                         leaves_qty=order['sr'],
+    #                         avg_px=order['avp'],
+    #                         timestamp=order['md'],
+    #                     )
+    #                 elif order["sm"] == 0 and any(
+    #                         order[x] != 0 for x in ("sc", "sl", "sv")
+    #                 ):
+    #                     self._generate_order_cancelled(
+    #                         cl_ord_id='',
+    #                         order_id=order['id'],
+    #                         timestamp=order['cd'],
+    #                     )
+    #                 # This is a full order, none has traded yet (size_remaining = original placed size)
+    #                 elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
+    #                     self._generate_order_accepted(
+    #                         cl_ord_id=ClientOrderId(), # TODO
+    #                         order_id=OrderId(order['id']),
+    #                         timestamp=order['pd'],
+    #                     )
+    #                 # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
+    #                 elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
+    #                     self._generate_order_accepted(
+    #                         cl_ord_id=ClientOrderId(),  # TODO
+    #                         order_id=OrderId(order['id']),
+    #                         timestamp=order['pd'],
+    #                     )
+    #                     self._generate_order_filled(
+    #                         cl_ord_id="",  # TODO - Where does this come from on reconnect? From the exec cache?
+    #                         order_id=order["id"],
+    #                         execution_id="",
+    #                         instrument_id=instrument.id,
+    #                         order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
+    #                         fill_qty=order['sm'],
+    #                         cum_qty="",  # TODO - Can I leave this?
+    #                         leaves_qty=order['sr'],
+    #                         avg_px=order['avp'],
+    #                         timestamp=order['md'],
+    #                     )
+    #                 else:
+    #                     self._log.error("Unknown order state: {order}")
+    #                     # raise KeyError("Unknown order type", order, None)
+    #
+    #             # TODO - These should be covered by filled orders above, but potentially we should add a checksum against
+    #             # these values?
+    #             for trade in selection.get("mb", []):
+    #                 pass
+    #             for trade in selection.get("ml", []):
+    #                 pass
+    #
+    #             # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
+    #             if selection.get("fullImage", False):
+    #                 pass
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

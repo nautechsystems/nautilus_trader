@@ -18,8 +18,7 @@ async def test_socket_base(socket_server, event_loop):
         port=port,
         message_handler=handler,
         loop=event_loop,
-        connection_messages=[],
         ssl=False,
     )
     await client.start()
-    assert len(messages) > 5
+    assert messages == [b"hello"] * 6

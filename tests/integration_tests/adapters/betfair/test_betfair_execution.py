@@ -16,6 +16,8 @@
 import datetime
 import json
 
+import pytest
+
 from nautilus_trader.adapters.betfair.common import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
@@ -201,6 +203,12 @@ def test_order_stream_sub_image(execution_client):
 def test_order_stream_update(execution_client):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_UPDATE.json").read())
     parse_order_stream(execution_client=execution_client, raw=raw)
+
+
+@pytest.mark.local()
+def test_live_order_insert_concurrent():
+    # TODO
+    pass
 
 
 # def test_connect(self):

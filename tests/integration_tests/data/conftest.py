@@ -7,10 +7,8 @@ import pytest
 
 class ThreadedTCPRequestHandler(socketserver.StreamRequestHandler):
     def handle(self):
-        # data = str(self.request.recv(1024), 'ascii')
-        cur_thread = threading.current_thread()
         while True:
-            response = bytes("{}\r\n".format(cur_thread.name), "ascii")
+            response = bytes("hello\r\n", "ascii")
             print("Sending response", response)
             self.request.sendall(response)
             time.sleep(0.1)

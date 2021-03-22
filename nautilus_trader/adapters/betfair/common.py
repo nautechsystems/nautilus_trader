@@ -158,35 +158,3 @@ def betfair_account_to_account_state(
         event_id,
         datetime.datetime.now(),
     )
-
-
-"""""
-Full list of betfair definitions, as per https://docs.developer.betfair.com/display/1smk3cen4v3lu3yomq5qye0ni/Exchange+Stream+API
-
-id / Bet Id - the id of the order
-p / Price - the original placed price of the order
-s / Size - the original placed size of the order
-bsp / BSP Liability - the BSP liability of the order (null if the order is not a BSP order)
-side / Side - the side of the order
-status / Status - the status of the order (E = EXECUTABLE, EC = EXECUTION_COMPLETE)
-pt / Persistence Type - whether the order will persist at in play or not (L = LAPSE, P = PERSIST, MOC = Market On Close)
-ot / Order Type - the type of the order (L = LIMIT, MOC = MARKET_ON_CLOSE, LOC = LIMIT_ON_CLOSE)
-pd / Placed Date - the date the order was placed
-md / Matched Date - the date the order was matched (null if the order is not matched)
-cd / Cancelled Date - the date the order was cancelled (null if the order is not cancelled)
-ld / Lapsed Date - the date the order was lapsed (null if the order is not lapsed)
-lsrc/Lapse Status Reason Code - the reason that some or all of this order has been lapsed (null if no portion of the order is lapsed)
-avp / Average Price Matched - the average price the order was matched at (null if the order is not matched
-sm / Size Matched - the amount of the order that has been matched
-sr / Size Remaining - the amount of the order that is remaining unmatched
-sl / Size Lapsed - the amount of the order that has been lapsed
-sc / Size Cancelled - the amount of the order that has been cancelled
-sv / Size Voided - the amount of the order that has been voided
-rac / Regulator Auth Code - the auth code returned by the regulator
-rc / Regulator Code - the regulator of the order
-rfo / Reference Order - the customer supplied order reference
-rfs / Reference Strategy - the customer supplied strategy reference used to group orders together - default is ""
-Price point / full depth Ladders (price, size - tuples - keyed by price) of matches:
-mb / Matched Backs - matched amounts by distinct matched price on the Back side for this runner
-ml / Matched Lays - matched amounts by distinct matched price on the Lay side for this runner
-"""

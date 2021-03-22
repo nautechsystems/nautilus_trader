@@ -5,8 +5,11 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
+from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -60,6 +63,12 @@ def betfairlightweight_mocks(mocker):
     )
     mock_account_funds.return_value = json.loads(
         open(TEST_PATH + "account_funds_no_exposure.json").read()
+    )
+
+    # Streaming endpoint
+    mocker.patch(
+        "nautilus_trader.adapters.betfair.sockets.HOST",
+        return_value="stream-api-integration.betfair.com",
     )
 
 
@@ -144,30 +153,6 @@ def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
 
 
 @pytest.fixture()
-def betfair_client():
-    return betfairlightweight.APIClient(
-        username="username",
-        password="password",
-        app_key="app_key",
-        certs="cert_location",
-    )
-
-
-@pytest.fixture()
-def execution_client(betfair_client, account_id, exec_engine, clock, live_logger):
-    client = BetfairExecutionClient(
-        client=betfair_client,
-        account_id=account_id,
-        engine=exec_engine,
-        clock=clock,
-        logger=live_logger,
-    )
-    client.connect()
-    exec_engine.register_client(client)
-    return client
-
-
-@pytest.fixture()
 def betting_instrument(provider):
     return BettingInstrument(
         venue_name=BETFAIR_VENUE.value,
@@ -187,4 +172,48 @@ def betting_instrument(provider):
         selection_handicap="0.0",
         selection_id="50214",
         selection_name="Kansas City Chiefs",
+    )
+
+
+@pytest.fixture()
+def betfair_client():
+    return betfairlightweight.APIClient(
+        username="username",
+        password="password",
+        app_key="app_key",
+        certs="cert_location",
+    )
+
+
+@pytest.fixture()
+def betfair_order_socket():
+    return BetfairOrderStreamClient()
+
+
+@pytest.fixture()
+def betfair_market_socket():
+    return BetfairMarketStreamClient()
+
+
+@pytest.fixture()
+def execution_client(betfair_client, account_id, exec_engine, clock, live_logger):
+    client = BetfairExecutionClient(
+        client=betfair_client,
+        account_id=account_id,
+        engine=exec_engine,
+        clock=clock,
+        logger=live_logger,
+    )
+    client.connect()
+    exec_engine.register_client(client)
+    return client
+
+
+@pytest.fixture()
+def betfair_data_client(betfair_client, data_engine, clock, live_logger):
+    return BetfairDataClient(
+        client=betfair_client,
+        engine=data_engine,
+        clock=clock,
+        logger=live_logger,
     )
