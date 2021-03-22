@@ -486,7 +486,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void _request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
         self._load_instruments()
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is not None:
             self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
         else:
@@ -506,7 +506,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         cdef InstrumentId instrument_id
         cdef Instrument instrument
         for instrument_id in self._subscribed_instruments:
-            instrument = self._instrument_provider.find_c(instrument_id)
+            instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
                 self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
             else:
@@ -523,7 +523,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ) except *:
-        cdef Instrument instrument = self._instrument_provider.find_c(bar_type.instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.instrument_id}).")
             return

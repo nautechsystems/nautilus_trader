@@ -30,7 +30,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_unix_time_ms
 from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.execution.messages cimport ExecutionReport
-from nautilus_trader.execution.messages cimport OrderStateReport
+from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -188,7 +188,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        OrderStateReport or None
+        OrderStatusReport or None
 
         """
         self._log.info(f"Generating OrderStatusReport for {repr(order.id)}...")
@@ -198,7 +198,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                             f"OrderId was 'NULL'.")
             return None  # Cannot generate state report
 
-        cdef Instrument instrument = self._instrument_provider.find_c(order.instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
                             f"instrument for {order.instrument_id} not found.")
@@ -235,7 +235,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         elif status == "expired":
             state = OrderState.EXPIRED
 
-        return OrderStateReport(
+        return OrderStatusReport(
             cl_ord_id=order.cl_ord_id,
             order_id=order.id,
             order_state=state,
