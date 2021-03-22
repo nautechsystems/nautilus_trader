@@ -1,3 +1,4 @@
+from betfairlightweight import APIClient
 from betfairlightweight.filters import streaming_market_data_filter
 from betfairlightweight.filters import streaming_market_filter
 from betfairlightweight.filters import streaming_order_filter
@@ -9,15 +10,13 @@ HOST = "stream-api.betfair.com"
 PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
+_UNIQUE_ID = 0
 
 
 class BetfairStreamClient(SocketClient):
-    _UNIQUE_ID = 0
-
     def __init__(
         self,
-        app_key,
-        session_token,
+        client: APIClient,
         message_handler,
         loop=None,
         host=None,
@@ -33,33 +32,40 @@ class BetfairStreamClient(SocketClient):
             crlf=crlf or CRLF,
             encoding=encoding or ENCODING,
         )
-        self.app_key = app_key
-        self.session_token = session_token
+        self.client = client
         self.unique_id = self.new_unique_id()
 
-    # TODO - (check) Is this shared between order/market connections because it is class level?
+    def connect(self):
+        assert (
+            self.client.session_token
+        ), f"Must login to APIClient before calling connect on {self.__class__}"
+        return super().connect()
+
     def new_unique_id(self) -> int:
-        self._UNIQUE_ID += 1
-        return self._UNIQUE_ID
+        global _UNIQUE_ID
+        _UNIQUE_ID += 1
+        return _UNIQUE_ID
 
     def auth_message(self):
         return {
             "op": "authentication",
             "id": self.unique_id,
-            "appKey": self.app_key,
-            "session": self.session_token,
+            "appKey": self.client.app_key,
+            "session": self.client.session_token,
         }
 
 
 class BetfairOrderStreamClient(BetfairStreamClient):
     def __init__(
         self,
+        client: APIClient,
+        message_handler,
         partition_matched_by_strategy_ref=True,
         include_overall_position=None,
         customer_strategy_refs=None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(client=client, message_handler=message_handler, **kwargs)
         self.order_filter = streaming_order_filter(
             include_overall_position=include_overall_position,
             customer_strategy_refs=customer_strategy_refs,
@@ -79,9 +85,9 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
-    def __init__(self, **kwargs):
+    def __init__(self, client: APIClient, message_handler, **kwargs):
         self.subscription_message = None
-        super().__init__(**kwargs)
+        super().__init__(client, message_handler, **kwargs)
 
     def set_market_subscriptions(
         self,

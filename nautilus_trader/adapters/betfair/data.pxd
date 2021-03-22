@@ -16,18 +16,16 @@
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
+    cdef object _socket
     cdef BetfairInstrumentProvider _instrument_provider
 
     cdef set _subscribed_instruments
+    cdef dict _subscribed_markets
     cdef dict _subscribed_order_books
-    cdef dict _subscribed_quote_ticks
-    cdef dict _subscribed_trade_ticks
-
     cdef object _update_instruments_task
 
     cdef inline void _log_betfair_error(self, ex, str method_name) except *
@@ -39,6 +37,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         dict kwargs=*,
     ) except *
     cpdef void unsubscribe_markets(self, InstrumentId instrument_id) except *
+    cpdef _on_market_update(self, dict update)
     cdef inline void _on_quote_tick(
         self,
         InstrumentId instrument_id,

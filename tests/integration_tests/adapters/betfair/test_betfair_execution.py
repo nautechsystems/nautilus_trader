@@ -73,11 +73,10 @@ def test_order_submit_to_betfair(
         command_timestamp=datetime.datetime.now(),
     )
     result = order_submit_to_betfair(command=command, instrument=betting_instrument)
-    assert len(result["customer_ref"]) == 36  # Check uuid
     expected = {
         "async": True,
-        "customer_ref": result["customer_ref"],
-        "customer_strategy_ref": "1",
+        "customer_ref": "1",
+        "customer_strategy_ref": "betfair-001-Test-1",
         "instructions": [
             {
                 "customerOrderRef": "1",
@@ -181,37 +180,27 @@ def test_account_statement(betfair_client, uuid):
 
 def test_order_stream_full_image(execution_client):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_FULL_IMAGE.json").read())
-    execution_client.handle_order_stream_update(
-        execution_client=execution_client, raw=raw
-    )
+    execution_client.handle_order_stream_update(raw=raw)
 
 
 def test_order_stream_empty_image(execution_client):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_EMPTY_IMAGE.json").read())
-    execution_client.handle_order_stream_update(
-        execution_client=execution_client, raw=raw
-    )
+    execution_client.handle_order_stream_update(raw=raw)
 
 
 def test_order_stream_new_full_image(execution_client):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_NEW_FULL_IMAGE.json").read())
-    execution_client.handle_order_stream_update(
-        execution_client=execution_client, raw=raw
-    )
+    execution_client.handle_order_stream_update(raw=raw)
 
 
 def test_order_stream_sub_image(execution_client):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_SUB_IMAGE.json").read())
-    execution_client.handle_order_stream_update(
-        execution_client=execution_client, raw=raw
-    )
+    execution_client.handle_order_stream_update(raw=raw)
 
 
 def test_order_stream_update(execution_client):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_UPDATE.json").read())
-    execution_client.handle_order_stream_update(
-        execution_client=execution_client, raw=raw
-    )
+    execution_client.handle_order_stream_update(raw=raw)
 
 
 @pytest.mark.local()

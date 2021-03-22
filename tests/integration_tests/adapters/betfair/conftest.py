@@ -72,7 +72,7 @@ def betfairlightweight_mocks(mocker):
     )
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def provider(betfair_client) -> BetfairInstrumentProvider:
     return BetfairInstrumentProvider(
         client=betfair_client,
@@ -175,7 +175,7 @@ def betting_instrument(provider):
     )
 
 
-@pytest.fixture()
+@pytest.fixture(scope="session")
 def betfair_client():
     return betfairlightweight.APIClient(
         username="username",
@@ -186,13 +186,13 @@ def betfair_client():
 
 
 @pytest.fixture()
-def betfair_order_socket():
-    return BetfairOrderStreamClient()
+def betfair_order_socket(betfair_client):
+    return BetfairOrderStreamClient(client=betfair_client, message_handler=None)
 
 
 @pytest.fixture()
 def betfair_market_socket():
-    return BetfairMarketStreamClient()
+    return BetfairMarketStreamClient(client=betfair_client, message_handler=None)
 
 
 @pytest.fixture()

@@ -54,7 +54,7 @@ cdef int _SECONDS_IN_HOUR = 60 * 60
 
 cdef class BetfairDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the unified CCXT Pro API.
+    Provides a data client for the Betfair API.
     """
 
     def __init__(
@@ -82,22 +82,20 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         ------
         """
         super().__init__(
-            client.name.upper(),
+            "BetfairDataClient",
             engine,
             clock,
             logger,
-            config={
-                "name": f"BetfairDataClient-{client.name.upper()}",
-                "unavailable_methods": [],
-            }
         )
 
-        self._client = client
+        self._client = client  # type: APIClient
         self._instrument_provider = BetfairInstrumentProvider(
             client=client,
             load_all=False,
         )
-        self._socket = BetfairMarketStreamClient()
+        self._socket = BetfairMarketStreamClient(
+            client=self._client, message_handler=self._on_market_update,
+        )
 
         self.is_connected = False
 
@@ -400,38 +398,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
-    async def _watch_socket_updates(self, int depth, dict kwargs):
+    cpdef _on_market_update(self, dict update):
         pass
-        # cdef OrderBook order_book = None
-        # try:
-        #     while True:
-        #         try:
-        #             lob = await self._client.watch_order_book(
-        #                 symbol=instrument_id.symbol.value,
-        #                 limit=None if depth == 0 else depth,
-        #                 params=kwargs,
-        #             )
-        #             timestamp = lob["timestamp"]
-        #             if timestamp is None:  # Compiled to fast C check
-        #                 # First quote timestamp often None
-        #                 timestamp = self._client.milliseconds()
-        #
-        #             bids = lob.get("bids")
-        #             asks = lob.get("asks")
-        #             if bids is None:
-        #                 continue
-        #             if asks is None:
-        #                 continue
-        #
-        #
-        #             self._handle_order_book(order_book)
-        #         except BetfairException as ex:
-        #             self._log_betfair_error(ex, self._watch_order_book.__name__)
-        #             continue
-        # except asyncio.CancelledError as ex:
-        #     self._log.debug(f"Cancelled `_watch_order_book` for {instrument_id.symbol}.")
-        # except Exception as ex:
-        #     self._log.exception(ex)
 
     cdef inline void _on_quote_tick(
         self,

@@ -31,6 +31,7 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.identifiers cimport ClientOrderId, OrderId
+from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE, ORDER_STREAM_SIDE_MAPPING, order_cancel_to_betfair, \
     order_amend_to_betfair, order_submit_to_betfair
@@ -87,8 +88,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         self._client = client # type: betfairlightweight.APIClient
         self.is_connected = False
-        # dict of orders pending inserts that we don't have an id for yet
-        self._pending_inserts = {}  # type: Dict[str, LimitOrder]
+        # order_id: cl_ord_id mapping
+        self.order_id_to_cl_ord_id = {}  # type: Dict[str, ClientOrderId]
 
     cpdef void connect(self) except *:
         self._log.info("Connecting...")
@@ -234,25 +235,25 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     #  we might want to throttle updates if they're coming faster than x / sec? Maybe this is for risk engine? We could
     #  use some heuristics about the avg network latency and add an optional flag for bulk inserts etc.
 
-
-    cpdef void _add_to_pending_inserts(self, LimitOrder order):
-        key = (order.account_id, order.strategy_id, order.instrument_id, order.price, order.quantity)
-        self._pending_inserts[key] = order
-
-    cpdef LimitOrder _pop_from_pending_insert(self, account_id, strategy_id, instrument_id, price, quantity):
-        try:
-            return self._pending_inserts.pop((account_id, strategy_id, instrument_id, price, quantity))
-        except KeyError:
-            self._log.error("Received an order not in the cache!")
-
     cpdef void submit_order(self, SubmitOrder command) except *:
-        instrument = self._instrument_provider._instruments[command.instrument_id]
-        kw = order_submit_to_betfair(command=command, instrument=instrument)
-        self._add_to_pending_inserts(order=command.order)
-        self._generate_order_submitted(
-            cl_ord_id=command.order.cl_ord_id, order_id=command.order.id, timestamp=self._clock.utc_now_c(),
-        )
-        resp = self._client.betting.place_orders(**kw)
+        pass
+
+    # TODO How to mix async (awaiting on place_orders) with submit order?
+    # cpdef void submit_order(self, SubmitOrder command) except *:
+    #     instrument = self._instrument_provider._instruments[command.instrument_id]
+    #     kw = order_submit_to_betfair(command=command, instrument=instrument)
+    #     self._generate_order_submitted(
+    #         cl_ord_id=command.order.cl_ord_id, order_id=command.order.id, timestamp=self._clock.utc_now_c(),
+    #     )
+    #     resp = await self._loop.run_in_executor(self._client.betting.place_orders, **kw)
+    #     assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
+    #     bet_id = resp['result']['instructionReports'][0]['betId']
+    #     self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
+    #     self._generate_order_accepted(
+    #         cl_ord_id=command.order.cl_ord_id,
+    #         order_id=bet_id,
+    #         timestamp=self._clock.utc_now_c()
+    #     )
 
     cpdef void amend_order(self, AmendOrder command) except *:
         instrument = self._instrument_provider._instruments[command.instrument_id]
@@ -264,31 +265,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         kw = order_cancel_to_betfair(command=command)
         self._client.betting.cancel_orders(**kw)
 
-    # -- Order stream API ---------------------------------------------------------
-
-    # cdef inline void _on_order_status(self, dict event) except *:
-    #     cdef OrderId order_id = OrderId(event["id"])
-    #     cdef ClientOrderId cl_ord_id = ClientOrderId(event["clientOrderId"])
-    #
-    #     if order_id not in self._cached_orders:
-    #         order = self._engine.cache.order(cl_ord_id)
-    #         if order is None:
-    #             # If state resolution has done its job this should never happen
-    #             self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
-    #             return
-    #         self._cache_order(order_id, order)
-    #
-    #     cdef datetime timestamp = from_unix_time_ms(event["timestamp"])
-    #     cdef str status = event["status"]
-    #     # status == "rejected" should be captured in `submit_order`
-    #     if status == "open" and event["filled"] == 0:
-    #         self._generate_order_accepted(cl_ord_id, order_id, timestamp)
-    #     elif status == "canceled":
-    #         self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-    #         self._decache_order(order_id)
-    #     elif status == "expired":
-    #         self._generate_order_expired(cl_ord_id, order_id, timestamp)
-    #         self._decache_order(order_id)
+    # -- Instrument helpers ---------------------------------------------------------
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
@@ -299,7 +276,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         assert len(instruments) == 1
         return instruments[0]
 
-    # TODO - ERROR `closures inside cpdef functions not yet supported`
+    # -- Order stream API ---------------------------------------------------------
+
     cpdef void handle_order_stream_update(self, dict raw):
         """ Handle an update from the order stream socket """
         for market in raw.get("oc", []):
@@ -310,69 +288,65 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     selection_id=str(selection["id"]),
                     handicap=str(selection.get("hc", "0.0")),
                 )
-                for update in selection.get("uo", []):
-                    # We need to find this order in our internal cache
-                    account_id, strategy_id = update.get("rfs", "-").split("-")
-                    orignal_order = self._pop_from_pending_insert(
-                        account_id=account_id, strategy_id=strategy_id, instrument_id=instrument.id.value,
-                        price=update['p'], quantity=update['s']
-                    )
+                for order in selection.get("uo", []):
+                    cl_ord_id = self.order_id_to_cl_ord_id[order['id']]
                     if (
                             order["status"] == "EC" and order["sm"] != 0
                     ):
                         # Execution complete, The entire order has traded or been cancelled
                         self._generate_order_filled(
-                            cl_ord_id=orignal_order.
+                            cl_ord_id=cl_ord_id,
                             order_id=order["id"],
-                            execution_id="",
+                            execution_id=ExecutionId(str(order["id"])),
                             instrument_id=instrument.id,
-                            order_side=ORDER_STREAM_SIDE_MAPPING[update['side']],
-                            fill_qty=update['sm'],
-                            cum_qty=update['s'] - update['sr'],
-                            leaves_qty=update['sr'],
-                            avg_px=update['avp'],
-                            timestamp=update['md'],
+                            order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
+                            fill_qty=order['sm'],
+                            cum_qty=order['s'] - order['sr'],
+                            leaves_qty=order['sr'],
+                            avg_px=order['avp'],
                             commission_amount=Decimal(0.0),
                             commission_currency="AUD",  # TODO - look up on account
                             liquidity_side=LiquiditySide.NONE,
+                            timestamp=order['md'],
                         )
-                    # elif order["sm"] == 0 and any(
-                    #         order[x] != 0 for x in ("sc", "sl", "sv")
-                    # ):
-                    #     self._generate_order_cancelled(
-                    #         cl_ord_id=ClientOrderId(''),
-                    #         order_id=order['id'],
-                    #         timestamp=order['cd'],
-                    #     )
-                    # # This is a full order, none has traded yet (size_remaining = original placed size)
-                    # elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
-                    #     self._generate_order_accepted(
-                    #         cl_ord_id=ClientOrderId(''), # TODO
-                    #         order_id=OrderId(order['id']),
-                    #         timestamp=order['pd'],
-                    #     )
-                    # # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
-                    # elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
-                    #     self._generate_order_accepted(
-                    #         cl_ord_id=ClientOrderId(''),  # TODO
-                    #         order_id=OrderId(order['id']),
-                    #         timestamp=order['pd'],
-                    #     )
-                    #     self._generate_order_filled(
-                    #         cl_ord_id="",  # TODO - Where does this come from on reconnect? From the exec cache?
-                    #         order_id=order["id"],
-                    #         execution_id="",
-                    #         instrument_id=instrument.id,
-                    #         order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
-                    #         fill_qty=order['sm'],
-                    #         cum_qty="",  # TODO - Can I leave this?
-                    #         leaves_qty=order['sr'],
-                    #         avg_px=order['avp'],
-                    #         timestamp=order['md'],
-                    #     )
-                #     else:
-                #         self._log.error("Unknown order state: {order}")
-                #         # raise KeyError("Unknown order type", order, None)
+                    elif order["sm"] == 0 and any([order[x] != 0 for x in ("sc", "sl", "sv")]):
+                        self._generate_order_cancelled(
+                            cl_ord_id=cl_ord_id,
+                            order_id=order['id'],
+                            timestamp=order['cd'],
+                        )
+                    # This is a full order, none has traded yet (size_remaining = original placed size)
+                    elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
+                        self._generate_order_accepted(
+                            cl_ord_id=ClientOrderId(''), # TODO
+                            order_id=OrderId(order['id']),
+                            timestamp=order['pd'],
+                        )
+                    # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
+                    elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
+                        self._generate_order_accepted(
+                            cl_ord_id=ClientOrderId(''),  # TODO
+                            order_id=OrderId(order['id']),
+                            timestamp=order['pd'],
+                        )
+                        self._generate_order_filled(
+                            cl_ord_id=cl_ord_id,
+                            order_id=order["id"],
+                            execution_id=ExecutionId(str(order["id"])),
+                            instrument_id=instrument.id,
+                            order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
+                            fill_qty=order['sm'],
+                            cum_qty=order['s'] - order['sr'],
+                            leaves_qty=order['sr'],
+                            avg_px=order['avp'],
+                            commission_amount=Decimal(0.0),
+                            commission_currency="AUD",  # TODO - look up on account
+                            liquidity_side=LiquiditySide.NONE,
+                            timestamp=order['md'],
+                        )
+                    else:
+                        self._log.error("Unknown order state: {order}")
+                        # raise KeyError("Unknown order type", order, None)
 
                 # TODO - These should be covered by filled orders above, but potentially we should add a checksum against
                 # these values?
