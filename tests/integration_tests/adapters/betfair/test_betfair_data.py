@@ -21,9 +21,10 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/
 
 
 @pytest.mark.local
-def test_betfair_data_client(betfair_data_client):
+@pytest.mark.asyncio
+async def test_betfair_data_client(betfair_data_client):
     """ Local test only, ensure we can connect to betfair and receive some market data """
-    pass
+    await betfair_data_client.connect()
 
 
 def test_individual_market_subscriptions():

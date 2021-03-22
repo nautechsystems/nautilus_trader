@@ -20,7 +20,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 
 cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
-    cdef object _socket
+    cdef object _stream
     cdef BetfairInstrumentProvider _instrument_provider
 
     cdef set _subscribed_instruments

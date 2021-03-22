@@ -178,27 +178,31 @@ def test_account_statement(betfair_client, uuid):
     assert result == expected
 
 
-def test_order_stream_full_image(execution_client):
+def test_order_stream_full_image(execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_FULL_IMAGE.json").read())
     execution_client.handle_order_stream_update(raw=raw)
+    assert exec_engine.events == []
 
 
-def test_order_stream_empty_image(execution_client):
+def test_order_stream_empty_image(execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_EMPTY_IMAGE.json").read())
     execution_client.handle_order_stream_update(raw=raw)
+    assert exec_engine.commands == []
 
 
-def test_order_stream_new_full_image(execution_client):
+def test_order_stream_new_full_image(execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_NEW_FULL_IMAGE.json").read())
     execution_client.handle_order_stream_update(raw=raw)
+    assert exec_engine.commands == []
 
 
-def test_order_stream_sub_image(execution_client):
+def test_order_stream_sub_image(execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_SUB_IMAGE.json").read())
     execution_client.handle_order_stream_update(raw=raw)
+    assert exec_engine.events == []
 
 
-def test_order_stream_update(execution_client):
+def test_order_stream_update(execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_UPDATE.json").read())
     execution_client.handle_order_stream_update(raw=raw)
 

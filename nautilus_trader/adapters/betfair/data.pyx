@@ -93,7 +93,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             client=client,
             load_all=False,
         )
-        self._socket = BetfairMarketStreamClient(
+        self._stream = BetfairMarketStreamClient(
             client=self._client, message_handler=self._on_market_update,
         )
 
@@ -144,6 +144,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._loop.create_task(self._connect())
 
     async def _connect(self):
+        # Load & handle instruments
         try:
             await self._load_instruments()
         except BetfairError as ex:
@@ -152,6 +153,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         for instrument in self._instrument_provider.get_all().values():
             self._handle_instrument(instrument)
+
+        # Start market data stream
+        await self._socket.connect()
 
         self.is_connected = True
         self._log.info("Connected.")

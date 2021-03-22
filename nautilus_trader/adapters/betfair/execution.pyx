@@ -32,9 +32,9 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.identifiers cimport ClientOrderId, OrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.order.limit import LimitOrder
+from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient, BetfairOrderStreamClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE, ORDER_STREAM_SIDE_MAPPING, order_cancel_to_betfair, \
-    order_amend_to_betfair, order_submit_to_betfair
+    order_amend_to_betfair
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
@@ -87,8 +87,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
         self._client = client # type: betfairlightweight.APIClient
+        self._stream = BetfairOrderStreamClient(
+            client=self._client, message_handler=self.handle_order_stream_update,
+        )
         self.is_connected = False
-        # order_id: cl_ord_id mapping
         self.order_id_to_cl_ord_id = {}  # type: Dict[str, ClientOrderId]
 
     cpdef void connect(self) except *:
@@ -99,6 +101,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Loading Instruments.")
         self._instrument_provider.load_all()
         self._log.info(f"Loaded {len(self._instrument_provider._instruments)} Instruments.")
+
+        self._sock
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -290,14 +294,17 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 )
                 for order in selection.get("uo", []):
                     cl_ord_id = self.order_id_to_cl_ord_id[order['id']]
+                    order_id = OrderId(order["id"])
+                    print("order:", order)
+                    execution_id = ExecutionId(str(order["id"]))
                     if (
                             order["status"] == "EC" and order["sm"] != 0
                     ):
                         # Execution complete, The entire order has traded or been cancelled
                         self._generate_order_filled(
                             cl_ord_id=cl_ord_id,
-                            order_id=order["id"],
-                            execution_id=ExecutionId(str(order["id"])),
+                            order_id=order_id,
+                            execution_id=execution_id,
                             instrument_id=instrument.id,
                             order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
                             fill_qty=order['sm'],
@@ -312,27 +319,27 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     elif order["sm"] == 0 and any([order[x] != 0 for x in ("sc", "sl", "sv")]):
                         self._generate_order_cancelled(
                             cl_ord_id=cl_ord_id,
-                            order_id=order['id'],
+                            order_id=order_id,
                             timestamp=order['cd'],
                         )
                     # This is a full order, none has traded yet (size_remaining = original placed size)
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
                         self._generate_order_accepted(
-                            cl_ord_id=ClientOrderId(''), # TODO
-                            order_id=OrderId(order['id']),
+                            cl_ord_id=cl_ord_id,
+                            order_id=order_id,
                             timestamp=order['pd'],
                         )
                     # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
                         self._generate_order_accepted(
-                            cl_ord_id=ClientOrderId(''),  # TODO
-                            order_id=OrderId(order['id']),
+                            cl_ord_id=cl_ord_id,
+                            order_id=order_id,
                             timestamp=order['pd'],
                         )
                         self._generate_order_filled(
                             cl_ord_id=cl_ord_id,
-                            order_id=order["id"],
-                            execution_id=ExecutionId(str(order["id"])),
+                            order_id=order_id,
+                            execution_id=execution_id,
                             instrument_id=instrument.id,
                             order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
                             fill_qty=order['sm'],

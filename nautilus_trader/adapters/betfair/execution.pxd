@@ -21,7 +21,9 @@ from nautilus_trader.model.instrument cimport BettingInstrument
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
+    cdef object _stream
     cdef dict order_id_to_cl_ord_id
+
 
     # -- INTERNAL --------------------------------------------------------------------------------------
 
