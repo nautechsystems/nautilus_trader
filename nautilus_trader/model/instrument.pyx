@@ -375,7 +375,7 @@ cdef class Instrument:
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        avg_price: Decimal,
+        avg_px: Decimal,
         LiquiditySide liquidity_side,
     ):
         """
@@ -386,7 +386,7 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The quantity for the transaction.
-        avg_price : Decimal or Price
+        avg_px : Decimal or Price
             The average transaction price.
         liquidity_side : LiquiditySide (Enum)
             The liquidity side for the transaction.
@@ -403,10 +403,10 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.type(avg_price, (Decimal, Price), "avg_price")
+        Condition.type(avg_px, (Decimal, Price), "avg_px")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
 
-        notional: Decimal = self.notional_value(quantity, avg_price)
+        notional: Decimal = self.notional_value(quantity, avg_px)
 
         if liquidity_side == LiquiditySide.MAKER:
             commission: Decimal = notional * self.maker_fee

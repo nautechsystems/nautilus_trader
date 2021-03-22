@@ -1023,9 +1023,9 @@ cdef class SimulatedExchange:
         if position is not None and position.entry != order.side:
             # Calculate PnL
             pnl = position.calculate_pnl(
-                avg_open=position.avg_open,
-                avg_close=fill_price,
-                quantity=order.quantity,
+                avg_px_open=position.avg_px_open,
+                avg_px_close=fill_price,
+                qty=order.quantity,
             )
 
         cdef Currency currency  # Settlement currency

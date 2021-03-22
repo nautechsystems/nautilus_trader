@@ -770,7 +770,7 @@ cdef class Portfolio(PortfolioFacade):
         net_position = Decimal()
         for position in positions_open:
             if position.instrument_id == instrument_id:
-                net_position += position.relative_quantity
+                net_position += position.relative_qty
 
         self._net_positions[instrument_id] = net_position
         self._update_maint_margin(instrument_id.venue)
