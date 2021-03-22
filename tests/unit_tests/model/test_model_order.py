@@ -715,7 +715,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
-        self.assertEqual(Decimal("1.00001"), order.avg_price)
+        self.assertEqual(Decimal("1.00001"), order.avg_px)
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
@@ -746,7 +746,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
-        self.assertEqual(Decimal("1.00001"), order.avg_price)
+        self.assertEqual(Decimal("1.00001"), order.avg_px)
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
@@ -792,7 +792,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
         self.assertEqual(Quantity(60000), order.filled_qty)
-        self.assertEqual(Decimal("1.000014"), order.avg_price)
+        self.assertEqual(Decimal("1.000014"), order.avg_px)
         self.assertEqual(2, len(order.execution_ids))
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
@@ -847,7 +847,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
-        self.assertEqual(Decimal("1.000018571428571428571428571"), order.avg_price)
+        self.assertEqual(Decimal("1.000018571428571428571428571"), order.avg_px)
         self.assertEqual(3, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
@@ -894,7 +894,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
-        self.assertEqual(Decimal("1.00001"), order.avg_price)
+        self.assertEqual(Decimal("1.00001"), order.avg_px)
         self.assertEqual(Decimal("0.00001"), order.slippage)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
@@ -941,7 +941,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
         self.assertEqual(Quantity(50000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
-        self.assertEqual(Decimal("0.999999"), order.avg_price)
+        self.assertEqual(Decimal("0.999999"), order.avg_px)
         self.assertEqual(Decimal("-0.000001"), order.slippage)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)

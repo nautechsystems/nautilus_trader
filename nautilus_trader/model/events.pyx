@@ -963,7 +963,7 @@ cdef class PositionOpened(PositionEvent):
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"avg_open={round(self.position.avg_open, 5)}, "
+                f"avg_px_open={round(self.position.avg_px_open, 5)}, "
                 f"{self.position.status_string_c()}, "
                 f"event_id={self.id})")
 
@@ -1014,7 +1014,7 @@ cdef class PositionChanged(PositionEvent):
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"avg_open={self.position.avg_open}, "
+                f"avg_px_open={self.position.avg_px_open}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
@@ -1070,8 +1070,8 @@ cdef class PositionClosed(PositionEvent):
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
                 f"duration={duration}, "
-                f"avg_open={self.position.avg_open}, "
-                f"avg_close={self.position.avg_close}, "
+                f"avg_px_open={self.position.avg_px_open}, "
+                f"avg_px_close={self.position.avg_px_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "

@@ -85,7 +85,7 @@ cdef class Order:
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly datetime filled_timestamp
     """The order last filled timestamp.\n\n:returns: `datetime` or None"""
-    cdef readonly object avg_price
+    cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
@@ -126,7 +126,7 @@ cdef class Order:
     cdef void _expired(self, OrderExpired event) except *
     cdef void _triggered(self, OrderTriggered event) except *
     cdef void _filled(self, OrderFilled event) except *
-    cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity)
+    cdef object _calculate_avg_px(self, Price fill_price, Quantity fill_quantity)
 
 
 cdef class PassiveOrder(Order):

@@ -163,4 +163,4 @@ cdef class MarketOrder(Order):
         self.execution_id = event.execution_id
         self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
         self.filled_timestamp = event.timestamp
-        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
+        self.avg_px = self._calculate_avg_px(event.fill_price, event.fill_qty)

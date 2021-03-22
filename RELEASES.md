@@ -2,11 +2,19 @@
 
 [WIP] Update dependencies before release...
 
+This update includes some renaming to align more closely with established financial
+market terminology with reference to the FIX5.0 SP2 spec.
+
 ## Breaking Changes
 - Remove `Instrument.leverage` (incorrect place for concept).
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
 - Change serialization of timestamps to ints.
 - Rename `COMMISSION` constant to `COMMISSION_AMOUNT`.
+- Rename `avg_price` to `avg_px` in methods and properties.
+- Rename `avg_open` to `avg_px_open` in methods and properties.
+- Rename `avg_close` to `avg_px_close` in methods and properties.
+- Rename `Position.relative_quantity` to `Position.relative_qty`.
+- Rename `Position.peak_quantity` to `Position.peak_qty`.
 
 ## Enhancements
 - Add Betfair adapter.

@@ -104,7 +104,7 @@ cdef class Instrument(Data):
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        avg_price: Decimal,
+        avg_px: Decimal,
         LiquiditySide liquidity_side,
     )
 
