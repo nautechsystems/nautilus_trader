@@ -971,7 +971,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
         elif isinstance(data, OrderBookOperations):
-            self._handle_order_book_ops(data)
+            self._handle_order_book_operations(data)
         elif isinstance(data, OrderBookSnapshot):
             self._handle_order_book_snapshot(data)
         elif isinstance(data, BarData):
@@ -1009,15 +1009,15 @@ cdef class DataEngine(Component):
         for handler in tick_handlers:
             handler(tick)
 
-    cdef inline void _handle_order_book_ops(self, OrderBookOperations ops) except *:
-        cdef InstrumentId instrument_id = ops.instrument_id
+    cdef inline void _handle_order_book_operations(self, OrderBookOperations operations) except *:
+        cdef InstrumentId instrument_id = operations.instrument_id
         cdef OrderBook order_book = self.cache.order_book(instrument_id)
         if order_book is None:
             self._log.error(f"Cannot apply `OrderBookOperations`: "
-                            f"no book found for {ops.instrument_id}.")
+                            f"no book found for {operations.instrument_id}.")
             return
 
-        order_book.apply_operations(ops)
+        order_book.apply_operations(operations)
 
         # Send to all registered order book handlers for that instrument_id
         cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])

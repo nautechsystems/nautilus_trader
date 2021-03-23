@@ -113,7 +113,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_data(self, Data data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
-    cdef inline void _handle_order_book_ops(self, OrderBookOperations ops) except *
+    cdef inline void _handle_order_book_operations(self, OrderBookOperations operations) except *
     cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *

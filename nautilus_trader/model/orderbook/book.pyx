@@ -142,13 +142,13 @@ cdef class OrderBook:
         for ask in snapshot.asks:
             self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
 
-    cpdef void apply_operations(self, OrderBookOperations ops) except *:
+    cpdef void apply_operations(self, OrderBookOperations operations) except *:
         """
         Apply the bulk operations to the order book.
 
         Parameters
         ----------
-        ops : OrderBookOperations
+        operations : OrderBookOperations
             The operations to apply.
 
         Raises
@@ -157,9 +157,11 @@ cdef class OrderBook:
             If snapshot.level is not equal to self.level.
 
         """
-        Condition.equal(ops.level, self.level, "snapshot.level", "self.level")
+        Condition.equal(operations.level, self.level, "operations.level", "self.level")
 
-        # TODO: Implement
+        cdef OrderBookOperation op
+        for op in operations.ops:
+            self._apply_operation(op)
 
     cpdef void check_integrity(self) except *:
         """
@@ -191,6 +193,14 @@ cdef class OrderBook:
         """
         self.clear_bids()
         self.clear_asks()
+
+    cdef inline void _apply_operation(self, OrderBookOperation op) except *:
+        if op.type == OrderBookOperationType.ADD:
+            self.add(order=op.order)
+        elif op.type == OrderBookOperationType.UPDATE:
+            self.update(order=op.order)
+        elif op.type == OrderBookOperationType.DELETE:
+            self.delete(order=op.order)
 
     cdef inline void _add(self, Order order) except *:
         """
@@ -663,3 +673,28 @@ cdef class OrderBookOperations(Data):
         self.instrument_id = instrument_id
         self.level = level
         self.ops = ops
+
+
+cdef class OrderBookOperation:
+    """
+    Represents a single operation on an `OrderBook`.
+    """
+
+    def __init__(
+        self,
+        OrderBookOperationType op,
+        Order order not None,
+    ):
+        """
+        Initialize a new instance of the `OrderBookOperation` class.
+
+        Parameters
+        ----------
+        op : OrderBookOperationType
+            The type of operation (ADD, UPDATED, DELETE).
+        order : Order
+            The order to apply.
+
+        """
+        self.op = op
+        self.order = order
