@@ -23,7 +23,6 @@ from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 
 
-
 cdef class OandaDataClientFactory(LiveDataClientFactory):
     """
     Provides data clients for the Oanda brokerage.
