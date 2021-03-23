@@ -36,7 +36,7 @@ cdef class Data:
         timestamp : datetime
             The data timestamp (UTC).
         unix_timestamp : double, optional
-            The data object to wrap.
+            The data Unix timestamp (seconds).
 
         Raises
         ------

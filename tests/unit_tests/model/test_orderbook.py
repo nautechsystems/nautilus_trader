@@ -20,16 +20,17 @@ from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
+from tests.test_kit.stubs import TestStubs
 
 
 @pytest.fixture(scope="function")
 def empty_book():
-    return OrderBook()
+    return OrderBook(TestStubs.audusd_id())
 
 
 @pytest.fixture(scope="function")
 def sample_book():
-    ob = L3OrderBook()
+    ob = L3OrderBook(TestStubs.audusd_id())
     orders = [Order()]
     for order in orders:
         ob.add(order)
@@ -37,13 +38,13 @@ def sample_book():
 
 
 def test_init():
-    ob = OrderBook()
+    ob = OrderBook(TestStubs.audusd_id())
     assert isinstance(ob.bids, Ladder) and isinstance(ob.asks, Ladder)
     assert ob.bids.reverse and not ob.asks.reverse
 
 
 def test_pprint_when_no_orders():
-    ob = OrderBook()
+    ob = OrderBook(TestStubs.audusd_id())
     result = ob.pprint()
 
     assert "" == result

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -22,6 +23,8 @@ from nautilus_trader.model.orderbook.order cimport Order
 cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly int level
+    """The order book level (1/2/3).\n\n:returns: `int`"""
     cdef readonly Ladder bids
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
@@ -61,3 +64,19 @@ cdef class L2OrderBook(OrderBook):
 
 cdef class L1OrderBook(OrderBook):
     cdef inline Order _process_order(self, Order order)
+
+
+cdef class OrderBookSnapshot(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly list bids
+    """The snapshot bids.\n\n:returns: `list`"""
+    cdef readonly list asks
+    """The snapshot asks.\n\n:returns: `list`"""
+
+
+cdef class OrderBookActions(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly list actions
+    """The order book actions.\n\n:returns: `list`"""
