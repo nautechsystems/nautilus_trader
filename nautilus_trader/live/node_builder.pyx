@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory

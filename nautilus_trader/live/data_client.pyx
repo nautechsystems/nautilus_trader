@@ -16,8 +16,8 @@
 import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LiveLogger
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
