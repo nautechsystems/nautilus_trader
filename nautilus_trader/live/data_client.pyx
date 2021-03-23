@@ -17,10 +17,51 @@ import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
+
+
+cdef class LiveDataClientFactory:
+    """
+    Provides a factory for creating `LiveDataClient` instances.
+    """
+
+    @staticmethod
+    def create(
+        str name not None,
+        dict config not None,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        LiveLogger logger not None,
+        client_cls=None,
+    ):
+        """
+        Return a new data client from the given parameters.
+
+        Parameters
+        ----------
+        name : str
+            The name for the client.
+        config : dict[str, object]
+            The client configuration.
+        engine : LiveDataEngine
+            The clients engine.
+        clock : LiveClock
+            The clients clock.
+        logger : LiveLogger
+            The client logger.
+        client_cls : class, optional
+            The internal client constructor.
+
+        Returns
+        -------
+        LiveDataClient
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class LiveDataClient(DataClient):
@@ -74,12 +115,12 @@ cdef class LiveMarketDataClient(MarketDataClient):
     """
 
     def __init__(
-            self,
-            str name not None,
-            LiveDataEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
-            dict config=None,
+        self,
+        str name not None,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `LiveMarketDataClient` class.

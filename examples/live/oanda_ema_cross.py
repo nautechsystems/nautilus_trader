@@ -24,6 +24,7 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from nautilus_trader.adapters.oanda.factories import OandaDataClientFactory
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
@@ -31,6 +32,9 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+
+
+# TODO: OandaExecutionClientFactory
 
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
@@ -63,13 +67,17 @@ config = {
         "load_state": True,  # Strategy state is loaded from the database on start
         "save_state": True,  # Strategy state is saved to the database on shutdown
     },
-    "adapters": {
-        "oanda": {
-            "data_client": True,  # If a data client should be created
-            "exec_client": True,  # If a exec client should be created
+    "data_clients": {
+        "OANDA": {
             "api_token": "OANDA_API_TOKEN",  # value is the environment variable key
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
         },
+    },
+    "exec_clients": {
+        # "OANDA": {
+        #     "api_token": "OANDA_API_TOKEN",  # value is the environment variable key
+        #     "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
+        # },
     },
 }
 
@@ -132,6 +140,10 @@ strategies = [
 
 # Instantiate the node passing a list of strategies and configuration
 node = TradingNode(strategies=strategies, config=config)
+
+# Register your client factories with the node (can take user defined factories)
+node.add_data_client_factory("OANDA", OandaDataClientFactory)
+node.build()
 
 
 # Stop and dispose of the node with SIGINT/CTRL+C

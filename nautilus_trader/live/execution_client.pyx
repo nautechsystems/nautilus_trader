@@ -19,6 +19,7 @@ from decimal import Decimal
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -51,6 +52,46 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
+
+
+cdef class LiveExecutionClientFactory:
+    """
+    Provides a factory for creating `LiveDataClient` instances.
+    """
+
+    @staticmethod
+    def create(
+        str name not None,
+        dict config not None,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        LiveLogger logger not None,
+        client_cls=None,
+    ):
+        """
+        Return a new execution client from the given parameters.
+
+        Parameters
+        ----------
+        name : str
+            The name for the client.
+        config : dict[str, object]
+            The client configuration.
+        engine : LiveDataEngine
+            The clients engine.
+        clock : LiveClock
+            The clients clock.
+        logger : LiveLogger
+            The client logger.
+        client_cls : class, optional
+            The internal client constructor.
+
+        Returns
+        -------
+        LiveExecutionClient
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class LiveExecutionClient(ExecutionClient):

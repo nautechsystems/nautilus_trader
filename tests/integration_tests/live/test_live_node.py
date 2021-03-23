@@ -147,6 +147,8 @@ class TradingNodeOperationTests(unittest.TestCase):
             config=config,
         )
 
+        self.node.build()
+
     def test_get_event_loop_returns_a_loop(self):
         # Arrange
         # Act
