@@ -15,6 +15,8 @@
 
 import pytest
 
+from nautilus_trader.model.c_enums.aggressor_side import AggressorSide
+from nautilus_trader.model.c_enums.aggressor_side import AggressorSideParser
 from nautilus_trader.model.c_enums.asset_class import AssetClass
 from nautilus_trader.model.c_enums.asset_class import AssetClassParser
 from nautilus_trader.model.c_enums.asset_type import AssetType
@@ -39,6 +41,41 @@ from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
+
+
+class TestAggressorSide:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [AggressorSide.UNDEFINED, "UNDEFINED"],
+            [AggressorSide.BUY, "BUY"],
+            [AggressorSide.SELL, "SELL"],
+        ],
+    )
+    def test_aggressor_side_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = OrderSideParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["", AggressorSide.UNDEFINED],
+            ["UNDEFINED", AggressorSide.UNDEFINED],
+            ["BUY", AggressorSide.BUY],
+            ["SELL", AggressorSide.SELL],
+        ],
+    )
+    def test_order_side_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = AggressorSideParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
 
 
 class TestAssetClass:
