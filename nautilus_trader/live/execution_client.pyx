@@ -17,9 +17,9 @@ import asyncio
 from decimal import Decimal
 
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -279,9 +279,11 @@ cdef class LiveExecutionClient(ExecutionClient):
         self, OrderStatusReport report,
         Order order=None,
         list trades=None,
-    ):
+    ) -> bool:
         """
         Reconcile the given orders state based on the given report.
+
+        Returns the result of the reconciliation.
 
         Parameters
         ----------
@@ -300,50 +302,58 @@ cdef class LiveExecutionClient(ExecutionClient):
         ValueError
             If report.order_id is not equal to order.id.
 
+        Returns
+        -------
+        bool
+            True if reconciliation event generation succeeded, else False.
+
         """
         Condition.not_none(report, "report")
-        Condition.equal(report.cl_ord_id, order.cl_ord_id, "report.cl_ord_id", "order.cl_ord_id")
-        Condition.equal(report.order_id, order.id, "report.order_id", "order.id")
-
-        if order is None:
-            order = self._engine.cache(report.cl_ord_id)
+        if order:
+            Condition.equal(report.cl_ord_id, order.cl_ord_id, "report.cl_ord_id", "order.cl_ord_id")
+            Condition.equal(report.order_id, order.id, "report.order_id", "order.id")
+        else:
+            order = self._engine.cache.order(report.cl_ord_id)
             if order is None:
-                self._log.warning(
-                    f"No reconciliation required for completed order {order}.")
-                return  # Cannot reconcile state
+                self._log.error(
+                    f"Cannot reconcile state for {repr(report.order_id)}, "
+                    f"cannot find order in cache.")
+                return False  # Cannot reconcile state
 
         if order.is_completed_c():
             self._log.warning(
                 f"No reconciliation required for completed order {order}.")
-            return  # Cannot reconcile state
+            return True
 
         self._log.info(f"Reconciling state for {repr(order.id)}...", LogColor.BLUE)
 
         if report.order_state == OrderState.REJECTED:
             # No OrderId would have been assigned from the exchange
+            # TODO: Investigate if exchanges record rejected orders?
             self._log.info("Generating OrderRejected event...", LogColor.GREEN)
             self._generate_order_rejected(report.cl_ord_id, "unknown", report.timestamp)
-            return
+            return True
         elif report.order_state == OrderState.EXPIRED:
             self._log.info("Generating OrderExpired event...", LogColor.GREEN)
             self._generate_order_expired(report.cl_ord_id, report.order_id, report.timestamp)
-            return
+            return True
         elif report.order_state == OrderState.CANCELLED:
             self._log.info("Generating OrderCancelled event...", LogColor.GREEN)
             self._generate_order_cancelled(report.cl_ord_id, report.order_id, report.timestamp)
-            return
+            return True
         elif report.order_state == OrderState.ACCEPTED:
             if order.state_c() == OrderState.SUBMITTED:
                 self._log.info("Generating OrderAccepted event...", LogColor.GREEN)
                 self._generate_order_accepted(report.cl_ord_id, report.order_id, report.timestamp)
-            return
+            return True
             # TODO: Consider other scenarios
 
+        # OrderState.PARTIALLY_FILLED or FILLED
         if trades is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
-                f"not trades given for {OrderStateParser.to_str(order.state_c())} order.")
-            return  # Cannot reconcile state
+                f"Cannot reconcile state for {repr(report.order_id)}, "
+                f"no trades given for {OrderStateParser.to_str(report.order_state)} order.")
+            return False  # Cannot reconcile state
 
         cdef ExecutionReport trade
         for trade in trades:
@@ -365,6 +375,8 @@ cdef class LiveExecutionClient(ExecutionClient):
                 liquidity_side=trade.liquidity_side,
                 timestamp=trade.timestamp,
             )
+
+        return True
 
     cdef inline void _generate_order_invalid(
         self,

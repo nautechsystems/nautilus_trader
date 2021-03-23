@@ -103,12 +103,12 @@ class TestLiveExecutionEngine:
         self.instrument_provider.add(GBPUSD_SIM)
 
         self.client = MockLiveExecutionClient(
-            "SIM",
-            self.account_id,
-            self.engine,
-            self.instrument_provider,
-            self.clock,
-            self.logger,
+            name=SIM.value,
+            account_id=self.account_id,
+            engine=self.engine,
+            instrument_provider=self.instrument_provider,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.engine.register_client(self.client)
