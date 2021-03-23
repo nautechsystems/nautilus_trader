@@ -33,7 +33,8 @@ cdef class OrderBook:
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
-    cpdef void apply_snapshot(self, list bids, list asks) except *
+    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *
+    cpdef void apply_operations(self, OrderBookOperations ops) except *
     cpdef void clear_bids(self) except *
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
@@ -75,8 +76,8 @@ cdef class OrderBookSnapshot(Data):
     """The snapshot asks.\n\n:returns: `list`"""
 
 
-cdef class OrderBookActions(Data):
+cdef class OrderBookOperations(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly list actions
-    """The order book actions.\n\n:returns: `list`"""
+    cdef readonly list ops
+    """The order book operations.\n\n:returns: `list`"""

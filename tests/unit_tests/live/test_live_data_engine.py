@@ -25,6 +25,7 @@ from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -33,6 +34,7 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 BITMEX = Venue("BITMEX")
@@ -177,9 +179,11 @@ class LiveDataEngineTests(unittest.TestCase):
             config={"qsize": 1},
         )
 
+        data = Data(UNIX_EPOCH)
+
         # Act
-        self.engine.process("some_data")
-        self.engine.process("some_data")  # Add over max size
+        self.engine.process(data)
+        self.engine.process(data)  # Add over max size
 
         # Assert
         self.assertEqual(1, self.engine.data_qsize())
