@@ -25,8 +25,6 @@ import warnings
 import msgpack
 import redis
 
-from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
-from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
@@ -39,6 +37,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.redis.execution import RedisExecutionDatabase
@@ -92,6 +91,8 @@ class TradingNode:
         PyCondition.not_empty(strategies, "strategies")
         PyCondition.not_empty(config, "config")
 
+        self._config = config
+
         # Extract configs
         config_trader = config.get("trader", {})
         config_system = config.get("system", {})
@@ -99,8 +100,15 @@ class TradingNode:
         config_exec_db = config.get("exec_database", {})
         config_risk = config.get("risk", {})
         config_strategy = config.get("strategy", {})
-        config_adapters = config.get("adapters", {})
 
+        # System config
+        self._connection_timeout = config_system.get("connection_timeout", 5.0)
+        self._disconnection_timeout = config_system.get("disconnection_timeout", 5.0)
+        self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
+        self._load_strategy_state = config_strategy.get("load_state", True)
+        self._save_strategy_state = config_strategy.get("save_state", True)
+
+        # Components
         self._uuid_factory = UUIDFactory()
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
@@ -197,7 +205,6 @@ class TradingNode:
 
         self._exec_engine.load_cache()
         self._exec_engine.register_risk_engine(self._risk_engine)
-        self._setup_adapters(config_adapters, self._logger)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -210,21 +217,25 @@ class TradingNode:
             logger=self._logger,
         )
 
-        # System config
-        self._connection_timeout = config_system.get("connection_timeout", 5.0)
-        self._disconnection_timeout = config_system.get("disconnection_timeout", 5.0)
-        self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
-        self._load_strategy_state = config_strategy.get("load_state", True)
-        self._save_strategy_state = config_strategy.get("save_state", True)
-
         if self._load_strategy_state:
             self.trader.load()
+
+        self._builder = TradingNodeBuilder(
+            data_engine=self._data_engine,
+            exec_engine=self._exec_engine,
+            risk_engine=self._risk_engine,
+            clock=self._clock,
+            logger=self._logger,
+            log=self._log,
+        )
 
         self._log.info("state=INITIALIZED.")
         self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(
             f"Initialized in {self.time_to_initialize.total_seconds():.3f}s."
         )
+
+        self._is_built = False
 
     @property
     def is_running(self) -> bool:
@@ -238,6 +249,19 @@ class TradingNode:
 
         """
         return self._is_running
+
+    @property
+    def is_built(self) -> bool:
+        """
+        If the trading node clients are built.
+
+        Returns
+        -------
+        bool
+            True if built, else False.
+
+        """
+        return self._is_built
 
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
         """
@@ -261,10 +285,69 @@ class TradingNode:
         """
         return self._logger
 
+    def add_data_client_factory(self, name, factory):
+        """
+        Add the given data client factory to the node.
+
+        Parameters
+        ----------
+        name : str
+            The name of the client factory.
+        factory : LiveDataClientFactory or LiveExecutionClientFactory
+            The factory to add.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        KeyError
+            If name has already been added.
+
+        """
+        self._builder.add_data_client_factory(name, factory)
+
+    def add_exec_client_factory(self, name, factory):
+        """
+        Add the given execution client factory to the node.
+
+        Parameters
+        ----------
+        name : str
+            The name of the client factory.
+        factory : LiveDataClientFactory or LiveExecutionClientFactory
+            The factory to add.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        KeyError
+            If name has already been added.
+
+        """
+        self._builder.add_exec_client_factory(name, factory)
+
+    def build(self) -> None:
+        """
+        Build the nodes clients.
+        """
+        if self._is_built:
+            raise RuntimeError("The trading nodes clients are already built.")
+
+        self._builder.build_data_clients(self._config.get("data_clients"))
+        self._builder.build_exec_clients(self._config.get("exec_clients"))
+        self._is_built = True
+
     def start(self) -> None:
         """
         Start the trading node.
         """
+        if not self._is_built:
+            raise RuntimeError(
+                "The trading nodes clients have not been built. "
+                "Please run `node.build()` prior to start."
+            )
+
         try:
             if self._loop.is_running():
                 self._loop.create_task(self._run())
@@ -381,47 +464,6 @@ class TradingNode:
 
         self._log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
-
-    def _setup_adapters(self, config: Dict[str, object], logger: LiveLogger) -> None:
-        # Setup each data client
-        for name, config in config.items():
-            if name.startswith("ccxt-"):
-                try:
-                    import ccxtpro
-                except ImportError:
-                    raise ImportError(
-                        "ccxtpro is not installed, "
-                        "installation instructions can be found at https://ccxt.pro"
-                    )
-
-                client_cls = getattr(ccxtpro, name.partition("-")[2].lower())
-
-                data_client, exec_client = CCXTClientsFactory.create(
-                    client_cls=client_cls,
-                    config=config,
-                    data_engine=self._data_engine,
-                    exec_engine=self._exec_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
-            elif name == "oanda":
-                data_client = OandaDataClientFactory.create(
-                    config=config,
-                    data_engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
-                exec_client = None  # TODO: Implement
-            else:
-                self._log.error(f"No adapter available for `{name}`.")
-                continue
-
-            if data_client is not None:
-                self._data_engine.register_client(data_client)
-
-            if exec_client is not None:
-                self._exec_engine.register_client(exec_client)
-                # Automatically registers with the risk engine
 
     async def _run(self) -> None:
         try:

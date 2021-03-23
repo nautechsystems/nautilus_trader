@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.live.data_client cimport LiveDataClientFactory
 
-cdef class OandaDataClientFactory:
 
+cdef class OandaDataClientFactory(LiveDataClientFactory):
     pass

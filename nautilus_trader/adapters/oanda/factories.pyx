@@ -20,34 +20,41 @@ import oandapyV20
 from nautilus_trader.adapters.oanda.data cimport OandaDataClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.live.data_engine cimport LiveDataEngine
 
 
-cdef class OandaDataClientFactory:
+
+cdef class OandaDataClientFactory(LiveDataClientFactory):
     """
     Provides data clients for the Oanda brokerage.
     """
 
     @staticmethod
     def create(
+        str name,
         dict config,
-        DataEngine data_engine,
+        LiveDataEngine engine,
         LiveClock clock,
         LiveLogger logger,
+        client_cls=None,
     ):
         """
         Create a new data client.
 
         Parameters
         ----------
+        name : str
+            The name for the client.
         config : dict
             The configuration dictionary.
-        data_engine : DataEngine
+        engine : DataEngine
             The data engine for the client.
         clock : LiveClock
             The clock for the client.
         logger : LiveLogger
             The logger for the client.
+        client_cls : class, optional
+            The class to build an internal client from.
 
         Returns
         -------
@@ -64,7 +71,7 @@ cdef class OandaDataClientFactory:
         return OandaDataClient(
             client=client,
             account_id=oanda_account_id,
-            engine=data_engine,
+            engine=engine,
             clock=clock,
             logger=logger,
         )

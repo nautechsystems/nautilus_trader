@@ -27,6 +27,10 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 
 
+cdef class LiveExecutionClientFactory:
+    pass
+
+
 cdef class LiveExecutionClient(ExecutionClient):
     cdef object _loop
 
