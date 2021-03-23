@@ -1,6 +1,3 @@
-import json
-
-import betfairlightweight
 import pandas as pd
 import pytest
 
@@ -23,11 +20,8 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.trading.portfolio import Portfolio
-from tests import TESTS_PACKAGE_ROOT
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.mocks import MockLiveExecutionEngine
-
-
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
 
 
 @pytest.fixture(autouse=True)
@@ -39,46 +33,41 @@ def betfairlightweight_mocks(mocker):
     mock_list_nav = mocker.patch(
         "betfairlightweight.endpoints.navigation.Navigation.list_navigation"
     )
-    mock_list_nav.return_value = json.loads(open(TEST_PATH + "navigation.json").read())
+    mock_list_nav.return_value = BetfairTestStubs.resp_navigation()
 
     # Betting.list_market_catalogue
     mock_market_catalogue = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_market_catalogue"
     )
-    mock_market_catalogue.return_value = json.loads(
-        open(TEST_PATH + "market_metadata.json").read()
-    )
+    mock_market_catalogue.return_value = BetfairTestStubs.resp_market_catalogue()
 
     # Account.get_account_details
     mock_account_detail = mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_details"
     )
-    mock_account_detail.return_value = json.loads(
-        open(TEST_PATH + "account_detail.json").read()
-    )
+    mock_account_detail.return_value = BetfairTestStubs.resp_account_detail()
 
     # Account.get_account_funds
     mock_account_funds = mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_funds"
     )
-    mock_account_funds.return_value = json.loads(
-        open(TEST_PATH + "account_funds_no_exposure.json").read()
-    )
+    mock_account_funds.return_value = BetfairTestStubs.resp_accont_funds()
 
     # Streaming endpoint
     mocker.patch(
         "nautilus_trader.adapters.betfair.sockets.HOST",
-        return_value="stream-api-integration.betfair.com",
+        return_value=BetfairTestStubs.integration_endpoint(),
     )
 
 
 @pytest.fixture(scope="session")
+def betfair_client():
+    return BetfairTestStubs.betfair_client()
+
+
+@pytest.fixture(scope="session")
 def provider(betfair_client) -> BetfairInstrumentProvider:
-    return BetfairInstrumentProvider(
-        client=betfair_client,
-        market_filter={"event_type_name": "Tennis"},
-        load_all=False,
-    )
+    return BetfairTestStubs.instrument_provider(betfair_client)
 
 
 @pytest.fixture()
@@ -175,16 +164,6 @@ def betting_instrument(provider):
     )
 
 
-@pytest.fixture(scope="session")
-def betfair_client():
-    return betfairlightweight.APIClient(
-        username="username",
-        password="password",
-        app_key="app_key",
-        certs="cert_location",
-    )
-
-
 @pytest.fixture()
 def betfair_order_socket(betfair_client):
     return BetfairOrderStreamClient(client=betfair_client, message_handler=None)
@@ -196,7 +175,9 @@ def betfair_market_socket():
 
 
 @pytest.fixture()
-def execution_client(betfair_client, account_id, exec_engine, clock, live_logger):
+async def execution_client(
+    betfair_client, account_id, exec_engine, clock, live_logger
+) -> BetfairExecutionClient:
     client = BetfairExecutionClient(
         client=betfair_client,
         account_id=account_id,
@@ -204,16 +185,19 @@ def execution_client(betfair_client, account_id, exec_engine, clock, live_logger
         clock=clock,
         logger=live_logger,
     )
-    client.connect()
+    client.instrument_provider().load_all()
     exec_engine.register_client(client)
     return client
 
 
 @pytest.fixture()
 def betfair_data_client(betfair_client, data_engine, clock, live_logger):
-    return BetfairDataClient(
+    client = BetfairDataClient(
         client=betfair_client,
         engine=data_engine,
         clock=clock,
         logger=live_logger,
     )
+    client.instrument_provider().load_all()
+    data_engine.register_client(client)
+    return client

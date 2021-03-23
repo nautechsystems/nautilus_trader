@@ -27,7 +27,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cdef dict _subscribed_markets
     cdef dict _subscribed_order_books
     cdef object _update_instruments_task
-
+    cpdef BetfairInstrumentProvider instrument_provider(self)
     cdef inline void _log_betfair_error(self, ex, str method_name) except *
     cpdef void subscribe_markets(
         self,

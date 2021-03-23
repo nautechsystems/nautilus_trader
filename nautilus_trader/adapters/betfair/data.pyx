@@ -397,6 +397,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cdef inline void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
+# -- Instrument helpers ---------------------------------------------------------
+
+    cpdef BetfairInstrumentProvider instrument_provider(self):
+        return self._instrument_provider
+
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     cpdef _on_market_update(self, dict update):

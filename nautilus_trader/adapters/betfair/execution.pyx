@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Tuple
+from typing import Dict, Optional
 
 import betfairlightweight
 
@@ -31,9 +32,11 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.identifiers cimport ClientOrderId, OrderId
-from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient, BetfairOrderStreamClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE, ORDER_STREAM_SIDE_MAPPING, order_cancel_to_betfair, \
+from nautilus_trader.model.identifiers import ExecutionId, Symbol
+from nautilus_trader.execution.messages import OrderStatusReport, ExecutionReport
+from nautilus_trader.model.order.base import Order
+from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE, B2N_ORDER_STREAM_SIDE, order_cancel_to_betfair, \
     order_amend_to_betfair
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -272,9 +275,14 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         kw = order_cancel_to_betfair(command=command)
         self._client.betting.cancel_orders(**kw)
 
+    # -- Instrument helpers ---------------------------------------------------------
+
+    cpdef BetfairInstrumentProvider instrument_provider(self):
+        return self._instrument_provider
+
     # -- Order stream API ---------------------------------------------------------
 
-    cpdef void handle_order_stream_update(self, dict raw):
+    cpdef void handle_order_stream_update(self, dict raw) except *:
         """ Handle an update from the order stream socket """
         for market in raw.get("oc", []):
             market_id = market["id"]
@@ -298,7 +306,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             order_id=order_id,
                             execution_id=execution_id,
                             instrument_id=instrument.id,
-                            order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
+                            order_side=B2N_ORDER_STREAM_SIDE[order['side']],
                             fill_qty=order['sm'],
                             cum_qty=order['s'] - order['sr'],
                             leaves_qty=order['sr'],
@@ -333,7 +341,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             order_id=order_id,
                             execution_id=execution_id,
                             instrument_id=instrument.id,
-                            order_side=ORDER_STREAM_SIDE_MAPPING[order['side']],
+                            order_side=B2N_ORDER_STREAM_SIDE[order['side']],
                             fill_qty=order['sm'],
                             cum_qty=order['s'] - order['sr'],
                             leaves_qty=order['sr'],
@@ -357,6 +365,16 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
                 if selection.get("fullImage", False):
                     pass
+
+    # -- RECONCILIATION -------------------------------------------------------------------------------
+
+    async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
+        # return self._client.betting.list_current_orders()
+        raise NotADirectoryError
+
+    async def generate_trades_list(self, order_id: OrderId, symbol: Symbol,  since: Optional[datetime]=None) -> List[ExecutionReport]:
+        # return self._client.betting.list_cleared_orders()
+        raise NotImplementedError
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

@@ -76,7 +76,7 @@ def test_order_submit_to_betfair(
     expected = {
         "async": True,
         "customer_ref": "1",
-        "customer_strategy_ref": "betfair-001-Test-1",
+        "customer_strategy_ref": "BETFAIR-001-Test-1",
         "instructions": [
             {
                 "customerOrderRef": "1",
@@ -178,8 +178,21 @@ def test_account_statement(betfair_client, uuid):
     assert result == expected
 
 
-def test_order_stream_full_image(execution_client, exec_engine):
+def _prefill_order_id_to_cl_ord_id(raw):
+    order_ids = [
+        update["id"]
+        for market in raw["oc"]
+        for order in market["orc"]
+        for update in order["uo"]
+    ]
+    return {i: oid for i, oid in enumerate(order_ids)}
+
+
+def test_order_stream_full_image(mocker, execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_FULL_IMAGE.json").read())
+    mocker.patch.object(
+        execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
+    )
     execution_client.handle_order_stream_update(raw=raw)
     assert exec_engine.events == []
 

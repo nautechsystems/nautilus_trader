@@ -13,21 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
+from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef object _stream
-    cdef dict order_id_to_cl_ord_id
+    cpdef public dict order_id_to_cl_ord_id
 
 
     # -- INTERNAL --------------------------------------------------------------------------------------
 
     # cdef inline void _log_betfair_error(self, ex, str method_name) except *
+    cpdef BetfairInstrumentProvider instrument_provider(self)
 
     # -- EVENTS ----------------------------------------------------------------------------------------
 
     # cdef inline void _on_account_state(self, dict event) except *
     # cdef inline void _on_order_status(self, dict event) except *
     # cdef inline void _on_exec_report(self, dict event) except *
-    cpdef void handle_order_stream_update(self, dict raw)
+    cpdef void handle_order_stream_update(self, dict raw) except *

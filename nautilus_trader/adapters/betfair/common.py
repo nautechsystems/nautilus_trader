@@ -227,7 +227,7 @@ def betfair_account_to_account_state(
 #                     selection_id=str(selection["id"]),
 #                     handicap=str(selection.get("hc", "0.0")),
 #                 )
-#                 instrument = self._instrument_provider.get_betting_instrument(kw)
+#                 instrument = self.instrument_provider().get_betting_instrument(**kw)
 #             except KeyError:
 #                 logging.error(f"Couldn't find instrument for market_id: {kw}")
 #                 # TODO - Should probably raise? We may need to do an instrument re-pull
