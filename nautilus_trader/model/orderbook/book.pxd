@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.orderbook_op cimport OrderBookOperationType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
@@ -35,11 +36,12 @@ cdef class OrderBook:
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *
-    cpdef void apply_operations(self, OrderBookOperations ops) except *
+    cpdef void apply_operations(self, OrderBookOperations operations) except *
     cpdef void clear_bids(self) except *
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
     cpdef void check_integrity(self) except *
+    cdef inline void _apply_operation(self, OrderBookOperation op) except *
     cdef inline void _add(self, Order order) except *
     cdef inline void _update(self, Order order) except *
     cdef inline void _delete(self, Order order) except *
@@ -86,3 +88,10 @@ cdef class OrderBookOperations(Data):
     """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list ops
     """The order book operations.\n\n:returns: `list`"""
+
+
+cdef class OrderBookOperation(Data):
+    cdef readonly OrderBookOperationType type
+    """The type of operation (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookOperationType (Enum)`"""
+    cdef readonly Order order
+    """The order to apply.\n\n:returns: `Order`"""
