@@ -22,6 +22,7 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
@@ -67,7 +68,7 @@ cdef class MarketDataClient(DataClient):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, int level, int depth=*, dict kwargs=*) except *
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
@@ -109,7 +110,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_bar(self, BarType bar_type, Bar bar) except *
     cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *

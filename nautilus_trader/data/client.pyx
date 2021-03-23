@@ -31,12 +31,11 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -237,7 +236,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, int level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -322,6 +321,7 @@ cdef class MarketDataClient(DataClient):
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
+    # TODO: Comment why these aren't cpdef
     def _handle_instruments_py(self, list instruments, UUID correlation_id):
         self._handle_instruments(instruments, correlation_id)
 
@@ -335,9 +335,6 @@ cdef class MarketDataClient(DataClient):
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
-
-    cdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
-        self._engine.process(BarData(bar_type, bar))
 
     cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(

@@ -54,6 +54,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -773,7 +774,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        int level=2,
+        OrderBookLevel level=OrderBookLevel.L2,
         int depth=0,
         int interval=0,
         dict kwargs=None,
@@ -793,8 +794,8 @@ cdef class TradingStrategy(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument identifier to subscribe to.
-        level : int
-            The order book data level (L1, L2, L3).
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval : int, optional
@@ -805,8 +806,6 @@ cdef class TradingStrategy(Component):
         Raises
         ------
         ValueError
-            If level is not in range 1-3.
-        ValueError
             If depth is negative.
         ValueError
             If delay is not None and interval is None.
@@ -814,7 +813,6 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(self._data_engine, "data_client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.in_range_int(level, 1, 3, "level")
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval, "interval")
 
@@ -953,7 +951,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=0) except *:
         """
-        Unsubscribe from streaming `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument identifier.
 
         The interval must match the previously defined interval if unsubscribing
         from snapshots.

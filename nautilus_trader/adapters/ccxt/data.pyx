@@ -31,11 +31,13 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -272,7 +274,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        int level,
+        OrderBookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -283,8 +285,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : int
-            The order book data level (L1, L2, L3).
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -640,7 +642,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
-    async def _watch_order_book(self, InstrumentId instrument_id, int level, int depth, dict kwargs):
+    async def _watch_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth, dict kwargs):
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to order book (no instrument for {instrument_id.symbol}).")
@@ -656,7 +658,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                         params=kwargs,
                     )
                     timestamp = lob["timestamp"]
-                    if timestamp is None:  # Compiled to fast C check
+                    if timestamp is None:
                         # First quote timestamp often None
                         timestamp = self._client.milliseconds()
 
@@ -669,7 +671,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
                     # Currently inefficient while using CCXT. The order book
                     # is regenerated with a snapshot on every update.
-                    snapshot = OrderBookSnapshot(instrument.id, bids, asks)
+                    snapshot = OrderBookSnapshot(
+                        instrument_id=instrument.id,
+                        level=level,
+                        bids=bids,
+                        asks=asks,
+                    )
 
                     self._handle_data(snapshot)
                 except CCXTError as ex:
@@ -939,7 +946,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             from_unix_time_ms(timestamp),
         )
 
-        self._handle_bar(bar_type, bar)
+        self._handle_data(BarData(bar_type, bar))
 
     async def _run_after_delay(self, double delay, coro):
         await asyncio.sleep(delay)
