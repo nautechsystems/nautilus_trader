@@ -35,6 +35,8 @@ from nautilus_trader.model.c_enums.order_state import OrderState
 from nautilus_trader.model.c_enums.order_state import OrderStateParser
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.order_type import OrderTypeParser
+from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
+from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevelParser
 from nautilus_trader.model.c_enums.position_side import PositionSide
 from nautilus_trader.model.c_enums.position_side import PositionSideParser
 from nautilus_trader.model.c_enums.price_type import PriceType
@@ -452,6 +454,44 @@ class TestOrderType:
         # Arrange
         # Act
         result = OrderTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOrderBookType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OrderBookLevel.L1, "L1"],
+            [OrderBookLevel.L2, "L2"],
+            [OrderBookLevel.L3, "L3"],
+        ],
+    )
+    def test_order_type_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = OrderBookLevelParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["", None],
+            ["L1", OrderBookLevel.L1],
+            ["L2", OrderBookLevel.L2],
+            ["L3", OrderBookLevel.L3],
+        ],
+    )
+    def test_order_type_from_str(self, string, expected):
+        # Arrange
+        # Act
+        if expected is None:
+            return
+
+        result = OrderBookLevelParser.from_str_py(string)
 
         # Assert
         assert expected == result

@@ -21,13 +21,18 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
@@ -339,16 +344,36 @@ class MarketDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
 
-    # TODO: WIP - tests for snapshots and operations
-    # def test_handle_order_book_sends_to_data_engine(self):
-    #     # Arrange
-    #     order_book = OrderBook(instrument_id=ETHUSDT_BINANCE.id)
-    #
-    #     # Act
-    #     self.client._handle_order_book_py(order_book)
-    #
-    #     # Assert
-    #     self.assertEqual(1, self.data_engine.data_count)
+    def test_handle_order_book_snapshot_sends_to_data_engine(self):
+        # Arrange
+        snapshot = OrderBookSnapshot(
+            instrument_id=ETHUSDT_BINANCE.id,
+            level=OrderBookLevel.L2,
+            bids=[[1000, 1]],
+            asks=[[1001, 1]],
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        self.client._handle_data_py(snapshot)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.data_count)
+
+    def test_handle_order_book_operations_sends_to_data_engine(self):
+        # Arrange
+        ops = OrderBookOperations(
+            instrument_id=ETHUSDT_BINANCE.id,
+            level=OrderBookLevel.L2,
+            ops=[],
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        self.client._handle_data_py(ops)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.data_count)
 
     def test_handle_quote_tick_sends_to_data_engine(self):
         # Arrange
@@ -384,27 +409,26 @@ class MarketDataClientTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
 
-    # TODO: WIP Make BarData
-    # def test_handle_bar_sends_to_data_engine(self):
-    #     # Arrange
-    #     bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-    #
-    #     bar = Bar(
-    #         Price("1.00001"),
-    #         Price("1.00004"),
-    #         Price("1.00002"),
-    #         Price("1.00003"),
-    #         Quantity(100000),
-    #         UNIX_EPOCH,
-    #     )
-    #
-    #     BarData
-    #
-    #     # Act
-    #     self.client._handle_data_py(bar_type, bar)
-    #
-    #     # Assert
-    #     self.assertEqual(1, self.data_engine.data_count)
+    def test_handle_bar_sends_to_data_engine(self):
+        # Arrange
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+
+        bar = Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            UNIX_EPOCH,
+        )
+
+        data = BarData(bar_type, bar)
+
+        # Act
+        self.client._handle_data_py(data)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.data_count)
 
     def test_handle_instruments_sends_to_data_engine(self):
         # Arrange

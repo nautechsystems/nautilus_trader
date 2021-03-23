@@ -20,6 +20,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -38,7 +39,7 @@ cdef class OrderBook:
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int level,
+        OrderBookLevel level,
     ):
         """
         Initialize a new instance of the `OrderBook` class.
@@ -47,21 +48,40 @@ cdef class OrderBook:
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : int
-            The order book level (1/2/3).
-
-        Raises
-        ------
-        ValueError
-            If level is not in range [1, 3].
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
 
         """
-        Condition.in_range_int(level, 1, 3, "level")
-
         self.instrument_id = instrument_id
         self.level = level
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
+
+    @staticmethod
+    def create(InstrumentId instrument_id, OrderBookLevel level):
+        """
+        Create a new order book with the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
+
+        Returns
+        -------
+        OrderBook
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if level == OrderBookLevel.L1:
+            return L1OrderBook(instrument_id)
+        elif level == OrderBookLevel.L2:
+            return L2OrderBook(instrument_id)
+        elif level == OrderBookLevel.L2:
+            return L3OrderBook(instrument_id)
 
     cpdef void add(self, Order order) except *:
         """
@@ -108,7 +128,14 @@ cdef class OrderBook:
         snapshot : OrderBookSnapshot
             The snapshot to apply.
 
+        Raises
+        ------
+        ValueError
+            If snapshot.level is not equal to self.level.
+
         """
+        Condition.equal(snapshot.level, self.level, "snapshot.level", "self.level")
+
         self.clear()
         for bid in snapshot.bids:
             self.add(order=Order(price=bid[0], volume=bid[1], side=OrderSide.BUY))
@@ -124,8 +151,14 @@ cdef class OrderBook:
         ops : OrderBookOperations
             The operations to apply.
 
+        Raises
+        ------
+        ValueError
+            If snapshot.level is not equal to self.level.
+
         """
-        pass
+        Condition.equal(ops.level, self.level, "snapshot.level", "self.level")
+
         # TODO: Implement
 
     cpdef void check_integrity(self) except *:
@@ -374,7 +407,7 @@ cdef class L3OrderBook(OrderBook):
             The instrument identifier for the book.
 
         """
-        super().__init__(instrument_id, level=3)
+        super().__init__(instrument_id, level=OrderBookLevel.L3)
 
 
 cdef class L2OrderBook(OrderBook):
@@ -394,7 +427,7 @@ cdef class L2OrderBook(OrderBook):
             The instrument identifier for the book.
 
         """
-        super().__init__(instrument_id, level=2)
+        super().__init__(instrument_id, level=OrderBookLevel.L2)
 
     cpdef void add(self, Order order) except *:
         """
@@ -487,13 +520,13 @@ cdef class L1OrderBook(OrderBook):
             The instrument identifier for the book.
 
         """
-        super().__init__(instrument_id, level=1)
+        super().__init__(instrument_id, level=OrderBookLevel.L1)
 
     cpdef void add(self, Order order) except *:
         """
-        NotImplemented (Use `update(order)` for L1Orderbook).
+        NotImplemented (Use `update(order)` for L1OrderBook).
         """
-        raise NotImplementedError("Use `update(order)` for L1Orderbook")
+        raise NotImplementedError("Use `update(order)` for L1OrderBook")
 
     cpdef void update(self, Order order) except *:
         """
@@ -568,6 +601,7 @@ cdef class OrderBookSnapshot(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        OrderBookLevel level,
         list bids not None,
         list asks not None,
         datetime timestamp,
@@ -579,6 +613,8 @@ cdef class OrderBookSnapshot(Data):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         bids : list
             The bids for the snapshot.
         asks : list
@@ -590,6 +626,7 @@ cdef class OrderBookSnapshot(Data):
         super().__init__(timestamp)
 
         self.instrument_id = instrument_id
+        self.level = level
         self.bids = bids
         self.asks = asks
 
@@ -602,6 +639,7 @@ cdef class OrderBookOperations(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
+        OrderBookLevel level,
         list ops not None,
         datetime timestamp not None,
     ):
@@ -612,10 +650,16 @@ cdef class OrderBookOperations(Data):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         ops : list
             The list of order book operations.
         timestamp : datetime
-            The actions timestamp.
+            The operations timestamp.
 
         """
         super().__init__(timestamp)
+
+        self.instrument_id = instrument_id
+        self.level = level
+        self.ops = ops

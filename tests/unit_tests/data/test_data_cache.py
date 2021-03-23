@@ -25,6 +25,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -323,6 +324,7 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
+            level=OrderBookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
             timestamp=UNIX_EPOCH,

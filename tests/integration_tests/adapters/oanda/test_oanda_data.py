@@ -107,7 +107,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
-    # TODO: WIP
+    # TODO: WIP - why is this failing??
     # def test_connect(self):
     #     async def run_test():
     #         # Arrange

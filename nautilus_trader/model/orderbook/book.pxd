@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
@@ -23,8 +24,8 @@ from nautilus_trader.model.orderbook.order cimport Order
 cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly int level
-    """The order book level (1/2/3).\n\n:returns: `int`"""
+    cdef readonly OrderBookLevel level
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly Ladder bids
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
@@ -70,6 +71,8 @@ cdef class L1OrderBook(OrderBook):
 cdef class OrderBookSnapshot(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly OrderBookLevel level
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list bids
     """The snapshot bids.\n\n:returns: `list`"""
     cdef readonly list asks
@@ -79,5 +82,7 @@ cdef class OrderBookSnapshot(Data):
 cdef class OrderBookOperations(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly OrderBookLevel level
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list ops
     """The order book operations.\n\n:returns: `list`"""
