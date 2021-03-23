@@ -37,6 +37,8 @@ from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.order_type import OrderTypeParser
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevelParser
+from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
+from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationTypeParser
 from nautilus_trader.model.c_enums.position_side import PositionSide
 from nautilus_trader.model.c_enums.position_side import PositionSideParser
 from nautilus_trader.model.c_enums.price_type import PriceType
@@ -459,7 +461,7 @@ class TestOrderType:
         assert expected == result
 
 
-class TestOrderBookType:
+class TestOrderBookLevel:
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -468,7 +470,7 @@ class TestOrderBookType:
             [OrderBookLevel.L3, "L3"],
         ],
     )
-    def test_order_type_to_str(self, enum, expected):
+    def test_orderbook_level_to_str(self, enum, expected):
         # Arrange
         # Act
         result = OrderBookLevelParser.to_str_py(enum)
@@ -485,13 +487,51 @@ class TestOrderBookType:
             ["L3", OrderBookLevel.L3],
         ],
     )
-    def test_order_type_from_str(self, string, expected):
+    def test_orderbook_level_from_str(self, string, expected):
         # Arrange
         # Act
         if expected is None:
             return
 
         result = OrderBookLevelParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestOrderBookOperationType:
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [OrderBookOperationType.ADD, "ADD"],
+            [OrderBookOperationType.UPDATE, "UPDATE"],
+            [OrderBookOperationType.DELETE, "DELETE"],
+        ],
+    )
+    def test_orderbook_op_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = OrderBookOperationTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["", None],
+            ["ADD", OrderBookOperationType.ADD],
+            ["UPDATE", OrderBookOperationType.UPDATE],
+            ["DELETE", OrderBookOperationType.DELETE],
+        ],
+    )
+    def test_orderbook_op_from_str(self, string, expected):
+        # Arrange
+        # Act
+        if expected is None:
+            return
+
+        result = OrderBookOperationTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result
