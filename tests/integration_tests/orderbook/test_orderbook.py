@@ -17,10 +17,11 @@ from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.stubs import TestStubs
 
 
 def test_l3_feed():
-    ob = L3OrderBook()
+    ob = L3OrderBook(TestStubs.audusd_id())
     # Updates that cause the book to fail integrity checks will be deleted
     # immediately, but we may get also delete later.
     skip_deletes = []
@@ -45,7 +46,7 @@ def test_l3_feed():
 
 
 def test_l2_feed():
-    ob = L2OrderBook()
+    ob = L2OrderBook(TestStubs.audusd_id())
 
     # Duplicate delete messages
     skip = [
@@ -68,7 +69,7 @@ def test_l2_feed():
 
 
 def test_l1_orderbook():
-    ob = L1OrderBook()
+    ob = L1OrderBook(TestStubs.audusd_id())
     for i, m in enumerate(TestDataProvider.l1_feed()):
         # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         # print("")
