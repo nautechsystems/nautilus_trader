@@ -13,17 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.data.client cimport MarketDataClient
+cdef class AggressorSideParser:
 
+    @staticmethod
+    cdef str to_str(int value):
+        if value == 1:
+            return "BUY"
+        elif value == 2:
+            return "SELL"
+        else:
+            return "UNDEFINED"
 
-cdef class LiveDataClientFactory:
-    pass
+    @staticmethod
+    cdef AggressorSide from_str(str value):
+        if value == "BUY":
+            return AggressorSide.BUY
+        elif value == "SELL":
+            return AggressorSide.SELL
+        else:
+            return AggressorSide.UNDEFINED
 
+    @staticmethod
+    def to_str_py(int value):
+        return AggressorSideParser.to_str(value)
 
-cdef class LiveDataClient(DataClient):
-    cdef object _loop
-
-
-cdef class LiveMarketDataClient(MarketDataClient):
-    cdef object _loop
+    @staticmethod
+    def from_str_py(str value):
+        return AggressorSideParser.from_str(value)

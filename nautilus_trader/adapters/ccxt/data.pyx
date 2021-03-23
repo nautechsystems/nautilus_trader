@@ -43,7 +43,7 @@ from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -183,7 +183,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             return
 
         for instrument in self._instrument_provider.get_all().values():
-            self._handle_instrument(instrument)
+            self._handle_data(instrument)
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -646,7 +646,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot subscribe to order book (no instrument for {instrument_id.symbol}).")
             return
 
-        cdef OrderBook order_book = None
+        cdef OrderBookSnapshot snapshot
         try:
             while True:
                 try:
@@ -667,14 +667,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     if asks is None:
                         continue
 
-                    if order_book is None:
-                        order_book = OrderBook(instrument.id)
-                    else:
-                        # Currently inefficient while using CCXT. The order book
-                        # is regenerated with a snapshot on every update.
-                        order_book.apply_snapshot(list(bids), list(asks))
+                    # Currently inefficient while using CCXT. The order book
+                    # is regenerated with a snapshot on every update.
+                    snapshot = OrderBookSnapshot(instrument.id, bids, asks)
 
-                    self._handle_order_book(order_book)
+                    self._handle_data(snapshot)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_order_book.__name__)
                     continue
@@ -782,7 +779,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             from_unix_time_ms(timestamp),
         )
 
-        self._handle_quote_tick(tick)
+        self._handle_data(tick)
 
     async def _watch_trades(self, InstrumentId instrument_id):
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
@@ -853,7 +850,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             from_unix_time_ms(timestamp),
         )
 
-        self._handle_trade_tick(tick)
+        self._handle_data(tick)
 
     async def _watch_ohlcv(self, BarType bar_type):
         cdef Instrument instrument = self._instrument_provider.find(bar_type.instrument_id)
@@ -973,7 +970,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         for instrument_id in self._subscribed_instruments:
             instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
-                self._handle_instrument(instrument)
+                self._handle_data(instrument)
             else:
                 self._log.error(f"Could not find instrument {instrument_id.symbol}.")
 

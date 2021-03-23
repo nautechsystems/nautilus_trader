@@ -14,6 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class CCXTClientsFactory:
+cpdef enum AggressorSide:
+    UNDEFINED = 0,  # Invalid value
+    BUY = 1,
+    SELL = 2,
 
-    pass
+
+cdef class AggressorSideParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef AggressorSide from_str(str value)

@@ -30,11 +30,13 @@ from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -53,6 +55,7 @@ cdef class DataEngine(Component):
     cdef dict _data_handlers
     cdef dict _bar_aggregators
     cdef dict _order_book_intervals
+    cdef dict _order_books
 
     cdef readonly Portfolio portfolio
     """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
@@ -84,7 +87,7 @@ cdef class DataEngine(Component):
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void execute(self, DataCommand command) except *
-    cpdef void process(self, data) except *
+    cpdef void process(self, Data data) except *
     cpdef void send(self, DataRequest request) except *
     cpdef void receive(self, DataResponse response) except *
 
@@ -109,9 +112,10 @@ cdef class DataEngine(Component):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef inline void _handle_data(self, data) except *
+    cdef inline void _handle_data(self, Data data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
-    cdef inline void _handle_order_book(self, OrderBook order_book) except *
+    cdef inline void _handle_order_book_actions(self, OrderBookOperations actions) except *
+    cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot actions) except *
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *

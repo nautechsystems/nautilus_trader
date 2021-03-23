@@ -13,7 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.live.data_client cimport LiveDataClientFactory
+from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 
-cdef class OandaDataClientFactory:
 
+cdef class CCXTDataClientFactory(LiveDataClientFactory):
+    pass
+
+
+cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
     pass

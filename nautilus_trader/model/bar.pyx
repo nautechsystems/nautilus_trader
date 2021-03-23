@@ -298,7 +298,7 @@ cdef class BarType:
         return f"{self.instrument_id}-{self.spec}"
 
 
-cdef class Bar(Data):
+cdef class Bar:
     """
     Represents an aggregated bar.
     """
@@ -347,13 +347,13 @@ cdef class Bar(Data):
             Condition.true(high_price >= low_price, 'high_price was < low_price')
             Condition.true(high_price >= close_price, 'high_price was < close_price')
             Condition.true(low_price <= close_price, 'low_price was > close_price')
-        super().__init__(timestamp)
 
         self.open = open_price
         self.high = high_price
         self.low = low_price
         self.close = close_price
         self.volume = volume
+        self.timestamp = timestamp
         self.checked = check
 
     def __eq__(self, Bar other) -> bool:
@@ -423,7 +423,7 @@ cdef class Bar(Data):
         return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{to_unix_time_ms(self.timestamp)}"
 
 
-cdef class BarData:
+cdef class BarData(Data):
     """
     Represents bar data of a `BarType` and `Bar`.
     """
@@ -440,6 +440,8 @@ cdef class BarData:
             The bar data.
 
         """
+        super().__init__(bar.timestamp)
+
         self.bar_type = bar_type
         self.bar = bar
 

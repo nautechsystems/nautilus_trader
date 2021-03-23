@@ -29,6 +29,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -162,7 +163,7 @@ cdef class LiveDataEngine(DataEngine):
                               f"{self._message_queue.qsize()} items.")
             self._loop.create_task(self._message_queue.put(command))
 
-    cpdef void process(self, data) except *:
+    cpdef void process(self, Data data) except *:
         """
         Process the given data.
 
@@ -171,7 +172,7 @@ cdef class LiveDataEngine(DataEngine):
 
         Parameters
         ----------
-        data : object
+        data : Data
             The data to process.
 
         Warnings

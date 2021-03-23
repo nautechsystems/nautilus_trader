@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import unittest
 
 from nautilus_trader.adapters.oanda.data import OandaDataClient
-from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
+from nautilus_trader.adapters.oanda.factories import OandaDataClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -26,8 +25,8 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 
 
-class OandaDataClientFactoryTests(unittest.TestCase):
-    def setUp(self):
+class TestOandaDataClientFactory:
+    def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
@@ -60,11 +59,12 @@ class OandaDataClientFactoryTests(unittest.TestCase):
 
         # Act
         client = OandaDataClientFactory.create(
+            name="OANDA",
             config=config,
-            data_engine=self.data_engine,
+            engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
         )
 
         # Assert
-        self.assertEqual(OandaDataClient, type(client))
+        assert type(client) == OandaDataClient

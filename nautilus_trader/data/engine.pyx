@@ -68,7 +68,12 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.orderbook.book cimport L1OrderBook
+from nautilus_trader.model.orderbook.book cimport L2OrderBook
+from nautilus_trader.model.orderbook.book cimport L3OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -122,8 +127,9 @@ cdef class DataEngine(Component):
         # Aggregators
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
-        # Snapshot providers
+        # OrderBook components
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
+        self._order_books = {}           # type: dict[InstrumentId, OrderBook]
 
         # Public components
         self.portfolio = portfolio
@@ -344,6 +350,7 @@ cdef class DataEngine(Component):
             client.reset()
 
         self.cache.reset()
+
         self._correlation_index.clear()
         self._instrument_handlers.clear()
         self._order_book_handlers.clear()
@@ -352,6 +359,8 @@ cdef class DataEngine(Component):
         self._bar_handlers.clear()
         self._data_handlers.clear()
         self._bar_aggregators.clear()
+        self._order_books.clear()
+
         self._clock.cancel_timers()
         self.command_count = 0
         self.data_count = 0
@@ -381,13 +390,13 @@ cdef class DataEngine(Component):
 
         self._execute_command(command)
 
-    cpdef void process(self, data) except *:
+    cpdef void process(self, Data data) except *:
         """
         Process the given data.
 
         Parameters
         ----------
-        data : object
+        data : Data
             The data to process.
 
         """
@@ -554,14 +563,6 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
-        # Always re-subscribe to override previous settings
-        client.subscribe_order_book(
-            instrument_id=instrument_id,
-            level=metadata.get(LEVEL),
-            depth=metadata.get(DEPTH),
-            kwargs=metadata.get(KWARGS),
-        )
-
         cdef int interval = metadata[INTERVAL]
         if interval > 0:
             key = (instrument_id, interval)
@@ -584,6 +585,20 @@ cdef class DataEngine(Component):
                            f"{interval} second intervals data.")
             return
 
+        # Create order book
+        cdef int level = metadata[LEVEL]
+        if instrument_id not in self._order_books:
+            if level == 3:
+                order_book = L3OrderBook(instrument_id)
+            elif level == 2:
+                order_book = L2OrderBook(instrument_id)
+            elif level == 1:
+                order_book = L1OrderBook(instrument_id)
+            else:
+                raise RuntimeError(f"invalid `OrderBook` level, was {level}.")
+
+            self._order_books[instrument_id] = order_book
+
         if instrument_id not in self._order_book_handlers:
             # Setup handlers
             self._order_book_handlers[instrument_id] = []  # type: list[callable]
@@ -595,6 +610,14 @@ cdef class DataEngine(Component):
             self._log.debug(f"Added {handler} for {instrument_id} <OrderBook> data.")
         else:
             self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
+
+        # Always re-subscribe to override previous settings
+        client.subscribe_order_book(
+            instrument_id=instrument_id,
+            level=metadata.get(LEVEL),
+            depth=metadata.get(DEPTH),
+            kwargs=metadata.get(KWARGS),
+        )
 
     cdef inline void _handle_subscribe_quote_ticks(
         self,
@@ -776,6 +799,7 @@ cdef class DataEngine(Component):
         if not self._order_book_handlers[instrument_id]:
             # No more handlers for instrument_id
             del self._order_book_handlers[instrument_id]
+            del self._order_books[instrument_id]
             client.unsubscribe_order_book(instrument_id)
             self._log.info(f"Unsubscribed from {instrument_id} <OrderBook> data.")
 
@@ -951,15 +975,17 @@ cdef class DataEngine(Component):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef inline void _handle_data(self, data) except *:
+    cdef inline void _handle_data(self, Data data) except *:
         self.data_count += 1
 
-        if isinstance(data, OrderBook):
-            self._handle_order_book(data)
-        elif isinstance(data, QuoteTick):
+        if isinstance(data, QuoteTick):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
+        elif isinstance(data, OrderBookOperations):
+            self._handle_order_book_actions(data)
+        elif isinstance(data, OrderBookSnapshot):
+            self._handle_order_book_snapshot(data)
         elif isinstance(data, BarData):
             self._handle_bar(data.bar_type, data.bar)
         elif isinstance(data, Instrument):
@@ -995,8 +1021,28 @@ cdef class DataEngine(Component):
         for handler in tick_handlers:
             handler(tick)
 
-    cdef inline void _handle_order_book(self, OrderBook order_book) except *:
-        self.cache.add_order_book(order_book)
+    cdef inline void _handle_order_book_actions(self, OrderBookOperations ops) except *:
+        cdef OrderBook order_book = self._order_books.get(ops.instrument_id)
+        if order_book is None:
+            self._log.error(f"Cannot apply `OrderBookOperations`: "
+                            f"no book found for {ops.instrument_id}.")
+            return
+
+        order_book.apply_operations(ops)
+
+        # Send to all registered order book handlers for that instrument_id
+        cdef list order_book_handlers = self._order_book_handlers.get(order_book.instrument_id, [])
+        for handler in order_book_handlers:
+            handler(order_book)
+
+    cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
+        cdef OrderBook order_book = self._order_books.get(snapshot.instrument_id)
+        if order_book is None:
+            self._log.error(f"Cannot apply `OrderBookSnapshot`: "
+                            f"no book found for {snapshot.instrument_id}.")
+            return
+
+        order_book.apply_snapshot(snapshot)
 
         # Send to all registered order book handlers for that instrument_id
         cdef list order_book_handlers = self._order_book_handlers.get(order_book.instrument_id, [])

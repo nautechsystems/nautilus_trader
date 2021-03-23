@@ -15,8 +15,12 @@
 
 from tabulate import tabulate
 
+from cpython.datetime cimport datetime
+
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
@@ -31,12 +35,31 @@ cdef class OrderBook:
     An L3 order book can be proxied to L2 or L1 `OrderBook` classes.
     """
 
-    def __init__(self, InstrumentId instrument_id=None):
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        int level,
+    ):
         """
         Initialize a new instance of the `OrderBook` class.
 
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+        level : int
+            The order book level (1/2/3).
+
+        Raises
+        ------
+        ValueError
+            If level is not in range [1, 3].
+
         """
+        Condition.in_range_int(level, 1, 3, "level")
+
         self.instrument_id = instrument_id
+        self.level = level
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
 
@@ -76,29 +99,34 @@ cdef class OrderBook:
         """
         self._delete(order=order)
 
-    cpdef void apply_snapshot(
-        self,
-        list bids,
-        list asks,
-    ) except *:
+    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
         """
-        Update this orderbook from a new snapshot.
+        Apply the bulk snapshot to the order book.
 
         Parameters
         ----------
-        bids : list
-            The snapshot bids.
-        asks : list
-            The snapshot asks.
+        snapshot : OrderBookSnapshot
+            The snapshot to apply.
 
         """
         self.clear()
-        cdef list bid
-        for bid in bids:
+        for bid in snapshot.bids:
             self.add(order=Order(price=bid[0], volume=bid[1], side=OrderSide.BUY))
-        cdef list ask
-        for ask in asks:
+        for ask in snapshot.asks:
             self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
+
+    cpdef void apply_operations(self, OrderBookOperations ops) except *:
+        """
+        Apply the bulk operations to the order book.
+
+        Parameters
+        ----------
+        ops : OrderBookOperations
+            The operations to apply.
+
+        """
+        pass
+        # TODO: Implement
 
     cpdef void check_integrity(self) except *:
         """
@@ -335,7 +363,18 @@ cdef class L3OrderBook(OrderBook):
 
     Maps directly to functionality of the `OrderBook` base class.
     """
-    pass
+
+    def __init__(self, InstrumentId instrument_id not None):
+        """
+        Initialize a new instance of the `L3OrderBook` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+
+        """
+        super().__init__(instrument_id, level=3)
 
 
 cdef class L2OrderBook(OrderBook):
@@ -344,6 +383,18 @@ cdef class L2OrderBook(OrderBook):
 
     An L2 order book `Levels` are only made up of a single order.
     """
+
+    def __init__(self, InstrumentId instrument_id not None):
+        """
+        Initialize a new instance of the `L2OrderBook` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+
+        """
+        super().__init__(instrument_id, level=2)
 
     cpdef void add(self, Order order) except *:
         """
@@ -426,6 +477,18 @@ cdef class L1OrderBook(OrderBook):
     An L1 order book has a single (top) `Level`.
     """
 
+    def __init__(self, InstrumentId instrument_id not None):
+        """
+        Initialize a new instance of the `L1OrderBook` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+
+        """
+        super().__init__(instrument_id, level=1)
+
     cpdef void add(self, Order order) except *:
         """
         NotImplemented (Use `update(order)` for L1Orderbook).
@@ -495,3 +558,64 @@ cdef class L1OrderBook(OrderBook):
         # the order.
         order.id = OrderSideParser.to_str(order.side)
         return order
+
+
+cdef class OrderBookSnapshot(Data):
+    """
+    Represents a snapshot in time for an `OrderBook`.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        list bids not None,
+        list asks not None,
+        datetime timestamp,
+    ):
+        """
+        Initialize a new instance of the `OrderBookSnapshot` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+        bids : list
+            The bids for the snapshot.
+        asks : list
+            The asks for the snapshot.
+        timestamp : datetime
+            The snapshot timestamp.
+
+        """
+        super().__init__(timestamp)
+
+        self.instrument_id = instrument_id
+        self.bids = bids
+        self.asks = asks
+
+
+cdef class OrderBookOperations(Data):
+    """
+    Represents bulk operations for an `OrderBook`.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        list ops not None,
+        datetime timestamp not None,
+    ):
+        """
+        Initialize a new instance of the `OrderBookOperations` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+        ops : list
+            The list of order book operations.
+        timestamp : datetime
+            The actions timestamp.
+
+        """
+        super().__init__(timestamp)
