@@ -55,7 +55,6 @@ cdef class DataEngine(Component):
     cdef dict _data_handlers
     cdef dict _bar_aggregators
     cdef dict _order_book_intervals
-    cdef dict _order_books
 
     cdef readonly Portfolio portfolio
     """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
@@ -114,8 +113,8 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_data(self, Data data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
-    cdef inline void _handle_order_book_actions(self, OrderBookOperations actions) except *
-    cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot actions) except *
+    cdef inline void _handle_order_book_ops(self, OrderBookOperations ops) except *
+    cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *

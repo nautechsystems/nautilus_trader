@@ -30,6 +30,7 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
@@ -128,7 +129,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        int level=*,
+        OrderBookLevel level=*,
         int depth=*,
         int interval=*,
         dict kwargs=*,

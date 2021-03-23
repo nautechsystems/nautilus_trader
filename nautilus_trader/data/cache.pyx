@@ -439,7 +439,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """
-        Return the latest order book snapshot for the given instrument_id.
+        Return the order book for the given instrument_id.
 
         Parameters
         ----------

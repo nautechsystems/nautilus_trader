@@ -509,7 +509,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         for instrument_id in self._subscribed_instruments:
             instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
-                self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
+                self._loop.call_soon_threadsafe(self._handle_data_py, instrument)
             else:
                 self._log.error(f"Could not find instrument {instrument_id.symbol}.")
 
@@ -695,9 +695,6 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void _handle_data_py(self, Data data) except *:
         self._engine.process(data)
-
-    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
-        self._engine.process(BarData(bar_type, bar))
 
     cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
         self._handle_instruments(instruments, correlation_id)

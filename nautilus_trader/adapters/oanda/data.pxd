@@ -57,7 +57,6 @@ cdef class OandaDataClient(LiveMarketDataClient):
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
     cpdef void _handle_data_py(self, Data data) except *
-    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *
     cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *
     cpdef void _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
     cpdef void _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
