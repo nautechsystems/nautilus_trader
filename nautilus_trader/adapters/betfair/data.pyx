@@ -15,7 +15,8 @@
 
 import asyncio
 
-from betfairlightweight import APIClient, BetfairError
+from betfairlightweight import APIClient
+from betfairlightweight import BetfairError
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -36,8 +37,11 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 from nautilus_trader.adapters.betfair.common import on_market_update
+
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
+
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
+
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
@@ -404,8 +408,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
-    cpdef _on_market_update(self, dict update):
-        return on_market_update(self, update)
+    cpdef void _on_market_update(self, dict update) except *:
+        on_market_update(self, update)
 
     cdef inline void _on_quote_tick(
         self,

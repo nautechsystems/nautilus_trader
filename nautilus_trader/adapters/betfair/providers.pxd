@@ -16,6 +16,7 @@
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.instrument cimport BettingInstrument
 
+
 cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef object _client
     cdef dict market_filter

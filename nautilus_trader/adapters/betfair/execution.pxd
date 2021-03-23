@@ -12,8 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
+from nautilus_trader.live.execution_client cimport LiveExecutionClient
 
 
 cdef class BetfairExecutionClient(LiveExecutionClient):

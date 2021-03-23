@@ -25,19 +25,28 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
+
+from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.model.identifiers cimport ClientOrderId, OrderId
-from nautilus_trader.model.identifiers import ExecutionId, Symbol
-from nautilus_trader.execution.messages import OrderStatusReport, ExecutionReport
-from nautilus_trader.model.order.base import Order
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport OrderId
+
+from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
+from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE, B2N_ORDER_STREAM_SIDE, order_cancel_to_betfair, \
-    order_amend_to_betfair
+from nautilus_trader.execution.messages import ExecutionReport
+from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.order.base import Order
+
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 

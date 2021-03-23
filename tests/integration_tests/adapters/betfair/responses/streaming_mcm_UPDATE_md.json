@@ -5,19 +5,19 @@
   "pt": 1478717720756,
   "mc": [
     {
-      "id": "1.128149474",
+      "id": "1.180770798",
       "marketDefinition": {
         "bspMarket": false,
         "turnInPlayEnabled": true,
         "persistenceEnabled": true,
         "marketBaseRate": 5,
-        "eventId": "28009395",
+        "eventId": "30363344",
         "eventTypeId": "2",
         "numberOfWinners": 1,
         "bettingType": "ODDS",
         "marketType": "GAME_BY_GAME_01_07",
-        "marketTime": "2016-11-09T18:15:00.000Z",
-        "suspendTime": "2016-11-09T18:15:00.000Z",
+        "marketTime": "2021-03-19T04:00:00+00:00",
+        "suspendTime": "2021-03-19T04:00:00+00:00",
         "bspReconciled": false,
         "complete": true,
         "inPlay": true,
@@ -30,12 +30,12 @@
           {
             "status": "ACTIVE",
             "sortPriority": 1,
-            "id": 4520808
+            "id": "13834991"
           },
           {
             "status": "ACTIVE",
             "sortPriority": 2,
-            "id": 7431682
+            "id": "3120169"
           }
         ],
         "regulators": [
@@ -44,7 +44,7 @@
         "countryCode": "CO",
         "discountAllowed": true,
         "timezone": "UTC",
-        "openDate": "2016-11-09T18:15:00.000Z",
+        "openDate": "2021-03-19T04:00:00+00:00",
         "version": 1488624717
       }
     }

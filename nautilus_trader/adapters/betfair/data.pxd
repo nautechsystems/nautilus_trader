@@ -37,7 +37,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         dict kwargs=*,
     ) except *
     cpdef void unsubscribe_markets(self, InstrumentId instrument_id) except *
-    cpdef _on_market_update(self, dict update)
+    cpdef void _on_market_update(self, dict update) except *
     cdef inline void _on_quote_tick(
         self,
         InstrumentId instrument_id,
