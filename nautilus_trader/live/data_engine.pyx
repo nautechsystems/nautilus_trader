@@ -271,6 +271,7 @@ cdef class LiveDataEngine(DataEngine):
 
     async def _run_data_queue(self):
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
+        cdef Data data
         try:
             while self.is_running:
                 data = await self._data_queue.get()
