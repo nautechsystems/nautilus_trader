@@ -21,6 +21,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.orderbook_op cimport OrderBookOperationType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -118,6 +119,14 @@ cdef class OrderBook:
 
         """
         self._delete(order=order)
+
+    cpdef void apply_operation(self, OrderBookOperation operation) except *:
+        if operation.op_type == OrderBookOperationType.add:
+            self.add(order=operation.order)
+        elif operation.op_type == OrderBookOperationType.update:
+            self.update(order=operation.order)
+        elif operation.op_type == OrderBookOperationType.delete:
+            self.delete(order=operation.order)
 
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
         """
@@ -669,7 +678,6 @@ cdef class OrderBookOperations(Data):
 
         """
         super().__init__(timestamp)
-
         self.instrument_id = instrument_id
         self.level = level
         self.ops = ops

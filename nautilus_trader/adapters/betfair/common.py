@@ -8,7 +8,10 @@ from betfairlightweight.filters import place_instruction
 from betfairlightweight.filters import replace_instruction
 import numpy as np
 
+from nautilus_trader.core.datetime import from_unix_time_ms
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
+from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
@@ -19,8 +22,14 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
+from nautilus_trader.model.orderbook.book import OrderBookOperation
+from nautilus_trader.model.orderbook.book import OrderBookOperations
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.tick import TradeTick
 
 
 BETFAIR_VENUE = Venue("BETFAIR")
@@ -45,6 +54,20 @@ N2B_TIME_IN_FORCE = {
     TimeInForce.GTC: None,
     TimeInForce.FOK: "FILL_OR_KILL",
 }
+
+B2N_MARKET_STREAM_SIDE = {
+    "atb": OrderSide.BUY,  # Available to Back
+    "batb": OrderSide.BUY,  # Best available to Back
+    "bdatb": OrderSide.BUY,  # Best display to Back
+    "atl": OrderSide.SELL,  # Available to Lay
+    "batl": OrderSide.SELL,  # Best available to Lay
+    "bdatl": OrderSide.SELL,  # Best display available to Lay
+}
+
+B_BID_KINDS = ("atb", "batb", "bdatb")
+B_ASK_KINDS = ("atl", "batl", "bdatl")
+B_SIDE_KINDS = B_BID_KINDS + B_ASK_KINDS
+
 
 B2N_ORDER_STREAM_SIDE = {
     "B": OrderSide.BUY,
@@ -212,28 +235,24 @@ def build_market_snapshot_messages(self, raw):
                         handicap=str(handicap or "0.0"),
                     )
                     instrument = self.instrument_provider().get_betting_instrument(**kw)
-                    # Check we only have one of [best bets / all bets]
-                    assert not ("batb" in selection and "atb" in selection) or (
-                        "batl" in selection and "atl" in selection
+                    # Check we only have one of [best bets / depth bets / all bets]
+                    bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
+                    ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atb"]
+                    assert len(bid_keys) <= 1
+                    assert len(ask_keys) <= 1
+                    snapshot = OrderBookSnapshot(
+                        level=OrderBookLevel.L2,
+                        instrument_id=instrument.id,
+                        bids=[
+                            Order(price=p, volume=q, side=OrderSide.BUY)
+                            for _, p, q in selection.get((bid_keys or ["atb"])[0], [])
+                        ],
+                        asks=[
+                            Order(price=p, volume=q, side=OrderSide.SELL)
+                            for _, p, q in selection.get((bid_keys or ["atl"])[0], [])
+                        ],
+                        timestamp=from_unix_time_ms(raw["pt"]),
                     )
-                    if "atb" in selection or "atl" in selection:
-                        snapshot = OrderBookSnapshot(
-                            instrument_id=instrument.id,
-                            bids=[(p, q) for _, p, q in selection.get("atb", [])],
-                            asks=[(p, q) for _, p, q in selection.get("atl", [])],
-                            timestamp=datetime.datetime.utcfromtimestamp(raw["pt"]),
-                        )
-                    elif "batb" in selection or "batl" in selection:
-                        snapshot = OrderBookSnapshot(
-                            instrument_id=instrument.id,
-                            bids=[(p, q) for _, p, q in selection.get("batb", [])],
-                            asks=[(p, q) for _, p, q in selection.get("batl", [])],
-                            timestamp=datetime.datetime.utcfromtimestamp(
-                                raw["pt"] / 1e3
-                            ),
-                        )
-                    else:
-                        raise KeyError("Unknown update key")
 
                     # TODO - handle orderbook snapshot
                     assert snapshot
@@ -252,18 +271,39 @@ def build_market_update_messages(self, raw):
             assert instrument
             operations = []
             assert operations
-            for side in ("atb", "atl", "batb", "batl"):
-                for price, size in runner.get(side, []):
-                    if size == 0:
-                        # TODO - handle level delete
-                        pass
-                    else:
-                        # TODO - handle level update
-                        pass
+            for side in B_SIDE_KINDS:
+                for price, volume in runner.get(side, []):
+                    operations.append(
+                        OrderBookOperation(
+                            op_type=OrderBookOperationType.delete
+                            if volume == 0
+                            else OrderBookOperationType.update,
+                            order=Order(
+                                price=price,
+                                volume=volume,
+                                side=B2N_MARKET_STREAM_SIDE[side],
+                            ),
+                        )
+                    )
+            ob_update = OrderBookOperations(
+                level=OrderBookLevel.L2,
+                instrument_id=instrument.id,
+                ops=operations,
+                timestamp=datetime.datetime.utcfromtimestamp(market["pt"] / 1e3),
+            )
+            assert ob_update
+            # TODO - emit orderbook updates
 
-            for price, size in runner.get("trd", []):
-                # TODO - handle market trade
-                pass
+            for price, volume in runner.get("trd", []):
+                trade_tick = TradeTick(
+                    instrument_id=instrument.id,
+                    price=Price(price),
+                    quantity=Quantity(volume),
+                    side=OrderSide.BUY,
+                    # TradeMatchId(trade_match_id),
+                    timestamp=from_unix_time_ms(market["pt"]),
+                )
+                assert trade_tick
 
         if market.get("marketDefinition", {}).get("status") == "CLOSED":
             for runner in market["marketDefinition"]["runners"]:

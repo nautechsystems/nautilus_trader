@@ -35,6 +35,7 @@ cdef class OrderBook:
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
+    cpdef void apply_operation(self, OrderBookOperation operation) except *
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *
     cpdef void apply_operations(self, OrderBookOperations operations) except *
     cpdef void clear_bids(self) except *
