@@ -57,7 +57,7 @@ cdef class BarType:
     cpdef str to_serializable_str(self)
 
 
-cdef class Bar(Data):
+cdef class Bar:
     cdef readonly Price open
     """The open price of the bar.\n\n:returns: `Price`"""
     cdef readonly Price high
@@ -70,13 +70,15 @@ cdef class Bar(Data):
     """The volume of the bar.\n\n:returns: `Quantity`"""
     cdef readonly bint checked
     """If the input values were integrity checked.\n\n:returns: `bool`"""
+    cdef readonly datetime timestamp
+    """If the timestamp the bar closed at.\n\n:returns: `datetime`"""
 
     @staticmethod
     cdef Bar from_serializable_str_c(str value)
     cpdef str to_serializable_str(self)
 
 
-cdef class BarData:
+cdef class BarData(Data):
     cdef readonly BarType bar_type
     """The type of the bar.\n\n:returns: `BarType`"""
     cdef readonly Bar bar

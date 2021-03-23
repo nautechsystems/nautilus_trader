@@ -31,7 +31,8 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.book import L2OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.providers import TestInstrumentProvider
@@ -320,11 +321,15 @@ class DataCacheTests(unittest.TestCase):
 
     def test_order_book_when_order_book_exists_returns_expected(self):
         # Arrange
-        order_book = OrderBook(instrument_id=ETHUSDT_BINANCE.id)
-        order_book.apply_snapshot(
+        snapshot = OrderBookSnapshot(
+            instrument_id=ETHUSDT_BINANCE.id,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
+            timestamp=UNIX_EPOCH,
         )
+
+        order_book = L2OrderBook(instrument_id=ETHUSDT_BINANCE.id)
+        order_book.apply_snapshot(snapshot)
 
         self.cache.add_order_book(order_book)
 

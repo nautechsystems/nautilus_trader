@@ -21,7 +21,6 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
@@ -29,7 +28,6 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
@@ -336,20 +334,21 @@ class MarketDataClientTests(unittest.TestCase):
     def test_handle_instrument_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_instrument_py(AUDUSD_SIM)
+        self.client._handle_data_py(AUDUSD_SIM)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
 
-    def test_handle_order_book_sends_to_data_engine(self):
-        # Arrange
-        order_book = OrderBook(instrument_id=ETHUSDT_BINANCE.id)
-
-        # Act
-        self.client._handle_order_book_py(order_book)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+    # TODO: WIP - tests for snapshots and operations
+    # def test_handle_order_book_sends_to_data_engine(self):
+    #     # Arrange
+    #     order_book = OrderBook(instrument_id=ETHUSDT_BINANCE.id)
+    #
+    #     # Act
+    #     self.client._handle_order_book_py(order_book)
+    #
+    #     # Assert
+    #     self.assertEqual(1, self.data_engine.data_count)
 
     def test_handle_quote_tick_sends_to_data_engine(self):
         # Arrange
@@ -363,7 +362,7 @@ class MarketDataClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_quote_tick_py(tick)
+        self.client._handle_data_py(tick)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
@@ -380,29 +379,32 @@ class MarketDataClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_trade_tick_py(tick)
+        self.client._handle_data_py(tick)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
 
-    def test_handle_bar_sends_to_data_engine(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            UNIX_EPOCH,
-        )
-
-        # Act
-        self.client._handle_bar_py(bar_type, bar)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+    # TODO: WIP Make BarData
+    # def test_handle_bar_sends_to_data_engine(self):
+    #     # Arrange
+    #     bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+    #
+    #     bar = Bar(
+    #         Price("1.00001"),
+    #         Price("1.00004"),
+    #         Price("1.00002"),
+    #         Price("1.00003"),
+    #         Quantity(100000),
+    #         UNIX_EPOCH,
+    #     )
+    #
+    #     BarData
+    #
+    #     # Act
+    #     self.client._handle_data_py(bar_type, bar)
+    #
+    #     # Assert
+    #     self.assertEqual(1, self.data_engine.data_count)
 
     def test_handle_instruments_sends_to_data_engine(self):
         # Arrange

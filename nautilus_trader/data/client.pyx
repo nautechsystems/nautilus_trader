@@ -131,7 +131,7 @@ cdef class DataClient:
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    def _handle_data_py(self, GenericData data):
+    def _handle_data_py(self, Data data):
         self._handle_data(data)
 
     def _handle_data_response_py(self, GenericData data, UUID correlation_id):
@@ -139,7 +139,7 @@ cdef class DataClient:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, GenericData data) except *:
+    cdef void _handle_data(self, Data data) except *:
         self._engine.process(data)
 
     cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *:
@@ -322,21 +322,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    def _handle_instrument_py(self, Instrument instrument):
-        self._handle_instrument(instrument)
-
-    def _handle_order_book_py(self, OrderBook order_book):
-        self._handle_order_book(order_book)
-
-    def _handle_quote_tick_py(self, QuoteTick tick):
-        self._handle_quote_tick(tick)
-
-    def _handle_trade_tick_py(self, TradeTick tick):
-        self._handle_trade_tick(tick)
-
-    def _handle_bar_py(self, BarType bar_type, Bar bar):
-        self._handle_bar(bar_type, bar)
-
     def _handle_instruments_py(self, list instruments, UUID correlation_id):
         self._handle_instruments(instruments, correlation_id)
 
@@ -350,18 +335,6 @@ cdef class MarketDataClient(DataClient):
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
-
-    cdef void _handle_instrument(self, Instrument instrument) except *:
-        self._engine.process(instrument)
-
-    cdef void _handle_order_book(self, OrderBook order_book) except *:
-        self._engine.process(order_book)
-
-    cdef void _handle_quote_tick(self, QuoteTick tick) except *:
-        self._engine.process(tick)
-
-    cdef void _handle_trade_tick(self, TradeTick tick) except *:
-        self._engine.process(tick)
 
     cdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
         self._engine.process(BarData(bar_type, bar))

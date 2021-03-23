@@ -41,6 +41,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -656,7 +657,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
                         # Heartbeat
                         continue
                     tick = self._parse_quote_tick(instrument_id, res)
-                    self._handle_quote_tick_py(tick)
+                    self._handle_data_py(tick)
         except asyncio.CancelledError:
             pass  # Expected cancellation
         except Exception as ex:
@@ -692,14 +693,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument_py(self, Instrument instrument) except *:
-        self._engine.process(instrument)
-
-    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *:
-        self._engine.process(tick)
-
-    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *:
-        self._engine.process(tick)
+    cpdef void _handle_data_py(self, Data data) except *:
+        self._engine.process(data)
 
     cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
         self._engine.process(BarData(bar_type, bar))

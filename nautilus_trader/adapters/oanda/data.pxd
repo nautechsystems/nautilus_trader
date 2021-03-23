@@ -23,10 +23,10 @@ from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OandaDataClient(LiveMarketDataClient):
@@ -56,9 +56,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument_py(self, Instrument instrument) except *
-    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *
-    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *
+    cpdef void _handle_data_py(self, Data data) except *
     cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *
     cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *
     cpdef void _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *

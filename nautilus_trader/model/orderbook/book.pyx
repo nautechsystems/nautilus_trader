@@ -59,6 +59,7 @@ cdef class OrderBook:
         Condition.in_range_int(level, 1, 3, "level")
 
         self.instrument_id = instrument_id
+        self.level = level
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
 
@@ -98,29 +99,34 @@ cdef class OrderBook:
         """
         self._delete(order=order)
 
-    cpdef void apply_snapshot(
-        self,
-        list bids,
-        list asks,
-    ) except *:
+    cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
         """
-        Update this orderbook from a new snapshot.
+        Apply the bulk snapshot to the order book.
 
         Parameters
         ----------
-        bids : list
-            The snapshot bids.
-        asks : list
-            The snapshot asks.
+        snapshot : OrderBookSnapshot
+            The snapshot to apply.
 
         """
         self.clear()
-        cdef list bid
-        for bid in bids:
+        for bid in snapshot.bids:
             self.add(order=Order(price=bid[0], volume=bid[1], side=OrderSide.BUY))
-        cdef list ask
-        for ask in asks:
+        for ask in snapshot.asks:
             self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
+
+    cpdef void apply_operations(self, OrderBookOperations ops) except *:
+        """
+        Apply the bulk operations to the order book.
+
+        Parameters
+        ----------
+        ops : OrderBookOperations
+            The operations to apply.
+
+        """
+        pass
+        # TODO: Implement
 
     cpdef void check_integrity(self) except *:
         """
@@ -588,26 +594,26 @@ cdef class OrderBookSnapshot(Data):
         self.asks = asks
 
 
-cdef class OrderBookActions(Data):
+cdef class OrderBookOperations(Data):
     """
-    Represents bulk actions for an `OrderBook`.
+    Represents bulk operations for an `OrderBook`.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        list actions not None,
+        list ops not None,
         datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the `OrderBookActions` class.
+        Initialize a new instance of the `OrderBookOperations` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        actions : list
-            The list of order book actions.
+        ops : list
+            The list of order book operations.
         timestamp : datetime
             The actions timestamp.
 
