@@ -46,6 +46,7 @@ from nautilus_trader.adapters.betfair.common import generate_order_status_report
 from nautilus_trader.adapters.betfair.common import generate_trades_list
 from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.common import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
@@ -115,8 +116,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     async def _connect(self):
         self._log.info("Connecting...")
-        self._client.login()
-        self._log.info("APIClient login successful.", LogColor.GREEN)
+        resp = self._client.login()
+        print(resp)
+        self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
 
         self._log.info("Loading Instruments.")
         self._instrument_provider.load_all()
@@ -126,13 +128,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         self.is_connected = True
         self._log.info("Connected.")
-
-    def _connect_order_stream(self):
-        """
-
-        :return:
-        """
-        pass
 
     cpdef void disconnect(self) except *:
         self._client.client_logout()
@@ -144,24 +139,24 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     #  use some heuristics about the avg network latency and add an optional flag for bulk inserts etc.
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        pass
+        self._loop.run_in_executor(self._submit_order, command)
 
-    # TODO How to mix async (awaiting on place_orders) with submit order?
-    # cpdef void submit_order(self, SubmitOrder command) except *:
-    #     instrument = self._instrument_provider._instruments[command.instrument_id]
-    #     kw = order_submit_to_betfair(command=command, instrument=instrument)
-    #     self._generate_order_submitted(
-    #         cl_ord_id=command.order.cl_ord_id, order_id=command.order.id, timestamp=self._clock.utc_now_c(),
-    #     )
-    #     resp = await self._loop.run_in_executor(self._client.betting.place_orders, **kw)
-    #     assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
-    #     bet_id = resp['result']['instructionReports'][0]['betId']
-    #     self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
-    #     self._generate_order_accepted(
-    #         cl_ord_id=command.order.cl_ord_id,
-    #         order_id=bet_id,
-    #         timestamp=self._clock.utc_now_c()
-    #     )
+    # TODO - Is this correct?
+    async def _submit_order(self, SubmitOrder command):
+        instrument = self._instrument_provider._instruments[command.instrument_id]
+        kw = order_submit_to_betfair(command=command, instrument=instrument)
+        self._generate_order_submitted(
+            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.utc_now_c(),
+        )
+        resp = self._client.betting.place_orders(**kw)
+        assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
+        bet_id = resp['result']['instructionReports'][0]['betId']
+        self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
+        self._generate_order_accepted(
+            cl_ord_id = command.order.cl_ord_id,
+            order_id = bet_id,
+            timestamp = self._clock.utc_now_c(),
+        )
 
     cpdef void amend_order(self, AmendOrder command) except *:
         instrument = self._instrument_provider._instruments[command.instrument_id]

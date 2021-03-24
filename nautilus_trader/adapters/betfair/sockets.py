@@ -1,3 +1,5 @@
+import asyncio
+
 from betfairlightweight import APIClient
 from betfairlightweight.filters import streaming_market_data_filter
 from betfairlightweight.filters import streaming_market_filter
@@ -39,7 +41,8 @@ class BetfairStreamClient(SocketClient):
         assert (
             self.client.session_token
         ), f"Must login to APIClient before calling connect on {self.__class__}"
-        return await super().connect()
+        await super().connect()
+        asyncio.create_task(self.start())
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID
@@ -179,6 +182,4 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         await self.send(raw=message)
 
     async def post_connection(self):
-        err = "Must call `set_subscription_message` before attempting connection"
-        assert self.subscription_message is not None, err
-        await self.send(raw=self.auth_message)
+        await self.send(raw=self.auth_message())

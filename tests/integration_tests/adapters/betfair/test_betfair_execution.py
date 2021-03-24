@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 import asyncio
 import datetime
+import os
 
 import betfairlightweight
 import pytest
@@ -22,6 +23,7 @@ from nautilus_trader.adapters.betfair.common import betfair_account_to_account_s
 from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.common import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
@@ -37,6 +39,23 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+@pytest.mark.asyncio
+@pytest.mark.skip  # Only runs locally, comment to run
+async def test_connect():
+    betfair_client = betfairlightweight.APIClient(
+        username=os.environ["BETFAIR_USERNAME"],
+        password=os.environ["BETFAIR_PW"],
+        app_key=os.environ["BETFAIR_APP_KEY"],
+        certs=os.environ["BETFAIR_CERT_DIR"],
+    )
+
+    socket = BetfairMarketStreamClient(client=betfair_client, message_handler=print)
+    await socket.connect()
+    await socket.send_subscription_message(market_ids=["1.180634014"])
+    await socket.start()
+    # TODO - mock login won't let this complete.
 
 
 def test_order_submit_to_betfair(
@@ -272,20 +291,6 @@ async def test_generate_trades_list(mocker, execution_client):
     result = await execution_client.generate_trades_list()
     assert result
     raise NotImplementedError()
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip
-async def test_connect(execution_client):
-    import os
-
-    real_client = betfairlightweight.APIClient(
-        username=os.environ["BETFAIR_USERNAME"],
-        password=os.environ["BETFAIR_PASSWORD"],
-        app_key=os.environ["BETFAIR_APP_KEY"],
-        certs=os.environ["BETFAIR_CERT_DIR"],
-    )
-    assert real_client
 
 
 # TODO - test that we can concurrently insert orders into an IN-PLAY game

@@ -156,7 +156,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         for instrument in self._instrument_provider.get_all().values():
             self._handle_instrument(instrument)
 
-        # Start market data stream
+        # Connect market data socket
         await self._stream.connect()
 
         self.is_connected = True

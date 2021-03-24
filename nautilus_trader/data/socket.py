@@ -2,13 +2,13 @@ import asyncio
 import json
 from typing import Optional
 
-from nautilus_trader.data.client import DataClient
-
 
 DEFAULT_CRLF = b"\r\n"
 
+# TODO - Need to add DataClient subclass back
 
-class SocketClient(DataClient):
+
+class SocketClient:
     def __init__(
         self,
         host,
@@ -29,6 +29,7 @@ class SocketClient(DataClient):
         :param encoding: Encoding to use when sending messages
         :param ssl: Use SSL for socket connection
         """
+        super().__init__()
         self.host = host
         self.port = port
         self.message_handler = message_handler
@@ -58,6 +59,7 @@ class SocketClient(DataClient):
             raw = json.dumps(raw)
         if not isinstance(raw, bytes):
             raw = raw.encode(self.encoding)
+        print(raw)
         self.writer.write(raw + self.crlf)
         await self.writer.drain()
 

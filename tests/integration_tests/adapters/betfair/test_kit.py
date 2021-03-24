@@ -15,6 +15,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
@@ -75,6 +76,10 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def uuid():
         return UUIDFactory().generate()
+
+    @staticmethod
+    def account_id() -> AccountId:
+        return AccountId(BETFAIR_VENUE.value, "000")
 
     @staticmethod
     def data_engine(event_loop, clock, live_logger, portfolio):

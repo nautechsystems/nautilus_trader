@@ -12,11 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import asyncio
 import json
+import os
 
+import betfairlightweight
 import pytest
 
+from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
 from tests import TESTS_PACKAGE_ROOT
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -25,13 +27,26 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
 
 
-@pytest.mark.local
 @pytest.mark.asyncio
+@pytest.mark.skip  # Only runs locally, comment to run
 async def test_betfair_data_client(betfair_data_client, data_engine):
     """ Local test only, ensure we can connect to betfair and receive some market data """
-    # TODO - implement
-    betfair_data_client.connect()
-    await asyncio.sleep(1)
+    betfair_client = betfairlightweight.APIClient(
+        username=os.environ["BETFAIR_USERNAME"],
+        password=os.environ["BETFAIR_PW"],
+        app_key=os.environ["BETFAIR_APP_KEY"],
+        certs=os.environ["BETFAIR_CERT_DIR"],
+    )
+    betfair_client.login()
+
+    def printer(x):
+        print(x)
+
+    # TODO - mock betfairlightweight.APIClient.login won't let this pass, need to comment out to run
+    socket = BetfairMarketStreamClient(client=betfair_client, message_handler=printer)
+    await socket.connect()
+    await socket.send_subscription_message(market_ids=["1.180634014"])
+    await socket.start()
 
 
 def test_individual_market_subscriptions():
