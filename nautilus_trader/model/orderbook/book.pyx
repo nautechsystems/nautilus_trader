@@ -21,6 +21,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.orderbook_op cimport OrderBookOperationType
+from nautilus_trader.model.c_enums.orderbook_op cimport OrderBookOperationTypeParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -640,6 +642,12 @@ cdef class OrderBookSnapshot(Data):
         self.bids = bids
         self.asks = asks
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"'{self.instrument_id}', "
+                f"bids={self.bids}, "
+                f"asks={self.asks})")
+
 
 cdef class OrderBookOperations(Data):
     """
@@ -674,6 +682,9 @@ cdef class OrderBookOperations(Data):
         self.level = level
         self.ops = ops
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self.instrument_id}', {self.ops})"
+
 
 cdef class OrderBookOperation:
     """
@@ -682,7 +693,7 @@ cdef class OrderBookOperation:
 
     def __init__(
         self,
-        OrderBookOperationType op,
+        OrderBookOperationType op_type,
         Order order not None,
     ):
         """
@@ -690,11 +701,16 @@ cdef class OrderBookOperation:
 
         Parameters
         ----------
-        op : OrderBookOperationType
+        op_type : OrderBookOperationType
             The type of operation (ADD, UPDATED, DELETE).
         order : Order
             The order to apply.
 
         """
-        self.op = op
+        self.op_type = op_type
         self.order = order
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"{OrderBookOperationTypeParser.to_str(self.op_type)}, "
+                f"order={self.order})")
