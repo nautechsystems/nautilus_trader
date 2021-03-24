@@ -34,9 +34,13 @@ cdef inline double unix_time() nogil:
     return _PyTime_AsSecondsDouble(tic)
 
 
-cdef inline double unix_time_ms() nogil:
-    cdef:
-        _PyTime_t tic
+cdef inline long unix_time_ms() nogil:
+    return <long>(unix_time() * 1000)
 
-    tic = _PyTime_GetSystemClock()
-    return _PyTime_AsSecondsDouble(tic) * 1000
+
+cdef inline long unix_time_us() nogil:
+    return <long>(unix_time() * 1_000_000)
+
+
+cdef inline long unix_time_ns() nogil:
+    return <long>(unix_time() * 1_000_000_000)
