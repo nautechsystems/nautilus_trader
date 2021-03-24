@@ -52,7 +52,7 @@ class PerformanceHarness:
 
         Returns
         -------
-        float
+        double
 
         """
         if runs < 1:
@@ -91,7 +91,7 @@ class PerformanceHarness:
 
         Returns
         -------
-        int
+        int32
 
         """
         size = get_size_of(x)
@@ -113,7 +113,7 @@ def get_size_of(obj) -> int:
 
     Returns
     -------
-    int
+    int32
         The object size in bytes.
 
     """

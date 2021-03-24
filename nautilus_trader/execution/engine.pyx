@@ -30,6 +30,8 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
@@ -40,7 +42,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.time cimport unix_time
+from nautilus_trader.core.time cimport unix_time_us
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -400,7 +402,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef double ts = unix_time()
+        cdef int64_t ts = unix_time_us()
 
         self.cache.cache_accounts()
         self.cache.cache_orders()
@@ -409,8 +411,7 @@ cdef class ExecutionEngine(Component):
         self.cache.check_integrity()
         self._set_position_id_counts()
 
-        cdef long total_us = round((unix_time() - ts) * 1000000)
-        self._log.info(f"Loaded cache in {total_us}μs.")
+        self._log.info(f"Loaded cache in {(unix_time_us() - ts)}μs.")
 
         # Update portfolio
         for account in self.cache.accounts():
@@ -583,7 +584,7 @@ cdef class ExecutionEngine(Component):
             cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self._handle_event(invalid)
