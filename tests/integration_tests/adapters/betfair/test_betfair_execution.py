@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 import asyncio
 import datetime
-import json
 
+import betfairlightweight
 import pytest
 
 from nautilus_trader.adapters.betfair.common import betfair_account_to_account_state
@@ -36,11 +36,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
-from tests import TESTS_PACKAGE_ROOT
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-
-
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
 
 
 def test_order_submit_to_betfair(
@@ -196,7 +192,7 @@ def _prefill_order_id_to_cl_ord_id(raw):
 
 @pytest.mark.asyncio
 async def test_order_stream_full_image(mocker, execution_client, exec_engine):
-    raw = json.loads(open(TEST_PATH + "streaming_ocm_FULL_IMAGE.json").read())
+    raw = BetfairTestStubs.streaming_ocm_FULL_IMAGE()
     mocker.patch.object(
         execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
     )
@@ -208,7 +204,7 @@ async def test_order_stream_full_image(mocker, execution_client, exec_engine):
 
 @pytest.mark.asyncio
 async def test_order_stream_empty_image(execution_client, exec_engine):
-    raw = json.loads(open(TEST_PATH + "streaming_ocm_EMPTY_IMAGE.json").read())
+    raw = BetfairTestStubs.streaming_ocm_EMPTY_IMAGE()
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
     assert len(exec_engine.events) == 0
@@ -216,7 +212,7 @@ async def test_order_stream_empty_image(execution_client, exec_engine):
 
 @pytest.mark.asyncio
 async def test_order_stream_new_full_image(mocker, execution_client, exec_engine):
-    raw = json.loads(open(TEST_PATH + "streaming_ocm_NEW_FULL_IMAGE.json").read())
+    raw = BetfairTestStubs.streaming_ocm_NEW_FULL_IMAGE()
     mocker.patch.object(
         execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
     )
@@ -229,7 +225,7 @@ async def test_order_stream_new_full_image(mocker, execution_client, exec_engine
 @pytest.mark.asyncio
 @pytest.mark.skip
 async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
-    raw = json.loads(open(TEST_PATH + "streaming_ocm_SUB_IMAGE.json").read())
+    raw = BetfairTestStubs.streaming_ocm_SUB_IMAGE()
     mocker.patch.object(
         execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
     )
@@ -240,7 +236,8 @@ async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
 
 @pytest.mark.asyncio
 async def test_order_stream_update(mocker, execution_client, exec_engine):
-    raw = json.loads(open(TEST_PATH + "streaming_ocm_UPDATE.json").read())
+    raw = BetfairTestStubs.streaming_ocm_UPDATE()
+
     mocker.patch.object(
         execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
     )
@@ -256,11 +253,11 @@ async def test_generate_order_status_report(mocker, execution_client):
     # Betfair client login
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_current_orders",
-        return_value=BetfairTestStubs.resp_current_orders(),
+        return_value=BetfairTestStubs.current_orders(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_current_orders",
-        return_value=BetfairTestStubs.resp_current_orders(),
+        return_value=BetfairTestStubs.current_orders(),
     )
     result = await execution_client.generate_order_status_report()
     assert result
@@ -275,6 +272,20 @@ async def test_generate_trades_list(mocker, execution_client):
     result = await execution_client.generate_trades_list()
     assert result
     raise NotImplementedError()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skip
+async def test_connect(execution_client):
+    import os
+
+    real_client = betfairlightweight.APIClient(
+        username=os.environ["BETFAIR_USERNAME"],
+        password=os.environ["BETFAIR_PASSWORD"],
+        app_key=os.environ["BETFAIR_APP_KEY"],
+        certs=os.environ["BETFAIR_CERT_DIR"],
+    )
+    assert real_client
 
 
 # TODO - test that we can concurrently insert orders into an IN-PLAY game

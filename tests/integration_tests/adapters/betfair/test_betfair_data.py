@@ -12,12 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
 import json
 
 import pytest
 
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
 from tests import TESTS_PACKAGE_ROOT
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
@@ -28,7 +30,8 @@ TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/
 async def test_betfair_data_client(betfair_data_client, data_engine):
     """ Local test only, ensure we can connect to betfair and receive some market data """
     # TODO - implement
-    assert betfair_data_client
+    betfair_data_client.connect()
+    await asyncio.sleep(1)
 
 
 def test_individual_market_subscriptions():
@@ -60,7 +63,7 @@ def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
 
 
 def test_market_resub_delta(betfair_data_client, data_engine):
-    update = json.loads(open(TEST_PATH + "streaming_mcm_RESUB_DELTA.json").read())
+    update = BetfairTestStubs.streaming_mcm_RESUB_DELTA()
     betfair_data_client._on_market_update(update=update)
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["OrderBookOperations"] * 284
@@ -68,7 +71,7 @@ def test_market_resub_delta(betfair_data_client, data_engine):
 
 
 def test_market_update(betfair_data_client, data_engine):
-    update = json.loads(open(TEST_PATH + "streaming_mcm_UPDATE.json").read())
+    update = BetfairTestStubs.streaming_mcm_UPDATE()
     betfair_data_client._on_market_update(update=update)
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["OrderBookOperations"] * 1
@@ -80,7 +83,7 @@ def test_market_update(betfair_data_client, data_engine):
 
 @pytest.mark.skip  # TODO - waiting for market status implementation
 def test_market_update_md(betfair_data_client, data_engine):
-    update = json.loads(open(TEST_PATH + "streaming_mcm_UPDATE_md.json").read())
+    update = BetfairTestStubs.streaming_mcm_UPDATE_md()
     betfair_data_client._on_market_update(update=update)
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["OrderBookSnapshot"] * 7
@@ -89,7 +92,7 @@ def test_market_update_md(betfair_data_client, data_engine):
 
 @pytest.mark.skip  # We don't do anything with traded volume at this stage
 def test_market_update_tv(betfair_data_client, data_engine):
-    update = json.loads(open(TEST_PATH + "streaming_mcm_UPDATE_tv.json").read())
+    update = BetfairTestStubs.streaming_mcm_UPDATE_tv()
     betfair_data_client._on_market_update(update=update)
     result = [type(event).__name__ for event in data_engine.events]
     expected = [] * 7

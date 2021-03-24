@@ -39,25 +39,25 @@ def betfairlightweight_mocks(mocker):
     mock_list_nav = mocker.patch(
         "betfairlightweight.endpoints.navigation.Navigation.list_navigation"
     )
-    mock_list_nav.return_value = BetfairTestStubs.resp_navigation()
+    mock_list_nav.return_value = BetfairTestStubs.navigation()
 
     # Betting.list_market_catalogue
     mock_market_catalogue = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_market_catalogue"
     )
-    mock_market_catalogue.return_value = BetfairTestStubs.resp_market_catalogue()
+    mock_market_catalogue.return_value = BetfairTestStubs.market_catalogue()
 
     # Account.get_account_details
     mock_account_detail = mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_details"
     )
-    mock_account_detail.return_value = BetfairTestStubs.resp_account_detail()
+    mock_account_detail.return_value = BetfairTestStubs.account_detail()
 
     # Account.get_account_funds
     mock_account_funds = mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_funds"
     )
-    mock_account_funds.return_value = BetfairTestStubs.resp_account_funds()
+    mock_account_funds.return_value = BetfairTestStubs.account_funds_no_exposure()
 
     # Streaming endpoint
     mocker.patch(

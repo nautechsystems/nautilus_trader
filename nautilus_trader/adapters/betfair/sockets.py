@@ -89,7 +89,8 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         self.subscription_message = None
         super().__init__(client, message_handler, **kwargs)
 
-    def set_market_subscriptions(
+    # TODO - Add support for initial_clk/clk reconnection
+    async def send_subscription_message(
         self,
         market_ids: list = None,
         betting_types: list = None,
@@ -100,6 +101,11 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         venues: list = None,
         country_codes: list = None,
         race_types: list = None,
+        initial_clk: str = None,
+        clk: str = None,
+        conflate_ms: int = None,
+        heartbeat_ms: int = None,
+        segmentation_enabled: bool = True,
         subscribe_book_updates=True,
         subscribe_trade_updates=True,
     ):
@@ -159,32 +165,6 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             fields=data_fields,
         )
 
-        self._set_subscription_message(
-            market_filter=market_filter, market_data_filter=market_data_filter
-        )
-
-    # TODO - Add support for initial_clk/clk reconnection
-    def _set_subscription_message(
-        self,
-        market_filter: dict,
-        market_data_filter: dict,
-        initial_clk: str = None,
-        clk: str = None,
-        conflate_ms: int = None,
-        heartbeat_ms: int = None,
-        segmentation_enabled: bool = True,
-    ):
-        """
-        Market subscription request.
-        :param dict market_filter: Market filter
-        :param dict market_data_filter: Market data filter
-        :param str initial_clk: Sequence token for reconnect
-        :param str clk: Sequence token for reconnect
-        :param int conflate_ms: conflation rate (bounds are 0 to 120000)
-        :param int heartbeat_ms: heartbeat rate (500 to 5000)
-        :param bool segmentation_enabled: allow the server to send large sets of data
-        in segments, instead of a single block
-        """
         message = {
             "op": "marketSubscription",
             "id": self.unique_id,
@@ -196,11 +176,9 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             "heartbeatMs": heartbeat_ms,
             "segmentationEnabled": segmentation_enabled,
         }
-
-        self.subscription_message = message
+        await self.send(raw=message)
 
     async def post_connection(self):
         err = "Must call `set_subscription_message` before attempting connection"
         assert self.subscription_message is not None, err
         await self.send(raw=self.auth_message)
-        await self.send(raw=self.subscription_message)
