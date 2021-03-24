@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import pandas as pd
 import pytest
 
@@ -5,6 +7,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import load_instruments
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.common.clock import LiveClock
@@ -22,6 +25,9 @@ from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.mocks import MockLiveExecutionEngine
+
+
+load_instruments = lru_cache()(load_instruments)
 
 
 @pytest.fixture(autouse=True)
@@ -162,6 +168,7 @@ def betting_instrument(provider):
         selection_handicap="0.0",
         selection_id="50214",
         selection_name="Kansas City Chiefs",
+        currency="GBP",
     )
 
 

@@ -191,16 +191,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     handicap=str(selection.get("hc", "0.0")),
                 )
                 for order in selection.get("uo", []):
-                    print(self.order_id_to_cl_ord_id)
                     cl_ord_id = self.order_id_to_cl_ord_id[order['id']]
                     order_id = OrderId(order["id"])
-                    print("order:", order)
                     execution_id = ExecutionId(str(order["id"]))
                     if (
                             order["status"] == "EC" and order["sm"] != 0
                     ):
                         # Execution complete, The entire order has traded or been cancelled
-                        print("GEN", self.get_account_currency())
                         self._generate_order_filled(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
@@ -213,7 +210,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             avg_px=order['avp'],
                             commission_amount=Decimal(0.0),
                             commission_currency=self.get_account_currency(),
-                            liquidity_side=LiquiditySide.NONE,
+                            liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
                             timestamp=from_unix_time_ms(order['md']),
                         )
                     elif order["sm"] == 0 and any([order[x] != 0 for x in ("sc", "sl", "sv")]):
@@ -255,9 +252,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                         self._log.error("Unknown order state: {order}")
                         # raise KeyError("Unknown order type", order, None)
 
-                # TODO - These should be covered by filled orders above, but potentially we should add a checksum against
                 # these values?
                 for trade in selection.get("mb", []):
+                    # TODO - we can get a matched back without full details. Need to match ourselves??
                     pass
                 for trade in selection.get("ml", []):
                     pass

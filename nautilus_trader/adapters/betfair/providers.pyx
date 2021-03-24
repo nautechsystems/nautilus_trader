@@ -103,11 +103,9 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         return list(self._instruments.values())
 
     cpdef str get_account_currency(self):
-        print([self._account_currency])
         if self._account_currency is None:
             detail = self._client.account.get_account_details()
             self._account_currency = detail['currencyCode']
-        print([self._account_currency])
         return self._account_currency
 
 
