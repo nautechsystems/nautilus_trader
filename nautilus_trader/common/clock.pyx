@@ -29,6 +29,9 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport UNIX_EPOCH
 from nautilus_trader.core.time cimport unix_time
+from nautilus_trader.core.time cimport unix_time_ms
+from nautilus_trader.core.time cimport unix_time_ns
+from nautilus_trader.core.time cimport unix_time_us
 
 
 cdef class Clock:
@@ -99,17 +102,6 @@ cdef class Clock:
         Condition.not_none(time, "time")
 
         return self.utc_now_c() - time
-
-    cpdef double unix_time(self):
-        """
-        Return the current Unix time in seconds from the system clock.
-
-        Returns
-        -------
-        double
-
-        """
-        return unix_time()
 
     cpdef list timer_names(self):
         """
@@ -537,6 +529,50 @@ cdef class LiveClock(Clock):
         # in UTC, converting to localtime only when generating output to be read
         # by humans.
         return datetime.now(tz=self._utc)
+
+    cpdef double unix_time(self) except *:
+        """
+        Return the current Unix time in seconds from the system clock.
+
+        Returns
+        -------
+        double
+
+        """
+        return unix_time()
+
+    cpdef long unix_time_ms(self) except *:
+        """
+        Return the current Unix time in milliseconds from the system clock.
+
+        Returns
+        -------
+        long
+
+        """
+        return unix_time_ms()
+
+    cpdef long unix_time_us(self) except *:
+        """
+        Return the current Unix time in microseconds from the system clock.
+
+        Returns
+        -------
+        long
+
+        """
+        return unix_time_us()
+
+    cpdef long unix_time_ns(self) except *:
+        """
+        Return the current Unix time in nanoseconds from the system clock.
+
+        Returns
+        -------
+        long
+
+        """
+        return unix_time_ns()
 
     cdef Timer _create_timer(
         self,

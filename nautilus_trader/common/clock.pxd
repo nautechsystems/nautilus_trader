@@ -45,7 +45,6 @@ cdef class Clock:
     cdef datetime utc_now_c(self)
     cpdef datetime local_now(self, tzinfo tz)
     cpdef timedelta delta(self, datetime time)
-    cpdef double unix_time(self)
     cpdef list timer_names(self)
     cpdef Timer timer(self, str name)
     cpdef void register_default_handler(self, handler: callable) except *
@@ -87,6 +86,12 @@ cdef class TestClock(Clock):
 cdef class LiveClock(Clock):
     cdef object _loop
     cdef tzinfo _utc
+
+    cpdef double unix_time(self) except *
+    cpdef long unix_time_ms(self) except *
+    cpdef long unix_time_us(self) except *
+    cpdef long unix_time_ns(self) except *
+
     cpdef void _raise_time_event(self, LiveTimer timer) except *
 
     cdef inline void _handle_time_event(self, TimeEvent event) except *
