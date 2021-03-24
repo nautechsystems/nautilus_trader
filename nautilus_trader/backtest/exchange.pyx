@@ -488,7 +488,7 @@ cdef class SimulatedExchange:
             balances_locked=list(self.account_balances_locked.values()),
             info=info,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            event_timestamp=self._clock.utc_now(),
         )
 
     cdef inline void _submit_order(self, Order order) except *:
@@ -496,9 +496,9 @@ cdef class SimulatedExchange:
         cdef OrderSubmitted submitted = OrderSubmitted(
             self.exec_client.account_id,
             order.cl_ord_id,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(submitted)
@@ -509,9 +509,9 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             order.cl_ord_id,
             self._generate_order_id(order.instrument_id),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(accepted)
@@ -521,10 +521,10 @@ cdef class SimulatedExchange:
         cdef OrderRejected rejected = OrderRejected(
             self.exec_client.account_id,
             order.cl_ord_id,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(rejected)
@@ -578,9 +578,9 @@ cdef class SimulatedExchange:
             order.account_id,
             order.cl_ord_id,
             order.id,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(cancelled)
@@ -603,17 +603,17 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             cl_ord_id,
             order_id,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             response,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(cancel_reject)
 
     cdef inline void _expire_order(self, PassiveOrder order) except *:
-        Condition.true(order.expire_time <= self._clock.utc_now_c(), "order expire time greater than time now")
+        Condition.true(order.expire_time <= self._clock.utc_now(), "order expire time greater than time now")
 
         # Generate event
         cdef OrderExpired expired = OrderExpired(
@@ -622,7 +622,7 @@ cdef class SimulatedExchange:
             order.id,
             order.expire_time,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(expired)
@@ -646,9 +646,9 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(triggered)
@@ -846,9 +846,9 @@ cdef class SimulatedExchange:
             order.id,
             qty,
             price,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(amended)
@@ -1013,9 +1013,9 @@ cdef class SimulatedExchange:
             instrument.is_inverse,
             commission,
             liquidity_side,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         # Calculate potential PnL
@@ -1121,10 +1121,10 @@ cdef class SimulatedExchange:
         cdef OrderRejected rejected = OrderRejected(
             self.exec_client.account_id,
             order.cl_ord_id,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             f"OCO order rejected from {other_oco}",
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(rejected)
@@ -1140,9 +1140,9 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self.exec_client.handle_event(cancelled)

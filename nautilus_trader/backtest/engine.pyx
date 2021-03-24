@@ -148,10 +148,10 @@ cdef class BacktestEngine:
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self._clock = LiveClock()
-        self.created_time = self._clock.utc_now_c()
+        self.created_time = self._clock.utc_now()
 
         self._test_clock = TestClock()
-        self._test_clock.set_time(self._clock.utc_now_c())
+        self._test_clock.set_time(self._clock.utc_now())
         self._uuid_factory = UUIDFactory()
 
         self.analyzer = PerformanceAnalyzer()
@@ -212,7 +212,7 @@ cdef class BacktestEngine:
             exec_db.flush()
 
         # Setup execution cache
-        self._test_clock.set_time(self._clock.utc_now_c())  # For logging consistency
+        self._test_clock.set_time(self._clock.utc_now())  # For logging consistency
 
         self.portfolio = Portfolio(
             clock=self._test_clock,
@@ -286,7 +286,7 @@ cdef class BacktestEngine:
 
         self._exchanges = {}
 
-        self._test_clock.set_time(self._clock.utc_now_c())  # For logging consistency
+        self._test_clock.set_time(self._clock.utc_now())  # For logging consistency
 
         self.iteration = 0
 
@@ -532,7 +532,7 @@ cdef class BacktestEngine:
             Condition.not_empty(strategies, "strategies")
             Condition.list_type(strategies, TradingStrategy, "strategies")
 
-        cdef datetime run_started = self._clock.utc_now_c()
+        cdef datetime run_started = self._clock.utc_now()
 
         # Setup logging
         self._test_logger.clear_log_store()
@@ -585,7 +585,7 @@ cdef class BacktestEngine:
 
         self.trader.stop()
 
-        self._log_footer(run_started, self._clock.utc_now_c(), start, stop)
+        self._log_footer(run_started, self._clock.utc_now(), start, stop)
         if print_log_store:
             self.print_log_store()
 

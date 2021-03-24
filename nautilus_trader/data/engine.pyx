@@ -1238,7 +1238,7 @@ cdef class DataEngine(Component):
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now_c(),
+            request_timestamp=self._clock.utc_now(),
         )
 
         # Send request directly to handler as we're already inside engine

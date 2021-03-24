@@ -501,7 +501,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
             cl_ord_id=order.cl_ord_id,
-            timestamp=self._clock.utc_now_c(),
+            timestamp=self._clock.utc_now(),
         )
 
         try:
@@ -518,7 +518,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._generate_order_rejected(
                 cl_ord_id=order.cl_ord_id,
                 reason=str(ex),
-                timestamp=self._clock.utc_now_c(),
+                timestamp=self._clock.utc_now(),
             )
 
     async def _cancel_order(self, ClientOrderId cl_ord_id):
@@ -598,7 +598,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             balances_locked,
             {},
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.utc_now(),
         )
 
         self._handle_event(account_state)
@@ -756,7 +756,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
             cl_ord_id=order.cl_ord_id,
-            timestamp=self._clock.utc_now_c(),
+            timestamp=self._clock.utc_now(),
         )
 
         try:
@@ -773,7 +773,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             self._generate_order_rejected(
                 cl_ord_id=order.cl_ord_id,
                 reason=str(ex),
-                timestamp=self._clock.utc_now_c(),
+                timestamp=self._clock.utc_now(),
             )
 
 
@@ -861,7 +861,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
             cl_ord_id=order.cl_ord_id,
-            timestamp=self._clock.utc_now_c(),
+            timestamp=self._clock.utc_now(),
         )
 
         try:
@@ -878,5 +878,5 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             self._generate_order_rejected(
                 cl_ord_id=order.cl_ord_id,
                 reason=str(ex),
-                timestamp=self._clock.utc_now_c(),
+                timestamp=self._clock.utc_now(),
             )
