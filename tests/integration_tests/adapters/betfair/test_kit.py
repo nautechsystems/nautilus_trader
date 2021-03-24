@@ -186,3 +186,15 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def resp_account_funds():
         return orjson.loads(open(TEST_PATH + "account_funds_no_exposure.json").read())
+
+    @staticmethod
+    def resp_cleared_orders():
+        return orjson.loads(open(TEST_PATH + "cleared_orders.json").read())
+
+    @staticmethod
+    def resp_current_orders():
+        return orjson.loads(open(TEST_PATH + "current_orders.json").read())
+
+    @staticmethod
+    def resp_current_orders_empty():
+        return orjson.loads(open(TEST_PATH + "current_orders_empty.json").read())

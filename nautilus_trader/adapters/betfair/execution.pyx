@@ -18,11 +18,14 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 
 import betfairlightweight
+from betfairlightweight import APIClient
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+
 from nautilus_trader.core.datetime import from_unix_time_ms
+
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
@@ -33,13 +36,14 @@ from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvide
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import generate_order_status_report
+from nautilus_trader.adapters.betfair.common import generate_trades_list
 from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
@@ -173,7 +177,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef str get_account_currency(self):
         return self._instrument_provider.get_account_currency()
 
-    # -- Instrument helpers ---------------------------------------------------------
+    # -- Debugging ---------------------------------------------------------
+
+    cpdef object client(self):
+        return self._client
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
@@ -266,12 +273,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
     async def generate_order_status_report(self) -> Optional[OrderStatusReport]:
-        # TODO - return self._client.betting.list_current_orders()
-        raise NotImplementedError
+        return await generate_order_status_report(self)
 
     async def generate_trades_list(self, order_id: OrderId, symbol: Symbol,  since: Optional[datetime]=None) -> List[ExecutionReport]:
-        # TODO - return self._client.betting.list_cleared_orders()
-        raise NotImplementedError
+        return await generate_trades_list(self)
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

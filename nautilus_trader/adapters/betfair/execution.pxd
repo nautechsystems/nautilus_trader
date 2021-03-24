@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from betfairlightweight import APIClient
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 
@@ -27,6 +28,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     # cdef inline void _log_betfair_error(self, ex, str method_name) except *
     cpdef BetfairInstrumentProvider instrument_provider(self)
+    cpdef object client(self)
     cpdef str get_account_currency(self)
 
     # -- EVENTS ----------------------------------------------------------------------------------------

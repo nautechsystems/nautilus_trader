@@ -37,6 +37,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
 from tests import TESTS_PACKAGE_ROOT
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
@@ -248,9 +249,37 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
     assert len(exec_engine.events) == 2
 
 
-@pytest.mark.local()
+# TODO
+@pytest.mark.asyncio
+@pytest.mark.skip
+async def test_generate_order_status_report(mocker, execution_client):
+    # Betfair client login
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.list_current_orders",
+        return_value=BetfairTestStubs.resp_current_orders(),
+    )
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.list_current_orders",
+        return_value=BetfairTestStubs.resp_current_orders(),
+    )
+    result = await execution_client.generate_order_status_report()
+    assert result
+    raise NotImplementedError()
+
+
+# TODO
+@pytest.mark.asyncio
+@pytest.mark.skip
+async def test_generate_trades_list(mocker, execution_client):
+    mocker.patch("betfairlightweight.endpoints.betting.Betting.list_cleared_orders")
+    result = await execution_client.generate_trades_list()
+    assert result
+    raise NotImplementedError()
+
+
+# TODO - test that we can concurrently insert orders into an IN-PLAY game
+@pytest.mark.skip()
 def test_live_order_insert_concurrent():
-    # TODO
     pass
 
 

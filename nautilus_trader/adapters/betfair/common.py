@@ -1,5 +1,6 @@
 import datetime
 import itertools
+from typing import List, Optional
 
 from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
@@ -8,6 +9,8 @@ from betfairlightweight.filters import replace_instruction
 import numpy as np
 
 from nautilus_trader.core.datetime import from_unix_time_ms
+from nautilus_trader.execution.messages import ExecutionReport
+from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
@@ -18,6 +21,8 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Money
@@ -322,3 +327,25 @@ def on_market_update(self, raw):
             return build_market_snapshot_messages(self, raw)
         else:
             return build_market_update_messages(self, raw)
+
+
+# TODO - Need to handle pagination > 1000 orders
+async def generate_order_status_report(self) -> Optional[OrderStatusReport]:
+    return [
+        # OrderStatusReport(
+        #     cl_ord_id=ClientOrderId(),
+        #     order_id=OrderId(),
+        #     order_stat=OrderState(),
+        #     filled_qty=Quantity(),
+        #     timestamp=from_unix_time_ms(),
+        # )
+        # for order in self.client().betting.list_current_orders()["currentOrders"]
+    ]
+
+
+async def generate_trades_list(
+    self, order_id: OrderId, symbol: Symbol, since: datetime = None
+) -> List[ExecutionReport]:
+    # filled = self.client().betting.list_cleared_orders()
+    # return [ExecutionReport()]
+    return []
