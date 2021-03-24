@@ -19,6 +19,7 @@ from nautilus_trader.live.execution_client cimport LiveExecutionClient
 cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef object _stream
+    cdef str _account_currency
     cpdef public dict order_id_to_cl_ord_id
 
 
@@ -26,6 +27,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     # cdef inline void _log_betfair_error(self, ex, str method_name) except *
     cpdef BetfairInstrumentProvider instrument_provider(self)
+    cpdef str get_account_currency(self)
 
     # -- EVENTS ----------------------------------------------------------------------------------------
 

@@ -51,7 +51,7 @@ def test_load_instruments(market_metadata):
     instruments = [
         instrument
         for metadata in market_metadata.values()
-        for instrument in make_instrument(metadata)
+        for instrument in make_instrument(metadata, currency="GBP")
     ]
     assert len(instruments) == 172535
 

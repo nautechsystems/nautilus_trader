@@ -253,6 +253,7 @@ def build_market_snapshot_messages(self, raw):
                         ],
                         timestamp=from_unix_time_ms(raw["pt"]),
                     )
+                    self._handle_data(snapshot)
 
                     # TODO - handle orderbook snapshot
                     assert snapshot
@@ -304,6 +305,7 @@ def build_market_update_messages(self, raw):
                     timestamp=from_unix_time_ms(market["pt"]),
                 )
                 assert trade_tick
+                self.on_trade_tick(trade_tick)
 
         if market.get("marketDefinition", {}).get("status") == "CLOSED":
             for runner in market["marketDefinition"]["runners"]:

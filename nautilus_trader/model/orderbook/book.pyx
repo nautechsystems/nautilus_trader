@@ -121,11 +121,11 @@ cdef class OrderBook:
         self._delete(order=order)
 
     cpdef void apply_operation(self, OrderBookOperation operation) except *:
-        if operation.op_type == OrderBookOperationType.add:
+        if operation.type == OrderBookOperationType.ADD:
             self.add(order=operation.order)
-        elif operation.op_type == OrderBookOperationType.update:
+        elif operation.type == OrderBookOperationType.UPDATE:
             self.update(order=operation.order)
-        elif operation.op_type == OrderBookOperationType.delete:
+        elif operation.type == OrderBookOperationType.DELETE:
             self.delete(order=operation.order)
 
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:

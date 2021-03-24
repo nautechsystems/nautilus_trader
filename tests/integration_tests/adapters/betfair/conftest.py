@@ -26,6 +26,8 @@ from tests.test_kit.mocks import MockLiveExecutionEngine
 
 @pytest.fixture(autouse=True)
 def betfairlightweight_mocks(mocker):
+    # TODO - Mocks not currently working in TestKit, need to stay here
+
     # Betfair client login
     mocker.patch("betfairlightweight.endpoints.login.Login.__call__")
 
@@ -129,7 +131,6 @@ def data_engine(event_loop, clock, live_logger, portfolio):
 
 
 @pytest.fixture()
-@pytest.mark.asyncio()
 def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
     database = BypassExecutionDatabase(trader_id=trader_id, logger=live_logger)
     return MockLiveExecutionEngine(

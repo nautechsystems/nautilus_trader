@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 import datetime
 import json
 
@@ -25,6 +25,7 @@ from nautilus_trader.adapters.betfair.common import order_submit_to_betfair
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -178,6 +179,11 @@ def test_account_statement(betfair_client, uuid):
     assert result == expected
 
 
+def test_get_account_currency(execution_client):
+    currency = execution_client.get_account_currency()
+    assert currency == AUD
+
+
 def _prefill_order_id_to_cl_ord_id(raw):
     order_ids = [
         update["id"]
@@ -185,22 +191,25 @@ def _prefill_order_id_to_cl_ord_id(raw):
         for order in market["orc"]
         for update in order["uo"]
     ]
-    return {i: oid for i, oid in enumerate(order_ids)}
+    return {oid: ClientOrderId(str(i)) for i, oid in enumerate(order_ids)}
 
 
-def test_order_stream_full_image(mocker, execution_client, exec_engine):
+@pytest.mark.asyncio
+async def test_order_stream_full_image(mocker, execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_FULL_IMAGE.json").read())
     mocker.patch.object(
         execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
     )
+    print("test", execution_client.order_id_to_cl_ord_id)
     execution_client.handle_order_stream_update(raw=raw)
+    await asyncio.sleep(0)
     assert exec_engine.events == []
 
 
 def test_order_stream_empty_image(execution_client, exec_engine):
     raw = json.loads(open(TEST_PATH + "streaming_ocm_EMPTY_IMAGE.json").read())
     execution_client.handle_order_stream_update(raw=raw)
-    assert exec_engine.commands == []
+    assert exec_engine.events == []
 
 
 def test_order_stream_new_full_image(execution_client, exec_engine):

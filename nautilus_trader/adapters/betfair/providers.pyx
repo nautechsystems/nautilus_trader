@@ -67,7 +67,9 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._load_instruments()
 
     cdef void _load_instruments(self) except *:
-        cdef list instruments = load_instruments(client=self._client, market_filter=self.market_filter)
+        cdef list instruments = load_instruments(
+            client=self._client, currency=self.get_account_currency(), market_filter=self.market_filter
+        )
 
         for ins in instruments:
             self._instruments[ins.id] = ins
@@ -100,6 +102,14 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._assert_loaded_instruments()
         return list(self._instruments.values())
 
+    cpdef str get_account_currency(self):
+        print([self._account_currency])
+        if self._account_currency is None:
+            detail = self._client.account.get_account_details()
+            self._account_currency = detail['currencyCode']
+        print([self._account_currency])
+        return self._account_currency
+
 
 def load_markets(client: APIClient, market_filter=None):
     navigation = client.navigation.list_navigation()
@@ -128,7 +138,7 @@ def load_markets_metadata(client: APIClient, markets: List[Dict]) -> Dict:
     return all_results
 
 
-def make_instrument(market_definition: Dict) -> BettingInstrument:
+def make_instrument(market_definition: Dict, currency) -> BettingInstrument:
     def _parse_date(s):
         # pd.Timestamp is ~5x faster than datetime.datetime.isoformat here.
         return pd.Timestamp(
@@ -155,15 +165,16 @@ def make_instrument(market_definition: Dict) -> BettingInstrument:
             selection_id=str(runner["selectionId"]),
             selection_name=runner.get("runnerName"),
             selection_handicap=str(runner.get("hc", runner.get("handicap", ""))),
+            currency=currency,
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
 
 
-def load_instruments(client: APIClient, market_filter=None):
+def load_instruments(client: APIClient, currency, market_filter=None):
     markets = load_markets(client, market_filter=market_filter)
     market_metadata = load_markets_metadata(client=client, markets=markets)
     return [
         instrument
         for metadata in market_metadata.values()
-        for instrument in make_instrument(metadata)
+        for instrument in make_instrument(metadata, currency=currency)
     ]

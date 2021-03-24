@@ -15,13 +15,14 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import betfairlightweight
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.datetime import from_unix_time_ms
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
@@ -32,6 +33,7 @@ from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvide
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -45,7 +47,6 @@ from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.order.base import Order
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -129,122 +130,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         """
         pass
 
-    # async def state_report(self, list active_orders):
-    #     """
-    #     Return an execution state report based on the given list of active
-    #     orders.
-    #     Parameters
-    #     ----------
-    #     active_orders : list[Order]
-    #         The orders which currently have an 'active' status.
-    #     Returns
-    #     -------
-    #     ExecutionStateReport
-    #     """
-    #     Condition.not_none(active_orders, "active_orders")
-    #
-    #     cdef dict order_states = {}
-    #     cdef dict order_filled = {}
-    #     cdef dict position_states = {}
-    #
-    #     if not active_orders:
-    #         # Nothing to resolve
-    #         return ExecutionStateReport(
-    #             client=self.name,
-    #             account_id=self.account_id,
-    #             order_states=order_states,
-    #             order_filled=order_filled,
-    #             position_states=position_states,
-    #         )
-    #
-    #     cdef int count = len(active_orders)
-    #     self._log.info(
-    #         f"Resolving state: {count} active order{'s' if count > 1 else ''}...",
-    #         LogColor.BLUE,
-    #     )
-    #
-    #     cdef Instrument instrument
-    #     cdef Order order
-    #     cdef str status
-    #     cdef dict response
-    #     cdef list trades
-    #     cdef list order_trades
-    #     for order in active_orders:
-    #         if order.id.is_null():
-    #             self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
-    #                             f"OrderId was 'NULL'.")
-    #             continue  # Cannot resolve order
-    #         instrument = self._instrument_provider.find_c(order.symbol)
-    #         if instrument is None:
-    #             self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
-    #                             f"instrument for {order.instrument_id} not found.")
-    #             continue  # Cannot resolve order
-    #
-    #         try:
-    #             response = await self._client.fetch_order(
-    #                 id=order.id.value,
-    #                 symbol=order.symbol.value,
-    #             )
-    #             trades = await self._client.fetch_my_trades(
-    #                 symbol=order.symbol.value,
-    #                 since=to_unix_time_ms(order.timestamp),
-    #             )
-    #             order_trades = [trade for trade in trades if trade["order"] == order.id.value]
-    #
-    #         except betfairlightweight.BetfairError as ex:
-    #             self._log_ccxt_error(ex, self._update_balances.__name__)
-    #             continue
-    #         if response is None:
-    #             self._log.error(f"No order found for {order.id.value}.")
-    #             continue
-    #         # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
-    #
-    #         cum_qty = order.filled_qty.as_decimal()
-    #         for trade in order_trades:
-    #             from model.identifiers import ExecutionId
-    #             execution_id = ExecutionId(str(response["id"]))
-    #             if execution_id in order.execution_ids_c():
-    #                 continue  # Trade already applied
-    #             self._generate_order_filled(
-    #                 cl_ord_id=order.cl_ord_id,
-    #                 order_id=order.id,
-    #                 execution_id=ExecutionId(str(response["id"])),
-    #                 instrument_id=order.instrument_id,
-    #                 order_side=order.side,
-    #                 fill_qty=Decimal(f"{trade['amount']:.{instrument.size_precision}}"),
-    #                 cum_qty=cum_qty,
-    #                 leaves_qty=order.quantity - cum_qty,
-    #                 avg_px=Decimal(trade["price"]),
-    #                 commission_amount=trade["fee"]["cost"],
-    #                 commission_currency=trade["fee"]["currency"],
-    #                 liquidity_side=LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-    #                 timestamp=from_unix_time_ms(trade["timestamp"]),
-    #             )
-    #
-    #         status = response["status"]
-    #         if status == "open":
-    #             if cum_qty > 0:
-    #                 order_states[order.id] = OrderState.PARTIALLY_FILLED
-    #                 order_filled[order.id] = cum_qty
-    #         elif status == "closed":
-    #             order_states[order.id] = OrderState.FILLED
-    #             order_filled[order.id] = cum_qty
-    #         elif status == "canceled":
-    #             order_states[order.id] = OrderState.CANCELLED
-    #             timestamp = from_unix_time_ms(<long>response["timestamp"])
-    #             self._generate_order_cancelled(order.cl_ord_id, order.id, timestamp)
-    #         elif status == "expired":
-    #             order_states[order.id] = OrderState.EXPIRED
-    #             self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
-    #
-    #     return ExecutionStateReport(
-    #         client=self.name,
-    #         account_id=self.account_id,
-    #         order_states=order_states,
-    #         order_filled=order_filled,
-    #         position_states=position_states,
-    #     )
-
     cpdef void disconnect(self) except *:
         self._client.client_logout()
         self._log.info("Disconnected.")
@@ -284,6 +169,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         kw = order_cancel_to_betfair(command=command)
         self._client.betting.cancel_orders(**kw)
 
+    # -- Account information ---------------------------------------------------------
+    cpdef str get_account_currency(self):
+        return self._instrument_provider.get_account_currency()
+
     # -- Instrument helpers ---------------------------------------------------------
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
@@ -302,6 +191,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     handicap=str(selection.get("hc", "0.0")),
                 )
                 for order in selection.get("uo", []):
+                    print(self.order_id_to_cl_ord_id)
                     cl_ord_id = self.order_id_to_cl_ord_id[order['id']]
                     order_id = OrderId(order["id"])
                     print("order:", order)
@@ -310,6 +200,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             order["status"] == "EC" and order["sm"] != 0
                     ):
                         # Execution complete, The entire order has traded or been cancelled
+                        print("GEN", self.get_account_currency())
                         self._generate_order_filled(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
@@ -321,29 +212,29 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             leaves_qty=order['sr'],
                             avg_px=order['avp'],
                             commission_amount=Decimal(0.0),
-                            commission_currency="AUD",  # TODO - look up on account
+                            commission_currency=self.get_account_currency(),
                             liquidity_side=LiquiditySide.NONE,
-                            timestamp=order['md'],
+                            timestamp=from_unix_time_ms(order['md']),
                         )
                     elif order["sm"] == 0 and any([order[x] != 0 for x in ("sc", "sl", "sv")]):
                         self._generate_order_cancelled(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
-                            timestamp=order['cd'],
+                            timestamp=from_unix_time_ms(order['cd']),
                         )
                     # This is a full order, none has traded yet (size_remaining = original placed size)
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
                         self._generate_order_accepted(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
-                            timestamp=order['pd'],
+                            timestamp=from_unix_time_ms(order['pd']),
                         )
                     # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
                         self._generate_order_accepted(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
-                            timestamp=order['pd'],
+                            timestamp=from_unix_time_ms(order['pd']),
                         )
                         self._generate_order_filled(
                             cl_ord_id=cl_ord_id,
@@ -356,9 +247,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             leaves_qty=order['sr'],
                             avg_px=order['avp'],
                             commission_amount=Decimal(0.0),
-                            commission_currency="AUD",  # TODO - look up on account
+                            commission_currency=self.get_account_currency(),  # TODO - look up on account
                             liquidity_side=LiquiditySide.NONE,
-                            timestamp=order['md'],
+                            timestamp=from_unix_time_ms(order['md']),
                         )
                     else:
                         self._log.error("Unknown order state: {order}")
@@ -377,12 +268,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
-        # return self._client.betting.list_current_orders()
-        raise NotADirectoryError
+    async def generate_order_status_report(self) -> Optional[OrderStatusReport]:
+        # TODO - return self._client.betting.list_current_orders()
+        raise NotImplementedError
 
     async def generate_trades_list(self, order_id: OrderId, symbol: Symbol,  since: Optional[datetime]=None) -> List[ExecutionReport]:
-        # return self._client.betting.list_cleared_orders()
+        # TODO - return self._client.betting.list_cleared_orders()
         raise NotImplementedError
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------

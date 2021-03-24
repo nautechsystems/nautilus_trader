@@ -21,6 +21,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef object _client
     cdef dict market_filter
     cdef dict _cache
+    cdef str _account_currency
 
     cdef readonly venue
 
@@ -30,3 +31,4 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cpdef list search_instruments(self, dict instrument_filter=*)
     cpdef list list_instruments(self)
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)
+    cpdef str get_account_currency(self)
