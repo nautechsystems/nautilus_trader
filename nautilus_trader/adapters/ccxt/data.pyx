@@ -674,8 +674,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     snapshot = OrderBookSnapshot(
                         instrument_id=instrument.id,
                         level=level,
-                        bids=bids,
-                        asks=asks,
+                        bids=list(bids),
+                        asks=list(asks),
+                        timestamp=from_unix_time_ms(timestamp)
                     )
 
                     self._handle_data(snapshot)
