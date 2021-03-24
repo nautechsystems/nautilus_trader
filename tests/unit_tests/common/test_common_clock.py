@@ -336,15 +336,6 @@ class LiveClockWithThreadTimerTests(unittest.TestCase):
         self.assertTrue(result > timedelta(0))
         self.assertEqual(timedelta, type(result))
 
-    def test_unix_time(self):
-        # Arrange
-        # Act
-        result = self.clock.unix_time()
-
-        # Assert
-        self.assertEqual(float, type(result))
-        self.assertTrue(result > 0)
-
     def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
@@ -550,6 +541,42 @@ class LiveClockWithLoopTimerTests(unittest.TestCase):
 
     def tearDown(self):
         self.clock.cancel_timers()
+
+    def test_unix_time(self):
+        # Arrange
+        # Act
+        result = self.clock.unix_time()
+
+        # Assert
+        self.assertEqual(float, type(result))
+        self.assertTrue(result > 0)
+
+    def test_unix_time_ms(self):
+        # Arrange
+        # Act
+        result = self.clock.unix_time_ms()
+
+        # Assert
+        self.assertEqual(int, type(result))
+        self.assertTrue(result > 0)
+
+    def test_unix_time_us(self):
+        # Arrange
+        # Act
+        result = self.clock.unix_time_us()
+
+        # Assert
+        self.assertEqual(int, type(result))
+        self.assertTrue(result > 0)
+
+    def test_unix_time_ns(self):
+        # Arrange
+        # Act
+        result = self.clock.unix_time_ns()
+
+        # Assert
+        self.assertEqual(int, type(result))
+        self.assertTrue(result > 0)
 
     def test_set_time_alert(self):
         async def run_test():
