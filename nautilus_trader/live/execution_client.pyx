@@ -385,10 +385,10 @@ cdef class LiveExecutionClient(ExecutionClient):
     ) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
-            cl_ord_id,
-            reason,
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            cl_ord_id=cl_ord_id,
+            reason=reason,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now_c(),
         )
         self._handle_event(invalid)
 
@@ -399,10 +399,10 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             self.account_id,
-            cl_ord_id,
-            timestamp,
-            self._uuid_factory.generate(),
-            timestamp,
+            cl_ord_id=cl_ord_id,
+            submitted_time=timestamp,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=timestamp,
         )
         self._handle_event(submitted)
 
@@ -415,11 +415,11 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
             self.account_id,
-            cl_ord_id,
-            timestamp,
-            reason,
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            cl_ord_id=cl_ord_id,
+            rejected_time=timestamp,
+            reason=reason,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now_c(),
         )
         self._handle_event(rejected)
 
@@ -432,11 +432,11 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
             self.account_id,
-            cl_ord_id,
-            order_id,
-            timestamp,
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            cl_ord_id=cl_ord_id,
+            order_id=order_id,
+            accepted_time=timestamp,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now_c(),
         )
         self._handle_event(accepted)
 
@@ -479,24 +479,24 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Generate event
         cdef OrderFilled filled = OrderFilled(
             self.account_id,
-            cl_ord_id,
-            order_id,
-            execution_id,
-            PositionId.null_c(),  # Assigned in engine
-            StrategyId.null_c(),  # Assigned in engine
-            instrument_id,
-            order_side,
-            Quantity(fill_qty, instrument.size_precision),
-            Quantity(cum_qty, instrument.size_precision),
-            Quantity(leaves_qty, instrument.size_precision),
-            Price(avg_px, instrument.price_precision),
-            instrument.quote_currency,
-            instrument.is_inverse,
-            commission,
-            liquidity_side,
-            timestamp,
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            cl_ord_id=cl_ord_id,
+            order_id=order_id,
+            execution_id=execution_id,
+            position_id=PositionId.null_c(),  # Assigned in engine
+            strategy_id=StrategyId.null_c(),  # Assigned in engine
+            instrument_id=instrument_id,
+            order_side=order_side,
+            fill_qty=Quantity(fill_qty, instrument.size_precision),
+            cum_qty=Quantity(cum_qty, instrument.size_precision),
+            leaves_qty=Quantity(leaves_qty, instrument.size_precision),
+            fill_price=Price(avg_px, instrument.price_precision),
+            currency=instrument.quote_currency,
+            is_inverse=instrument.is_inverse,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            execution_time=timestamp,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now_c(),
         )
 
         self._handle_event(filled)
@@ -509,12 +509,12 @@ cdef class LiveExecutionClient(ExecutionClient):
     ) except *:
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
-            self.account_id,
-            cl_ord_id,
-            order_id,
-            timestamp,
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            account_id=self.account_id,
+            cl_ord_id=cl_ord_id,
+            order_id=order_id,
+            cancelled_time=timestamp,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now_c(),
         )
 
         self._handle_event(cancelled)
@@ -527,12 +527,12 @@ cdef class LiveExecutionClient(ExecutionClient):
     ) except *:
         # Generate event
         cdef OrderExpired expired = OrderExpired(
-            self.account_id,
-            cl_ord_id,
-            order_id,
-            timestamp,
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            account_id=self.account_id,
+            cl_ord_id=cl_ord_id,
+            order_id=order_id,
+            expired_time=timestamp,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now_c(),
         )
 
         self._handle_event(expired)
