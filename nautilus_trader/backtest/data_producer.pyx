@@ -33,6 +33,7 @@ from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
+from nautilus_trader.core.time cimport unix_time
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
@@ -113,7 +114,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef list trade_tick_frames = []
         self.execution_resolutions = []
 
-        cdef double ts_total = self._clock.unix_time()
+        cdef double ts_total = unix_time()
         cdef double ts
         for instrument in data.instruments.values():
             instrument_id = instrument.id
@@ -126,7 +127,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # Process quote tick data
             # -----------------------
             if data.has_quote_data(instrument_id):
-                ts = self._clock.unix_time()  # Time data processing
+                ts = unix_time()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
                     data_quotes=self._data.quote_ticks.get(instrument_id),
@@ -140,13 +141,13 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
                 self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
-                               f"{self._clock.unix_time() - ts:.3f}s.")
+                               f"{unix_time() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
             # -----------------------
             if data.has_trade_data(instrument_id):
-                ts = self._clock.unix_time()  # Time data processing
+                ts = unix_time()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
                     data=self._data.trade_ticks.get(instrument_id),
@@ -158,7 +159,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
                 self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
-                               f"{self._clock.unix_time() - ts:.3f}s.")
+                               f"{unix_time() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
             if execution_resolution is None:
@@ -222,7 +223,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self.has_data = False
 
         self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
-                       f"total tick rows in {self._clock.unix_time() - ts_total:.3f}s.")
+                       f"total tick rows in {unix_time() - ts_total:.3f}s.")
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
