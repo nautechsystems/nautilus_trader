@@ -15,12 +15,56 @@
 
 import pytest
 
+from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import OrderBookOperationType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookOperation
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
+
+
+AUDUSD = TestStubs.audusd_id()
+
+
+class TestOrderBookSnapshot:
+    def test_repr(self):
+        # Arrange
+        snapshot = OrderBookSnapshot(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
+            bids=[[1010, 2], [1009, 1]],
+            asks=[[1020, 2], [1021, 1]],
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        # Assert
+        assert (
+            repr(snapshot)
+            == "OrderBookSnapshot('AUD/USD.SIM', bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]])"
+        )
+
+
+class TestOrderBookOperation:
+    def test_repr(self):
+        # Arrange
+        order = Order(price=10, volume=5, side=OrderSide.BUY)
+        op = OrderBookOperation(
+            op_type=OrderBookOperationType.ADD,
+            order=order,
+        )
+
+        # Act
+        # Assert
+        assert (
+            repr(op)
+            == f"OrderBookOperation(ADD, order=Order(10.0, 5.0, BUY, {order.id}))"
+        )
 
 
 @pytest.fixture(scope="function")
