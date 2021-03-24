@@ -560,6 +560,7 @@ cdef class DataEngine(Component):
 
         cdef int interval = metadata[INTERVAL]
         if interval > 0:
+            # Subscribe to interval snapshots
             key = (instrument_id, interval)
             if key not in self._order_book_intervals:
                 self._order_book_intervals[key] = []
@@ -575,10 +576,23 @@ cdef class DataEngine(Component):
                 )
                 self._log.debug(f"Set timer {timer_name}.")
 
+            # Add handler for subscriber
             self._order_book_intervals[key].append(handler)
             self._log.info(f"Subscribed to {instrument_id} <OrderBook> "
                            f"{interval} second intervals data.")
-            return
+        else:
+            # Subscribe to stream
+            if instrument_id not in self._order_book_handlers:
+                # Setup handlers
+                self._order_book_handlers[instrument_id] = []  # type: list[callable]
+                self._log.info(f"Subscribed to {instrument_id} <OrderBook> data.")
+
+            # Add handler for subscriber
+            if handler not in self._order_book_handlers[instrument_id]:
+                self._order_book_handlers[instrument_id].append(handler)
+                self._log.debug(f"Added {handler} for {instrument_id} <OrderBook> data.")
+            else:
+                self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
 
         # Create order book
         if not self.cache.has_order_book(instrument_id):
@@ -587,18 +601,6 @@ cdef class DataEngine(Component):
                 level=metadata[LEVEL],
             )
             self.cache.add_order_book(order_book)
-
-        if instrument_id not in self._order_book_handlers:
-            # Setup handlers
-            self._order_book_handlers[instrument_id] = []  # type: list[callable]
-            self._log.info(f"Subscribed to {instrument_id} <OrderBook> data.")
-
-        # Add handler for subscriber
-        if handler not in self._order_book_handlers[instrument_id]:
-            self._order_book_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <OrderBook> data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
 
         # Always re-subscribe to override previous settings
         client.subscribe_order_book(
