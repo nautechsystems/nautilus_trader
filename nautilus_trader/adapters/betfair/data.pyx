@@ -37,6 +37,7 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 from nautilus_trader.adapters.betfair.common import on_market_update
+from nautilus_trader.model.data import Data
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 
@@ -272,7 +273,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         #     kwargs = {}
         # Condition.not_none(instrument_id, "instrument_id")
         #
-        # # TODO - create data socket, send subsribe message. If at max subscription, add more sockets
+        # # TODO - create data socket, send subscribe message. If at max subscription, add more sockets
         #
         # if instrument_id in self._subscribed_order_books:
         #     self._log.warning(f"Already subscribed {instrument_id.symbol} <OrderBook> data.")
@@ -323,88 +324,18 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.debug(f"Cancelled {task}.")
         self._log.info(f"Unsubscribed from {instrument_id.symbol} <OrderBook> data.")
 
-# -- REQUESTS --------------------------------------------------------------------------------------
-
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
-        """
-        Request the instrument for the given instrument identifier.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the request.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        self._loop.create_task(self._request_instrument(instrument_id))
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
-        """
-        Request all instruments.
-
-        Parameters
-        ----------
-        correlation_id : UUID
-            The correlation identifier for the request.
-
-        """
-        Condition.not_none(correlation_id, "correlation_id")
-
-        self._loop.create_task(self._request_instruments(correlation_id))
-
-    # TODO v2.0 Client or Historical client - historical data lives totally separately
-    # cpdef void request_trade_ticks(
-    #     self,
-    #     InstrumentId instrument_id,
-    #     datetime from_datetime,
-    #     datetime to_datetime,
-    #     int limit,
-    #     UUID correlation_id,
-    # ) except *:
-    #     """
-    #     Request historical trade ticks for the given parameters.
-    #
-    #     Parameters
-    #     ----------
-    #     instrument_id : InstrumentId
-    #         The tick instrument identifier for the request.
-    #     from_datetime : datetime, optional
-    #         The specified from datetime for the data.
-    #     to_datetime : datetime, optional
-    #         The specified to datetime for the data. If None then will default
-    #         to the current datetime.
-    #     limit : int
-    #         The limit for the number of returned ticks.
-    #     correlation_id : UUID
-    #         The correlation identifier for the request.
-    #
-    #     """
-    #     Condition.not_none(instrument_id, "instrument_id")
-    #     Condition.not_none(correlation_id, "correlation_id")
-    #
-    #     if to_datetime is not None:
-    #         self._log.warning(f"`request_trade_ticks` was called with a `to_datetime` "
-    #                           f"argument of {to_datetime} when not supported by the exchange "
-    #                           f"(will use `limit` of {limit}).")
-    #
-    #     self._loop.create_task(self._request_trade_ticks(
-    #         instrument_id,
-    #         from_datetime,
-    #         to_datetime,
-    #         limit,
-    #         correlation_id,
-    #     ))
-
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-# -- Instrument helpers ---------------------------------------------------------
 
+# -- Debugging ---------------------------------------------------------------------------------------
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
+
+    cpdef void handle_data(self, Data data):
+        self._handle_data(data=data)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
@@ -469,19 +400,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     def _load_instruments(self):
         self._instrument_provider.load_all()
         self._log.info(f"Updated {len(self._instrument_provider._instruments)} instruments.")
-
-    async def _request_instrument(self, InstrumentId instrument_id, UUID correlation_id):
-        await self._load_instruments()
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
-        if instrument is not None:
-            self._handle_instruments([instrument], correlation_id)
-        else:
-            self._log.error(f"Could not find instrument {instrument_id.symbol}.")
-
-    async def _request_instruments(self, correlation_id):
-        await self._load_instruments()
-        cdef list instruments = list(self._instrument_provider.get_all().values())
-        self._handle_instruments(instruments, correlation_id)
 
     async def _subscribed_instruments_update(self, delay):
         self._log.info("Loading all instruments")

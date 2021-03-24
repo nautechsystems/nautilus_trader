@@ -94,7 +94,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         if key not in self._cache:
             instrument_filter = {'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': handicap}
             instruments = self.search_instruments(instrument_filter=instrument_filter)
-            assert len(instruments) == 1, f"Wrong number of instruments: {len(instruments)}"
+            assert len(instruments) == 1, f"Wrong number of instruments: {len(instruments)} for filter: {instrument_filter}"
             self._cache[key] = instruments[0]
         return self._cache[key]
 

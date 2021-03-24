@@ -15,6 +15,7 @@
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -37,6 +38,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         dict kwargs=*,
     ) except *
     cpdef void unsubscribe_markets(self, InstrumentId instrument_id) except *
+    cpdef void handle_data(self, Data data)
     cpdef void _on_market_update(self, dict update) except *
     cdef inline void _on_quote_tick(
         self,

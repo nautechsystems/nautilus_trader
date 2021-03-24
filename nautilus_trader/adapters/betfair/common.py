@@ -1,6 +1,5 @@
 import datetime
 import itertools
-import logging
 
 from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
@@ -198,29 +197,9 @@ def betfair_account_to_account_state(
 
 def build_market_snapshot_messages(self, raw):
     for market in raw.get("mc", []):
-        market_definition = market.get("marketDefinition", {})
-
         # Market status events
-        for selection in market_definition.get("runners", []):
-            if market_definition["status"] == "CLOSED":
-                # TODO Should yield an event here
-                continue
-            kw = dict(
-                market_id=market["id"],
-                selection_id=str(selection["id"]),
-                handicap=str(selection.get("hc", "0.0")),
-            )
-            try:
-                instrument = self.instrument_provider().get_betting_instrument(**kw)
-                # TODO - Need to add a instrument status event here
-                # msu = InstrumentStatusUpdate(
-                #     status=MARKET_STATUS[market_definition["status"]],
-                #     instrument_id=str(instrument.id),
-                # )
-            except KeyError:
-                logging.error(f"Couldn't find instrument for market_id: {kw}")
-                # TODO - Should probably raise? We may need to do an instrument re-pull
-                continue
+        # market_definition = market.get("marketDefinition", {})
+        # TODO - Need to handle instrument status = CLOSED here
 
         # Orderbook snapshots
         if market.get("img") is True:
@@ -253,10 +232,7 @@ def build_market_snapshot_messages(self, raw):
                         ],
                         timestamp=from_unix_time_ms(raw["pt"]),
                     )
-                    self._handle_data(snapshot)
-
-                    # TODO - handle orderbook snapshot
-                    assert snapshot
+                    self.handle_data(snapshot)
 
 
 def build_market_update_messages(self, raw):
@@ -271,14 +247,13 @@ def build_market_update_messages(self, raw):
             instrument = self.instrument_provider().get_betting_instrument(**kw)
             assert instrument
             operations = []
-            assert operations
             for side in B_SIDE_KINDS:
-                for price, volume in runner.get(side, []):
+                for level, price, volume in runner.get(side, []):
                     operations.append(
                         OrderBookOperation(
-                            op_type=OrderBookOperationType.delete
+                            op_type=OrderBookOperationType.DELETE
                             if volume == 0
-                            else OrderBookOperationType.update,
+                            else OrderBookOperationType.UPDATE,
                             order=Order(
                                 price=price,
                                 volume=volume,
@@ -290,10 +265,9 @@ def build_market_update_messages(self, raw):
                 level=OrderBookLevel.L2,
                 instrument_id=instrument.id,
                 ops=operations,
-                timestamp=datetime.datetime.utcfromtimestamp(market["pt"] / 1e3),
+                timestamp=datetime.datetime.utcfromtimestamp(raw["pt"] / 1e3),
             )
-            assert ob_update
-            # TODO - emit orderbook updates
+            self.handle_data(ob_update)
 
             for price, volume in runner.get("trd", []):
                 trade_tick = TradeTick(
@@ -302,10 +276,9 @@ def build_market_update_messages(self, raw):
                     quantity=Quantity(volume),
                     side=OrderSide.BUY,
                     # TradeMatchId(trade_match_id),
-                    timestamp=from_unix_time_ms(market["pt"]),
+                    timestamp=from_unix_time_ms(raw["pt"]),
                 )
-                assert trade_tick
-                self.on_trade_tick(trade_tick)
+                self.handle_data(trade_tick)
 
         if market.get("marketDefinition", {}).get("status") == "CLOSED":
             for runner in market["marketDefinition"]["runners"]:
@@ -332,8 +305,8 @@ def build_market_update_messages(self, raw):
             for selection in market["marketDefinition"]["runners"]:
                 kw = dict(
                     market_id=market_id,
-                    spcelection_id=str(selection["id"]),
-                    handicap=str(selection or "0.0"),
+                    selection_id=str(selection["id"]),
+                    handicap=str(selection.get("hc") or "0.0"),
                 )
                 instrument = self.instrument_provider().get_betting_instrument(**kw)
                 assert instrument

@@ -27,6 +27,7 @@ from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.bar import BarType
@@ -665,6 +666,28 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
         config=None,
     ):
         super().__init__(loop, database, portfolio, clock, logger, config)
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)
+
+
+class MockLiveDataEngine(LiveDataEngine):
+    def __init__(
+        self,
+        loop,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(
+            loop=loop, portfolio=portfolio, clock=clock, logger=logger, config=config
+        )
         self.commands = []
         self.events = []
 

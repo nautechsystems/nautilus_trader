@@ -116,6 +116,7 @@ class BetfairTestStubs(TestStubs):
             selection_handicap="0.0",
             selection_id="50214",
             selection_name="Kansas City Chiefs",
+            currency="GBP",
         )
 
     @staticmethod
@@ -183,5 +184,5 @@ class BetfairTestStubs(TestStubs):
         return orjson.loads(open(TEST_PATH + "account_detail.json").read())
 
     @staticmethod
-    def resp_accont_funds():
+    def resp_account_funds():
         return orjson.loads(open(TEST_PATH + "account_funds_no_exposure.json").read())
