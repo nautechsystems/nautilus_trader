@@ -742,7 +742,7 @@ cdef class TradingStrategy(Component):
             provider=provider,
             data_type=data_type,
             handler=self.handle_data,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -765,7 +765,7 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -826,7 +826,7 @@ cdef class TradingStrategy(Component):
                 KWARGS: kwargs,
             }),
             handler=self.handle_order_book,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -849,7 +849,7 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -872,7 +872,7 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -895,7 +895,7 @@ cdef class TradingStrategy(Component):
             provider=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -920,7 +920,7 @@ cdef class TradingStrategy(Component):
             provider=provider,
             data_type=data_type,
             handler=self.handle_data,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -943,7 +943,7 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -974,7 +974,7 @@ cdef class TradingStrategy(Component):
                 INTERVAL: interval,
             }),
             handler=self.handle_order_book,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -997,7 +997,7 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -1020,7 +1020,7 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -1043,7 +1043,7 @@ cdef class TradingStrategy(Component):
             provider=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
-            command_id=self.uuid_factory.generate_c(),
+            command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
@@ -1070,7 +1070,7 @@ cdef class TradingStrategy(Component):
             provider=provider,
             data_type=data_type,
             callback=self.handle_data,
-            request_id=self.uuid_factory.generate_c(),
+            request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
         )
 
@@ -1116,7 +1116,7 @@ cdef class TradingStrategy(Component):
                 LIMIT: self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_quote_ticks,
-            request_id=self.uuid_factory.generate_c(),
+            request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
         )
 
@@ -1162,7 +1162,7 @@ cdef class TradingStrategy(Component):
                 LIMIT: self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_trade_ticks,
-            request_id=self.uuid_factory.generate_c(),
+            request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
         )
 
@@ -1208,7 +1208,7 @@ cdef class TradingStrategy(Component):
                 LIMIT: self._data_engine.cache.bar_capacity,
             }),
             callback=self.handle_bars,
-            request_id=self.uuid_factory.generate_c(),
+            request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
         )
 
@@ -1256,7 +1256,7 @@ cdef class TradingStrategy(Component):
             self.id,
             position_id,
             order,
-            self.uuid_factory.generate_c(),
+            self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
 
@@ -1291,7 +1291,7 @@ cdef class TradingStrategy(Component):
             account_id,
             self.id,
             bracket_order,
-            self.uuid_factory.generate_c(),
+            self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
 
@@ -1380,7 +1380,7 @@ cdef class TradingStrategy(Component):
             order.cl_ord_id,
             quantity,
             price,
-            self.uuid_factory.generate_c(),
+            self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
 
@@ -1417,7 +1417,7 @@ cdef class TradingStrategy(Component):
             order.account_id,
             order.cl_ord_id,
             order.id,
-            self.uuid_factory.generate_c(),
+            self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
 
@@ -1491,7 +1491,7 @@ cdef class TradingStrategy(Component):
             self.id,
             position.id,
             order,
-            self.uuid_factory.generate_c(),
+            self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
 

@@ -32,7 +32,4 @@ cdef class UUIDFactory:
         UUID
 
         """
-        return self.generate_c()
-
-    cdef UUID generate_c(self):
         return UUID(value=os.urandom(16))
