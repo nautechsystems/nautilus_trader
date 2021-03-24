@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.timer cimport LiveTimer
 from nautilus_trader.common.timer cimport TimeEvent
@@ -42,7 +43,10 @@ cdef class Clock:
     """The name of the next time event.\n\n:returns: `str`"""
 
     cpdef datetime utc_now(self)
-    cdef datetime utc_now_c(self)
+    cpdef double unix_time(self) except *
+    cpdef int64_t unix_time_ms(self) except *
+    cpdef int64_t unix_time_us(self) except *
+    cpdef int64_t unix_time_ns(self) except *
     cpdef datetime local_now(self, tzinfo tz)
     cpdef timedelta delta(self, datetime time)
     cpdef list timer_names(self)
@@ -86,11 +90,6 @@ cdef class TestClock(Clock):
 cdef class LiveClock(Clock):
     cdef object _loop
     cdef tzinfo _utc
-
-    cpdef double unix_time(self) except *
-    cpdef long unix_time_ms(self) except *
-    cpdef long unix_time_us(self) except *
-    cpdef long unix_time_ns(self) except *
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *
 

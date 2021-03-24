@@ -388,7 +388,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             cl_ord_id=cl_ord_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            event_timestamp=self._clock.utc_now(),
         )
         self._handle_event(invalid)
 
@@ -419,7 +419,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             rejected_time=timestamp,
             reason=reason,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            event_timestamp=self._clock.utc_now(),
         )
         self._handle_event(rejected)
 
@@ -436,7 +436,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             order_id=order_id,
             accepted_time=timestamp,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            event_timestamp=self._clock.utc_now(),
         )
         self._handle_event(accepted)
 
@@ -496,7 +496,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             liquidity_side=liquidity_side,
             execution_time=timestamp,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            event_timestamp=self._clock.utc_now(),
         )
 
         self._handle_event(filled)
@@ -514,7 +514,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             order_id=order_id,
             cancelled_time=timestamp,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            event_timestamp=self._clock.utc_now(),
         )
 
         self._handle_event(cancelled)
@@ -532,7 +532,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             order_id=order_id,
             expired_time=timestamp,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            event_timestamp=self._clock.utc_now(),
         )
 
         self._handle_event(expired)
