@@ -690,9 +690,13 @@ class MockLiveDataEngine(LiveDataEngine):
         )
         self.commands = []
         self.events = []
+        self.responses = []
 
     def execute(self, command):
         self.commands.append(command)
 
     def process(self, event):
         self.events.append(event)
+
+    def receive(self, response):
+        self.responses.append(response)

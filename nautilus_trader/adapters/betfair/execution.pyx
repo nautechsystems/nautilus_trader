@@ -127,25 +127,23 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Disconnected.")
 
     # -- COMMAND HANDLERS ------------------------------------------------------------------------------
-    # TODO - Add support for bulk updates - betfair allows up to 200 inserts / 60 updates / 60 cancels per request,
-    #  we might want to throttle updates if they're coming faster than x / sec? Maybe this is for risk engine? We could
-    #  use some heuristics about the avg network latency and add an optional flag for bulk inserts etc.
+    # TODO - #  Do want to throttle updates if they're coming faster than x / sec? Maybe this is for risk engine?
+    #  We could use some heuristics about the avg network latency and add an optional flag for throttle inserts etc.
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        f = self._loop.run_in_executor(self._submit_order, command)
-        f.add_done_callback()
-        # TODO -
-        resp = f.result()
+        aw = self._loop.run_in_executor(None, self._submit_order, command)
+        self._log.info("aw:", aw)
+        resp = await aw
+        self._log.info("resp:", resp)
         assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
         bet_id = resp['result']['instructionReports'][0]['betId']
         self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
         self._generate_order_accepted(
             cl_ord_id = command.order.cl_ord_id,
             order_id = bet_id,
-            timestamp = self._clock.utc_now_c(),
+            timestamp = self._clock.unix_time(),
         )
 
-    # TODO - Is this correct?
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_submit_to_betfair(command=command, instrument=instrument)
@@ -154,8 +152,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
         return self._client.betting.place_orders(**kw)
 
-
-
+    # TODO - Does this also take 5s ??
     cpdef void amend_order(self, AmendOrder command) except *:
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_amend_to_betfair(command=command)
@@ -165,6 +162,18 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_cancel_to_betfair(command=command)
         self._client.betting.cancel_orders(**kw)
+
+    # cpdef void bulk_submit_order(self, list commands):
+    # betfair allows up to 200 inserts per request
+    #     raise NotImplementedError
+
+    # cpdef void bulk_submit_amend(self, list commands):
+    # betfair allows up to 60 updates per request
+    #     raise NotImplementedError
+
+    # cpdef void bulk_submit_delete(self, list commands):
+    # betfair allows up to 60 cancels per request
+    #     raise NotImplementedError
 
     # -- Account information ---------------------------------------------------------
     cpdef str get_account_currency(self):

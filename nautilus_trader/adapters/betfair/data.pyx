@@ -20,13 +20,14 @@ from betfairlightweight import APIClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
+from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport BettingInstrument
-
 from nautilus_trader.adapters.betfair.parsing import on_market_update
-
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.data cimport Data
 
@@ -34,6 +35,11 @@ from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
+
+class InstrumentSearch:
+    def __init__(self, instruments):
+        self.instruments = instruments
+
 
 # Notes
 # TODO - if you receive con=true flag on a market - then you are consuming data slower than the rate of deliver. If the
@@ -177,15 +183,35 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         self._log.info("Disposed.")
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- REQUESTS --------------------------------------------------------------------------------------
+
+    cpdef void request(self, DataType data_type, UUID correlation_id) except *:
+        print(data_type,data_type.type, InstrumentSearch,  data_type.type == InstrumentSearch)
+        if data_type.type == InstrumentSearch:
+            print("HANDLING")
+            # Strategy has requested a list of instruments
+            instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
+            self._handle_data_response(
+                data=GenericData(
+                    data_type=data_type,
+                    data=InstrumentSearch(instruments=instruments),
+                    timestamp=self._clock.utc_now(),
+                ),
+                correlation_id=correlation_id
+            )
+        else:
+            super().request(data_type=data_type, correlation_id=correlation_id)
+
+    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
     cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
         """
         Subscribe to `OrderBook` data for the given instrument identifier.
 
         Parameters
         ----------
-        instrument_ids : InstrumentId
-            A list of instrument ids to subscribe to order books.
+        instrument_id : InstrumentId
+            The Instrument id to subscribe to order books.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -219,10 +245,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-
-        if instrument_id not in self._subscribed_order_books:
-            self._log.debug(f"Betfair does not support unsubscribing from instruments")
-            return
+        self._log.warning(f"Betfair does not support unsubscribing from instruments")
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -231,6 +254,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 
 # -- Debugging ---------------------------------------------------------------------------------------
+
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
 

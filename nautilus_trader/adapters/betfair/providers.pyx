@@ -117,7 +117,6 @@ def load_markets(client: APIClient, market_filter=None):
 def load_markets_metadata(client: APIClient, markets: List[Dict]) -> Dict:
     all_results = {}
     for market__id_chunk in chunk([m["market_id"] for m in markets], 50):
-        logger.info("Loading ")
         results = client.betting.list_market_catalogue(
             market_projection=[
                 "EVENT_TYPE",

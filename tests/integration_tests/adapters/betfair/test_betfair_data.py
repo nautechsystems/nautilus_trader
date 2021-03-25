@@ -12,14 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
 import json
 import os
 
 import betfairlightweight
 import pytest
 
+from adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
+from nautilus_trader.model.data import DataType
 from tests import TESTS_PACKAGE_ROOT
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -112,3 +115,15 @@ def test_market_update_tv(betfair_data_client, data_engine):
     result = [type(event).__name__ for event in data_engine.events]
     expected = [] * 7
     assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_request_search_instruments(betfair_data_client, data_engine, uuid):
+    req = DataType(
+        data_type=InstrumentSearch,
+        metadata={"event_type_id": "6"},
+    )
+    betfair_data_client.request(req, uuid)
+    await asyncio.sleep(0)
+    resp = data_engine.responses[0]
+    assert len(resp.data.data.instruments) == 495

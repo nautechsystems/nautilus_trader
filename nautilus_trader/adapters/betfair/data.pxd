@@ -25,7 +25,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _stream
     cdef BetfairInstrumentProvider _instrument_provider
 
-    cdef set _subscribed_order_books
+    cdef set _subscribed_market_ids
     cdef object _update_instruments_task
 
     cpdef BetfairInstrumentProvider instrument_provider(self)
