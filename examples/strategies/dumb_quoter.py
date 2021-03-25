@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from adapters.betfair.data import InstrumentSearch
+from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce

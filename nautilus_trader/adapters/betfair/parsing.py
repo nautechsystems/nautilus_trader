@@ -244,7 +244,7 @@ def build_market_update_messages(
 def on_market_update(raw: dict, instrument_provider: BetfairInstrumentProvider):
     if raw.get("ct") == "HEARTBEAT":
         # TODO - Do we send out heartbeats
-        return
+        return []
     for mc in raw.get("mc", []):
         if mc.get("img"):
             return build_market_snapshot_messages(

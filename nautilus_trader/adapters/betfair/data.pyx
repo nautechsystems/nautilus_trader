@@ -18,6 +18,7 @@ import asyncio
 from betfairlightweight import APIClient
 
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
@@ -92,6 +93,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._client = client  # type: APIClient
         self._instrument_provider = BetfairInstrumentProvider(
             client=client,
+            logger=logger,
             load_all=False,
         )
         self._stream = BetfairMarketStreamClient(
@@ -113,8 +115,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._loop.create_task(self._connect())
 
     async def _connect(self):
-        # Load instruments
-        self._instrument_provider.load_all()
+        self._log.info("Connecting to Betfair APIClient...")
+        resp = self._client.login()
+        self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
 
         # Connect market data socket
         await self._stream.connect()
@@ -133,18 +136,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         stop_tasks = []
 
-        # Cancel update instruments
-        if self._update_instruments_task:
-            self._update_instruments_task.cancel()
-            # TODO: This task is not finishing
-            # stop_tasks.append(self._update_instruments_task)
-
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks)
-
         # Ensure client closed
-        self._log.info("Closing WebSocket(s)...")
-        await self._client.close()
+        self._log.info("Closing APICClient(s)...")
+        self._client.client_logout()
 
         self.is_connected = False
         self._log.info("Disconnected.")

@@ -66,8 +66,7 @@ cdef class LiveExecutionClientFactory:
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
         LiveLogger logger not None,
-        client_cls=None,
-    ):
+c    ):
         """
         Return a new execution client from the given parameters.
 

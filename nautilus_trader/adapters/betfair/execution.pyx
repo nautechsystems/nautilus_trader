@@ -63,6 +63,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
+        dict market_filter not None,
     ):
         """
         Initialize a new instance of the `BetfairExecutionClient` class.
@@ -83,7 +84,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         """
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
-            load_all=False,
+            load_all=True,
+            market_filter=market_filter
         )
 
         super().__init__(
@@ -109,14 +111,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._loop.create_task(self._connect())
 
     async def _connect(self):
-        self._log.info("Connecting...")
+        self._log.info("Connecting to Betfair APIClient...")
         resp = self._client.login()
-        print(resp)
         self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
 
-        self._log.info("Loading Instruments.")
-        self._instrument_provider.load_all()
-        self._log.info(f"Loaded {len(self._instrument_provider._instruments)} Instruments.")
+        # self._log.info("Loading Instruments.")
+        # self._instrument_provider.load_all()
+        # self._log.info(f"Loaded {len(self._instrument_provider._instruments)} Instruments.")
 
         await self._stream.connect()
 
@@ -124,7 +125,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
-        self._client.client_lnwsogout()
+        self._client.client_logout()
         self._log.info("Disconnected.")
 
     # -- COMMAND HANDLERS ------------------------------------------------------------------------------

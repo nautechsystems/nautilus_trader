@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 import logging
 
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
 
 from typing import Dict, List
@@ -34,10 +35,10 @@ logger = logging.getLogger(__name__)
 
 cdef class BetfairInstrumentProvider(InstrumentProvider):
     """
-    Provides a means of loading `Instrument` objects from a unified CCXT exchange.
+    Provides a means of loading `BettingInstruments` from the Betfair APIClient.
     """
 
-    def __init__(self, client not None: APIClient, bint load_all=True, dict market_filter=None):
+    def __init__(self, client not None: APIClient, logger: Logger, bint load_all=True, dict market_filter=None):
         """
         Initialize a new instance of the `CCXTInstrumentProvider` class.
 
@@ -53,6 +54,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
         self._client = client
         self.market_filter = market_filter or {}
+        self._log = logger
         self.venue = BETFAIR_VENUE
         self._instruments = {}
         self._cache = {}
@@ -67,9 +69,18 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._load_instruments()
 
     cdef void _load_instruments(self) except *:
-        cdef list instruments = load_instruments(
-            client=self._client, currency=self.get_account_currency(), market_filter=self.market_filter
-        )
+        markets = load_markets(self._client, market_filter=market_filter)
+        self._log.info(f"Found {len(markets)} markets with filter: {market_filter}")
+        self._log.info(f"Loading metadata for {len(markets)} markets..")
+        market_metadata = load_markets_metadata(client=self._client, markets=markets)
+        self._log.info(f"Creating {len(market_metadata)} instruments")
+
+        cdef list instruments = [
+            instrument
+            for metadata in market_metadata.values()
+            for instrument in make_instrument(metadata, currency=self.get_account_currency())
+        ]
+        self._log.info(f"Instruments created")
 
         for ins in instruments:
             self._instruments[ins.id] = ins
@@ -165,13 +176,3 @@ def make_instrument(market_definition: Dict, currency) -> BettingInstrument:
             currency=currency,
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
-
-
-def load_instruments(client: APIClient, currency, market_filter=None):
-    markets = load_markets(client, market_filter=market_filter)
-    market_metadata = load_markets_metadata(client=client, markets=markets)
-    return [
-        instrument
-        for metadata in market_metadata.values()
-        for instrument in make_instrument(metadata, currency=currency)
-    ]

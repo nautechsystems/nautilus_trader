@@ -24,7 +24,8 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.dumb_quoter import DumbQuoter
-from nautilus_trader.adapters.betfair.factory import BetfairClientsFactory
+from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
 
 
@@ -41,7 +42,7 @@ config = {
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
     "logging": {
-        "log_level_console": "INF",
+        "log_level_console": "DBG",
         "log_level_file": "DBG",
         "log_level_store": "WRN",
         "log_thread_id": False,
@@ -65,6 +66,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+            "market_filter": {"market_id": "1.180634014"},
         },
     },
     "exec_clients": {
@@ -73,6 +75,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+            "market_filter": {"market_id": "1.180634014"},
             "sandbox_mode": False,  # If clients use the testnet
         },
     },
@@ -93,8 +96,8 @@ strategy = DumbQuoter(
 node = TradingNode(strategies=[strategy], config=config)
 
 # Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("BETFAIR", BetfairClientsFactory)
-node.add_exec_client_factory("BETFAIR", BetfairClientsFactory)
+node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
+node.add_exec_client_factory("BETFAIR", BetfairLiveExecutionClientFactory)
 node.build()
 
 
