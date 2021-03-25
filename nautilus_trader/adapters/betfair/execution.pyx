@@ -58,7 +58,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     def __init__(
         self,
-        client not None: betfairlightweight.APIClient,
+        betfairlightweight.APIClient client not None,
         AccountId account_id not None,
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
@@ -114,10 +114,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Connecting to Betfair APIClient...")
         resp = self._client.login()
         self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
-
-        # self._log.info("Loading Instruments.")
-        # self._instrument_provider.load_all()
-        # self._log.info(f"Loaded {len(self._instrument_provider._instruments)} Instruments.")
 
         await self._stream.connect()
 
@@ -181,6 +177,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     #     raise NotImplementedError
 
     # -- Account information ---------------------------------------------------------
+
     cpdef str get_account_currency(self):
         return self._instrument_provider.get_account_currency()
 

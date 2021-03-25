@@ -24,9 +24,7 @@ from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
-
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-
 from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 

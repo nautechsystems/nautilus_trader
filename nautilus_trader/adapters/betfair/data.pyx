@@ -15,6 +15,7 @@
 
 import asyncio
 
+import betfairlightweight
 from betfairlightweight import APIClient
 
 from nautilus_trader.common.clock cimport LiveClock
@@ -61,10 +62,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     def __init__(
         self,
-        client not None,
+        betfairlightweight.APIClient client not None,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
+        dict market_filter not None,
     ):
         """
         Initialize a new instance of the `BetfairDataClient` class.
@@ -83,6 +85,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         Raises
         ------
         """
+        cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
+            client=client,
+            load_all=True,
+            market_filter=market_filter
+        )
         super().__init__(
             "BetfairDataClient",
             engine,
@@ -91,11 +98,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         )
 
         self._client = client  # type: APIClient
-        self._instrument_provider = BetfairInstrumentProvider(
-            client=client,
-            logger=logger,
-            load_all=False,
-        )
+        self._instrument_provider = instrument_provider
         self._stream = BetfairMarketStreamClient(
             client=self._client, message_handler=self._on_market_update,
         )
