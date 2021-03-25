@@ -18,20 +18,14 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 
 import betfairlightweight
-from betfairlightweight import APIClient
-
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-
 from nautilus_trader.core.datetime import from_unix_time_ms
-
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
-
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
@@ -39,14 +33,13 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
-
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.common import generate_order_status_report
-from nautilus_trader.adapters.betfair.common import generate_trades_list
-from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
-from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
-from nautilus_trader.adapters.betfair.common import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
+from nautilus_trader.adapters.betfair.parsing import generate_trades_list
+from nautilus_trader.adapters.betfair.parsing import order_amend_to_betfair
+from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
@@ -130,7 +123,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
-        self._client.client_logout()
+        self._client.client_lnwsogout()
         self._log.info("Disconnected.")
 
     # -- COMMAND HANDLERS ------------------------------------------------------------------------------
@@ -139,16 +132,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     #  use some heuristics about the avg network latency and add an optional flag for bulk inserts etc.
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        self._loop.run_in_executor(self._submit_order, command)
-
-    # TODO - Is this correct?
-    async def _submit_order(self, SubmitOrder command):
-        instrument = self._instrument_provider._instruments[command.instrument_id]
-        kw = order_submit_to_betfair(command=command, instrument=instrument)
-        self._generate_order_submitted(
-            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.utc_now_c(),
-        )
-        resp = self._client.betting.place_orders(**kw)
+        f = self._loop.run_in_executor(self._submit_order, command)
+        f.add_done_callback()
+        # TODO -
+        resp = f.result()
         assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
         bet_id = resp['result']['instructionReports'][0]['betId']
         self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
@@ -157,6 +144,17 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             order_id = bet_id,
             timestamp = self._clock.utc_now_c(),
         )
+
+    # TODO - Is this correct?
+    def _submit_order(self, SubmitOrder command):
+        instrument = self._instrument_provider._instruments[command.instrument_id]
+        kw = order_submit_to_betfair(command=command, instrument=instrument)
+        self._generate_order_submitted(
+            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.utc_now_c(),
+        )
+        return self._client.betting.place_orders(**kw)
+
+
 
     cpdef void amend_order(self, AmendOrder command) except *:
         instrument = self._instrument_provider._instruments[command.instrument_id]

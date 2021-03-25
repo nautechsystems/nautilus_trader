@@ -1,5 +1,3 @@
-import asyncio
-
 from betfairlightweight import APIClient
 from betfairlightweight.filters import streaming_market_data_filter
 from betfairlightweight.filters import streaming_market_filter
@@ -42,7 +40,7 @@ class BetfairStreamClient(SocketClient):
             self.client.session_token
         ), f"Must login to APIClient before calling connect on {self.__class__}"
         await super().connect()
-        asyncio.create_task(self.start())
+        self.loop.create_task(self.start())
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID

@@ -19,10 +19,10 @@ import os
 import betfairlightweight
 import pytest
 
-from nautilus_trader.adapters.betfair.common import betfair_account_to_account_state
-from nautilus_trader.adapters.betfair.common import order_amend_to_betfair
-from nautilus_trader.adapters.betfair.common import order_cancel_to_betfair
-from nautilus_trader.adapters.betfair.common import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
+from nautilus_trader.adapters.betfair.parsing import order_amend_to_betfair
+from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
+from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
@@ -50,12 +50,12 @@ async def test_connect():
         app_key=os.environ["BETFAIR_APP_KEY"],
         certs=os.environ["BETFAIR_CERT_DIR"],
     )
-
+    # TODO - mock login won't let you login - need to comment out in conftest.py to run
+    betfair_client.login()
     socket = BetfairMarketStreamClient(client=betfair_client, message_handler=print)
     await socket.connect()
     await socket.send_subscription_message(market_ids=["1.180634014"])
-    await socket.start()
-    # TODO - mock login won't let this complete.
+    await asyncio.sleep(15)
 
 
 def test_order_submit_to_betfair(

@@ -16,30 +16,19 @@
 import asyncio
 
 from betfairlightweight import APIClient
-from betfairlightweight import BetfairError
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_unix_time_ms
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.instrument cimport BettingInstrument
 
-from nautilus_trader.adapters.betfair.common import on_market_update
-from nautilus_trader.model.data import Data
+from nautilus_trader.adapters.betfair.parsing import on_market_update
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
+from nautilus_trader.model.data cimport Data
 
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
@@ -102,59 +91,24 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._stream = BetfairMarketStreamClient(
             client=self._client, message_handler=self._on_market_update,
         )
-
         self.is_connected = False
 
         # Subscriptions
-        self._subscribed_instruments = set()   # type: set[InstrumentId]
-        self._subscribed_markets = {}      # type: dict[InstrumentId, asyncio.Task]
+        self._subscribed_market_ids = set()      # type: set[InstrumentId]
 
         # Scheduled tasks
         self._update_instruments_task = None
-
-    @property
-    def subscribed_instruments(self):
-        """
-        The instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_instruments))
-
-    @property
-    def subscribed_markets(self):
-        """
-        The quote tick instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_markets.keys()))
 
     cpdef void connect(self) except *:
         """
         Connect the client.
         """
         self._log.info("Connecting...")
-
-        # Schedule subscribed instruments update
-        delay = _SECONDS_IN_HOUR
-        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
-
         self._loop.create_task(self._connect())
 
     async def _connect(self):
-        # Load & handle instruments
-        self._load_instruments()
-
-        for instrument in self._instrument_provider.get_all().values():
-            self._handle_instrument(instrument)
+        # Load instruments
+        self._instrument_provider.load_all()
 
         # Connect market data socket
         await self._stream.connect()
@@ -178,12 +132,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             # TODO: This task is not finishing
             # stop_tasks.append(self._update_instruments_task)
-
-        # Cancel residual tasks
-        for task in self._subscribed_markets.values():
-            if not task.cancelled():
-                self._log.debug(f"Cancelling {task}...")
-                task.cancel()
 
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
@@ -213,9 +161,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         self._subscribed_instruments = set()
 
-        # Check all tasks have been popped and cancelled
-        assert len(self._subscribed_markets) == 0
-
         self._log.info("Reset.")
 
     cpdef void dispose(self) except *:
@@ -233,28 +178,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
-        """
-        Subscribe to `Instrument` data for the given instrument identifier.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument to subscribe to.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        self._subscribed_instruments.add(instrument_id)
-
-    cpdef void subscribe_markets(
-        self,
-        list instrument_ids,
-        int level,
-        int depth=0,
-        dict kwargs=None,
-    ) except *:
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
         """
         Subscribe to `OrderBook` data for the given instrument identifier.
 
@@ -268,42 +192,23 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The keyword arguments for exchange specific parameters.
 
         """
-        pass
-        # if kwargs is None:
-        #     kwargs = {}
-        # Condition.not_none(instrument_id, "instrument_id")
-        #
-        # # TODO - create data socket, send subscribe message. If at max subscription, add more sockets
-        #
-        # if instrument_id in self._subscribed_order_books:
-        #     self._log.warning(f"Already subscribed {instrument_id.symbol} <OrderBook> data.")
-        #     return
-        #
-        # task = self._loop.create_task(self._watch_order_book(
-        #     instrument_id=instrument_id,
-        #     level=level,
-        #     depth=depth,
-        #     kwargs=kwargs,
-        # ))
-        # self._subscribed_order_books[instrument_id] = task
-        #
-        # self._log.info(f"Subscribed to {instrument_id.symbol} <OrderBook> data.")
-
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
-        """
-        Unsubscribe from `Instrument` data for the given instrument identifier.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument to unsubscribe from.
-
-        """
+        if kwargs is None:
+            kwargs = {}
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscribed_instruments.discard(instrument_id)
+        cdef BettingInstrument instrument = self._instrument_provider.find(instrument_id)  # type: BettingInstrument
 
-    cpdef void unsubscribe_markets(self, InstrumentId instrument_id) except *:
+        if instrument.market_id  in self._subscribed_market_ids:
+            self._log.warning(f"Already subscribed to market_id: {instrument.market_id} [Instrument: {instrument_id.symbol}] <OrderBook> data.")
+            return
+
+        self._stream.send_subscription_message(
+            market_ids=[instrument.market_id]
+        )
+
+        self._log.info(f"Subscribed to market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.")
+
+    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from `OrderBook` data for the given instrument identifier.
 
@@ -316,13 +221,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if instrument_id not in self._subscribed_order_books:
-            self._log.debug(f"Not subscribed to {instrument_id.symbol} <OrderBook> data.")
+            self._log.debug(f"Betfair does not support unsubscribing from instruments")
             return
-
-        task = self._subscribed_order_books.pop(instrument_id)
-        task.cancel()
-        self._log.debug(f"Cancelled {task}.")
-        self._log.info(f"Unsubscribed from {instrument_id.symbol} <OrderBook> data.")
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -340,80 +240,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     cpdef void _on_market_update(self, dict update) except *:
-        on_market_update(self, update)
-
-    cdef inline void _on_quote_tick(
-        self,
-        InstrumentId instrument_id,
-        double best_bid,
-        double best_ask,
-        double best_bid_size,
-        double best_ask_size,
-        long timestamp,
-        int price_precision,
-        int size_precision,
-    ) except *:
-        cdef QuoteTick tick = QuoteTick(
-            instrument_id,
-            Price(best_bid, price_precision),
-            Price(best_ask, price_precision),
-            Quantity(best_bid_size, size_precision),
-            Quantity(best_ask_size, size_precision),
-            from_unix_time_ms(timestamp),
-        )
-
-        self._handle_quote_tick(tick)
-
-    cdef inline void _on_trade_tick(
-        self,
-        InstrumentId instrument_id,
-        double price,
-        double amount,
-        str order_side,
-        str liquidity_side,
-        str trade_match_id,
-        long timestamp,
-        int price_precision,
-        int size_precision,
-    ) except *:
-        # Determine liquidity side
-        cdef OrderSide side = OrderSide.BUY if order_side == "buy" else OrderSide.SELL
-        if liquidity_side == "maker":
-            side = OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.BUY
-
-        cdef TradeTick tick = TradeTick(
-            instrument_id,
-            Price(price, price_precision),
-            Quantity(amount, size_precision),
-            side,
-            TradeMatchId(trade_match_id),
-            from_unix_time_ms(timestamp),
-        )
-
-        self._handle_trade_tick(tick)
-
-    async def _run_after_delay(self, double delay, coro):
-        # TODO - Can we use loop.call_soon here?
-        await asyncio.sleep(delay)
-        return await coro
-
-    def _load_instruments(self):
-        self._instrument_provider.load_all()
-        self._log.info(f"Updated {len(self._instrument_provider._instruments)} instruments.")
-
-    async def _subscribed_instruments_update(self, delay):
-        self._log.info("Loading all instruments")
-        self._load_instruments()
-
-        cdef InstrumentId instrument_id
-        cdef Instrument instrument
-        for instrument_id in self._subscribed_instruments:
-            instrument = self._instrument_provider.find_c(instrument_id)
-            if instrument is not None:
-                self._handle_instrument(instrument)
-            else:
-                self._log.error(f"Could not find instrument {instrument_id.symbol}.")
-
-        # Reschedule subscribed instruments update
-        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
+        updates = on_market_update(raw=update, instrument_provider=self.instrument_provider())
+        for upd in updates:
+            self.handle_data(data=upd)

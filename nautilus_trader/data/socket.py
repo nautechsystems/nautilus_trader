@@ -1,13 +1,13 @@
 import asyncio
 import json
+import logging
 from typing import Optional
 
 
 DEFAULT_CRLF = b"\r\n"
 
+
 # TODO - Need to add DataClient subclass back
-
-
 class SocketClient:
     def __init__(
         self,
@@ -59,7 +59,7 @@ class SocketClient:
             raw = json.dumps(raw)
         if not isinstance(raw, bytes):
             raw = raw.encode(self.encoding)
-        print(raw)
+        logging.info(raw)
         self.writer.write(raw + self.crlf)
         await self.writer.drain()
 
@@ -69,11 +69,9 @@ class SocketClient:
         while not self.stop:
             try:
                 raw = await self.reader.readuntil(separator=self.crlf)
-                if raw is not None:
-                    self.message_handler(raw.rstrip(self.crlf))
+                logging.debug(raw)
+                self.message_handler(raw.rstrip(self.crlf))
                 await asyncio.sleep(0)
-                if self.stop:
-                    break
             except ConnectionResetError:
                 await self.connect()
         await self.shutdown()
