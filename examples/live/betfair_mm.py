@@ -47,12 +47,13 @@ config = {
         "log_thread_id": False,
         "log_to_file": False,
         "log_file_path": "logs/",
+        "run_in_process": False,
     },
-    # "exec_database": {
-    #     "type": "redis",
-    #     "host": "localhost",
-    #     "port": 6379,
-    # },
+    "exec_database": {
+        "type": "redis",
+        "host": "localhost",
+        "port": 6379,
+    },
     "risk": {},
     "strategy": {
         "load_state": True,  # Strategy state is loaded from the database on start
@@ -60,16 +61,18 @@ config = {
     },
     "data_clients": {
         "BETFAIR": {
-            "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "BINANCE_API_KEY",  # value is the environment variable key
-            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
+            "username": "BETFAIR_USERNAME",  # value is the environment variable key
+            "password": "BETFAIR_PW",  # value is the environment variable key
+            "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
+            "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
         },
     },
     "exec_clients": {
         "BETFAIR": {
-            "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "BINANCE_API_KEY",  # value is the environment variable key
-            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
+            "username": "BETFAIR_USERNAME",  # value is the environment variable key
+            "password": "BETFAIR_PW",  # value is the environment variable key
+            "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
+            "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
             "sandbox_mode": False,  # If clients use the testnet
         },
     },
@@ -91,6 +94,7 @@ node = TradingNode(strategies=[strategy], config=config)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("BETFAIR", BetfairClientsFactory)
+node.add_exec_client_factory("BETFAIR", BetfairClientsFactory)
 node.build()
 
 

@@ -12,9 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 from datetime import datetime
 from decimal import Decimal
+from functools import partial
 from typing import Dict, List, Optional
 
 import betfairlightweight
@@ -131,26 +132,29 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     #  We could use some heuristics about the avg network latency and add an optional flag for throttle inserts etc.
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        aw = self._loop.run_in_executor(None, self._submit_order, command)
-        self._log.info("aw:", aw)
-        resp = await aw
-        self._log.info("resp:", resp)
-        assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
-        bet_id = resp['result']['instructionReports'][0]['betId']
-        self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
-        self._generate_order_accepted(
-            cl_ord_id = command.order.cl_ord_id,
-            order_id = bet_id,
-            timestamp = self._clock.unix_time(),
-        )
+        f = self._loop.run_in_executor(None, self._submit_order, command) # type: asyncio.Future
+        self._log.info("future:", f)
+        f.add_done_callback(partial(self._post_submit_order, command=command))
 
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_submit_to_betfair(command=command, instrument=instrument)
         self._generate_order_submitted(
-            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.utc_now_c(),
+            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.unix_time(),
         )
         return self._client.betting.place_orders(**kw)
+
+    def _post_submit_order(self, resp, command):
+        self._log.info("resp:", resp)
+        self._log.info("command:", command)
+        assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
+        bet_id = resp['result']['instructionReports'][0]['betId']
+        self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
+        self._generate_order_accepted(
+            cl_ord_id=command.order.cl_ord_id,
+            order_id=bet_id,
+            timestamp=self._clock.unix_time(),
+        )
 
     # TODO - Does this also take 5s ??
     cpdef void amend_order(self, AmendOrder command) except *:

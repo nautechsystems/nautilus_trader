@@ -69,7 +69,7 @@ cdef class BetfairClientsFactory:
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),
-            certs=os.getenv(config.get("cert_location", ""), ""),
+            certs=os.getenv(config.get("cert_dir", ""), ""),
         )
 
         if config.get("data_client", True):
