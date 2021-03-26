@@ -2,7 +2,6 @@ from betfairlightweight import APIClient
 from betfairlightweight.filters import streaming_market_data_filter
 from betfairlightweight.filters import streaming_market_filter
 from betfairlightweight.filters import streaming_order_filter
-import orjson
 
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -48,7 +47,6 @@ class BetfairStreamClient(SocketClient):
         ), f"Must login to APIClient before calling connect on {self.__class__}"
         await super().connect()
         self.loop.create_task(self.start())
-        self.loop.call_later(10, self.send(raw=orjson.dumps({"op": "heartbeat"})))
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID
