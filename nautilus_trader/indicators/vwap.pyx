@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 
@@ -51,7 +52,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self.update_raw(
             bar.close.as_double(),
             bar.volume.as_double(),
-            bar.timestamp,
+            nanos_to_unix_dt(nanos=bar.timestamp_ns),
         )
 
     cpdef void update_raw(

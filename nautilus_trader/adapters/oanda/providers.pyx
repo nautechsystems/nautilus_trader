@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 from decimal import Decimal
 
 import oandapyV20
@@ -21,6 +20,7 @@ from oandapyV20.endpoints.accounts import AccountInstruments
 
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
@@ -143,6 +143,6 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
             maker_fee=maker_fee,
             taker_fee=taker_fee,
             financing=values.get("financing", {}),
-            timestamp=datetime.utcnow(),
+            timestamp_ns=unix_timestamp_ns(),
             info=values,
         )

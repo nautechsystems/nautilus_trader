@@ -161,7 +161,7 @@ class TestLiveRiskEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -206,7 +206,7 @@ class TestLiveRiskEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         event = TestStubs.event_order_submitted(order)
@@ -286,7 +286,7 @@ class TestLiveRiskEngine:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             # Act

@@ -109,7 +109,7 @@ class TestRiskEngine:
         random = TradingCommand(
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(random)
@@ -118,7 +118,7 @@ class TestRiskEngine:
         # Arrange
         random = Event(
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(random)
@@ -150,7 +150,7 @@ class TestRiskEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -191,7 +191,7 @@ class TestRiskEngine:
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -227,7 +227,7 @@ class TestRiskEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.set_block_all_orders()
@@ -266,7 +266,7 @@ class TestRiskEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         amend = AmendOrder(
@@ -277,7 +277,7 @@ class TestRiskEngine:
             order.quantity,
             Price("1.00010"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit)
@@ -315,7 +315,7 @@ class TestRiskEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         cancel = CancelOrder(
@@ -325,7 +325,7 @@ class TestRiskEngine:
             order.cl_ord_id,
             order.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit)
@@ -368,7 +368,7 @@ class TestRiskEngine:
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.set_block_all_orders()

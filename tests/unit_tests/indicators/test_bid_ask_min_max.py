@@ -53,7 +53,7 @@ class BidAskMinMaxTests(unittest.TestCase):
                 Price("2.0"),
                 Quantity(1),
                 Quantity(1),
-                datetime(2020, 1, 1, 0, 0, 0, tzinfo=pytz.utc),
+                0,
             )
         )
         # 5 min later (still in the window)
@@ -64,7 +64,7 @@ class BidAskMinMaxTests(unittest.TestCase):
                 Price("2.1"),
                 Quantity(1),
                 Quantity(1),
-                datetime(2020, 1, 1, 0, 5, 0, tzinfo=pytz.utc),
+                3e11,
             )
         )
 
@@ -85,7 +85,7 @@ class BidAskMinMaxTests(unittest.TestCase):
                 Price("2.1"),
                 Quantity(1),
                 Quantity(1),
-                datetime(2020, 1, 1, 0, 5, 0, tzinfo=pytz.utc),
+                0,
             )
         )
 

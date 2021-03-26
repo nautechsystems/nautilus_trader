@@ -171,28 +171,25 @@ cdef class DataCache(DataCacheFacade):
 
         ticks.appendleft(tick)
 
-    cpdef void add_bar(self, BarType bar_type, Bar bar) except *:
+    cpdef void add_bar(self, Bar bar) except *:
         """
         Add the given bar type and bar to the cache.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type for the received bar.
         bar : Bar
             The received bar to add.
 
         """
-        Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bar, "bar")
 
         # Update ticks
-        bars = self._bars.get(bar_type)
+        bars = self._bars.get(bar.type)
 
         if bars is None:
             # The bar type was not registered
             bars = deque(maxlen=self.bar_capacity)
-            self._bars[bar_type] = bars
+            self._bars[bar.type] = bars
 
         bars.appendleft(bar)
 
@@ -270,34 +267,33 @@ cdef class DataCache(DataCacheFacade):
         for tick in ticks:
             cached_ticks.appendleft(tick)
 
-    cpdef void add_bars(self, BarType bar_type, list bars) except *:
+    cpdef void add_bars(self, list bars) except *:
         """
         Handle the given bar type and bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type for the received bar.
         bars : list[Bar]
             The received bars to add.
 
         """
-        Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bars, "bars")
 
         cdef int length = len(bars)
+        cdef BarType bar_type
         if length > 0:
-            self._log.debug(f"Received <Bar[{length}]> data for {bar_type.instrument_id}.")
+            bar_type = bars[0].type
+            self._log.debug(f"Received <Bar[{length}]> data for {bar_type}.")
         else:
             self._log.debug("Received <Bar[]> data with no ticks.")
             return
 
-        cached_bars = self._trade_ticks.get(bar_type.instrument_id)
+        cached_bars = self._bars.get(bar_type)
 
         if cached_bars is None:
             # The instrument_id was not registered
             cached_bars = deque(maxlen=self.bar_capacity)
-            self._trade_ticks[bar_type.instrument_id] = cached_bars
+            self._bars[bar_type] = cached_bars
         elif len(cached_bars) > 0:
             # Currently the simple solution for multiple consumers requesting
             # bars at system spool up; is just to add only if the cache is empty.

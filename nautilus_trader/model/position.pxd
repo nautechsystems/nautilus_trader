@@ -15,8 +15,7 @@
 
 from decimal import Decimal
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -71,14 +70,14 @@ cdef class Position:
     """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
-    cdef readonly datetime timestamp
-    """The position initialization timestamp.\n\n:returns: `datetime`"""
-    cdef readonly datetime opened_time
-    """The opened time.\n\n:returns: `datetime`"""
-    cdef readonly datetime closed_time
-    """The closed time.\n\n:returns: `datetime` or `None`"""
-    cdef readonly timedelta open_duration
-    """The total open duration.\n\n:returns: `timedelta` or `None`"""
+    cdef readonly int64_t timestamp_ns
+    """The position initialization Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly int64_t opened_timestamp_ns
+    """The opened time Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly int64_t closed_timestamp_ns
+    """The closed time Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly int64_t open_duration_ns
+    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
     cdef readonly object avg_px_open
     """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_px_close

@@ -12,7 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from cpython.datetime cimport datetime
+
 from decimal import Decimal
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass

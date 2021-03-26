@@ -259,7 +259,7 @@ cdef class RiskEngine(Component):
             cl_ord_id=order.cl_ord_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._exec_engine.process(denied)

@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
@@ -27,11 +26,13 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestStubs.audusd_id()
 GBPUSD_SIM = TestStubs.gbpusd_id()
+ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
+GBPUSD_1_MIN_BID = BarType(GBPUSD_SIM, ONE_MIN_BID)
 
 
 class TestBarSpecification:
@@ -54,8 +55,8 @@ class TestBarSpecification:
         # Act
         # Assert
         assert isinstance(hash(bar_spec), int)
-        assert "1-MINUTE-BID" == str(bar_spec)
-        assert "BarSpecification(1-MINUTE-BID)" == repr(bar_spec)
+        assert str(bar_spec) == "1-MINUTE-BID"
+        assert repr(bar_spec) == "BarSpecification(1-MINUTE-BID)"
 
     @pytest.mark.parametrize(
         "value",
@@ -177,9 +178,10 @@ class TestBarType:
         # Act
         # Assert
         assert isinstance(hash(bar_type), int)
-        assert "AUD/USD.SIM-1-MINUTE-BID" == str(bar_type)
-        assert "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)" == repr(
-            bar_type
+        assert str(bar_type) == "AUD/USD.SIM-1-MINUTE-BID"
+        assert (
+            repr(bar_type)
+            == "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)"
         )
 
     @pytest.mark.parametrize(
@@ -234,7 +236,7 @@ class TestBarType:
         bar_type = BarType.from_serializable_str(value, internal_aggregation=True)
 
         # Assert
-        assert bar_type == expected
+        assert expected == bar_type
 
 
 class TestBar:
@@ -244,12 +246,13 @@ class TestBar:
         # Assert
         with pytest.raises(ValueError):
             Bar(
+                AUDUSD_1_MIN_BID,
                 Price("1.00001"),
                 Price("1.00000"),  # High below low
                 Price("1.00002"),
                 Price("1.00003"),
                 Quantity(100000),
-                UNIX_EPOCH,
+                0,
                 True,
             )
 
@@ -259,12 +262,13 @@ class TestBar:
         # Assert
         with pytest.raises(ValueError):
             Bar(
+                AUDUSD_1_MIN_BID,
                 Price("1.00000"),
                 Price("1.00000"),  # High below close
                 Price("1.00000"),
                 Price("1.00005"),
                 Quantity(100000),
-                UNIX_EPOCH,
+                0,
                 True,
             )
 
@@ -274,33 +278,36 @@ class TestBar:
         # Assert
         with pytest.raises(ValueError):
             Bar(
+                AUDUSD_1_MIN_BID,
                 Price("1.00000"),
                 Price("1.00005"),
                 Price("1.00000"),
                 Price("0.99999"),  # Close below low
                 Quantity(100000),
-                UNIX_EPOCH,
+                0,
                 True,
             )
 
     def test_equality(self):
         # Arrange
         bar1 = Bar(
+            AUDUSD_1_MIN_BID,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         bar2 = Bar(
+            AUDUSD_1_MIN_BID,
             Price("1.00000"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -311,93 +318,68 @@ class TestBar:
     def test_hash_str_repr(self):
         # Arrange
         bar = Bar(
+            AUDUSD_1_MIN_BID,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
         # Assert
         assert isinstance(hash(bar), int)
-        assert "1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z" == str(
-            bar
+        assert (
+            str(bar)
+            == "AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0"
         )
         assert (
-            "Bar(1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)"
-            == repr(bar)
+            repr(bar)
+            == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"
         )
 
     def test_to_serializable_string(self):
         # Arrange
         bar = Bar(
+            AUDUSD_1_MIN_BID,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
         serializable = bar.to_serializable_str()
 
         # Assert
-        assert "1.00001,1.00004,1.00002,1.00003,100000,0" == serializable
+        assert serializable == "1.00001,1.00004,1.00002,1.00003,100000,0"
 
     def test_from_serializable_string_given_malformed_string_raises_value_error(self):
         # Arrange
         bar = Bar(
+            AUDUSD_1_MIN_BID,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
         # Assert
         with pytest.raises(ValueError):
-            bar.from_serializable_str("NOT_A_BAR")
+            bar.from_serializable_str(AUDUSD_1_MIN_BID, "NOT_BAR_VALUES!")
 
     def test_from_serializable_string_given_valid_string_returns_expected_bar(self):
         # Arrange
         bar = TestStubs.bar_5decimal()
 
         # Act
-        result = Bar.from_serializable_str(bar.to_serializable_str())
+        result = Bar.from_serializable_str(bar.type, bar.to_serializable_str())
 
         # Assert
-        assert bar == result
-
-
-class TestBarData:
-    def test_str_repr(self):
-        # Arrange
-        instrument_id = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
-        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type = BarType(instrument_id, bar_spec)
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            UNIX_EPOCH,
-        )
-
-        bar_data = BarData(bar_type, bar)
-
-        # Act
-        # Assert
-        assert (
-            "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)"
-            == str(bar_data)
-        )  # noqa
-        assert (
-            "BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)"
-            == repr(bar_data)
-        )  # noqa
+        assert result == bar

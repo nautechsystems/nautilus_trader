@@ -20,9 +20,11 @@ Defines various order types used for trading.
 from decimal import Decimal
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -128,11 +130,11 @@ cdef class Order:
         self.side = event.order_side
         self.type = event.order_type
         self.quantity = event.quantity
-        self.timestamp = event.timestamp
+        self.timestamp_ns = event.timestamp_ns
         self.time_in_force = event.time_in_force
         self.filled_qty = Quantity()
-        self.filled_timestamp = None  # Can be None
-        self.avg_px = None         # Can be None
+        self.execution_ns = 0
+        self.avg_px = None  # Can be None
         self.slippage = Decimal()
         self.init_id = event.id
 
@@ -537,13 +539,13 @@ cdef class PassiveOrder(Order):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
-        OrderType order_type,  # 'type' hides keyword
+        OrderType order_type,
         Quantity quantity not None,
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
         dict options not None,
     ):
         """
@@ -568,10 +570,10 @@ cdef class PassiveOrder(Order):
         time_in_force : TimeInForce (Enum)
             The order time-in-force.
         expire_time : datetime, optional
-            The order expiry time - for GTD orders only.
+            The order expiry time - applicable to GTD orders only.
         init_id : UUID
             The order initialization event identifier.
-        timestamp : datetime
+        timestamp_ns : int64
             The order initialization timestamp.
         options : dict
             The order options.
@@ -615,7 +617,7 @@ cdef class PassiveOrder(Order):
             quantity=quantity,
             time_in_force=time_in_force,
             event_id=init_id,
-            event_timestamp=timestamp,
+            timestamp_ns=timestamp_ns,
             options=options,
         )
 
@@ -624,6 +626,7 @@ cdef class PassiveOrder(Order):
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
+        self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
         self.slippage = Decimal()
 
     cdef str status_string_c(self):
@@ -645,7 +648,7 @@ cdef class PassiveOrder(Order):
         self.execution_id = event.execution_id
         self.liquidity_side = event.liquidity_side
         self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
-        self.filled_timestamp = event.timestamp
+        self.execution_ns = event.execution_ns
         self.avg_px = self._calculate_avg_px(event.fill_price, event.fill_qty)
         self._set_slippage()
 

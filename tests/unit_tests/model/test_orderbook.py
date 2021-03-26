@@ -25,7 +25,6 @@ from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD = TestStubs.audusd_id()
@@ -39,7 +38,7 @@ class TestOrderBookSnapshot:
             level=OrderBookLevel.L2,
             bids=[[1010, 2], [1009, 1]],
             asks=[[1020, 2], [1021, 1]],
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act

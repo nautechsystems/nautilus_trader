@@ -41,7 +41,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestDataProvider:
@@ -233,7 +232,7 @@ class TestInstrumentProvider:
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -275,7 +274,7 @@ class TestInstrumentProvider:
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -317,7 +316,7 @@ class TestInstrumentProvider:
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -359,7 +358,7 @@ class TestInstrumentProvider:
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -427,5 +426,5 @@ class TestInstrumentProvider:
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )

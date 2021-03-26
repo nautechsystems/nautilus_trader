@@ -17,6 +17,7 @@ from cpython.datetime cimport timedelta
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport is_datetime_utc
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
@@ -60,8 +61,8 @@ cdef class BidAskMinMax(Indicator):
             Incoming quote tick to process
 
         """
-        self.bids.add_price(tick.timestamp, tick.bid)
-        self.asks.add_price(tick.timestamp, tick.ask)
+        self.bids.add_price(nanos_to_unix_dt(nanos=tick.timestamp_ns), tick.bid)
+        self.asks.add_price(nanos_to_unix_dt(nanos=tick.timestamp_ns), tick.ask)
 
         # Mark as having input and initialized
         self._set_has_inputs(True)

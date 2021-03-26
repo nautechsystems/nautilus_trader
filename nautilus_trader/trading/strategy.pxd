@@ -97,7 +97,7 @@ cdef class TradingStrategy(Component):
     cpdef void on_order_book(self, OrderBook order_book) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
-    cpdef void on_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, GenericData data) except *
     cpdef void on_event(self, Event event) except *
 
@@ -190,8 +190,8 @@ cdef class TradingStrategy(Component):
     cpdef void handle_quote_ticks(self, list ticks) except *
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
     cpdef void handle_trade_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *
+    cpdef void handle_bar(self, Bar bar, bint is_historical=*) except *
+    cpdef void handle_bars(self, list bars) except *
     cpdef void handle_data(self, GenericData data) except *
     cpdef void handle_event(self, Event event) except *
 

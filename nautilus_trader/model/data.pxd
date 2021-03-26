@@ -13,14 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 
 cdef class Data:
-    cdef readonly datetime timestamp
-    """The data timestamp (UTC).\n\n:returns: `datetime`"""
-    cdef readonly double unix_timestamp
-    """The data Unix timestamp (seconds).\n\n:returns: `double`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of the data.\n\n:returns: `int64`"""
 
 
 cdef class DataType:

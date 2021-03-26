@@ -300,9 +300,9 @@ class OandaDataClientTests(unittest.TestCase):
                         "Limit": 1000,
                     },
                 ),
-                callback=handler.store_2,
+                callback=handler.store,
                 request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -315,7 +315,7 @@ class OandaDataClientTests(unittest.TestCase):
             self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
             # Final bar incomplete so becomes partial
-            self.assertEqual(99, len(handler.get_store()[0][1]))
+            self.assertEqual(99, len(handler.get_store()[0]))
 
             # Tear Down
             self.data_engine.stop()

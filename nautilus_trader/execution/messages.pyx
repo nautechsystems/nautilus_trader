@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -39,7 +39,7 @@ cdef class OrderStatusReport:
         OrderId order_id not None,
         OrderState order_state,
         Quantity filled_qty not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `OrderStatusReport` class.
@@ -54,8 +54,8 @@ cdef class OrderStatusReport:
             The reported order state at the exchange.
         filled_qty : Quantity
             The reported filled quantity at the exchange.
-        timestamp : datetime
-            The report timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the report.
 
         Raises
         ------
@@ -69,7 +69,7 @@ cdef class OrderStatusReport:
         self.order_id = order_id
         self.order_state = order_state
         self.filled_qty = filled_qty
-        self.timestamp = timestamp
+        self.timestamp_ns = timestamp_ns
 
 
 cdef class PositionStatusReport:
@@ -81,7 +81,7 @@ cdef class PositionStatusReport:
         InstrumentId instrument_id not None,
         PositionSide position_side,
         Quantity qty not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `PositionStatusReport` class.
@@ -94,8 +94,8 @@ cdef class PositionStatusReport:
             The reported position side at the exchange.
         qty : Quantity
             The reported position quantity at the exchange.
-        timestamp : datetime
-            The report timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the report.
 
         Raises
         ------
@@ -108,7 +108,7 @@ cdef class PositionStatusReport:
         self.instrument_id = instrument_id
         self.side = position_side
         self.qty = qty
-        self.timestamp = timestamp
+        self.timestamp_ns = timestamp_ns
 
 
 cdef class ExecutionReport:
@@ -118,54 +118,56 @@ cdef class ExecutionReport:
 
     def __init__(
         self,
-        ExecutionId execution_id not None,
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
+        ExecutionId execution_id not None,
         last_qty not None: Decimal,
         last_px not None: Decimal,
-        commission_amount: Decimal,    # Can be None
-        str commission_currency,  # Can be None
+        commission_amount: Decimal,  # Can be None
+        str commission_currency,     # Can be None
         LiquiditySide liquidity_side,
-        datetime timestamp not None,
+        int64_t execution_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `ExecutionReport` class.
 
         Parameters
         ----------
-        execution_id : ExecutionId
-            The execution identifier for the trade.
         cl_ord_id : ClientOrderId
             The client order identifier.
         order_id : OrderId
             The order identifier.
+        execution_id : ExecutionId
+            The execution identifier for the trade.
         last_qty : Decimal
-            The last filled quantity.
+            The quantity of the last fill.
         last_px : Decimal
-            The last filled price.
+            The price of the last fill.
         commission_amount : Decimal, optional
             The commission for the transaction (can be None).
         commission_currency : str, optional
             The commission currency for the transaction (can be None).
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
-        timestamp : datetime
-            The execution time.
+        execution_ns : int64
+            The Unix timestamp (nanos) of the execution.
 
         """
         Condition.type(last_qty, Decimal, "last_qty")
         Condition.type(last_px, Decimal, "last_qty")
         Condition.type_or_none(commission_amount, Decimal, "commission_amount")
 
-        self.id = execution_id
         self.cl_ord_id = cl_ord_id
         self.order_id = order_id
+        self.id = execution_id
         self.last_qty = last_qty
         self.last_px = last_px
         self.commission_amount = commission_amount
         self.commission_currency = commission_currency
         self.liquidity_side = liquidity_side
-        self.timestamp = timestamp
+        self.execution_ns = execution_ns
+        self.timestamp_ns = timestamp_ns
 
 
 cdef class ExecutionMassStatus:
@@ -177,7 +179,7 @@ cdef class ExecutionMassStatus:
         self,
         str client not None,
         AccountId account_id not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `ExecutionMassStatus` class.
@@ -188,8 +190,8 @@ cdef class ExecutionMassStatus:
             The client name for the report.
         account_id : AccountId
             The account identifier for the report.
-        timestamp : datetime
-            The report timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the report.
 
         Raises
         ------
@@ -201,7 +203,7 @@ cdef class ExecutionMassStatus:
 
         self.client = client
         self.account_id = account_id
-        self.timestamp = timestamp
+        self.timestamp_ns = timestamp_ns
 
         self._order_states = {}     # type: dict[OrderId, OrderStatusReport]
         self._trades = {}           # type: dict[OrderId, list[ExecutionReport]]

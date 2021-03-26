@@ -22,7 +22,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestStubs.audusd_id()
@@ -38,13 +37,13 @@ class TestExecutionStateReport:
         report = ExecutionMassStatus(
             client=client,
             account_id=account_id,
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Assert
         assert report.client == client
         assert report.account_id == account_id
-        assert report.timestamp == UNIX_EPOCH
+        assert report.timestamp_ns == 0
         assert report.order_reports() == {}
         assert report.position_reports() == {}
 
@@ -53,7 +52,7 @@ class TestExecutionStateReport:
         report = ExecutionMassStatus(
             client="IB",
             account_id=TestStubs.account_id(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         order_id = OrderId("1")
@@ -62,7 +61,7 @@ class TestExecutionStateReport:
             order_id=order_id,
             order_state=OrderState.REJECTED,
             filled_qty=Quantity(0),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -75,14 +74,14 @@ class TestExecutionStateReport:
         report = ExecutionMassStatus(
             client="IB",
             account_id=TestStubs.account_id(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         position_report = PositionStatusReport(
             instrument_id=AUDUSD_SIM,
             position_side=PositionSide.FLAT,
             qty=Quantity(0),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act

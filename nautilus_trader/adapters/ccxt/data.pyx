@@ -25,13 +25,12 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_unix_time_ms
-from nautilus_trader.core.datetime cimport to_unix_time_ms
+from nautilus_trader.core.datetime cimport dt_to_unix_millis
+from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -639,6 +638,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
+    cdef inline int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *:
+        return millis_to_nanos(millis)
+
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
@@ -657,10 +659,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                         limit=None if depth == 0 else depth,
                         params=kwargs,
                     )
-                    timestamp = lob["timestamp"]
-                    if timestamp is None:
+                    timestamp_ms = lob["timestamp"]
+                    if timestamp_ms is None:
                         # First quote timestamp often None
-                        timestamp = self._client.milliseconds()
+                        timestamp_ms = self._client.milliseconds()
 
                     bids = lob.get("bids")
                     asks = lob.get("asks")
@@ -676,7 +678,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                         level=level,
                         bids=list(bids),
                         asks=list(asks),
-                        timestamp=from_unix_time_ms(timestamp)
+                        timestamp_ns=self._ccxt_to_timestamp_ns(millis=timestamp_ms)
                     )
 
                     self._handle_data(snapshot)
@@ -774,7 +776,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -784,7 +786,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(best_ask, price_precision),
             Quantity(best_bid_size, size_precision),
             Quantity(best_ask_size, size_precision),
-            from_unix_time_ms(timestamp),
+            timestamp_ns,
         )
 
         self._handle_data(tick)
@@ -820,7 +822,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     trade["side"],
                     trade["takerOrMaker"],
                     trade["id"],
-                    trade["timestamp"],
+                    self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
                     price_precision,
                     size_precision,
                 )
@@ -840,7 +842,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         str order_side,
         str liquidity_side,
         str trade_match_id,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -855,7 +857,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Quantity(amount, size_precision),
             side,
             TradeMatchId(trade_match_id),
-            from_unix_time_ms(timestamp),
+            timestamp_ns,
         )
 
         self._handle_data(tick)
@@ -879,8 +881,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
-        cdef long last_timestamp = 0
-        cdef long this_timestamp = 0
+        cdef int64_t last_timestamp = 0
+        cdef int64_t this_timestamp = 0
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
@@ -899,7 +901,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     exiting = True
 
                 bar = bars[0]  # Last closed bar
-                this_timestamp = bar[0]
+                this_timestamp = self._ccxt_to_timestamp_ns(millis=bar[0])
                 if last_timestamp == 0:
                     # Initialize last timestamp
                     last_timestamp = this_timestamp
@@ -934,20 +936,21 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *:
         cdef Bar bar = Bar(
+            bar_type,
             Price(open_price, price_precision),
             Price(high_price, price_precision),
             Price(low_price, price_precision),
             Price(close_price, price_precision),
             Quantity(volume, size_precision),
-            from_unix_time_ms(timestamp),
+            timestamp_ns,
         )
 
-        self._handle_data(BarData(bar_type, bar))
+        self._handle_data(bar)
 
     async def _run_after_delay(self, double delay, coro):
         await asyncio.sleep(delay)
@@ -1012,7 +1015,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             trades = await self._client.fetch_trades(
                 symbol=instrument_id.symbol.value,
-                since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
+                since=dt_to_unix_millis(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
         except CCXTError as ex:
@@ -1091,7 +1094,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             data = await self._client.fetch_ohlcv(
                 symbol=bar_type.symbol.value,
                 timeframe=timeframe,
-                since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
+                since=dt_to_unix_millis(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
         except TypeError:
@@ -1110,7 +1113,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef int size_precision = instrument.size_precision
 
         # Set partial bar
-        cdef Bar partial_bar = self._parse_bar(data[-1], price_precision, size_precision)
+        cdef Bar partial_bar = self._parse_bar(
+            bar_type,
+            data[-1],
+            price_precision,
+            size_precision,
+        )
 
         # Delete last values
         del data[-1]
@@ -1118,7 +1126,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list bars = []  # type: list[Bar]
         cdef list values     # type: list[object]
         for values in data:
-            bars.append(self._parse_bar(values, price_precision, size_precision))
+            bars.append(self._parse_bar(
+                bar_type,
+                values,
+                price_precision,
+                size_precision,
+            ))
 
         self._handle_bars(
             bar_type,
@@ -1140,22 +1153,24 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Quantity(trade['amount'], size_precision),
             OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
             TradeMatchId(trade["id"]),
-            from_unix_time_ms(trade["timestamp"]),
+            self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
         )
 
     cdef inline Bar _parse_bar(
         self,
+        BarType bar_type,
         list values,
         int price_precision,
         int size_precision,
     ):
         return Bar(
+            bar_type,
             Price(values[1], price_precision),
             Price(values[2], price_precision),
             Price(values[3], price_precision),
             Price(values[4], price_precision),
             Quantity(values[5], size_precision),
-            from_unix_time_ms(values[0]),
+            self._ccxt_to_timestamp_ns(millis=values[0]),
         )
 
     cdef str _make_timeframe(self, BarSpecification bar_spec):

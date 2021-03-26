@@ -134,10 +134,6 @@ class TestStubs:
         return BarType(TestStubs.usdjpy_id(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
-    def bartype_btcusdt_binance_1min_bid() -> BarType:
-        return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_1min_bid())
-
-    @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
         return BarType(
             TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last()
@@ -146,23 +142,25 @@ class TestStubs:
     @staticmethod
     def bar_5decimal() -> Bar:
         return Bar(
+            TestStubs.bartype_audusd_1min_bid(),
             Price("1.00002"),
             Price("1.00004"),
             Price("1.00001"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
     def bar_3decimal() -> Bar:
         return Bar(
+            TestStubs.bartype_usdjpy_1min_bid(),
             Price("90.002"),
             Price("90.004"),
             Price("90.001"),
             Price("90.003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -173,7 +171,7 @@ class TestStubs:
             ask if ask is not None else Price("90.005"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -184,7 +182,7 @@ class TestStubs:
             ask if ask is not None else Price("1.00003"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -195,7 +193,7 @@ class TestStubs:
             Quantity(100000),
             OrderSide.BUY,
             TradeMatchId("123456"),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -218,7 +216,7 @@ class TestStubs:
             [Money(0, USD)],
             {"default_currency": "USD"},
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -226,9 +224,9 @@ class TestStubs:
         return OrderSubmitted(
             TestStubs.account_id(),
             order.cl_ord_id,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -239,9 +237,9 @@ class TestStubs:
             TestStubs.account_id(),
             order.cl_ord_id,
             order_id,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -249,10 +247,10 @@ class TestStubs:
         return OrderRejected(
             TestStubs.account_id(),
             order.cl_ord_id,
-            UNIX_EPOCH,
+            0,
             "ORDER_REJECTED",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -262,9 +260,10 @@ class TestStubs:
         execution_id=None,
         position_id=None,
         strategy_id=None,
-        fill_price=None,
-        fill_qty=None,
+        last_qty=None,
+        last_px=None,
         liquidity_side=LiquiditySide.TAKER,
+        execution_ns=0,
     ) -> OrderFilled:
         if execution_id is None:
             execution_id = ExecutionId(order.cl_ord_id.value.replace("O", "E"))
@@ -272,14 +271,14 @@ class TestStubs:
             position_id = order.position_id
         if strategy_id is None:
             strategy_id = order.strategy_id
-        if fill_price is None:
-            fill_price = Price("1.00000")
-        if fill_qty is None:
-            fill_qty = order.quantity
+        if last_px is None:
+            last_px = Price("1.00000")
+        if last_qty is None:
+            last_qty = order.quantity
 
         commission = instrument.calculate_commission(
             quantity=order.quantity,
-            avg_px=fill_price,
+            avg_px=last_px,
             liquidity_side=liquidity_side,
         )
 
@@ -292,17 +291,17 @@ class TestStubs:
             strategy_id=strategy_id,
             instrument_id=order.instrument_id,
             order_side=order.side,
-            fill_qty=fill_qty,
-            cum_qty=Quantity(order.filled_qty + fill_qty),
-            leaves_qty=Quantity(max(0, order.quantity - order.filled_qty - fill_qty)),
-            fill_price=order.price if fill_price is None else fill_price,
+            last_qty=last_qty,
+            last_px=order.price if last_px is None else last_px,
+            cum_qty=Quantity(order.filled_qty + last_qty),
+            leaves_qty=Quantity(max(0, order.quantity - order.filled_qty - last_qty)),
             currency=instrument.quote_currency,
             is_inverse=instrument.is_inverse,
             commission=commission,
             liquidity_side=liquidity_side,
-            execution_time=UNIX_EPOCH,
+            execution_ns=execution_ns,
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -311,9 +310,9 @@ class TestStubs:
             TestStubs.account_id(),
             order.cl_ord_id,
             order.id,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -322,9 +321,9 @@ class TestStubs:
             TestStubs.account_id(),
             order.cl_ord_id,
             order.id,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -333,9 +332,9 @@ class TestStubs:
             TestStubs.account_id(),
             order.cl_ord_id,
             order.id,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -344,7 +343,7 @@ class TestStubs:
             position,
             position.last_event,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -353,7 +352,7 @@ class TestStubs:
             position,
             position.last_event,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     @staticmethod
@@ -362,5 +361,5 @@ class TestStubs:
             position,
             position.last_event,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )

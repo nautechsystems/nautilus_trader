@@ -48,7 +48,7 @@ class DataMessageTests(unittest.TestCase):
             data_type=DataType(str, {"type": "newswire"}),  # str data type is invalid
             handler=handler,
             command_id=command_id,
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -58,8 +58,7 @@ class DataMessageTests(unittest.TestCase):
             f"provider=BINANCE, "
             f"data_type=<str> {{'type': 'newswire'}}, "
             f"handler={repr(handler)}, "
-            f"id={command_id}, "
-            f"timestamp=1970-01-01 00:00:00+00:00)",
+            f"id={command_id})",
             repr(command),
         )
 
@@ -82,7 +81,7 @@ class DataMessageTests(unittest.TestCase):
             ),
             callback=handler,
             request_id=request_id,
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -100,8 +99,7 @@ class DataMessageTests(unittest.TestCase):
             f"'ToDateTime': None, "
             f"'Limit': 1000}}, "
             f"callback={repr(handler)}, "
-            f"id={request_id}, "
-            f"timestamp=1970-01-01 00:00:00+00:00)",
+            f"id={request_id})",
             repr(request),
         )
 
@@ -118,7 +116,7 @@ class DataMessageTests(unittest.TestCase):
             data=[],
             correlation_id=correlation_id,
             response_id=response_id,
-            response_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -131,7 +129,6 @@ class DataMessageTests(unittest.TestCase):
             f"provider=BINANCE, "
             f"data_type=<QuoteTick> {{'InstrumentId': InstrumentId('AUD/USD.IDEALPRO')}}, "
             f"correlation_id={correlation_id}, "
-            f"id={response_id}, "
-            f"timestamp=1970-01-01 00:00:00+00:00)",
+            f"id={response_id})",
             repr(response),
         )

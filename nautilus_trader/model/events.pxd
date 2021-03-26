@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -84,15 +84,15 @@ cdef class OrderDenied(OrderEvent):
 cdef class OrderSubmitted(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly datetime submitted_time
-    """The order submitted time.\n\n:returns: `datetime`"""
+    cdef readonly int64_t submitted_ns
+    """The order submitted time.\n\n:returns: `int64`"""
 
 
 cdef class OrderRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly datetime rejected_time
-    """The order rejected time.\n\n:returns: `datetime`"""
+    cdef readonly int64_t rejected_ns
+    """The order rejected time.\n\n:returns: `int64`"""
     cdef readonly str reason
     """The reason the order was rejected.\n\n:returns: `str`"""
 
@@ -100,15 +100,15 @@ cdef class OrderRejected(OrderEvent):
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly datetime accepted_time
-    """The order accepted time.\n\n:returns: `datetime`"""
+    cdef readonly int64_t accepted_ns
+    """The order accepted time.\n\n:returns: `int64`"""
 
 
 cdef class OrderCancelReject(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly datetime rejected_time
-    """The requests rejected time of the event.\n\n:returns: `datetime`"""
+    cdef readonly int64_t rejected_ns
+    """The requests rejected time of the event.\n\n:returns: `int64`"""
     cdef readonly str response_to
     """The cancel rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
@@ -118,8 +118,8 @@ cdef class OrderCancelReject(OrderEvent):
 cdef class OrderCancelled(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly datetime cancelled_time
-    """The order cancelled time.\n\n:returns: `datetime`"""
+    cdef readonly int64_t cancelled_ns
+    """The order cancelled time.\n\n:returns: `int64`"""
 
 
 cdef class OrderAmended(OrderEvent):
@@ -129,22 +129,22 @@ cdef class OrderAmended(OrderEvent):
     """The orders current quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
-    cdef readonly datetime amended_time
-    """The order amended time.\n\n:returns: `datetime`"""
+    cdef readonly int64_t amended_ns
+    """The order amended time.\n\n:returns: `int64`"""
 
 
 cdef class OrderExpired(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly datetime expired_time
-    """The order expired time.\n\n:returns: `datetime`"""
+    cdef readonly int64_t expired_ns
+    """The order expired time.\n\n:returns: `int64`"""
 
 
 cdef class OrderTriggered(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly datetime triggered_time
-    """The order triggered time.\n\n:returns: `datetime`"""
+    cdef readonly int64_t triggered_ns
+    """The order triggered time.\n\n:returns: `int64`"""
 
 
 cdef class OrderFilled(OrderEvent):
@@ -162,12 +162,12 @@ cdef class OrderFilled(OrderEvent):
     """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly Quantity fill_qty
     """The fill quantity.\n\n:returns: `Quantity`"""
+    cdef readonly Price fill_price
+    """The fill price for this execution.\n\n:returns: `Price`"""
     cdef readonly Quantity cum_qty
     """The order cumulative filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order quantity remaining to be filled.\n\n:returns: `Quantity`"""
-    cdef readonly Price fill_price
-    """The fill price for this execution.\n\n:returns: `Price`"""
     cdef readonly Currency currency
     """The currency of the price.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
@@ -176,8 +176,8 @@ cdef class OrderFilled(OrderEvent):
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide` (Enum)"""
-    cdef readonly datetime execution_time
-    """The execution timestamp.\n\n:returns: `datetime`"""
+    cdef readonly int64_t execution_ns
+    """The Unix timestamp (nanos) of the execution.\n\n:returns: `int64`"""
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 
@@ -186,7 +186,7 @@ cdef class PositionEvent(Event):
     cdef readonly Position position
     """The position associated with the event.\n\n:returns: `Position`"""
     cdef readonly OrderFilled order_fill
-    """The order fill associated with the position.\n\n:returns: `OrderFilled`"""
+    """The order fill associated with the event.\n\n:returns: `OrderFilled`"""
 
 
 cdef class PositionOpened(PositionEvent):

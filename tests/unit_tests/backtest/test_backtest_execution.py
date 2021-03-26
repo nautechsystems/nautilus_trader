@@ -167,7 +167,7 @@ class BacktestExecClientTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -198,7 +198,7 @@ class BacktestExecClientTests(unittest.TestCase):
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -222,7 +222,7 @@ class BacktestExecClientTests(unittest.TestCase):
             order.cl_ord_id,
             order.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -248,7 +248,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Quantity(100),
             Price("1010.00"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act

@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
@@ -24,9 +25,8 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
-from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -42,22 +42,23 @@ cdef class BarBuilder:
     Provides a generic bar builder for aggregation.
     """
 
-    def __init__(self, BarSpecification bar_spec not None, bint use_previous_close=False):
+    def __init__(self, BarType bar_type not None, bint use_previous_close=False):
         """
         Initialize a new instance of the `BarBuilder` class.
 
         Parameters
         ----------
-        bar_spec : BarSpecification
-            The bar specification for the builder.
+        bar_type : BarType
+            The bar type for the builder.
         use_previous_close : bool
             If the previous close price should set the open price of a new bar.
 
         """
-        self.bar_spec = bar_spec
+        self.bar_type = bar_type
+        self.bar_spec = bar_type.spec
         self.use_previous_close = use_previous_close
         self.initialized = False
-        self.last_timestamp = None
+        self.last_timestamp_ns = 0
         self.count = 0
 
         self._partial_set = False
@@ -70,7 +71,7 @@ cdef class BarBuilder:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"bar_spec={self.bar_spec},"
+                f"{self.bar_type},"
                 f"{self._open},"
                 f"{self._high},"
                 f"{self._low},"
@@ -105,13 +106,13 @@ cdef class BarBuilder:
 
         self.volume += partial_bar.volume
 
-        if self.last_timestamp is None:
-            self.last_timestamp = partial_bar.timestamp
+        if self.last_timestamp_ns == 0:
+            self.last_timestamp_ns = partial_bar.timestamp_ns
 
         self._partial_set = True
         self.initialized = True
 
-    cpdef void update(self, Price price, Quantity size, datetime timestamp) except *:
+    cpdef void update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         """
         Update the bar builder.
 
@@ -121,15 +122,15 @@ cdef class BarBuilder:
             The update price.
         size : Decimal
             The update size.
-        timestamp : datetime
-            The update timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the update.
 
         """
         Condition.not_none(price, "price")
         Condition.not_none(size, "size")
-        Condition.not_none(timestamp, "timestamp")
 
-        if self.last_timestamp and timestamp < self.last_timestamp:
+        # TODO: What happens if the first tick updates before a partial bar is applied?
+        if timestamp_ns < self.last_timestamp_ns:
             return  # Not applicable
 
         if self._open is None:
@@ -146,7 +147,7 @@ cdef class BarBuilder:
         self._close = price
         self.volume += size
         self.count += 1
-        self.last_timestamp = timestamp
+        self.last_timestamp_ns = timestamp_ns
 
     cpdef void reset(self) except *:
         """
@@ -167,14 +168,25 @@ cdef class BarBuilder:
         self.volume = Decimal()
         self.count = 0
 
-    cpdef Bar build(self, datetime close_time=None):
+    cpdef Bar build_now(self):
         """
         Return the aggregated bar and reset.
 
+        Returns
+        -------
+        Bar
+
+        """
+        return self.build(self.last_timestamp_ns)
+
+    cpdef Bar build(self, int64_t timestamp_ns):
+        """
+        Return the aggregated bar with the given closing timestamp, and reset.
+
         Parameters
         ----------
-        close_time : datetime, optional
-            The closing time for the bar (if None will be last updated time).
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the bar close.
 
         Returns
         -------
@@ -188,12 +200,13 @@ cdef class BarBuilder:
             self._close = self._last_close
 
         cdef Bar bar = Bar(
+            bar_type=self.bar_type,
             open_price=self._open,
             high_price=self._high,
             low_price=self._low,
             close_price=self._close,
             volume=Quantity(self.volume),
-            timestamp=close_time if close_time is not None else self.last_timestamp,
+            timestamp_ns=timestamp_ns,
         )
 
         self._last_close = self._close
@@ -232,7 +245,7 @@ cdef class BarAggregator:
         self._handler = handler
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._builder = BarBuilder(
-            bar_spec=self.bar_type.spec,
+            bar_type=self.bar_type,
             use_previous_close=use_previous_close,
         )
 
@@ -251,7 +264,7 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.extract_price(self._builder.bar_spec.price_type),
             size=tick.extract_volume(self._builder.bar_spec.price_type),
-            timestamp=tick.timestamp,
+            timestamp_ns=tick.timestamp_ns,
         )
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
@@ -269,16 +282,19 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.price,
             size=tick.size,
-            timestamp=tick.timestamp,
+            timestamp_ns=tick.timestamp_ns,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef void _build_and_send(self, datetime close=None) except *:
-        cdef Bar bar = self._builder.build(close)
-        cdef BarData data = BarData(self.bar_type, bar)
-        self._handler(data)
+    cdef inline void _build_now_and_send(self) except *:
+        cdef Bar bar = self._builder.build_now()
+        self._handler(bar)
+
+    cdef inline void _build_and_send(self, int64_t timestamp_ns) except *:
+        cdef Bar bar = self._builder.build(timestamp_ns)
+        self._handler(bar)
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -317,11 +333,11 @@ cdef class TickBarAggregator(BarAggregator):
 
         self.step = bar_type.spec.step
 
-    cdef void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
-        self._builder.update(price, size, timestamp)
+    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
+        self._builder.update(price, size, timestamp_ns)
 
         if self._builder.count == self.step:
-            self._build_and_send()
+            self._build_now_and_send()
 
 
 cdef class VolumeBarAggregator(BarAggregator):
@@ -360,7 +376,7 @@ cdef class VolumeBarAggregator(BarAggregator):
 
         self.step = bar_type.spec.step
 
-    cdef inline void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         cdef int precision = size.precision_c()
         size_update = size
 
@@ -370,20 +386,20 @@ cdef class VolumeBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity(size_update, precision=precision),
-                    timestamp=timestamp,
+                    timestamp_ns=timestamp_ns,
                 )
                 break
 
-            size_diff = self.step - self._builder.volume
+            size_diff: Decimal = self.step - self._builder.volume
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
                 size=Quantity(size_diff, precision=precision),
-                timestamp=timestamp,
+                timestamp_ns=timestamp_ns,
             )
 
             # Build a bar and reset builder
-            self._build_and_send()
+            self._build_now_and_send()
 
             # Decrement the update size
             size_update -= size_diff
@@ -427,7 +443,7 @@ cdef class ValueBarAggregator(BarAggregator):
         self.step = bar_type.spec.step
         self.cum_value = Decimal()  # Cumulative value
 
-    cdef inline void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         cdef int precision = size.precision_c()
         size_update = size
 
@@ -439,21 +455,21 @@ cdef class ValueBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity(size_update, precision=precision),
-                    timestamp=timestamp,
+                    timestamp_ns=timestamp_ns,
                 )
                 break
 
-            value_diff = self.step - self.cum_value
-            size_diff = Quantity(size_update * (value_diff / value_update), precision=precision)
+            value_diff: Decimal = self.step - self.cum_value
+            size_diff: Decimal = size_update * (value_diff / value_update)
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=size_diff,
-                timestamp=timestamp,
+                size=Quantity(size_diff, precision=precision),
+                timestamp_ns=timestamp_ns,
             )
 
             # Build a bar and reset builder and cumulative value
-            self._build_and_send()
+            self._build_now_and_send()
             self.cum_value = Decimal()
 
             # Decrement the update size
@@ -502,10 +518,11 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._clock = clock
         self.interval = self._get_interval()
+        self.interval_ns = self._get_interval_ns()
         self._set_build_timer()
-        self.next_close = self._clock.timer(str(self.bar_type)).next_time
+        self.next_close_ns = self._clock.timer(str(self.bar_type)).next_time_ns
         self._build_on_next_tick = False
-        self._stored_close = None
+        self._stored_close_ns = 0
 
     cpdef datetime get_start_time(self):
         """
@@ -514,30 +531,33 @@ cdef class TimeBarAggregator(BarAggregator):
         Returns
         -------
         datetime
+            The timestamp (UTC).
 
         """
         cdef datetime now = self._clock.utc_now()
         cdef int step = self.bar_type.spec.step
+
+        cdef datetime start_time
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
-            return now - timedelta(
+            start_time = now - timedelta(
                 seconds=now.second % step,
                 microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
-            return now - timedelta(
+            start_time = now - timedelta(
                 minutes=now.minute % step,
                 seconds=now.second,
                 microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
-            return now - timedelta(
+            start_time = now - timedelta(
                 hours=now.hour % step,
                 minutes=now.minute,
                 seconds=now.second,
                 microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
-            return now - timedelta(
+            start_time = now - timedelta(
                 days=now.day % step,
                 hours=now.hour,
                 minutes=now.minute,
@@ -548,6 +568,8 @@ cdef class TimeBarAggregator(BarAggregator):
             # Design time error
             raise ValueError(f"Aggregation not a time, "
                              f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}")
+
+        return start_time
 
     cpdef void set_partial(self, Bar partial_bar) except *:
         """
@@ -586,12 +608,29 @@ cdef class TimeBarAggregator(BarAggregator):
             raise ValueError(f"Aggregation not time range, "
                              f"was {BarAggregationParser.to_str(aggregation)}")
 
+    cdef int64_t _get_interval_ns(self):
+        cdef BarAggregation aggregation = self.bar_type.spec.aggregation
+        cdef int step = self.bar_type.spec.step
+
+        if aggregation == BarAggregation.SECOND:
+            return secs_to_nanos(step)
+        elif aggregation == BarAggregation.MINUTE:
+            return secs_to_nanos(step) * 60
+        elif aggregation == BarAggregation.HOUR:
+            return secs_to_nanos(step) * 60 * 60
+        elif aggregation == BarAggregation.DAY:
+            return secs_to_nanos(step) * 60 * 60 * 24
+        else:
+            # Design time error
+            raise ValueError(f"Aggregation not time range, "
+                             f"was {BarAggregationParser.to_str(aggregation)}")
+
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = str(self.bar_type)
 
         self._clock.set_timer(
             name=timer_name,
-            interval=self._get_interval(),
+            interval=self.interval,
             start_time=self.get_start_time(),
             stop_time=None,
             handler=self._build_event,
@@ -599,40 +638,40 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._log.debug(f"Started timer {timer_name}.")
 
-    cdef void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         if self._clock.is_test_clock:
-            if self.next_close < timestamp:
+            if self.next_close_ns < timestamp_ns:
                 # Build bar first, then update
-                self._build_bar(self.next_close)
-                self._builder.update(price, size, timestamp)
+                self._build_bar(self.next_close_ns)
+                self._builder.update(price, size, timestamp_ns)
                 return
-            elif self.next_close == timestamp:
+            elif self.next_close_ns == timestamp_ns:
                 # Update first, then build bar
-                self._builder.update(price, size, timestamp)
-                self._build_bar(self.next_close)
+                self._builder.update(price, size, timestamp_ns)
+                self._build_bar(self.next_close_ns)
                 return
 
-        self._builder.update(price, size, timestamp)
+        self._builder.update(price, size, timestamp_ns)
         if self._build_on_next_tick:  # (fast C-level check)
             self._build_and_send(self._stored_close)
             # Reset flag and clear stored close
             self._build_on_next_tick = False
-            self._stored_close = None
+            self._stored_close = 0
 
-    cpdef void _build_bar(self, datetime at_time) except *:
+    cpdef void _build_bar(self, int64_t timestamp_ns) except *:
         cdef TestTimer timer = self._clock.timer(str(self.bar_type))
         cdef TimeEvent event = timer.pop_next_event()
         self._build_event(event)
-        self.next_close = timer.next_time
+        self.next_close_ns = timer.next_time_ns
 
     cpdef void _build_event(self, TimeEvent event) except *:
         if self._builder.use_previous_close and not self._builder.initialized:
             # Set flag to build on next close with the stored close time
             self._build_on_next_tick = True
-            self._stored_close = self.next_close
+            self._stored_close_ns = self.next_close_ns
             return
 
-        self._build_and_send(close=event.timestamp)
+        self._build_and_send(timestamp_ns=event.event_timestamp_ns)
 
 
 cdef class BulkTickBarBuilder:
@@ -693,8 +732,8 @@ cdef class BulkTickBarBuilder:
 
         self.callback(self.aggregator.bar_type, self.bars)
 
-    cpdef void _add_bar(self, BarData data) except *:
-        self.bars.append(data.bar)
+    cpdef void _add_bar(self, Bar bar) except *:
+        self.bars.append(bar)
 
 
 cdef class BulkTimeBarUpdater:
@@ -713,7 +752,7 @@ cdef class BulkTimeBarUpdater:
 
         """
         self.aggregator = aggregator
-        self.start_time = self.aggregator.next_close - self.aggregator.interval
+        self.start_time_ns = self.aggregator.next_close_ns - self.aggregator.interval_ns
 
     def receive(self, list ticks):
         """
@@ -727,11 +766,11 @@ cdef class BulkTimeBarUpdater:
         """
         if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
             for i in range(len(ticks)):
-                if ticks[i].timestamp < self.start_time:
+                if ticks[i].timestamp_ns < self.start_time_ns:
                     continue  # Price not applicable to this bar
                 self.aggregator.handle_trade_tick(ticks[i])
         else:
             for i in range(len(ticks)):
-                if ticks[i].timestamp < self.start_time:
+                if ticks[i].timestamp_ns < self.start_time_ns:
                     continue  # Price not applicable to this bar
                 self.aggregator.handle_quote_tick(ticks[i])

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID
@@ -77,14 +78,14 @@ cdef class Order:
     """The order type.\n\n:returns: `OrderType` (Enum)"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
-    cdef readonly datetime timestamp
-    """The order initialization timestamp.\n\n:returns: `datetime`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of order initialization.\n\n:returns: `int64`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce` (Enum)"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly datetime filled_timestamp
-    """The order last filled timestamp.\n\n:returns: `datetime` or None"""
+    cdef readonly int64_t execution_ns
+    """The Unix timestamp (nanos) of the last execution (0 for no execution).\n\n:returns: `int64`"""
     cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage
@@ -135,6 +136,8 @@ cdef class PassiveOrder(Order):
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide` (Enum)"""
     cdef readonly datetime expire_time
-    """The order expire time (optional).\n\n:returns: `datetime` or `None`"""
+    """The order expire time.\n\n:returns: `datetime` or None"""
+    cdef readonly int64_t expire_time_ns
+    """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
 
     cdef void _set_slippage(self) except *

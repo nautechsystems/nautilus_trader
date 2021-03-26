@@ -17,9 +17,19 @@ import unittest
 
 from nautilus_trader.indicators.swings import Swings
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
+
+
+AUDUSD_SIM = TestStubs.audusd_id()
+ONE_MIN_BID = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+AUDUSD_1_MIN_BID = BarType(AUDUSD_SIM, ONE_MIN_BID)
 
 
 class SwingsTests(unittest.TestCase):
@@ -54,12 +64,13 @@ class SwingsTests(unittest.TestCase):
     def test_handle_bar(self):
         # Arrange
         bar = Bar(
+            AUDUSD_1_MIN_BID,
             Price("1.00000"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act

@@ -118,7 +118,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         def execute_command():

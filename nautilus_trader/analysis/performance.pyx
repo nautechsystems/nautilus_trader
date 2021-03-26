@@ -35,6 +35,7 @@ from scipy.stats import kurtosis
 from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
@@ -94,7 +95,7 @@ cdef class PerformanceAnalyzer:
         cdef Position position
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(position.closed_time, position.realized_return)
+            self.add_return(nanos_to_unix_dt(position.closed_timestamp_ns), position.realized_return)
 
     cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *:
         """
