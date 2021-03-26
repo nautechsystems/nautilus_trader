@@ -161,19 +161,17 @@ cdef class EMACross(TradingStrategy):
         # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
-    cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
+    cpdef void on_bar(self, Bar bar) except *:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")
+        self.log.info(f"Received Bar({bar})")
 
         # Check if indicators ready
         if not self.indicators_initialized():

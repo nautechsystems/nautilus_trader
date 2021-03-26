@@ -13,12 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport from_unix_time_ms
-from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -298,19 +295,20 @@ cdef class BarType:
         return f"{self.instrument_id}-{self.spec}"
 
 
-cdef class Bar:
+cdef class Bar(Data):
     """
     Represents an aggregated bar.
     """
 
     def __init__(
         self,
+        BarType bar_type not None,
         Price open_price not None,
         Price high_price not None,
         Price low_price not None,
         Price close_price not None,
         Quantity volume not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
         bint check=False,
     ):
         """
@@ -318,6 +316,8 @@ cdef class Bar:
 
         Parameters
         ----------
+        bar_type : BarType
+            The bar type for this bar.
         open_price : Price
             The bars open price.
         high_price : Price
@@ -328,8 +328,8 @@ cdef class Bar:
             The bars close price.
         volume : Quantity
             The bars volume.
-        timestamp : datetime
-            The timestamp the bar closed at (UTC).
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the bar close.
         check : bool
             If bar parameters should be checked valid.
 
@@ -347,69 +347,74 @@ cdef class Bar:
             Condition.true(high_price >= low_price, 'high_price was < low_price')
             Condition.true(high_price >= close_price, 'high_price was < close_price')
             Condition.true(low_price <= close_price, 'low_price was > close_price')
+        super().__init__(timestamp_ns)
 
+        self.type = bar_type
         self.open = open_price
         self.high = high_price
         self.low = low_price
         self.close = close_price
         self.volume = volume
-        self.timestamp = timestamp
         self.checked = check
 
     def __eq__(self, Bar other) -> bool:
-        return self.open == other.open \
+        return self.type == other.type \
+            and self.open == other.open \
             and self.high == other.high \
             and self.low == other.low \
             and self.close == other.close \
             and self.volume == other.volume \
-            and self.timestamp == other.timestamp
+            and self.timestamp_ns == other.timestamp_ns
 
     def __ne__(self, Bar other) -> bool:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash((self.open, self.high, self.low, self.close, self.volume, self.timestamp))
+        return hash((self.type, self.open, self.high, self.low, self.close, self.volume, self.timestamp_ns))
 
     def __str__(self) -> str:
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
+        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_ns}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef Bar from_serializable_str_c(str value):
-        Condition.valid_string(value, 'value')
+    cdef Bar from_serializable_str_c(BarType bar_type, str values):
+        Condition.valid_string(values, 'values')
 
-        cdef list pieces = value.split(',', maxsplit=5)
+        cdef list pieces = values.split(',', maxsplit=5)
 
         if len(pieces) != 6:
-            raise ValueError(f"The Bar string value was malformed, was {value}")
+            raise ValueError(f"The Bar string value was malformed, was {values}")
 
         return Bar(
-            Price(pieces[0]),
-            Price(pieces[1]),
-            Price(pieces[2]),
-            Price(pieces[3]),
-            Quantity(pieces[4]),
-            from_unix_time_ms(long(pieces[5])),
+            bar_type=bar_type,
+            open_price=Price(pieces[0]),
+            high_price=Price(pieces[1]),
+            low_price=Price(pieces[2]),
+            close_price=Price(pieces[3]),
+            volume=Quantity(pieces[4]),
+            timestamp_ns=long(pieces[5]),  # TODO: Standard C function for str->int64_t
         )
 
     @staticmethod
-    def from_serializable_str(str value) -> Bar:
+    def from_serializable_str(BarType bar_type, str values) -> Bar:
         """
         Parse a bar parsed from the given string.
 
         Parameters
         ----------
-        value : str
-            The bar string to parse.
+        bar_type : BarType
+            The bar type for the bar.
+        values : str
+            The bar values string to parse.
 
         Returns
         -------
         Bar
 
         """
-        return Bar.from_serializable_str_c(value)
+        return Bar.from_serializable_str_c(bar_type, values)
 
     cpdef str to_serializable_str(self):
         """
@@ -420,30 +425,4 @@ cdef class Bar:
         str
 
         """
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{to_unix_time_ms(self.timestamp)}"
-
-
-cdef class BarData(Data):
-    """
-    Represents bar data of a `BarType` and `Bar`.
-    """
-
-    def __init__(self, BarType bar_type not None, Bar bar not None):
-        """
-        Initialize a new instance of the `BarData` class.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the data.
-        bar : Bar
-            The bar data.
-
-        """
-        super().__init__(bar.timestamp)
-
-        self.bar_type = bar_type
-        self.bar = bar
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(bar_type={self.bar_type}, bar={self.bar})"
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_ns}"

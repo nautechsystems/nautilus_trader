@@ -17,11 +17,11 @@ import random
 
 import pandas as pd
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.identifiers cimport TradeMatchId
@@ -229,7 +229,7 @@ cdef class QuoteTickDataWrangler:
         self.processed_data = df_ticks_final
         self.processed_data["instrument_id"] = instrument_indexer
 
-    cpdef list build_ticks(self):
+    def build_ticks(self):
         """
         Build ticks from all data.
 
@@ -240,9 +240,9 @@ cdef class QuoteTickDataWrangler:
         """
         return list(map(self._build_tick_from_values,
                         self.processed_data.values,
-                        self.processed_data.index))
+                        list(map(lambda x: dt_to_unix_nanos(x), self.processed_data.index))))
 
-    cpdef QuoteTick _build_tick_from_values(self, str[:] values, datetime timestamp):
+    cpdef QuoteTick _build_tick_from_values(self, str[:] values, int64_t timestamp_ns):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
@@ -251,7 +251,7 @@ cdef class QuoteTickDataWrangler:
             ask=Price(values[1], self.instrument.price_precision),
             bid_size=Quantity(values[2], self.instrument.size_precision),
             ask_size=Quantity(values[3], self.instrument.size_precision),
-            timestamp=timestamp,
+            timestamp_ns=timestamp_ns,
         )
 
 
@@ -311,7 +311,7 @@ cdef class TradeTickDataWrangler:
         else:
             return self._data_trades["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")
 
-    cpdef list build_ticks(self):
+    def build_ticks(self):
         """
         Build ticks from all data.
 
@@ -322,9 +322,9 @@ cdef class TradeTickDataWrangler:
         """
         return list(map(self._build_tick_from_values,
                         self.processed_data.values,
-                        self.processed_data.index))
+                        list(map(lambda x: dt_to_unix_nanos(x), self.processed_data.index))))
 
-    cpdef TradeTick _build_tick_from_values(self, str[:] values, datetime timestamp):
+    cpdef TradeTick _build_tick_from_values(self, str[:] values, int64_t timestamp_ns):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick(
@@ -333,7 +333,7 @@ cdef class TradeTickDataWrangler:
             size=Quantity(values[1]),
             side=OrderSideParser.from_str(values[2]),
             match_id=TradeMatchId(values[3]),
-            timestamp=timestamp,
+            timestamp_ns=timestamp_ns,
         )
 
 
@@ -345,6 +345,7 @@ cdef class BarDataWrangler:
 
     def __init__(
         self,
+        BarType bar_type,
         int price_precision,
         int size_precision,
         data: pd.DataFrame=None,
@@ -354,6 +355,8 @@ cdef class BarDataWrangler:
 
         Parameters
         ----------
+        bar_type : BarType
+            The bar type for the wrangler.
         price_precision : int
             The decimal precision for bar prices (>= 0).
         size_precision : int
@@ -371,10 +374,12 @@ cdef class BarDataWrangler:
             If data not type DataFrame.
 
         """
+        Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
         Condition.type(data, pd.DataFrame, "data")
 
+        self._bar_type = bar_type
         self._price_precision = price_precision
         self._size_precision = size_precision
         self._data = as_utc_index(data)
@@ -382,7 +387,7 @@ cdef class BarDataWrangler:
         if "volume" not in self._data:
             self._data["volume"] = 1
 
-    cpdef list build_bars_all(self):
+    def build_bars_all(self):
         """
         Build bars from all data.
 
@@ -393,9 +398,9 @@ cdef class BarDataWrangler:
         """
         return list(map(self._build_bar,
                         self._data.values,
-                        pd.to_datetime(self._data.index)))
+                        list(map(lambda x: dt_to_unix_nanos(x), self._data.index))))
 
-    cpdef list build_bars_from(self, int index=0):
+    def build_bars_from(self, int index=0):
         """
         Build bars from the given index (>= 0).
 
@@ -408,9 +413,9 @@ cdef class BarDataWrangler:
 
         return list(map(self._build_bar,
                         self._data.iloc[index:].values,
-                        pd.to_datetime(self._data.iloc[index:].index)))
+                        list(map(lambda x: dt_to_unix_nanos(x), self._data.iloc[index:].index))))
 
-    cpdef list build_bars_range(self, int start=0, int end=-1):
+    def build_bars_range(self, int start=0, int end=-1):
         """
         Build bars within the given range.
 
@@ -423,16 +428,17 @@ cdef class BarDataWrangler:
 
         return list(map(self._build_bar,
                         self._data.iloc[start:end].values,
-                        pd.to_datetime(self._data.iloc[start:end].index)))
+                        list(map(lambda x: dt_to_unix_nanos(x), self._data.iloc[start:end].index))))
 
-    cpdef Bar _build_bar(self, double[:] values, datetime timestamp):
+    cpdef Bar _build_bar(self, double[:] values, int64_t timestamp_ns):
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(
-            Price(values[0], self._price_precision),
-            Price(values[1], self._price_precision),
-            Price(values[2], self._price_precision),
-            Price(values[3], self._price_precision),
-            Quantity(values[4], self._size_precision),
-            timestamp,
+            bar_type=self._bar_type,
+            open_price=Price(values[0], self._price_precision),
+            high_price=Price(values[1], self._price_precision),
+            low_price=Price(values[2], self._price_precision),
+            close_price=Price(values[3], self._price_precision),
+            volume=Quantity(values[4], self._size_precision),
+            timestamp_ns=timestamp_ns,
         )

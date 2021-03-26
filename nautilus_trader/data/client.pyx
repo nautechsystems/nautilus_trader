@@ -148,7 +148,7 @@ cdef class DataClient:
             data=data,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._engine.receive(response)
@@ -343,7 +343,7 @@ cdef class MarketDataClient(DataClient):
             data=instruments,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._engine.receive(response)
@@ -355,7 +355,7 @@ cdef class MarketDataClient(DataClient):
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._engine.receive(response)
@@ -367,7 +367,7 @@ cdef class MarketDataClient(DataClient):
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._engine.receive(response)
@@ -379,7 +379,7 @@ cdef class MarketDataClient(DataClient):
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._engine.receive(response)

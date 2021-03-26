@@ -271,7 +271,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position = Position(order_filled)
@@ -323,7 +323,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position = Position(order_filled)
@@ -405,7 +405,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order.apply(
             TestStubs.event_order_filled(
-                order, instrument=AUDUSD_SIM, fill_price=Price("1.00001")
+                order, instrument=AUDUSD_SIM, last_px=Price("1.00001")
             ),
         )
 
@@ -462,7 +462,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         position = Position(order1_filled)
@@ -522,7 +522,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         position = Position(order1_filled)
@@ -543,7 +543,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         position.apply(order2_filled)
@@ -630,7 +630,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position1 = Position(order1_filled)
@@ -680,7 +680,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
         position1 = Position(order1_filled)
         self.cache.update_order(order1)
@@ -733,7 +733,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position1 = Position(order1_filled)

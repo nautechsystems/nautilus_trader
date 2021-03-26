@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.common.clock cimport Clock
@@ -25,7 +26,14 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class DataProducerFacade:
-    cpdef void setup(self, datetime start, datetime stop) except *
+    cdef readonly list execution_resolutions
+    cdef readonly datetime min_timestamp
+    cdef readonly datetime max_timestamp
+    cdef readonly int64_t min_timestamp_ns
+    cdef readonly int64_t max_timestamp_ns
+    cdef readonly bint has_data
+
+    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *
     cpdef void reset(self) except *
     cpdef Data next(self)
 
@@ -45,7 +53,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef str[:] _quote_asks
     cdef str[:] _quote_bid_sizes
     cdef str[:] _quote_ask_sizes
-    cdef datetime[:] _quote_timestamps
+    cdef int64_t[:] _quote_timestamps
     cdef int _quote_index
     cdef int _quote_index_last
     cdef QuoteTick _next_quote_tick
@@ -55,18 +63,13 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef str[:] _trade_sizes
     cdef str[:] _trade_match_ids
     cdef str[:] _trade_sides
-    cdef datetime[:] _trade_timestamps
+    cdef int64_t[:] _trade_timestamps
     cdef int _trade_index
     cdef int _trade_index_last
     cdef TradeTick _next_trade_tick
 
-    cdef readonly list execution_resolutions
-    cdef readonly datetime min_timestamp
-    cdef readonly datetime max_timestamp
-    cdef readonly bint has_data
-
     cpdef LoggerAdapter get_logger(self)
-    cpdef void setup(self, datetime start, datetime stop) except *
+    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *
     cpdef void reset(self) except *
     cpdef void clear(self) except *
     cpdef Data next(self)
@@ -87,12 +90,7 @@ cdef class CachedProducer(DataProducerFacade):
     cdef int _init_start_tick_index
     cdef int _init_stop_tick_index
 
-    cdef readonly list execution_resolutions
-    cdef readonly datetime min_timestamp
-    cdef readonly datetime max_timestamp
-    cdef readonly bint has_data
-
-    cpdef void setup(self, datetime start, datetime stop) except *
+    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *
     cpdef void reset(self) except *
     cpdef Data next(self)
     cdef void _create_data_cache(self) except *

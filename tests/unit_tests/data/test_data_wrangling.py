@@ -131,9 +131,8 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Price("0.67070"), ticks[0].ask)
         self.assertEqual(Quantity("1"), ticks[0].bid_size)
         self.assertEqual(Quantity("1"), ticks[0].ask_size)
-        self.assertEqual(
-            Timestamp("2020-01-30 15:28:09.820000+0000", tz="UTC"), ticks[0].timestamp
-        )
+        self.assertEqual(1580398089820000000, ticks[0].timestamp_ns)
+        self.assertEqual(1580504394500999936, ticks[99999].timestamp_ns)
 
     def test_build_ticks_with_bar_data(self):
         # Arrange
@@ -156,9 +155,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Price("91.717"), ticks[0].ask)
         self.assertEqual(Quantity("1"), ticks[0].bid_size)
         self.assertEqual(Quantity("1"), ticks[0].ask_size)
-        self.assertEqual(
-            Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"), ticks[0].timestamp
-        )
+        self.assertEqual(1359676799700000000, ticks[0].timestamp_ns)
 
 
 class TradeTickDataWranglerTests(unittest.TestCase):
@@ -210,16 +207,20 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(Quantity("2.67900"), ticks[0].size)
         self.assertEqual(OrderSide.SELL, ticks[0].side)
         self.assertEqual(TradeMatchId("148568980"), ticks[0].match_id)
-        self.assertEqual(
-            Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks[0].timestamp
-        )
+        self.assertEqual(1597399200223000064, ticks[0].timestamp_ns)
 
 
 class BarDataWranglerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
-        self.bar_builder = BarDataWrangler(5, 1, data)
+        bar_type = TestStubs.bartype_gbpusd_1min_bid()
+        self.bar_builder = BarDataWrangler(
+            bar_type=bar_type,
+            price_precision=5,
+            size_precision=1,
+            data=data,
+        )
 
     def test_build_bars_all(self):
         # Arrange
@@ -354,6 +355,4 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
         self.assertEqual(Quantity("0.132000"), ticks[0].size)
         self.assertEqual(OrderSide.BUY, ticks[0].side)
         self.assertEqual(TradeMatchId("42377944"), ticks[0].match_id)
-        self.assertEqual(
-            Timestamp("2020-02-22 00:00:02.418379+0000", tz="UTC"), ticks[0].timestamp
-        )
+        self.assertEqual(1582329602418379008, ticks[0].timestamp_ns)

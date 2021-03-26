@@ -41,7 +41,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 SIM = Venue("SIM")
@@ -112,7 +111,7 @@ class TestLiveExecutionClient:
                 order_id=OrderId("1"),
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             # Act
@@ -154,7 +153,7 @@ class TestLiveExecutionClient:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -170,7 +169,7 @@ class TestLiveExecutionClient:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELLED,
                 filled_qty=Quantity(0),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             # Act
@@ -210,7 +209,7 @@ class TestLiveExecutionClient:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -226,7 +225,7 @@ class TestLiveExecutionClient:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             # Act
@@ -268,7 +267,7 @@ class TestLiveExecutionClient:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -282,7 +281,7 @@ class TestLiveExecutionClient:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             # Act

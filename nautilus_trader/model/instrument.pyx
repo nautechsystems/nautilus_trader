@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-
+from libc.stdint cimport int64_t
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
@@ -28,7 +28,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Instrument:
+cdef class Instrument(Data):
     """
     Represents a tradeable financial market instrument.
     """
@@ -58,7 +58,7 @@ cdef class Instrument:
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
         dict financing not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
         dict info=None,
     ):
         """
@@ -112,8 +112,8 @@ cdef class Instrument:
             The fee rate for liquidity takers as a percentage of order value.
         financing : dict[str, object]
             The financing information for the instrument.
-        timestamp : datetime
-            The timestamp the instrument was created/updated at.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) the instrument was created/updated at.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -174,7 +174,7 @@ cdef class Instrument:
         Condition.not_negative(margin_maint, "margin_maint")
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
-        super().__init__(timestamp)
+        super().__init__(timestamp_ns)
 
         self.id = instrument_id
         self.symbol = instrument_id.symbol
@@ -445,7 +445,7 @@ cdef class Future(Instrument):
         int price_precision,
         tick_size not None: Decimal,
         Quantity lot_size not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `Future` class.
@@ -462,7 +462,7 @@ cdef class Future(Instrument):
             The price decimal precision.
         tick_size : Decimal
             The tick size.
-        timestamp : datetime
+        timestamp_ns : int64
             The timestamp the instrument was created/updated at.
 
         Raises
@@ -504,7 +504,7 @@ cdef class Future(Instrument):
             maker_fee=Decimal(),
             taker_fee=Decimal(),
             financing={},
-            timestamp=timestamp,
+            timestamp_ns=timestamp_ns,
             info={},
         )
 

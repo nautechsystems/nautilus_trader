@@ -34,7 +34,6 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 BITMEX = Venue("BITMEX")
@@ -96,7 +95,7 @@ class LiveDataEngineTests(unittest.TestCase):
             data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -131,7 +130,7 @@ class LiveDataEngineTests(unittest.TestCase):
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -158,7 +157,7 @@ class LiveDataEngineTests(unittest.TestCase):
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            response_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -179,7 +178,7 @@ class LiveDataEngineTests(unittest.TestCase):
             config={"qsize": 1},
         )
 
-        data = Data(UNIX_EPOCH)
+        data = Data(1_000_000_000)
 
         # Act
         self.engine.process(data)
@@ -246,7 +245,7 @@ class LiveDataEngineTests(unittest.TestCase):
                 data_type=DataType(QuoteTick),
                 handler=[].append,
                 command_id=self.uuid_factory.generate(),
-                command_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -283,7 +282,7 @@ class LiveDataEngineTests(unittest.TestCase):
                 ),
                 callback=handler.append,
                 request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -310,7 +309,7 @@ class LiveDataEngineTests(unittest.TestCase):
                 data=[],
                 correlation_id=self.uuid_factory.generate(),
                 response_id=self.uuid_factory.generate(),
-                response_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act

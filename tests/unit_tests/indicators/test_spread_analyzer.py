@@ -21,7 +21,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -61,7 +60,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
             Price("117.80010"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
         # Act
         # Assert
@@ -76,7 +75,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
             Price("0.80010"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         tick2 = QuoteTick(
@@ -85,7 +84,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
             Price("0.80008"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act

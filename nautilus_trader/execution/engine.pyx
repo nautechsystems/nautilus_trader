@@ -42,7 +42,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.time cimport unix_time_us
+from nautilus_trader.core.time cimport unix_timestamp_us
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -402,7 +402,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef int64_t ts = unix_time_us()
+        cdef int64_t ts = unix_timestamp_us()
 
         self.cache.cache_accounts()
         self.cache.cache_orders()
@@ -411,7 +411,7 @@ cdef class ExecutionEngine(Component):
         self.cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {(unix_time_us() - ts)}μs.")
+        self._log.info(f"Loaded cache in {(unix_timestamp_us() - ts)}μs.")
 
         # Update portfolio
         for account in self.cache.accounts():
@@ -584,7 +584,7 @@ cdef class ExecutionEngine(Component):
             cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.timestamp_ns(),
         )
 
         self._handle_event(invalid)
@@ -828,16 +828,16 @@ cdef class ExecutionEngine(Component):
             fill.instrument_id,
             fill.order_side,
             position.quantity,                       # Fill original position quantity remaining
+            fill.fill_price,
             Quantity(fill.cum_qty - difference),     # Adjust cumulative qty by difference
             Quantity(fill.leaves_qty + difference),  # Adjust leaves qty by difference
-            fill.fill_price,
             fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent1, fill.commission.currency),
             fill.liquidity_side,
-            fill.execution_time,
+            fill.execution_ns,
             fill.id,
-            fill.timestamp,
+            fill.timestamp_ns,
         )
 
         # Close original position
@@ -864,16 +864,16 @@ cdef class ExecutionEngine(Component):
             fill.instrument_id,
             fill.order_side,
             difference,  # Fill difference from original as above
+            fill.fill_price,
             fill.cum_qty,
             fill.leaves_qty,
-            fill.fill_price,
             fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent2, fill.commission.currency),
             fill.liquidity_side,
-            fill.execution_time,
+            fill.execution_ns,
             self._uuid_factory.generate(),  # New event identifier
-            fill.timestamp,
+            fill.timestamp_ns,
         )
 
         cdef Position position_flip = Position(fill_split2)
@@ -885,7 +885,7 @@ cdef class ExecutionEngine(Component):
             position,
             event,
             self._uuid_factory.generate(),
-            event.timestamp,
+            event.timestamp_ns,
         )
 
     cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled event):
@@ -893,7 +893,7 @@ cdef class ExecutionEngine(Component):
             position,
             event,
             self._uuid_factory.generate(),
-            event.timestamp,
+            event.timestamp_ns,
         )
 
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled event):
@@ -901,7 +901,7 @@ cdef class ExecutionEngine(Component):
             position,
             event,
             self._uuid_factory.generate(),
-            event.timestamp,
+            event.timestamp_ns,
         )
 
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:

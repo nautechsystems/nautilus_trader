@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -35,8 +35,8 @@ cdef class OrderStatusReport:
     """The reported order state at the exchange.\n\n:returns: `OrderState`"""
     cdef readonly Quantity filled_qty
     """The reported filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly datetime timestamp
-    """The report timestamp.\n\n:returns: `datetime`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
 
 
 cdef class PositionStatusReport:
@@ -46,15 +46,15 @@ cdef class PositionStatusReport:
     """The reported position side at the exchange.\n\n:returns: `PositionSide`"""
     cdef readonly Quantity qty
     """The reported position quantity at the exchange.\n\n:returns: `Quantity`"""
-    cdef readonly datetime timestamp
-    """The report timestamp.\n\n:returns: `datetime`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
 
 
 cdef class ExecutionReport:
     # TODO: Docs
-    cdef readonly ExecutionId id
     cdef readonly ClientOrderId cl_ord_id
     cdef readonly OrderId order_id
+    cdef readonly ExecutionId id
     cdef readonly object last_qty
     cdef readonly object cum_qty
     cdef readonly object leaves_qty
@@ -62,7 +62,9 @@ cdef class ExecutionReport:
     cdef readonly object commission_amount
     cdef readonly str commission_currency
     cdef readonly LiquiditySide liquidity_side
-    cdef readonly datetime timestamp
+    cdef readonly int64_t execution_ns
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
 
 
 cdef class ExecutionMassStatus:
@@ -74,8 +76,8 @@ cdef class ExecutionMassStatus:
     """The client name for the report.\n\n:returns: `str`"""
     cdef readonly AccountId account_id
     """The account identifier for the report.\n\n:returns: `AccountId`"""
-    cdef readonly datetime timestamp
-    """The timestamp for the report.\n\n:returns: `datetime`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
 
     cpdef dict order_reports(self)
     cpdef dict trades(self)

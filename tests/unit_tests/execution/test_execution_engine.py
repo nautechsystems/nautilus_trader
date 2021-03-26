@@ -55,7 +55,6 @@ from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.mocks import MockExecutionDatabase
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -231,7 +230,7 @@ class ExecutionEngineTests(unittest.TestCase):
             [Money(0, USD)],
             info={"default_currency": "USD"},  # Set the default currency
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)
@@ -259,7 +258,7 @@ class ExecutionEngineTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1-001"),
             strategy_id=strategy_id,
-            fill_price=Price("50000.00000000"),
+            last_px=Price("50000.00000000"),
         )
 
         order.apply(fill1)
@@ -280,7 +279,7 @@ class ExecutionEngineTests(unittest.TestCase):
         random = TradingCommand(
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(random)
@@ -289,7 +288,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         random = Event(
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(random)
@@ -321,7 +320,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -359,7 +358,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -396,7 +395,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId("RANDOM"),  # Invalid PositionId
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -432,7 +431,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -491,7 +490,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -551,7 +550,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             bracket1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         entry2 = strategy.order_factory.market(
@@ -577,7 +576,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             bracket2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -640,7 +639,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             bracket1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         entry2 = strategy.order_factory.market(
@@ -666,7 +665,7 @@ class ExecutionEngineTests(unittest.TestCase):
             strategy.id,
             bracket2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -719,7 +718,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -756,7 +755,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -794,7 +793,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act (event attempts to fill order before its submitted)
@@ -858,7 +857,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -873,7 +872,7 @@ class ExecutionEngineTests(unittest.TestCase):
             order.cl_ord_id,
             OrderId("1"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -911,7 +910,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -927,7 +926,7 @@ class ExecutionEngineTests(unittest.TestCase):
             Quantity(200000),
             order.price,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -964,7 +963,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -975,9 +974,9 @@ class ExecutionEngineTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.id,
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1013,7 +1012,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1024,9 +1023,9 @@ class ExecutionEngineTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             OrderId("RANDOM_001"),  # Also a random order id the engine won't find
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1062,7 +1061,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1073,9 +1072,9 @@ class ExecutionEngineTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.id,
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1113,7 +1112,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1177,7 +1176,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1241,7 +1240,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1299,7 +1298,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1311,19 +1310,19 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.process(
             TestStubs.event_order_filled(
-                order=order, instrument=AUDUSD_SIM, fill_qty=Quantity(20100)
+                order=order, instrument=AUDUSD_SIM, last_qty=Quantity(20100)
             ),
         )
 
         self.exec_engine.process(
             TestStubs.event_order_filled(
-                order=order, instrument=AUDUSD_SIM, fill_qty=Quantity(19900)
+                order=order, instrument=AUDUSD_SIM, last_qty=Quantity(19900)
             ),
         )
 
         self.exec_engine.process(
             TestStubs.event_order_filled(
-                order=order, instrument=AUDUSD_SIM, fill_qty=Quantity(60000)
+                order=order, instrument=AUDUSD_SIM, last_qty=Quantity(60000)
             ),
         )
 
@@ -1373,7 +1372,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order)
@@ -1442,7 +1441,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.execute(submit_order1)
@@ -1460,7 +1459,7 @@ class ExecutionEngineTests(unittest.TestCase):
             expected_position_id,
             order2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1521,7 +1520,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         position_id = PositionId("P-1")
@@ -1541,7 +1540,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1618,7 +1617,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         submit_order2 = SubmitOrder(
@@ -1629,7 +1628,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         position1_id = PositionId("P-1")
@@ -1739,7 +1738,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         position_id1 = PositionId("P-1")
@@ -1752,7 +1751,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id1,
             order2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         submit_order3 = SubmitOrder(
@@ -1763,7 +1762,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order3,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         position_id2 = PositionId("P-2")
@@ -1856,7 +1855,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         position_id = PositionId("P-19700101-000000-000-001-1")
@@ -1876,7 +1875,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1946,7 +1945,7 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order1,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         position_id = PositionId("P-19700101-000000-000-001-1")
@@ -1966,7 +1965,7 @@ class ExecutionEngineTests(unittest.TestCase):
             position_id,
             order2,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act

@@ -132,7 +132,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -140,7 +140,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -148,7 +148,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         fill4 = TestStubs.event_order_filled(
@@ -156,7 +156,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00020"),
+            last_px=Price("1.00020"),
         )
 
         position1 = Position(fill1)

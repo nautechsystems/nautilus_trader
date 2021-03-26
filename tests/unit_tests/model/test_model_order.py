@@ -119,7 +119,7 @@ class OrderTests(unittest.TestCase):
             Quantity(),
             TimeInForce.DAY,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     def test_market_order_with_invalid_tif_raises_value_error(self):
@@ -135,7 +135,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100),
             TimeInForce.GTD,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     def test_stop_market_order_with_gtd_and_expire_time_none_raises_type_error(self):
@@ -151,7 +151,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             price=Price("1.00000"),
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
             time_in_force=TimeInForce.GTD,
             expire_time=None,
         )
@@ -170,7 +170,7 @@ class OrderTests(unittest.TestCase):
             price=Price("1.00001"),
             trigger=Price("1.00000"),
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
             time_in_force=TimeInForce.GTD,
             expire_time=None,
         )
@@ -237,8 +237,8 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_sell)
         self.assertFalse(order.is_passive)
         self.assertTrue(order.is_aggressive)
-        self.assertEqual(None, order.filled_timestamp)
-        self.assertEqual(UNIX_EPOCH, order.last_event.timestamp)
+        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.last_event.timestamp_ns)
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertTrue(order == order)
         self.assertFalse(order != order)
@@ -262,7 +262,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertFalse(order.is_buy)
         self.assertTrue(order.is_sell)
-        self.assertEqual(None, order.filled_timestamp)
+        self.assertEqual(0, order.execution_ns)
         self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_order_equality(self):
@@ -325,7 +325,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price("1.00000"),
             TimeInForce.GTD,
-            UNIX_EPOCH,
+            expire_time=UNIX_EPOCH,
         )
 
         # Assert
@@ -450,7 +450,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(
             BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id
         )
-        self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
+        self.assertEqual(0, bracket_order.timestamp_ns)
 
     def test_bracket_order_str_and_repr(self):
         # Arrange
@@ -499,7 +499,7 @@ class OrderTests(unittest.TestCase):
             order.cl_ord_id,
             "SOME_REASON",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -523,7 +523,7 @@ class OrderTests(unittest.TestCase):
             order.cl_ord_id,
             "SOME_REASON",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -599,7 +599,7 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price("0.99990"),
             TimeInForce.GTD,
-            UNIX_EPOCH,
+            expire_time=UNIX_EPOCH,
         )
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -622,7 +622,7 @@ class OrderTests(unittest.TestCase):
             Price("1.00000"),
             Price("0.99990"),
             TimeInForce.GTD,
-            UNIX_EPOCH,
+            expire_time=UNIX_EPOCH,
         )
 
         order.apply(TestStubs.event_order_submitted(order))
@@ -673,9 +673,9 @@ class OrderTests(unittest.TestCase):
             OrderId("1"),
             Quantity(120000),
             Price("1.00001"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -706,7 +706,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         # Act
@@ -719,7 +719,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
+        self.assertEqual(0, order.execution_ns)
 
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange
@@ -737,7 +737,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         # Act
@@ -750,7 +750,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
+        self.assertEqual(0, order.execution_ns)
 
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(
         self,
@@ -771,8 +771,8 @@ class OrderTests(unittest.TestCase):
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
-            fill_qty=Quantity(20000),
+            last_px=Price("1.00001"),
+            last_qty=Quantity(20000),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -781,8 +781,8 @@ class OrderTests(unittest.TestCase):
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00002"),
-            fill_qty=Quantity(40000),
+            last_px=Price("1.00002"),
+            last_qty=Quantity(40000),
         )
 
         # Act
@@ -796,7 +796,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(2, len(order.execution_ids))
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
+        self.assertEqual(0, order.execution_ns)
 
     def test_apply_filled_events_to_market_order_results_in_filled(self):
         # Arrange
@@ -815,8 +815,8 @@ class OrderTests(unittest.TestCase):
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
-            fill_qty=Quantity(20000),
+            last_px=Price("1.00001"),
+            last_qty=Quantity(20000),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -825,8 +825,8 @@ class OrderTests(unittest.TestCase):
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00002"),
-            fill_qty=Quantity(40000),
+            last_px=Price("1.00002"),
+            last_qty=Quantity(40000),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -835,8 +835,8 @@ class OrderTests(unittest.TestCase):
             execution_id=ExecutionId("3"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00003"),
-            fill_qty=Quantity(40000),
+            last_px=Price("1.00003"),
+            last_qty=Quantity(40000),
         )
 
         # Act
@@ -851,7 +851,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(3, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
+        self.assertEqual(0, order.execution_ns)
 
     def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -875,16 +875,16 @@ class OrderTests(unittest.TestCase):
             order.instrument_id,
             order.side,
             order.quantity,
+            Price("1.00001"),
             order.quantity,
             Quantity(),
-            Price("1.00001"),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -898,7 +898,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal("0.00001"), order.slippage)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
+        self.assertEqual(0, order.execution_ns)
 
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -922,16 +922,16 @@ class OrderTests(unittest.TestCase):
             order.instrument_id,
             order.side,
             Quantity(50000),
-            Quantity(50000),
-            Quantity(50000),
             Price("0.999999"),
+            Quantity(50000),
+            Quantity(50000),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
-            UNIX_EPOCH,
+            1_000_000_000,
             uuid4(),
-            UNIX_EPOCH,
+            1_000_000_000,
         )
 
         # Act
@@ -945,4 +945,4 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal("-0.000001"), order.slippage)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
+        self.assertEqual(1_000_000_000, order.execution_ns)

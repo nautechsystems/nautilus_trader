@@ -61,7 +61,7 @@ class ReportProviderTests(unittest.TestCase):
             balances_locked=[Money("0.00000000", BTC)],
             info={},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -132,7 +132,7 @@ class ReportProviderTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            fill_price=Price("0.80011"),
+            last_px=Price("0.80011"),
         )
 
         order1.apply(event)
@@ -183,7 +183,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("0.80011"),
+            last_px=Price("0.80011"),
         )
 
         order1.apply(filled)
@@ -225,7 +225,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -233,7 +233,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123457"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
         position1 = Position(fill1)

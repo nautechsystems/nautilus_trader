@@ -45,7 +45,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 SIM = Venue("SIM")
@@ -169,7 +168,7 @@ class TestLiveExecutionEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -214,7 +213,7 @@ class TestLiveExecutionEngine:
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         event = TestStubs.event_order_submitted(order)
@@ -294,7 +293,7 @@ class TestLiveExecutionEngine:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             # Act
@@ -397,7 +396,7 @@ class TestLiveExecutionEngine:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -409,7 +408,7 @@ class TestLiveExecutionEngine:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.ACCEPTED,
                 filled_qty=Quantity(0),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             self.client.add_order_status_report(report)
@@ -454,7 +453,7 @@ class TestLiveExecutionEngine:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -466,7 +465,7 @@ class TestLiveExecutionEngine:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELLED,
                 filled_qty=Quantity(0),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             self.client.add_order_status_report(report)
@@ -511,7 +510,7 @@ class TestLiveExecutionEngine:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -523,7 +522,7 @@ class TestLiveExecutionEngine:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.EXPIRED,
                 filled_qty=Quantity(0),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             self.client.add_order_status_report(report)
@@ -568,7 +567,7 @@ class TestLiveExecutionEngine:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -580,7 +579,7 @@ class TestLiveExecutionEngine:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.PARTIALLY_FILLED,
                 filled_qty=Quantity(70000),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             trade1 = ExecutionReport(
@@ -592,7 +591,8 @@ class TestLiveExecutionEngine:
                 commission_amount=Decimal("5.0"),
                 commission_currency="USD",
                 liquidity_side=LiquiditySide.MAKER,
-                timestamp=UNIX_EPOCH,
+                execution_ns=0,
+                timestamp_ns=0,
             )
 
             trade2 = ExecutionReport(
@@ -604,7 +604,8 @@ class TestLiveExecutionEngine:
                 commission_amount=Decimal("2.0"),
                 commission_currency="USD",
                 liquidity_side=LiquiditySide.MAKER,
-                timestamp=UNIX_EPOCH,
+                execution_ns=0,
+                timestamp_ns=0,
             )
 
             self.client.add_order_status_report(report)
@@ -650,7 +651,7 @@ class TestLiveExecutionEngine:
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             self.engine.execute(submit_order)
@@ -662,7 +663,7 @@ class TestLiveExecutionEngine:
                 order_id=OrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
-                timestamp=UNIX_EPOCH,
+                timestamp_ns=0,
             )
 
             trade1 = ExecutionReport(
@@ -674,7 +675,8 @@ class TestLiveExecutionEngine:
                 commission_amount=Decimal("5.0"),
                 commission_currency="USD",
                 liquidity_side=LiquiditySide.MAKER,
-                timestamp=UNIX_EPOCH,
+                execution_ns=0,
+                timestamp_ns=0,
             )
 
             trade2 = ExecutionReport(
@@ -686,7 +688,8 @@ class TestLiveExecutionEngine:
                 commission_amount=Decimal("2.0"),
                 commission_currency="USD",
                 liquidity_side=LiquiditySide.MAKER,
-                timestamp=UNIX_EPOCH,
+                execution_ns=0,
+                timestamp_ns=0,
             )
 
             self.client.add_order_status_report(report)

@@ -30,12 +30,12 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -620,13 +620,13 @@ cdef class OandaDataClient(LiveMarketDataClient):
         for values in data:
             if not values["complete"]:
                 continue
-            bars.append(self._parse_bar(instrument, values, bar_type.spec.price_type))
+            bars.append(self._parse_bar(bar_type, instrument, values, bar_type.spec.price_type))
 
         # Set partial bar if last bar not complete
         cdef dict last_values = data[-1]
         cdef Bar partial_bar = None
         if not last_values["complete"]:
-            partial_bar = self._parse_bar(instrument, last_values, bar_type.spec.price_type)
+            partial_bar = self._parse_bar(bar_type, instrument, last_values, bar_type.spec.price_type)
 
         self._loop.call_soon_threadsafe(
             self._handle_bars_py,
@@ -670,10 +670,16 @@ cdef class OandaDataClient(LiveMarketDataClient):
             Price(values["asks"][0]["price"]),
             Quantity(1),
             Quantity(1),
-            pd.to_datetime(values["time"]),
+            dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
         )
 
-    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
+    cdef inline Bar _parse_bar(
+        self,
+        BarType bar_type,
+        Instrument instrument,
+        dict values,
+        PriceType price_type,
+    ):
         cdef dict prices
         if price_type == PriceType.BID:
             prices = values["bid"]
@@ -683,12 +689,13 @@ cdef class OandaDataClient(LiveMarketDataClient):
             prices = values["mid"]
 
         return Bar(
+            bar_type,
             Price(prices["o"], instrument.price_precision),
             Price(prices["h"], instrument.price_precision),
             Price(prices["l"], instrument.price_precision),
             Price(prices["c"], instrument.price_precision),
             Quantity(values["volume"], instrument.size_precision),
-            pd.to_datetime(values["time"]),
+            dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
         )
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------

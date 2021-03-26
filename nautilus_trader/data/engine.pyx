@@ -59,7 +59,6 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -976,8 +975,8 @@ cdef class DataEngine(Component):
             self._handle_order_book_operations(data)
         elif isinstance(data, OrderBookSnapshot):
             self._handle_order_book_snapshot(data)
-        elif isinstance(data, BarData):
-            self._handle_bar(data.bar_type, data.bar)
+        elif isinstance(data, Bar):
+            self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         elif isinstance(data, GenericData):
@@ -1041,13 +1040,13 @@ cdef class DataEngine(Component):
         for handler in order_book_handlers:
             handler(order_book)
 
-    cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *:
-        self.cache.add_bar(bar_type, bar)
+    cdef inline void _handle_bar(self, Bar bar) except *:
+        self.cache.add_bar(bar)
 
         # Send to all registered bar handlers for that bar type
-        cdef list bar_handlers = self._bar_handlers.get(bar_type, [])
+        cdef list bar_handlers = self._bar_handlers.get(bar.type, [])
         for handler in bar_handlers:
-            handler(bar_type, bar)
+            handler(bar)
 
     cdef inline void _handle_custom_data(self, GenericData data) except *:
         # Send to all registered data handlers for that data type
@@ -1069,7 +1068,6 @@ cdef class DataEngine(Component):
             self._handle_trade_ticks(response.data, response.correlation_id)
         elif response.data_type.type == Bar:
             self._handle_bars(
-                response.data_type.metadata.get(BAR_TYPE),
                 response.data,
                 response.data_type.metadata.get("Partial"),
                 response.correlation_id,
@@ -1117,8 +1115,8 @@ cdef class DataEngine(Component):
 
         callback(ticks)
 
-    cdef inline void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
-        self.cache.add_bars(bar_type, bars)
+    cdef inline void _handle_bars(self, list bars, Bar partial, UUID correlation_id) except *:
+        self.cache.add_bars(bars)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
         if callback is None:
@@ -1128,9 +1126,9 @@ cdef class DataEngine(Component):
         cdef TimeBarAggregator
         if partial is not None:
             # Update partial time bar
-            aggregator = self._bar_aggregators.get(bar_type)
+            aggregator = self._bar_aggregators.get(partial.type)
             if aggregator:
-                self._log.debug(f"Applying partial bar {partial} for {bar_type}.")
+                self._log.debug(f"Applying partial bar {partial} for {partial.type}.")
                 aggregator.set_partial(partial)
             else:
                 if self._fsm.state == ComponentState.RUNNING:
@@ -1139,7 +1137,7 @@ cdef class DataEngine(Component):
                     # partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update.")
 
-        callback(bar_type, bars)
+        callback(bars)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -1238,7 +1236,7 @@ cdef class DataEngine(Component):
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         # Send request directly to handler as we're already inside engine

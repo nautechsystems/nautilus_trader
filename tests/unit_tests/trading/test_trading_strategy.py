@@ -299,11 +299,10 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
 
-        bar_type = TestStubs.bartype_audusd_1min_bid()
         bar = TestStubs.bar_5decimal()
 
         # Act
-        strategy.on_bar(bar_type, bar)
+        strategy.on_bar(bar)
 
         # Assert
         self.assertTrue(True)  # Exception not raised
@@ -313,7 +312,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy = TradingStrategy("000")
 
         # Act
-        strategy.on_data(GenericData(DataType(str), "DATA", UNIX_EPOCH))
+        strategy.on_data(GenericData(DataType(str), "DATA", 0))
 
         # Assert
         self.assertTrue(True)  # Exception not raised
@@ -652,11 +651,10 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.start()
 
         bar = TestStubs.bar_5decimal()
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, strategy.handle_bar, bar_type, bar)
+        self.assertRaises(RuntimeError, strategy.handle_bar, bar)
 
     def test_handle_data_when_user_code_raises_exception_logs_and_reraises(self):
         # Arrange
@@ -675,7 +673,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertRaises(
             RuntimeError,
             strategy.handle_data,
-            GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH),
+            GenericData(DataType(str), "SOME_DATA", 0),
         )
 
     def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self):
@@ -816,15 +814,16 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         bar = Bar(
+            bar_type,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            0,
         )
 
-        strategy.handle_bar(bar_type, bar)
+        strategy.handle_bar(bar)
 
         # Act
         strategy.reset()
@@ -1204,7 +1203,7 @@ class TradingStrategyTests(unittest.TestCase):
 
     def test_handle_bar_updates_indicator_registered_for_bars(self):
         # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TradingStrategy("000")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -1217,8 +1216,8 @@ class TradingStrategyTests(unittest.TestCase):
         bar = TestStubs.bar_5decimal()
 
         # Act
-        strategy.handle_bar(bar_type, bar)
-        strategy.handle_bar(bar_type, bar, True)
+        strategy.handle_bar(bar)
+        strategy.handle_bar(bar, True)
 
         # Assert
         self.assertEqual(2, ema.count)
@@ -1236,7 +1235,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar = TestStubs.bar_5decimal()
 
         # Act
-        strategy.handle_bar(bar_type, bar)
+        strategy.handle_bar(bar)
 
         # Assert
         self.assertEqual([], strategy.calls)
@@ -1257,15 +1256,15 @@ class TradingStrategyTests(unittest.TestCase):
         bar = TestStubs.bar_5decimal()
 
         # Act
-        strategy.handle_bar(bar_type, bar)
+        strategy.handle_bar(bar)
 
         # Assert
         self.assertEqual(["on_start", "on_bar"], strategy.calls)
-        self.assertEqual((bar_type, bar), strategy.object_storer.get_store()[0])
+        self.assertEqual(bar, strategy.object_storer.get_store()[0])
 
     def test_handle_bars_updates_indicator_registered_for_bars(self):
         # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TradingStrategy("000")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -1278,7 +1277,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar = TestStubs.bar_5decimal()
 
         # Act
-        strategy.handle_bars(bar_type, [bar])
+        strategy.handle_bars([bar])
 
         # Assert
         self.assertEqual(1, ema.count)
@@ -1297,7 +1296,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_indicator_for_bars(bar_type, ema)
 
         # Act
-        strategy.handle_bars(bar_type, [])
+        strategy.handle_bars([])
 
         # Assert
         self.assertEqual(0, ema.count)
@@ -1310,7 +1309,7 @@ class TradingStrategyTests(unittest.TestCase):
             self.logger,
         )
 
-        data = GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH)
+        data = GenericData(DataType(str), "SOME_DATA", 0)
 
         # Act
         strategy.handle_data(data)
@@ -1329,7 +1328,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.start()
 
-        data = GenericData(DataType(str), "SOME_DATA", UNIX_EPOCH)
+        data = GenericData(DataType(str), "SOME_DATA", 0)
 
         # Act
         strategy.handle_data(data)

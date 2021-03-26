@@ -372,14 +372,12 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
+    cpdef void on_bar(self, Bar bar) except *:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
@@ -743,7 +741,7 @@ cdef class TradingStrategy(Component):
             data_type=data_type,
             handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -766,7 +764,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -827,7 +825,7 @@ cdef class TradingStrategy(Component):
             }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -850,7 +848,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -873,7 +871,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -896,7 +894,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -921,7 +919,7 @@ cdef class TradingStrategy(Component):
             data_type=data_type,
             handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -944,7 +942,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -975,7 +973,7 @@ cdef class TradingStrategy(Component):
             }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -998,7 +996,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1021,7 +1019,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1044,7 +1042,7 @@ cdef class TradingStrategy(Component):
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1071,7 +1069,7 @@ cdef class TradingStrategy(Component):
             data_type=data_type,
             callback=self.handle_data,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1117,7 +1115,7 @@ cdef class TradingStrategy(Component):
             }),
             callback=self.handle_quote_ticks,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1163,7 +1161,7 @@ cdef class TradingStrategy(Component):
             }),
             callback=self.handle_trade_ticks,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1209,7 +1207,7 @@ cdef class TradingStrategy(Component):
             }),
             callback=self.handle_bars,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1243,7 +1241,7 @@ cdef class TradingStrategy(Component):
             # Null object pattern
             position_id = PositionId.null_c()
 
-        cdef AccountId account_id = self.execution.account_id(order.venue)
+        cdef AccountId account_id = self.execution.account_id(order.venue)  # TODO should be first()
         if account_id is None:
             self.log.error(f"Cannot submit order: "
                            f"no account registered for {order.venue}, {order}.")
@@ -1257,7 +1255,7 @@ cdef class TradingStrategy(Component):
             position_id,
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1292,7 +1290,7 @@ cdef class TradingStrategy(Component):
             self.id,
             bracket_order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1381,7 +1379,7 @@ cdef class TradingStrategy(Component):
             quantity,
             price,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1418,7 +1416,7 @@ cdef class TradingStrategy(Component):
             order.cl_ord_id,
             order.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1492,7 +1490,7 @@ cdef class TradingStrategy(Component):
             position.id,
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1712,7 +1710,7 @@ cdef class TradingStrategy(Component):
         for i in range(length):
             self.handle_trade_tick(ticks[i], is_historical=True)
 
-    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
+    cpdef void handle_bar(self, Bar bar, bint is_historical=False) except *:
         """
         Handle the given bar data.
 
@@ -1720,8 +1718,6 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        bar_type : BarType
-            The received bar type.
         bar : Bar
             The bar received.
         is_historical : bool
@@ -1732,11 +1728,10 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bar, "bar")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar_type)  # Could be None
+        cdef list indicators = self._indicators_for_bars.get(bar.type)
         cdef Indicator indicator
         if indicators is not None:
             for indicator in indicators:
@@ -1747,21 +1742,19 @@ cdef class TradingStrategy(Component):
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_bar(bar_type, bar)
+                self.on_bar(bar)
             except Exception as ex:
                 self.log.exception(ex)
                 raise
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
+    cpdef void handle_bars(self, list bars) except *:
         """
         Handle the given bar data by handling each bar individually.
 
         Parameters
         ----------
-        bar_type : BarType
-            The received bar type.
         bars : list[Bar]
             The bars to handle.
 
@@ -1770,20 +1763,23 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bars, "bars")  # Can be empty
 
         cdef int length = len(bars)
         cdef Bar first = bars[0] if length > 0 else None
         cdef Bar last = bars[length - 1] if length > 0 else None
 
-        self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
+        if length > 0:
+            self.log.info(f"Received <Bar[{length}]> data for {first.type}.")
+        else:
+            self.log.error(f"Received <Bar[{length}]> data for unknown bar type.")
+            return  # TODO: Strategy shouldn't receive zero bars
 
-        if length > 0 and first.timestamp > last.timestamp:
+        if length > 0 and first.timestamp_ns > last.timestamp_ns:
             raise RuntimeError(f"Cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):
-            self.handle_bar(bar_type, bars[i], is_historical=True)
+            self.handle_bar(bars[i], is_historical=True)
 
     cpdef void handle_data(self, GenericData data) except *:
         """

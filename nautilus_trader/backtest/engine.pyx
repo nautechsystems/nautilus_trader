@@ -16,6 +16,7 @@
 import pytz
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
@@ -38,6 +39,7 @@ from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_timestamp
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
@@ -151,7 +153,7 @@ cdef class BacktestEngine:
         self.created_time = self._clock.utc_now()
 
         self._test_clock = TestClock()
-        self._test_clock.set_time(self._clock.utc_now())
+        self._test_clock.set_time(self._clock.timestamp_ns())
         self._uuid_factory = UUIDFactory()
 
         self.analyzer = PerformanceAnalyzer()
@@ -212,7 +214,7 @@ cdef class BacktestEngine:
             exec_db.flush()
 
         # Setup execution cache
-        self._test_clock.set_time(self._clock.utc_now())  # For logging consistency
+        self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
 
         self.portfolio = Portfolio(
             clock=self._test_clock,
@@ -286,7 +288,7 @@ cdef class BacktestEngine:
 
         self._exchanges = {}
 
-        self._test_clock.set_time(self._clock.utc_now())  # For logging consistency
+        self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
 
         self.iteration = 0
 
@@ -547,11 +549,14 @@ cdef class BacktestEngine:
         # Reset engine to fresh state (in case already run)
         self.reset()
 
+        cdef int64_t start_ns = dt_to_unix_nanos(start)
+        cdef int64_t stop_ns = dt_to_unix_nanos(stop)
+
         # Setup clocks
-        self._test_clock.set_time(start)
+        self._test_clock.set_time(to_time_ns=start_ns)
 
         # Setup data
-        self._data_producer.setup(start, stop)
+        self._data_producer.setup(start_ns=start_ns, stop_ns=stop_ns)
 
         # Setup new strategies
         if strategies is not None:
@@ -561,7 +566,7 @@ cdef class BacktestEngine:
         self._log.info(f"Running backtest...")
 
         for strategy in self.trader.strategies_c():
-            strategy.clock.set_time(start)
+            strategy.clock.set_time(to_time_ns=start_ns)
 
         for exchange in self._exchanges.values():
             exchange.initialize_account()
@@ -575,11 +580,11 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            self._advance_time(data.timestamp)
+            self._advance_time(now_ns=data.timestamp_ns)
             if isinstance(data, Tick):
                 self._exchanges[data.venue].process_tick(data)
             self._data_engine.process(data)
-            self._process_modules(data.timestamp)
+            self._process_modules(now_ns=data.timestamp_ns)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -589,21 +594,21 @@ cdef class BacktestEngine:
         if print_log_store:
             self.print_log_store()
 
-    cdef inline void _advance_time(self, datetime now) except *:
+    cdef inline void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
         for strategy in self.trader.strategies_c():
-            time_events += strategy.clock.advance_time(now)
+            time_events += strategy.clock.advance_time(to_time_ns=now_ns)
         for event_handler in sorted(time_events):
-            self._test_clock.set_time(event_handler.event.timestamp)
+            self._test_clock.set_time(to_time_ns=event_handler.event.event_timestamp_ns)
             event_handler.handle()
-        self._test_clock.set_time(now)
+        self._test_clock.set_time(to_time_ns=now_ns)
 
-    cdef inline void _process_modules(self, datetime now) except *:
+    cdef inline void _process_modules(self, int64_t now_ns) except *:
         cdef SimulatedExchange exchange
         for exchange in self._exchanges.values():
-            exchange.process_modules(now)
+            exchange.process_modules(now_ns)
 
     cdef inline void _log_header(
         self,

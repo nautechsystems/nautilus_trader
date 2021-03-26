@@ -2,6 +2,8 @@
 
 [WIP] Update dependencies before release...
 
+Standardize data timestamps to nanoseconds.
+
 This update includes some renaming to align more closely with established financial
 market terminology with reference to the FIX5.0 SP2 spec.
 
@@ -22,7 +24,7 @@ market terminology with reference to the FIX5.0 SP2 spec.
 - Enhance state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`.
 
 ## Fixes
-None
+- `DataCache` incorrectly caching bars.
 
 ---
 
