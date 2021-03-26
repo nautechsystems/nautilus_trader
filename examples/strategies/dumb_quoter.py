@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.model.orderbook.book import OrderBook
@@ -98,9 +99,14 @@ class DumbQuoter(TradingStrategy):
 
     def update_midpoint(self, order_book: OrderBook):
         """ Check if midpoint has moved more than threshold, if so , update quotes """
-        midpoint = (order_book.best_ask_price() + order_book.best_bid_price()) / 2.0
+        midpoint = Decimal(
+            order_book.best_ask_price() + order_book.best_bid_price()
+        ) / Decimal(2.0)
         self.log.info(f"midpoint: {midpoint}, prev: {self.midpoint}")
-        if abs(midpoint - (self.midpoint or -1e15)) > self.theo_change_threshold:
+        if (
+            abs(midpoint - (self.midpoint or Decimal(-1e15)))
+            > self.theo_change_threshold
+        ):
             self.log.info("Theo updating", LogColor.BLUE)
             self.buy(price=midpoint)
             self.sell(price=midpoint)
@@ -128,7 +134,7 @@ class DumbQuoter(TradingStrategy):
         """
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
-            price=price - (self.market_width / 2.0),
+            price=Price(price - (self.market_width / Decimal(2.0)), precision=5),
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
             time_in_force=TimeInForce.GTC,
@@ -143,7 +149,7 @@ class DumbQuoter(TradingStrategy):
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            price=price + (self.market_width / 2.0),
+            price=Price(price + (self.market_width / Decimal(2.0)), precision=5),
             quantity=Quantity(self.trade_size),
             time_in_force=TimeInForce.GTC,
         )

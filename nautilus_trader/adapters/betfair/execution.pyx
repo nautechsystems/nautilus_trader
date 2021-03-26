@@ -20,14 +20,19 @@ from typing import Dict, List, Optional
 
 import betfairlightweight
 import orjson
+
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+
 from nautilus_trader.core.datetime import from_unix_time_ms
+
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
+
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
@@ -35,8 +40,10 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
+
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.parsing import order_amend_to_betfair
@@ -117,7 +124,11 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         resp = self._client.login()
         self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
 
-        await self._stream.connect()
+        aws = [
+            self._stream.connect(),
+            self.connection_account_state(),
+        ]
+        await asyncio.gather(*aws)
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -126,26 +137,52 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._client.client_logout()
         self._log.info("Disconnected.")
 
+    # -- ACCOUNT HANDLERS ------------------------------------------------------------------------------
+    async def connection_account_state(self):
+        aws = [
+            self._loop.run_in_executor(None, self._get_account_details),
+            self._loop.run_in_executor(None, self._get_account_funds),
+        ]
+        result = await asyncio.gather(*aws)
+        print(result)
+        account_details, account_funds = result
+        account_state = betfair_account_to_account_state(
+            account_detail=account_details, account_funds=account_funds, event_id=self._uuid_factory.generate()
+        )
+        self._handle_event(account_state)
+
+    cpdef dict _get_account_details(self):
+        self._log.debug("Sending get_account_details request")
+        return self._client.account.get_account_details()
+
+    cpdef dict _get_account_funds(self):
+        self._log.debug("Sending get_account_funds request")
+        return self._client.account.get_account_funds()
+
     # -- COMMAND HANDLERS ------------------------------------------------------------------------------
     # TODO - #  Do want to throttle updates if they're coming faster than x / sec? Maybe this is for risk engine?
     #  We could use some heuristics about the avg network latency and add an optional flag for throttle inserts etc.
 
     cpdef void submit_order(self, SubmitOrder command) except *:
+        self._log.debug(f"SubmitOrder received {command}")
+
+        self._generate_order_submitted(
+            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.unix_time(),
+        )
+        self._log.debug(f"Generated _generate_order_submitted")
+
         f = self._loop.run_in_executor(None, self._submit_order, command) # type: asyncio.Future
-        self._log.info("future:", f)
+        self._log.debug("future:", f)
         f.add_done_callback(partial(self._post_submit_order, command=command))
 
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_submit_to_betfair(command=command, instrument=instrument)
-        self._generate_order_submitted(
-            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.unix_time(),
-        )
         return self._client.betting.place_orders(**kw)
 
     def _post_submit_order(self, resp, command):
-        self._log.info("resp:", resp)
-        self._log.info("command:", command)
+        self._log.debug("resp:", resp)
+        self._log.debug("command:", command)
         assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
         bet_id = resp['result']['instructionReports'][0]['betId']
         self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id

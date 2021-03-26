@@ -8,6 +8,7 @@ from betfairlightweight.filters import place_instruction
 from betfairlightweight.filters import replace_instruction
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
@@ -100,15 +101,17 @@ def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument)
 
 
 def betfair_account_to_account_state(
-    account_detail, account_funds, event_id
+    account_detail,
+    account_funds,
+    event_id,
+    account_id="001",
 ) -> AccountState:
-    account_id = f"{account_detail['firstName']}-{account_detail['lastName']}"
     currency = Currency.from_str(account_detail["currencyCode"])
     balance = float(account_funds["availableToBetBalance"])
     balance_locked = -float(account_funds["exposure"])
     balance_free = balance - balance_locked
     return AccountState(
-        AccountId(issuer="betfair", identifier=account_id),
+        AccountId(issuer=BETFAIR_VENUE.value, identifier=account_id),
         [Money(value=balance, currency=currency)],
         [Money(value=balance_free, currency=currency)],
         [Money(value=balance_locked, currency=currency)],
@@ -158,11 +161,11 @@ def build_market_snapshot_messages(
                         level=OrderBookLevel.L2,
                         instrument_id=instrument.id,
                         bids=[
-                            (price_to_probability(p, OrderSide.BUY), v) for p, v in bids
+                            (price_to_probability(p, OrderSide.BUY), v) for p, v in asks
                         ],
                         asks=[
                             (price_to_probability(p, OrderSide.SELL), v)
-                            for p, v in asks
+                            for p, v in bids
                         ],
                         timestamp=from_unix_time_ms(raw["pt"]),
                     )
@@ -186,7 +189,12 @@ def build_market_update_messages(
             assert instrument
             operations = []
             for side in B_SIDE_KINDS:
-                for level, price, volume in runner.get(side, []):
+                for upd in runner.get(side, []):
+                    # TODO - Fix this crap
+                    if len(upd) == 3:
+                        _, price, volume = upd
+                    else:
+                        price, volume = upd
                     operations.append(
                         OrderBookOperation(
                             op_type=OrderBookOperationType.DELETE

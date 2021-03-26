@@ -195,6 +195,12 @@ def test_account_statement(betfair_client, uuid):
     assert result == expected
 
 
+@pytest.mark.asyncio
+async def test_connection_account_state(execution_client, exec_engine):
+    await execution_client.connection_account_state()
+    assert isinstance(exec_engine.events[0], AccountState)
+
+
 def test_get_account_currency(execution_client):
     currency = execution_client.get_account_currency()
     assert currency == "AUD"

@@ -27,9 +27,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef object client(self)
     cpdef str get_account_currency(self)
+    cpdef dict _get_account_details(self)
+    cpdef dict _get_account_funds(self)
 
     # -- EVENTS ----------------------------------------------------------------------------------------
-
     # cdef inline void _on_account_state(self, dict event) except *
     # cdef inline void _on_order_status(self, dict event) except *
     # cdef inline void _on_exec_report(self, dict event) except *
