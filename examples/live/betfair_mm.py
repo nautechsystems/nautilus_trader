@@ -13,8 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from decimal import Decimal
+import os
 import pathlib
 import sys
 
@@ -31,6 +31,7 @@ from nautilus_trader.live.node import TradingNode
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
+market_id = "1.181005744"
 config = {
     "trader": {
         "name": "TESTER",  # Not sent beyond system boundary
@@ -46,8 +47,8 @@ config = {
         "log_level_file": "DBG",
         "log_level_store": "WRN",
         "log_thread_id": False,
-        "log_to_file": False,
-        "log_file_path": "logs/",
+        "log_to_file": True,
+        "log_file_path": f"{os.environ['HOME']}/data/logs",
         "run_in_process": False,
     },
     "exec_database": {
@@ -66,7 +67,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
-            "market_filter": {"market_id": "1.181012324"},
+            "market_filter": {"market_id": market_id},
         },
     },
     "exec_clients": {
@@ -75,7 +76,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
-            "market_filter": {"market_id": "1.181012324"},
+            "market_filter": {"market_id": market_id},
             "sandbox_mode": False,  # If clients use the testnet
         },
     },
@@ -87,7 +88,7 @@ config = {
 # file.
 
 strategy = DumbQuoter(
-    instrument_filter={"market_id": "1.181012324"},
+    instrument_filter={"market_id": market_id},
     trade_size=Decimal("0.05"),
     order_id_tag="001",
 )
