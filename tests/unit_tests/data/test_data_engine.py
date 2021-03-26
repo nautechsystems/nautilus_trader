@@ -27,7 +27,6 @@ from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.data.messages import Unsubscribe
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.data import Data
@@ -55,7 +54,6 @@ from tests.test_kit.mocks import MockMarketDataClient
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 BITMEX = Venue("BITMEX")
@@ -285,7 +283,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(str),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -310,7 +308,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -337,7 +335,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -367,7 +365,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             callback=handler.append,
             request_id=uuid,  # Duplicate
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         request2 = DataRequest(
@@ -383,7 +381,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             callback=handler.append,
             request_id=uuid,  # Duplicate
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -402,7 +400,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(str),  # str data type is invalid
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -423,7 +421,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -444,7 +442,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(str, metadata={"Type": "news"}),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -466,7 +464,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(str, metadata={"Type": "news"}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -476,7 +474,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(str, metadata={"Type": "news"}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -498,7 +496,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(type(str)),  # str data type is invalid
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -520,7 +518,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -537,7 +535,7 @@ class DataEngineTests(unittest.TestCase):
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            response_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -548,7 +546,7 @@ class DataEngineTests(unittest.TestCase):
 
     def test_process_unrecognized_data_type_logs_and_does_nothing(self):
         # Arrange
-        data = Data(UNIX_EPOCH)
+        data = Data(0)
 
         # Act
         self.data_engine.process(data)  # Invalid
@@ -578,7 +576,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -600,7 +598,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -612,7 +610,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -634,7 +632,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -660,7 +658,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         handler2 = []
@@ -671,7 +669,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe1)
@@ -703,7 +701,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -730,7 +728,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -758,7 +756,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -774,7 +772,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -802,7 +800,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -818,7 +816,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -848,7 +846,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -858,7 +856,7 @@ class DataEngineTests(unittest.TestCase):
             level=OrderBookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -888,7 +886,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -897,7 +895,7 @@ class DataEngineTests(unittest.TestCase):
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             ops=[],
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -929,7 +927,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         handler2 = []
@@ -946,7 +944,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe1)
@@ -957,7 +955,7 @@ class DataEngineTests(unittest.TestCase):
             level=OrderBookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -984,7 +982,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -1005,7 +1003,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -1017,7 +1015,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1039,7 +1037,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -1050,7 +1048,7 @@ class DataEngineTests(unittest.TestCase):
             Price("100.003"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -1075,7 +1073,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         handler2 = []
@@ -1086,7 +1084,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe1)
@@ -1098,7 +1096,7 @@ class DataEngineTests(unittest.TestCase):
             Price("100.003"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -1122,7 +1120,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1144,7 +1142,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -1156,7 +1154,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1178,7 +1176,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -1189,7 +1187,7 @@ class DataEngineTests(unittest.TestCase):
             Quantity(100),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -1213,7 +1211,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         handler2 = []
@@ -1224,7 +1222,7 @@ class DataEngineTests(unittest.TestCase):
             ),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe1)
@@ -1236,7 +1234,7 @@ class DataEngineTests(unittest.TestCase):
             Quantity(100),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -1260,7 +1258,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler.store_2,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1283,7 +1281,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler.store_2,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
@@ -1293,7 +1291,7 @@ class DataEngineTests(unittest.TestCase):
             data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler.store_2,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -1314,29 +1312,28 @@ class DataEngineTests(unittest.TestCase):
         subscribe = Subscribe(
             provider=BINANCE.value,
             data_type=DataType(Bar, metadata={"BarType": bar_type}),
-            handler=handler.store_2,
+            handler=handler.store,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe)
 
         bar = Bar(
+            bar_type,
             Price("1051.00000"),
             Price("1055.00000"),
             Price("1050.00000"),
             Price("1052.00000"),
             Quantity(100),
-            UNIX_EPOCH,
+            0,
         )
 
-        data = BarData(bar_type, bar)
-
         # Act
-        self.data_engine.process(data)
+        self.data_engine.process(bar)
 
         # Assert
-        self.assertEqual([(bar_type, bar)], handler.get_store())
+        self.assertEqual([bar], handler.get_store())
 
     def test_process_bar_when_subscribers_then_sends_to_registered_handlers(self):
         # Arrange
@@ -1350,37 +1347,36 @@ class DataEngineTests(unittest.TestCase):
         subscribe1 = Subscribe(
             provider=BINANCE.value,
             data_type=DataType(Bar, metadata={"BarType": bar_type}),
-            handler=handler1.store_2,
+            handler=handler1.store,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         handler2 = ObjectStorer()
         subscribe2 = Subscribe(
             provider=BINANCE.value,
             data_type=DataType(Bar, metadata={"BarType": bar_type}),
-            handler=handler2.store_2,
+            handler=handler2.store,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self.data_engine.execute(subscribe1)
         self.data_engine.execute(subscribe2)
 
         bar = Bar(
+            bar_type,
             Price("1051.00000"),
             Price("1055.00000"),
             Price("1050.00000"),
             Price("1052.00000"),
             Quantity(100),
-            UNIX_EPOCH,
+            0,
         )
 
-        data = BarData(bar_type, bar)
-
         # Act
-        self.data_engine.process(data)
+        self.data_engine.process(bar)
 
         # Assert
-        self.assertEqual([(bar_type, bar)], handler1.get_store())
-        self.assertEqual([(bar_type, bar)], handler2.get_store())
+        self.assertEqual([bar], handler1.get_store())
+        self.assertEqual([bar], handler2.get_store())

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
@@ -96,7 +96,7 @@ cdef class SimulatedExchange:
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
     cpdef void process_tick(self, Tick tick) except *
-    cpdef void process_modules(self, datetime now) except *
+    cpdef void process_modules(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 

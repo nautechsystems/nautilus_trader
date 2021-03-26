@@ -162,7 +162,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -186,7 +186,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -211,7 +211,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -236,7 +236,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -276,7 +276,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             PositionId("P-123456"),
             order,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -312,7 +312,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             StrategyId("SCALPER", "01"),
             bracket_order,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -349,7 +349,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             StrategyId("SCALPER", "01"),
             bracket_order,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -372,7 +372,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             Quantity(100000),
             Price("1.00001"),
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -393,7 +393,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             OrderId("001"),
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -421,7 +421,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             balances_locked=[Money(0, USD)],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -442,7 +442,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.FOK,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options={},
         )
 
@@ -471,7 +471,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options=options,
         )
 
@@ -496,7 +496,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options=options,
         )
 
@@ -527,7 +527,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options=options,
         )
 
@@ -544,9 +544,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderSubmitted(
             self.account_id,
             ClientOrderId("O-123456"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -562,7 +562,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             "OrderId already exists",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -578,7 +578,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             "Exceeds risk for FX",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -594,9 +594,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("B-123456"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -611,10 +611,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderRejected(
             self.account_id,
             ClientOrderId("O-123456"),
-            UNIX_EPOCH,
+            0,
             "ORDER_ID_INVALID",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -630,9 +630,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -648,11 +648,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),
-            UNIX_EPOCH,
+            0,
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -670,9 +670,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("1"),
             Quantity(100000),
             Price("0.80010"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -688,9 +688,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -712,16 +712,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(50000),
-            Quantity(50000),
-            Quantity(50000),
             Price("1.00000"),
+            Quantity(50000),
+            Quantity(50000),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -743,16 +743,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
+            Price("1.00000"),
             Quantity(100000),
             Quantity(),
-            Price("1.00000"),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.TAKER,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act

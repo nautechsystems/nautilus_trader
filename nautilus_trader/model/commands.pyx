@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
@@ -36,7 +36,7 @@ cdef class TradingCommand(Command):
         self,
         InstrumentId instrument_id not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `TradingCommand` class.
@@ -47,11 +47,11 @@ cdef class TradingCommand(Command):
             The instrument identifier for the command.
         command_id : UUID
             The commands identifier.
-        command_timestamp : datetime
-            The commands timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(command_id, command_timestamp)
+        super().__init__(command_id, timestamp_ns)
 
         self.instrument_id = instrument_id
         self.symbol = instrument_id.symbol
@@ -72,8 +72,8 @@ cdef class SubmitOrder(TradingCommand):
         PositionId position_id not None,
         Order order not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
-    ) -> object:
+        int64_t timestamp_ns,
+    ):
         """
         Initialize a new instance of the `SubmitOrder` class.
 
@@ -93,11 +93,11 @@ cdef class SubmitOrder(TradingCommand):
             The order to submit.
         command_id : UUID
             The commands identifier.
-        command_timestamp : datetime
-            The commands timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -130,7 +130,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         StrategyId strategy_id not None,
         BracketOrder bracket_order not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `SubmitBracketOrder` class.
@@ -149,11 +149,11 @@ cdef class SubmitBracketOrder(TradingCommand):
             The bracket order to submit.
         command_id : UUID
             The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -189,7 +189,7 @@ cdef class AmendOrder(TradingCommand):
         Quantity quantity not None,
         Price price not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `AmendOrder` class.
@@ -210,11 +210,11 @@ cdef class AmendOrder(TradingCommand):
             The price for the order (amending optional).
         command_id : UUID
             The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -246,7 +246,7 @@ cdef class CancelOrder(TradingCommand):
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `CancelOrder` class.
@@ -265,11 +265,11 @@ cdef class CancelOrder(TradingCommand):
             The order identifier to cancel.
         command_id : UUID
             The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id

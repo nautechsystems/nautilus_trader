@@ -122,7 +122,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position = Position(order_filled)
@@ -187,7 +187,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             TestStubs.event_order_filled(
                 order,
                 instrument=AUDUSD_SIM,
-                fill_price=Price("1.00001"),
+                last_px=Price("1.00001"),
             )
         )
 
@@ -219,7 +219,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
                 order1,
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
-                fill_price=Price("1.00001"),
+                last_px=Price("1.00001"),
             )
         )
         self.database.update_order(order1)
@@ -246,7 +246,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             order2,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         order2.apply(filled)
@@ -262,7 +262,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_update_strategy(self):
         # Arrange
-        strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())
+        strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())
         strategy.register_trader(self.trader_id, self.clock, self.logger)
 
         # Act
@@ -404,7 +404,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position = Position(order_filled)
@@ -485,7 +485,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
                 order1,
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
-                fill_price=Price("1.00001"),
+                last_px=Price("1.00001"),
             )
         )
 
@@ -522,7 +522,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position1 = Position(filled)

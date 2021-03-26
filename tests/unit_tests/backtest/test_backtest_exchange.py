@@ -198,7 +198,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("89.999"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -601,7 +601,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             cl_ord_id=ClientOrderId("O-123456"),
             order_id=OrderId("001"),
             command_id=self.uuid_factory.generate(),
-            command_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -620,7 +620,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             quantity=Quantity(100000),
             price=Price("1.00000"),
             command_id=self.uuid_factory.generate(),
-            command_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -1089,7 +1089,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("96.710"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH + timedelta(minutes=1),
+            1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
         )
 
         # Act
@@ -1125,7 +1125,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("80.011"),
             Quantity(200000),
             Quantity(200000),
-            UNIX_EPOCH,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1134,7 +1134,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("96.712"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1172,7 +1172,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("96.712"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1208,7 +1208,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("90.006"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH + timedelta(seconds=1),
+            1_000_000_000,
         )
 
         self.exchange.process_tick(tick2)
@@ -1243,7 +1243,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("90.007"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -1253,7 +1253,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("90.001"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1289,7 +1289,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("80.011"),
             Quantity(200000),
             Quantity(200000),
-            UNIX_EPOCH,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1298,7 +1298,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("90.001"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1335,7 +1335,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("89.999"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1371,7 +1371,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("90.102"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1413,7 +1413,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("89.999"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1457,7 +1457,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("91.102"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1478,7 +1478,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity(100000),
             OrderSide.SELL,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         tick2 = TradeTick(
@@ -1487,7 +1487,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity(100000),
             OrderSide.BUY,
             TradeMatchId("123456790"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_engine.process(tick1)
@@ -1517,7 +1517,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity(100000),
             OrderSide.SELL,  # Lowers bid price
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick3)
@@ -1562,7 +1562,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("91.102"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1571,7 +1571,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("91.203"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1633,7 +1633,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("100.003"),
             Quantity(100000),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(reduce_quote)
@@ -1700,7 +1700,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("90.003"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_engine.process(open_quote)
@@ -1721,7 +1721,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price("100.003"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(reduce_quote)
@@ -1750,7 +1750,9 @@ class SimulatedExchangeTests(unittest.TestCase):
 class BitmexExchangeTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.strategies = [MockStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())]
+        self.strategies = [
+            MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())
+        ]
 
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -1815,7 +1817,7 @@ class BitmexExchangeTests(unittest.TestCase):
         self.exchange.register_client(self.exec_client)
 
         self.strategy = MockStrategy(
-            bar_type=TestStubs.bartype_btcusdt_binance_1min_bid()
+            bar_type=TestStubs.bartype_btcusdt_binance_100tick_last()
         )
         self.strategy.register_trader(
             self.trader_id,
@@ -1838,7 +1840,7 @@ class BitmexExchangeTests(unittest.TestCase):
             Price("11493.75"),
             Quantity(1500000),
             Quantity(1500000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_engine.process(quote1)
@@ -1867,7 +1869,7 @@ class BitmexExchangeTests(unittest.TestCase):
             Price("11493.64"),
             Quantity(1500000),
             Quantity(1500000),
-            UNIX_EPOCH,
+            0,
         )
 
         self.exchange.process_tick(quote2)  # Fill the limit order

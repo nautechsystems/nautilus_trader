@@ -42,7 +42,6 @@ from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.portfolio import PortfolioFacade
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 SIM = Venue("SIM")
@@ -175,7 +174,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money("0.00000000", BTC)],
             info={},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         self.data_cache = DataCache(logger)
@@ -302,7 +301,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("25000.00"),
+            last_px=Price("25000.00"),
         )
         order1.apply(filled1)
 
@@ -317,7 +316,7 @@ class PortfolioTests(unittest.TestCase):
             Price("25002.00"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -351,7 +350,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("25000.00"),
+            last_px=Price("25000.00"),
         )
 
         filled2 = TestStubs.event_order_filled(
@@ -359,7 +358,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("25000.00"),
+            last_px=Price("25000.00"),
         )
 
         position1 = Position(filled1)
@@ -376,7 +375,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("25000.00"),
+            last_px=Price("25000.00"),
         )
 
         position2 = Position(filled3)
@@ -388,7 +387,7 @@ class PortfolioTests(unittest.TestCase):
             Price("25002.00"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -411,7 +410,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         last = QuoteTick(
@@ -420,7 +419,7 @@ class PortfolioTests(unittest.TestCase):
             Price("10511.00"),
             Quantity("1.000000"),
             Quantity("1.000000"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_cache.add_quote_tick(last)
@@ -469,7 +468,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("15000.00"),
+            last_px=Price("15000.00"),
         )
 
         last = QuoteTick(
@@ -478,7 +477,7 @@ class PortfolioTests(unittest.TestCase):
             Price("15510.25"),
             Quantity("12.62"),
             Quantity("3.1"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_cache.add_quote_tick(last)
@@ -523,7 +522,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -536,7 +535,7 @@ class PortfolioTests(unittest.TestCase):
             Price("377.10"),
             Quantity("16"),
             Quantity("25"),
-            UNIX_EPOCH,
+            0,
         )
 
         last_btcusd = QuoteTick(
@@ -545,7 +544,7 @@ class PortfolioTests(unittest.TestCase):
             Price("10501.51"),
             Quantity("2.54"),
             Quantity("0.91"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_cache.add_quote_tick(last_ethusd)
@@ -564,7 +563,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("376.05"),
+            last_px=Price("376.05"),
         )
 
         position = Position(fill)
@@ -593,7 +592,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -610,7 +609,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("376.05"),
+            last_px=Price("376.05"),
         )
 
         position = Position(fill)
@@ -632,7 +631,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -650,7 +649,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("376.05"),
+            last_px=Price("376.05"),
         )
 
         last_ethusd = QuoteTick(
@@ -659,7 +658,7 @@ class PortfolioTests(unittest.TestCase):
             Price("377.10"),
             Quantity("16"),
             Quantity("25"),
-            UNIX_EPOCH,
+            0,
         )
 
         position = Position(fill)
@@ -684,7 +683,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money(0.00, USD)],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -697,7 +696,7 @@ class PortfolioTests(unittest.TestCase):
             Price("0.80505"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         last_gbpusd = QuoteTick(
@@ -706,7 +705,7 @@ class PortfolioTests(unittest.TestCase):
             Price("1.30317"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_cache.add_quote_tick(last_audusd)
@@ -731,7 +730,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         order2_filled = TestStubs.event_order_filled(
@@ -739,7 +738,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position1 = Position(order1_filled)
@@ -787,7 +786,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money(0.00, USD)],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -800,7 +799,7 @@ class PortfolioTests(unittest.TestCase):
             Price("0.80505"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_cache.add_quote_tick(last_audusd)
@@ -817,7 +816,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position = Position(order1_filled)
@@ -835,7 +834,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position.apply(order2_filled)
@@ -874,7 +873,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money(0.00, USD)],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -892,7 +891,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         position = Position(order1_filled)
@@ -910,7 +909,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
         position.apply(order2_filled)
@@ -939,7 +938,7 @@ class PortfolioTests(unittest.TestCase):
             balances_locked=[Money(0.00, USD)],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -975,7 +974,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         order2_filled = TestStubs.event_order_filled(
@@ -983,7 +982,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         order3_filled = TestStubs.event_order_filled(
@@ -991,7 +990,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         order4_filled = TestStubs.event_order_filled(
@@ -999,7 +998,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("1.00100"),
+            last_px=Price("1.00100"),
         )
 
         position1 = Position(order1_filled)
@@ -1012,7 +1011,7 @@ class PortfolioTests(unittest.TestCase):
             Price("0.80505"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         last_gbpusd = QuoteTick(
@@ -1021,7 +1020,7 @@ class PortfolioTests(unittest.TestCase):
             Price("1.30317"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.data_cache.add_quote_tick(last_audusd)

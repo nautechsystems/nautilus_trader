@@ -25,15 +25,17 @@ import pandas as pd
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
-from nautilus_trader.core.time cimport unix_time
+from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
@@ -52,7 +54,7 @@ cdef class DataProducerFacade:
     Provides a read-only facade for data producers.
     """
 
-    cpdef void setup(self, datetime start, datetime stop) except *:
+    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -114,8 +116,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef list trade_tick_frames = []
         self.execution_resolutions = []
 
-        cdef double ts_total = unix_time()
-        cdef double ts
+        cdef double ts_total = unix_timestamp()
         for instrument in data.instruments.values():
             instrument_id = instrument.id
             self._log.info(f"Preparing {instrument_id} data...")
@@ -127,7 +128,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # Process quote tick data
             # -----------------------
             if data.has_quote_data(instrument_id):
-                ts = unix_time()  # Time data processing
+                ts = unix_timestamp()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
                     data_quotes=self._data.quote_ticks.get(instrument_id),
@@ -141,13 +142,13 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
                 self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
-                               f"{unix_time() - ts:.3f}s.")
+                               f"{unix_timestamp() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
             # -----------------------
             if data.has_trade_data(instrument_id):
-                ts = unix_time()  # Time data processing
+                ts = unix_timestamp()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
                     data=self._data.trade_ticks.get(instrument_id),
@@ -159,7 +160,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
                 self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
-                               f"{unix_time() - ts:.3f}s.")
+                               f"{unix_timestamp() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
             if execution_resolution is None:
@@ -199,6 +200,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
             else:
                 self.max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
+        self.min_timestamp_ns = dt_to_unix_nanos(self.min_timestamp)
+        self.max_timestamp_ns = dt_to_unix_nanos(self.max_timestamp)
+
         # Initialize backing fields
         self._quote_instruments = None
         self._quote_bids = None
@@ -223,7 +227,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self.has_data = False
 
         self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
-                       f"total tick rows in {unix_time() - ts_total:.3f}s.")
+                       f"total tick rows in {unix_timestamp() - ts_total:.3f}s.")
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
@@ -238,21 +242,18 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         return self._log
 
-    cpdef void setup(self, datetime start, datetime stop) except *:
+    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
         """
         Setup tick data for a backtest run.
 
         Parameters
         ----------
-        start : datetime
-            The start datetime (UTC) for the run.
-        stop : datetime
-            The stop datetime (UTC) for the run.
+        start_ns : int64
+            The Unix timestamp (nanoseconds) for the run start.
+        stop_ns : int64
+            The Unix timestamp (nanoseconds) for the run stop.
 
         """
-        Condition.not_none(start, "start")
-        Condition.not_none(stop, "stop")
-
         # Prepare instruments
         for instrument in self._data.instruments.values():
             self._data_engine.process(instrument)
@@ -261,6 +262,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         # Calculate data size
         cdef long total_size = 0
+
+        cdef datetime start = nanos_to_unix_dt(start_ns)
+        cdef datetime stop = nanos_to_unix_dt(stop_ns)
 
         # Build quote tick data stream
         if not self._quote_tick_data.empty:
@@ -273,7 +277,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_asks = quote_ticks_slice["ask"].values
             self._quote_bid_sizes = quote_ticks_slice["bid_size"].values
             self._quote_ask_sizes = quote_ticks_slice["ask_size"].values
-            self._quote_timestamps = np.asarray([<datetime>dt for dt in quote_ticks_slice.index])
+            self._quote_timestamps = np.asarray([dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index])
 
             # Calculate cumulative data size
             total_size += get_size_of(self._quote_instruments)
@@ -300,7 +304,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
             self._trade_sides = trade_ticks_slice["side"].values
-            self._trade_timestamps = np.asarray([<datetime>dt for dt in trade_ticks_slice.index])
+            self._trade_timestamps = np.asarray([dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index])
 
             # Calculate cumulative data size
             total_size += get_size_of(self._trade_instruments)
@@ -388,7 +392,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             return next_data
 
         # Mixture of quote and trade ticks
-        if self._next_quote_tick.timestamp <= self._next_trade_tick.timestamp:
+        if self._next_quote_tick.timestamp_ns <= self._next_trade_tick.timestamp_ns:
             next_data = self._next_quote_tick
             self._iterate_quote_ticks()
             return next_data
@@ -463,30 +467,29 @@ cdef class CachedProducer(DataProducerFacade):
         self.execution_resolutions = self._producer.execution_resolutions
         self.min_timestamp = self._producer.min_timestamp
         self.max_timestamp = self._producer.max_timestamp
+        self.min_timestamp_ns = self._producer.min_timestamp_ns
+        self.max_timestamp_ns = self._producer.max_timestamp_ns
         self.has_data = False
 
         self._create_data_cache()
 
-    cpdef void setup(self, datetime start, datetime stop) except *:
+    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
         """
         Setup tick data for a backtest run.
 
         Parameters
         ----------
-        start : datetime
-            The start datetime (UTC) for the run.
-        stop : datetime
-            The stop datetime (UTC) for the run.
+        start_ns : int64
+            The Unix timestamp (nanoseconds) for the run start.
+        stop_ns : int64
+            The Unix timestamp (nanoseconds) for the run stop.
 
         """
-        Condition.not_none(start, "start")
-        Condition.not_none(stop, "stop")
-
-        self._producer.setup(start, stop)
+        self._producer.setup(start_ns, stop_ns)
 
         # Set indexing
-        self._tick_index = bisect_double_left(self._ts_cache, start.timestamp())
-        self._tick_index_last = bisect_double_left(self._ts_cache, stop.timestamp())
+        self._tick_index = bisect_double_left(self._ts_cache, start_ns)
+        self._tick_index_last = bisect_double_left(self._ts_cache, stop_ns)
         self._init_start_tick_index = self._tick_index
         self._init_stop_tick_index = self._tick_index_last
         self.has_data = True
@@ -527,7 +530,7 @@ cdef class CachedProducer(DataProducerFacade):
 
     cdef void _create_data_cache(self) except *:
         self._log.info(f"Pre-caching data...")
-        self._producer.setup(self.min_timestamp, self.max_timestamp)
+        self._producer.setup(self.min_timestamp_ns, self.max_timestamp_ns)
 
         cdef double ts = time.time()
 
@@ -535,7 +538,7 @@ cdef class CachedProducer(DataProducerFacade):
         while self._producer.has_data:
             data = self._producer.next()
             self._data_cache.append(data)
-            self._ts_cache.append(data.unix_timestamp)
+            self._ts_cache.append(data.timestamp_ns)
 
         self._log.info(f"Pre-cached {len(self._data_cache):,} "
                        f"total data items in {time.time() - ts:.3f}s.")

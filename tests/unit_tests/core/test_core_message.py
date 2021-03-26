@@ -22,7 +22,6 @@ from nautilus_trader.core.message import Response
 from nautilus_trader.core.message import message_type_from_str
 from nautilus_trader.core.message import message_type_to_str
 from nautilus_trader.core.uuid import uuid4
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestMessage:
@@ -33,25 +32,25 @@ class TestMessage:
         message1 = Message(
             msg_type=MessageType.COMMAND,
             identifier=uuid,
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         message2 = Message(
             msg_type=MessageType.COMMAND,
             identifier=uuid,
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         message3 = Message(
             msg_type=MessageType.DOCUMENT,  # Different message type
             identifier=uuid,
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         message4 = Message(
             msg_type=MessageType.DOCUMENT,
             identifier=uuid4(),  # Different UUID
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -65,7 +64,7 @@ class TestMessage:
         # Arrange
         message = Document(
             identifier=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -77,17 +76,13 @@ class TestMessage:
         uuid = uuid4()
         message = Document(
             identifier=uuid,
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
         # Assert
-        assert f"Document(id={uuid}, timestamp=1970-01-01 00:00:00+00:00)" == str(
-            message
-        )
-        assert f"Document(id={uuid}, timestamp=1970-01-01 00:00:00+00:00)" == str(
-            message
-        )
+        assert f"Document(id={uuid}, timestamp=0)" == str(message)
+        assert f"Document(id={uuid}, timestamp=0)" == str(message)
 
     def test_response_message_str_and_repr(self):
         # Arrange
@@ -96,17 +91,17 @@ class TestMessage:
         message = Response(
             correlation_id=uuid_corr,
             identifier=uuid_id,
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
         # Assert
         assert (
-            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=1970-01-01 00:00:00+00:00)"
+            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
             == str(message)
         )
         assert (
-            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=1970-01-01 00:00:00+00:00)"
+            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
             == str(message)
         )
 

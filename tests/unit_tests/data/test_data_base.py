@@ -22,7 +22,6 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 SIM = Venue("SIM")
@@ -72,12 +71,12 @@ class DataTypeTests(unittest.TestCase):
         # Arrange
         # Act
         data_type = DataType(str, {"type": "NEWS_WIRE"})
-        data = GenericData(data_type, "Some News Headline", UNIX_EPOCH)
+        data = GenericData(data_type, "Some News Headline", 1_000_000_000)
 
         # Assert
         self.assertEqual(data_type, data.data_type)
         self.assertEqual("Some News Headline", data.data)
-        self.assertEqual(UNIX_EPOCH, data.timestamp)
+        self.assertEqual(1_000_000_000, data.timestamp_ns)
 
 
 class DataCacheFacadeTests(unittest.TestCase):

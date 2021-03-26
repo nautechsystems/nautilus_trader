@@ -140,11 +140,11 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(tick)
 
-    def on_bar(self, bar_type, bar) -> None:
+    def on_bar(self, bar) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store((bar_type, bar))
+        self.object_storer.store(bar)
 
-        if bar_type != self.bar_type:
+        if bar.type != self.bar_type:
             return
 
         if self.ema1.value > self.ema2.value:
@@ -247,7 +247,7 @@ class KaboomStrategy(TradingStrategy):
     def on_trade_tick(self, tick) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_bar(self, bar_type, bar) -> None:
+    def on_bar(self, bar) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
     def on_data(self, data) -> None:

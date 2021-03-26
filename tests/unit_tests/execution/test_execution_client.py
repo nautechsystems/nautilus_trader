@@ -113,7 +113,7 @@ class ExecutionClientTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.assertRaises(NotImplementedError, self.client.submit_order, command)
@@ -140,7 +140,7 @@ class ExecutionClientTests(unittest.TestCase):
             StrategyId("SCALPER", "001"),
             bracket_order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.assertRaises(
@@ -158,7 +158,7 @@ class ExecutionClientTests(unittest.TestCase):
             Quantity(120000),
             Price("1.00000"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -174,7 +174,7 @@ class ExecutionClientTests(unittest.TestCase):
             ClientOrderId("O-123456789"),
             OrderId("001"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -193,7 +193,7 @@ class ExecutionClientTests(unittest.TestCase):
             AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         # Act

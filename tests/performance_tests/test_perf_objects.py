@@ -23,7 +23,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestStubs.audusd_id()
@@ -46,24 +45,26 @@ class ObjectTests:
     @staticmethod
     def build_bar_no_checking():
         Bar(
+            AUDUSD_1MIN_BID,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity("100000"),
-            UNIX_EPOCH,
+            0,
             check=False,
         )
 
     @staticmethod
     def build_bar_with_checking():
         Bar(
+            AUDUSD_1MIN_BID,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity("100000"),
-            UNIX_EPOCH,
+            0,
             check=True,
         )
 

@@ -29,41 +29,32 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestClockBase:
-    def test_unix_time_when_not_implemented_raises_exception(self):
+    def test_utc_now_when_not_implemented_raises_exception(self):
         # Arrange
         clock = Clock()
 
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            clock.unix_time()
+            clock.utc_now()
 
-    def test_unix_time_ms_when_not_implemented_raises_exception(self):
+    def test_timestamp_when_not_implemented_raises_exception(self):
         # Arrange
         clock = Clock()
 
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            clock.unix_time_ms()
+            clock.timestamp()
 
-    def test_unix_time_us_when_not_implemented_raises_exception(self):
+    def test_timestamp_ns_when_not_implemented_raises_exception(self):
         # Arrange
         clock = Clock()
 
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            clock.unix_time_us()
-
-    def test_unix_time_ns_when_not_implemented_raises_exception(self):
-        # Arrange
-        clock = Clock()
-
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            clock.unix_time_ns()
+            clock.timestamp_ns()
 
     def test_set_timer_when_not_implemented_raises_exception(self):
         # Arrange
@@ -87,97 +78,77 @@ class TestClockBase:
 class TestTestClock:
     def test_instantiate_has_expected_time_and_properties(self):
         # Arrange
-        init_time = UNIX_EPOCH + timedelta(minutes=1)
-        clock = TestClock(UNIX_EPOCH + timedelta(minutes=1))
+        initial_ns = 42_000_000
+        clock = TestClock(initial_ns=initial_ns)
 
         # Act
         # Assert
-        assert clock.utc_now() == init_time
+        assert clock.timestamp_ns() == initial_ns
         assert clock.is_test_clock
 
     def test_utc_now_returns_expected_datetime(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
-        result = clock.utc_now()
+        result = clock.timestamp_ns()
 
         # Assert
-        assert result == UNIX_EPOCH
+        assert result == 0
 
-    def test_unix_time_returns_expected_double(self):
+    def test_timestamp_returns_expected_double(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH + timedelta(minutes=1))
+        clock = TestClock(60_000_000_000)
 
         # Act
-        result = clock.unix_time()
+        result = clock.timestamp()
 
         # Assert
         assert result == 60
 
-    def test_unix_time_ms_returns_expected_int64(self):
+    def test_timestamp_ns_returns_expected_int64(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH + timedelta(minutes=1))
+        clock = TestClock(60_000_000_000)
 
         # Act
-        result = clock.unix_time_ms()
-
-        # Assert
-        assert result == 60_000
-
-    def test_unix_time_us_returns_expected_int64(self):
-        # Arrange
-        clock = TestClock(UNIX_EPOCH + timedelta(minutes=1))
-
-        # Act
-        result = clock.unix_time_us()
-
-        # Assert
-        assert result == 60_000_000
-
-    def test_unix_time_ns_returns_expected_int64(self):
-        # Arrange
-        clock = TestClock(UNIX_EPOCH + timedelta(minutes=1))
-
-        # Act
-        result = clock.unix_time_ns()
+        result = clock.timestamp_ns()
 
         # Assert
         assert result == 60_000_000_000
 
     def test_set_time_changes_time(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
-        clock.set_time(UNIX_EPOCH + timedelta(minutes=1))
+        clock.set_time(60_000_000_000)
 
         # Assert
-        assert clock.utc_now() == UNIX_EPOCH + timedelta(minutes=1)
+        assert clock.timestamp_ns() == 60_000_000_000
 
     def test_advance_time_changes_time_produces_empty_list(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
-        events = clock.advance_time(UNIX_EPOCH + timedelta(minutes=1))
+        events = clock.advance_time(1_000_000_000)
 
         # Assert
-        assert clock.utc_now() == UNIX_EPOCH + timedelta(minutes=1)
+        assert clock.timestamp_ns() == 1_000_000_000
         assert events == []
 
     def test_advance_time_given_time_in_past_raises_value_error(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
         # Assert
         with pytest.raises(ValueError):
-            clock.advance_time(UNIX_EPOCH - timedelta(minutes=1))
+            clock.advance_time(-1_000_000_000)
 
     def test_local_now(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
         result = clock.local_now(pytz.timezone("Australia/Sydney"))
@@ -186,7 +157,7 @@ class TestTestClock:
 
     def test_delta(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
         events = clock.delta(UNIX_EPOCH - timedelta(minutes=9))
@@ -195,7 +166,7 @@ class TestTestClock:
 
     def test_cancel_timer_when_no_timers_does_nothing(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
         clock.cancel_timer("BOGUS_ALERT")
@@ -206,7 +177,7 @@ class TestTestClock:
 
     def test_cancel_timers_when_no_timers_does_nothing(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
 
         # Act
         clock.cancel_timers()
@@ -217,7 +188,7 @@ class TestTestClock:
 
     def test_set_time_alert(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         name = "TEST_ALERT"
         interval = timedelta(minutes=10)
         alert_time = clock.utc_now() + interval
@@ -233,7 +204,7 @@ class TestTestClock:
 
     def test_cancel_time_alert_when_timer_removes_timer(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         name = "TEST_ALERT"
         interval = timedelta(milliseconds=300)
         alert_time = clock.utc_now() + interval
@@ -250,7 +221,7 @@ class TestTestClock:
 
     def test_cancel_timers_when_multiple_times_removes_all_timers(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         interval = timedelta(milliseconds=300)
         alert_time = clock.utc_now() + interval
         handler = []
@@ -270,7 +241,7 @@ class TestTestClock:
 
     def test_set_timer(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         name = "TEST_TIMER"
         interval = timedelta(minutes=1)
         handler = []
@@ -291,7 +262,7 @@ class TestTestClock:
 
     def test_advance_time_with_set_time_alert_triggers_event(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         name = "TEST_ALERT"
         interval = timedelta(minutes=1)
         alert_time = clock.utc_now() + interval
@@ -300,7 +271,7 @@ class TestTestClock:
         clock.set_time_alert(name, alert_time, handler.append)
 
         # Act
-        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=2))
+        event_handlers = clock.advance_time(2 * 60 * 1_000_000_000)
 
         # Assert
         assert len(event_handlers) == 1
@@ -310,7 +281,7 @@ class TestTestClock:
 
     def test_advance_time_with_multiple_set_time_alerts_triggers_event(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         interval = timedelta(minutes=1)
         alert_time = clock.utc_now() + interval
         handler = []
@@ -320,7 +291,7 @@ class TestTestClock:
         clock.set_time_alert("TEST_ALERT3", alert_time, handler.append)
 
         # Act
-        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=2))
+        event_handlers = clock.advance_time(2 * 60 * 1_000_000_000)
 
         # Assert
         assert len(event_handlers) == 3
@@ -332,7 +303,7 @@ class TestTestClock:
 
     def test_advance_time_with_set_timer_triggers_events(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         name = "TEST_TIMER"
         interval = timedelta(minutes=1)
         handler = []
@@ -346,7 +317,7 @@ class TestTestClock:
             handler=handler.append,
         )
 
-        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=5))
+        event_handlers = clock.advance_time(5 * 60 * 1_000_000_000)
 
         # Assert
         assert len(event_handlers) == 4
@@ -357,7 +328,7 @@ class TestTestClock:
 
     def test_advance_time_with_multiple_set_timers_triggers_events(self):
         # Arrange
-        clock = TestClock(UNIX_EPOCH)
+        clock = TestClock()
         name1 = "TEST_TIMER1"
         name2 = "TEST_TIMER2"
         interval1 = timedelta(minutes=1)
@@ -382,7 +353,7 @@ class TestTestClock:
             handler=handler2.append,
         )
 
-        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=5))
+        event_handlers = clock.advance_time(5 * 60 * 1_000_000_000)
 
         # Assert
         assert len(event_handlers) == 15
@@ -648,37 +619,19 @@ class TestLiveClockWithLoopTimer:
     def teardown(self):
         self.clock.cancel_timers()
 
-    def test_unix_time(self):
+    def test_unix_timestamp(self):
         # Arrange
         # Act
-        result = self.clock.unix_time()
+        result = self.clock.timestamp()
 
         # Assert
         assert type(result) == float
         assert result > 0
 
-    def test_unix_time_ms(self):
+    def test_unix_timestamp_ns(self):
         # Arrange
         # Act
-        result = self.clock.unix_time_ms()
-
-        # Assert
-        assert type(result) == int
-        assert result > 0
-
-    def test_unix_time_us(self):
-        # Arrange
-        # Act
-        result = self.clock.unix_time_us()
-
-        # Assert
-        assert type(result) == int
-        assert result > 0
-
-    def test_unix_time_ns(self):
-        # Arrange
-        # Act
-        result = self.clock.unix_time_ns()
+        result = self.clock.timestamp_ns()
 
         # Assert
         assert type(result) == int
@@ -696,6 +649,7 @@ class TestLiveClockWithLoopTimer:
             await asyncio.sleep(0.3)
 
             # Assert
+            assert self.clock.timer_names() == []
             assert len(self.handler) >= 1
             assert isinstance(self.handler[0], TimeEvent)
 

@@ -13,13 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
-from datetime import timedelta
 from decimal import Decimal
 import unittest
 
 from parameterized import parameterized
-import pytz
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -42,7 +39,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -99,7 +95,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         last = Price("1.00050")
@@ -116,8 +112,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), position.peak_qty)
         self.assertEqual(OrderSide.BUY, position.entry)
         self.assertEqual(PositionSide.LONG, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertIsNone(position.open_duration)
+        self.assertEqual(0, position.opened_timestamp_ns)
+        self.assertEqual(0, position.open_duration_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
@@ -158,7 +154,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         last = Price("1.00050")
@@ -170,7 +166,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_qty)
         self.assertEqual(PositionSide.SHORT, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual(
@@ -208,8 +204,8 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
-            fill_qty=Quantity(50000),
+            last_px=Price("1.00001"),
+            last_qty=Quantity(50000),
         )
 
         last = Price("1.00048")
@@ -221,7 +217,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(50000), position.quantity)
         self.assertEqual(Quantity(50000), position.peak_qty)
         self.assertEqual(PositionSide.LONG, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertTrue(position.is_long)
@@ -253,8 +249,8 @@ class PositionTests(unittest.TestCase):
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
-            fill_qty=Quantity(50000),
+            last_px=Price("1.00001"),
+            last_qty=Quantity(50000),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -263,8 +259,8 @@ class PositionTests(unittest.TestCase):
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00002"),
-            fill_qty=Quantity(50000),
+            last_px=Price("1.00002"),
+            last_qty=Quantity(50000),
         )
 
         position = Position(fill1)
@@ -277,7 +273,7 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(PositionSide.SHORT, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.000015"), position.avg_px_open)
         self.assertEqual(2, position.event_count)
         self.assertFalse(position.is_long)
@@ -310,7 +306,8 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
+            execution_ns=1_000_000_000,
         )
 
         position = Position(fill1)
@@ -325,16 +322,16 @@ class PositionTests(unittest.TestCase):
             order.instrument_id,
             OrderSide.SELL,
             order.quantity,
+            Price("1.00011"),
             order.quantity,
             Quantity(),
-            Price("1.00011"),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.TAKER,
-            UNIX_EPOCH + timedelta(minutes=1),
+            2_000_000_000,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         last = Price("1.00050")
@@ -345,13 +342,11 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(timedelta(minutes=1), position.open_duration)
+        self.assertEqual(1_000_000_000, position.opened_timestamp_ns)
+        self.assertEqual(1_000_000_000, position.open_duration_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(2, position.event_count)
-        self.assertEqual(
-            datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), position.closed_time
-        )
+        self.assertEqual(2_000_000_000, position.closed_timestamp_ns)
         self.assertEqual(Decimal("1.00011"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
@@ -398,8 +393,8 @@ class PositionTests(unittest.TestCase):
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
-            fill_qty=Quantity(50000),
+            last_px=Price("1.00001"),
+            last_qty=Quantity(50000),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -408,8 +403,8 @@ class PositionTests(unittest.TestCase):
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00003"),
-            fill_qty=Quantity(50000),
+            last_px=Price("1.00003"),
+            last_qty=Quantity(50000),
         )
 
         last = Price("1.00050")
@@ -421,11 +416,11 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_open)
         self.assertEqual(3, position.event_count)
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
-        self.assertEqual(UNIX_EPOCH, position.closed_time)
+        self.assertEqual(0, position.closed_timestamp_ns)
         self.assertEqual(Decimal("1.00002"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
@@ -467,7 +462,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         last = Price("1.00050")
@@ -478,7 +473,7 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_open)
         self.assertEqual(2, position.event_count)
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
@@ -489,7 +484,7 @@ class PositionTests(unittest.TestCase):
             ],
             position.execution_ids,
         )
-        self.assertEqual(UNIX_EPOCH, position.closed_time)
+        self.assertEqual(0, position.closed_timestamp_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
@@ -540,7 +535,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -548,7 +543,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
         last = Price("1.00050")
@@ -561,13 +556,13 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(UNIX_EPOCH, position.opened_time)
+        self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.000005"), position.avg_px_open)
         self.assertEqual(3, position.event_count)
         self.assertEqual(
             [order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.cl_ord_ids
         )
-        self.assertEqual(UNIX_EPOCH, position.closed_time)
+        self.assertEqual(0, position.closed_timestamp_ns)
         self.assertEqual(Decimal("1.0001"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
@@ -619,7 +614,7 @@ class PositionTests(unittest.TestCase):
             order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            fill_price=Price(100),
+            last_px=Price(100),
         )
 
         position = Position(fill1)
@@ -628,7 +623,7 @@ class PositionTests(unittest.TestCase):
             order2,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            fill_price=Price(99),
+            last_px=Price(99),
         )
 
         position.apply(fill2)
@@ -641,7 +636,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price(101),
+            last_px=Price(101),
         )
 
         position.apply(fill3)
@@ -654,7 +649,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price(105),
+            last_px=Price(105),
         )
 
         position.apply(fill4)
@@ -667,7 +662,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price(103),
+            last_px=Price(103),
         )
 
         position.apply(fill5)
@@ -716,7 +711,7 @@ class PositionTests(unittest.TestCase):
             order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            fill_price=Price("10000.00"),
+            last_px=Price("10000.00"),
         )
 
         position = Position(fill1)
@@ -725,7 +720,7 @@ class PositionTests(unittest.TestCase):
             order2,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            fill_price=Price("9999.00"),
+            last_px=Price("9999.00"),
         )
 
         position.apply(fill2)
@@ -738,7 +733,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10001.00"),
+            last_px=Price("10001.00"),
         )
 
         position.apply(fill3)
@@ -751,7 +746,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10003.00"),
+            last_px=Price("10003.00"),
         )
 
         position.apply(fill4)
@@ -764,7 +759,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10005"),
+            last_px=Price("10005"),
         )
 
         position.apply(fill5)
@@ -789,7 +784,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         position = Position(fill)
@@ -815,7 +810,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         position = Position(fill)
@@ -852,7 +847,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         position = Position(fill)
@@ -889,7 +884,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         position = Position(fill)
@@ -926,7 +921,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         position = Position(fill)
@@ -963,7 +958,7 @@ class PositionTests(unittest.TestCase):
             instrument=XBTUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10000.00"),
+            last_px=Price("10000.00"),
         )
 
         position = Position(fill)
@@ -999,7 +994,7 @@ class PositionTests(unittest.TestCase):
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("375.95"),
+            last_px=Price("375.95"),
         )
 
         position = Position(fill)
@@ -1030,7 +1025,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -1038,7 +1033,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10500.00"),
+            last_px=Price("10500.00"),
         )
 
         position = Position(fill1)
@@ -1066,7 +1061,7 @@ class PositionTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("10505.60"),
+            last_px=Price("10505.60"),
         )
 
         position = Position(fill)
@@ -1093,7 +1088,7 @@ class PositionTests(unittest.TestCase):
     #         instrument=XBTUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
     #         strategy_id=StrategyId("S", "001"),
-    #         fill_price=Price("10500.00"),
+    #         last_px=Price("10500.00"),
     #     )
     #
     #     position = Position(fill)
@@ -1120,7 +1115,7 @@ class PositionTests(unittest.TestCase):
     #         instrument=XBTUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
     #         strategy_id=StrategyId("S", "001"),
-    #         fill_price=Price("15500.00"),
+    #         last_px=Price("15500.00"),
     #     )
     #
     #     position = Position(fill)

@@ -16,8 +16,6 @@ from operator import itemgetter
 
 from tabulate import tabulate
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -59,6 +57,8 @@ cdef class OrderBook:
         self.level = level
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
+        self.last_update_timestamp_ns = 0
+        self.last_update_id = 0
 
     @staticmethod
     def create(InstrumentId instrument_id, OrderBookLevel level):
@@ -621,7 +621,7 @@ cdef class OrderBookSnapshot(Data):
         OrderBookLevel level,
         list bids not None,
         list asks not None,
-        datetime timestamp,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderBookSnapshot` class.
@@ -636,11 +636,11 @@ cdef class OrderBookSnapshot(Data):
             The bids for the snapshot.
         asks : list
             The asks for the snapshot.
-        timestamp : datetime
-            The snapshot timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the snapshot.
 
         """
-        super().__init__(timestamp)
+        super().__init__(timestamp_ns)
 
         self.instrument_id = instrument_id
         self.level = level
@@ -664,7 +664,7 @@ cdef class OrderBookOperations(Data):
         InstrumentId instrument_id not None,
         OrderBookLevel level,
         list ops not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderBookOperations` class.
@@ -677,11 +677,11 @@ cdef class OrderBookOperations(Data):
             The order book level (L1, L2, L3).
         ops : list
             The list of order book operations.
-        timestamp : datetime
-            The operations timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the operations.
 
         """
-        super().__init__(timestamp)
+        super().__init__(timestamp_ns)
         self.instrument_id = instrument_id
         self.level = level
         self.ops = ops

@@ -60,11 +60,11 @@ class TickTock(TradingStrategy):
         self.subscribe_quote_ticks(self.bar_type.instrument_id)
 
     def on_quote_tick(self, tick):
-        self.log.info(f"Received Tick({tick})")
+        self.log.info(f"Received {repr(tick)}")
         self.store.append(tick)
 
-    def on_bar(self, bar_type, bar):
-        self.log.info(f"Received {bar_type} Bar({bar})")
+    def on_bar(self, bar):
+        self.log.info(f"Received {repr(bar)}")
         self.store.append(bar)
         if not self.timer_running:
             timer_name = "Test-Timer"
@@ -183,19 +183,17 @@ class EMACross(TradingStrategy):
         """
         pass
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    def on_bar(self, bar: Bar):
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")
+        self.log.info(f"Received {repr(bar)}")
 
         # Check if indicators ready
         if not self.indicators_initialized():

@@ -30,7 +30,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class AccountTests(unittest.TestCase):
@@ -56,7 +55,7 @@ class AccountTests(unittest.TestCase):
             [Money(0, USD)],
             info={"default_currency": "USD"},  # Set the default currency
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -83,7 +82,7 @@ class AccountTests(unittest.TestCase):
             [Money(0, USD)],
             info={"default_currency": "USD"},  # Set the default currency
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -120,7 +119,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -174,7 +173,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -191,7 +190,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.50000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -217,7 +216,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -245,7 +244,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -275,7 +274,7 @@ class AccountTests(unittest.TestCase):
             balances_locked=[Money(0, USD)],
             info={"default_currency": "USD"},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)
@@ -301,7 +300,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)
@@ -325,7 +324,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00", USD)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)
@@ -349,7 +348,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00", USD)],
             info={"default_currency": "USD"},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)
@@ -373,7 +372,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)
@@ -397,7 +396,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00", USD)],
             info={"default_currency": "USD"},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)
@@ -427,7 +426,7 @@ class AccountTests(unittest.TestCase):
             [Money("0.00000000", BTC), Money("0.00000000", ETH)],
             info={},  # No default currency set
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(event)

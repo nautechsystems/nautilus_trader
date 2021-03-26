@@ -21,6 +21,7 @@ import pytz
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEventHandler
+from nautilus_trader.core.datetime import millis_to_nanos
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -44,11 +45,10 @@ class TestClockTests(unittest.TestCase):
     def test_utc_now(self):
         # Arrange
         # Act
-        result = self.clock.utc_now()
-
         # Assert
-        self.assertEqual(datetime, type(result))
-        self.assertEqual(pytz.utc, result.tzinfo)
+        self.assertEqual(datetime, type(self.clock.utc_now()))
+        self.assertEqual(pytz.utc, self.clock.utc_now().tzinfo)
+        self.assertEqual(int, type(self.clock.timestamp_ns()))
 
     def test_local_now(self):
         # Arrange
@@ -66,7 +66,7 @@ class TestClockTests(unittest.TestCase):
         start = self.clock.utc_now()
 
         # Act
-        self.clock.set_time(start + timedelta(1))
+        self.clock.set_time(1_000_000_000)
         result = self.clock.delta(start)
 
         # Assert
@@ -80,9 +80,7 @@ class TestClockTests(unittest.TestCase):
 
         # Act
         self.clock.set_time_alert(name, alert_time)
-        events = self.clock.advance_time(
-            self.clock.utc_now() + timedelta(milliseconds=200)
-        )
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(200))
 
         # Assert
         self.assertEqual([], self.clock.timer_names())
@@ -112,9 +110,7 @@ class TestClockTests(unittest.TestCase):
         # Act
         self.clock.set_time_alert("TEST_ALERT1", alert_time1)
         self.clock.set_time_alert("TEST_ALERT2", alert_time2)
-        events = self.clock.advance_time(
-            self.clock.utc_now() + timedelta(milliseconds=300)
-        )
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(300))
 
         # Assert
         self.assertEqual([], self.clock.timer_names())
@@ -132,16 +128,30 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(
-            self.clock.utc_now() + timedelta(milliseconds=400)
-        )
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(400))
 
         # Assert
         self.assertEqual([name], self.clock.timer_names())
         self.assertEqual(4, len(events))
+        self.assertEqual(100_000_000, events[0].event.event_timestamp_ns)
+        self.assertEqual(200_000_000, events[1].event.event_timestamp_ns)
+        self.assertEqual(300_000_000, events[2].event.event_timestamp_ns)
+        self.assertEqual(400_000_000, events[3].event.event_timestamp_ns)
+        self.assertEqual(
+            datetime(1970, 1, 1, 0, 0, 0, 100000, tzinfo=pytz.utc),
+            events[0].event.event_timestamp,
+        )
+        self.assertEqual(
+            datetime(1970, 1, 1, 0, 0, 0, 200000, tzinfo=pytz.utc),
+            events[1].event.event_timestamp,
+        )
+        self.assertEqual(
+            datetime(1970, 1, 1, 0, 0, 0, 300000, tzinfo=pytz.utc),
+            events[2].event.event_timestamp,
+        )
         self.assertEqual(
             datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc),
-            events[3].event.timestamp,
+            events[3].event.event_timestamp,
         )
 
     def test_set_timer(self):
@@ -157,9 +167,7 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(
-            self.clock.utc_now() + timedelta(milliseconds=400)
-        )
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(400))
 
         # Assert
         self.assertEqual([name], self.clock.timer_names())
@@ -177,9 +185,7 @@ class TestClockTests(unittest.TestCase):
             stop_time=self.clock.utc_now() + timedelta(milliseconds=300),
         )
 
-        events = self.clock.advance_time(
-            self.clock.utc_now() + timedelta(milliseconds=300)
-        )
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(300))
 
         # Assert
         self.assertEqual([], self.clock.timer_names())
@@ -216,9 +222,7 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(
-            self.clock.utc_now() + timedelta(milliseconds=400)
-        )
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(400))
 
         # Assert
         self.assertEqual([name], self.clock.timer_names())
@@ -234,7 +238,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_timer(
             name=name,
             interval=interval,
-            start_time=self.clock.utc_now(),
+            start_time=start_time,
             stop_time=stop_time,
         )
 
@@ -264,10 +268,9 @@ class TestClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        events = self.clock.advance_time(
-            self.clock.utc_now() + timedelta(milliseconds=500)
-        )
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(500))
 
         # Assert
         self.assertEqual(10, len(events))
         self.assertEqual(start_time + timedelta(milliseconds=500), self.clock.utc_now())
+        self.assertEqual(500_000_000, self.clock.timestamp_ns())

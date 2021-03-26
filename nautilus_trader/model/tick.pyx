@@ -13,12 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport from_unix_time_ms
-from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -40,8 +37,7 @@ cdef class Tick(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        datetime timestamp not None,
-        double unix_timestamp,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -50,20 +46,18 @@ cdef class Tick(Data):
         ----------
         instrument_id : InstrumentId
             The ticks instrument identifier.
-        timestamp : datetime
-            The ticks timestamp (UTC).
-        unix_timestamp : double
-            The ticks Unix timestamp (seconds).
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the tick.
 
         """
-        super().__init__(timestamp, unix_timestamp)
+        super().__init__(timestamp_ns)
 
         self.instrument_id = instrument_id
         self.symbol = instrument_id.symbol
         self.venue = instrument_id.venue
 
     def __eq__(self, Tick other) -> bool:
-        return self.instrument_id == other.instrument_id and self.timestamp == other.timestamp
+        return self.instrument_id == other.instrument_id and self.timestamp_ns == other.timestamp_ns
 
     def __ne__(self, Tick other) -> bool:
         return not self == other
@@ -81,8 +75,7 @@ cdef class QuoteTick(Tick):
         Price ask not None,
         Quantity bid_size not None,
         Quantity ask_size not None,
-        datetime timestamp not None,
-        double unix_timestamp=0,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -99,14 +92,11 @@ cdef class QuoteTick(Tick):
             The size at the best bid.
         ask_size : Quantity
             The size at the best ask.
-        timestamp : datetime
-            The tick timestamp (UTC).
-        unix_timestamp : double, optional
-            The tick Unix timestamp (seconds). If not given then will be
-            captured from `timestamp.timestamp()`.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the tick.
 
         """
-        super().__init__(instrument_id, timestamp, unix_timestamp)
+        super().__init__(instrument_id, timestamp_ns)
 
         self.bid = bid
         self.ask = ask
@@ -119,7 +109,7 @@ cdef class QuoteTick(Tick):
                 f"{self.ask},"
                 f"{self.bid_size},"
                 f"{self.ask_size},"
-                f"{format_iso8601(self.timestamp)}")
+                f"{self.timestamp_ns}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -186,7 +176,7 @@ cdef class QuoteTick(Tick):
             Price(pieces[1]),
             Quantity(pieces[2]),
             Quantity(pieces[3]),
-            from_unix_time_ms(long(pieces[4])),
+            long(pieces[4]),  # TODO: Standard C function str -> int64_t
         )
 
     @staticmethod
@@ -222,7 +212,7 @@ cdef class QuoteTick(Tick):
         str
 
         """
-        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{to_unix_time_ms(self.timestamp)}"
+        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{self.timestamp_ns}"
 
 
 cdef class TradeTick(Tick):
@@ -237,8 +227,7 @@ cdef class TradeTick(Tick):
         Quantity size not None,
         OrderSide side,
         TradeMatchId match_id not None,
-        datetime timestamp not None,
-        double unix_timestamp=0,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `TradeTick` class.
@@ -255,11 +244,8 @@ cdef class TradeTick(Tick):
             The side of the trade.
         match_id : TradeMatchId
             The trade match identifier.
-        timestamp : datetime
-            The tick timestamp (UTC).
-        unix_timestamp : double, optional
-            The tick Unix timestamp (seconds). If not given then will be
-            captured from `timestamp.timestamp()`.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the tick.
 
         Raises
         ------
@@ -269,10 +255,7 @@ cdef class TradeTick(Tick):
         """
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
 
-        if unix_timestamp == 0:
-            unix_timestamp = timestamp.timestamp()
-
-        super().__init__(instrument_id, timestamp, unix_timestamp)
+        super().__init__(instrument_id, timestamp_ns)
 
         self.price = price
         self.size = size
@@ -285,7 +268,7 @@ cdef class TradeTick(Tick):
                 f"{self.size},"
                 f"{OrderSideParser.to_str(self.side)},"
                 f"{self.match_id},"
-                f"{format_iso8601(self.timestamp)}")
+                f"{self.timestamp_ns}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -306,7 +289,7 @@ cdef class TradeTick(Tick):
             Quantity(pieces[1]),
             OrderSideParser.from_str(pieces[2]),
             TradeMatchId(pieces[3]),
-            from_unix_time_ms(long(pieces[4])),
+            long(pieces[4]),
         )
 
     @staticmethod
@@ -346,4 +329,4 @@ cdef class TradeTick(Tick):
                 f"{self.size},"
                 f"{OrderSideParser.to_str(self.side)},"
                 f"{self.match_id},"
-                f"{to_unix_time_ms(self.timestamp)}")
+                f"{self.timestamp_ns}")

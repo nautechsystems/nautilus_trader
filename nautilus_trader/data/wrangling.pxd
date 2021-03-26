@@ -13,9 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
@@ -31,8 +32,7 @@ cdef class QuoteTickDataWrangler:
     cdef readonly processed_data
     cdef readonly BarAggregation resolution
 
-    cpdef list build_ticks(self)
-    cpdef QuoteTick _build_tick_from_values(self, str[:] values, datetime timestamp)
+    cpdef QuoteTick _build_tick_from_values(self, str[:] values, int64_t timestamp_ns)
 
 
 cdef class TradeTickDataWrangler:
@@ -41,16 +41,13 @@ cdef class TradeTickDataWrangler:
     cdef readonly Instrument instrument
     cdef readonly processed_data
 
-    cpdef list build_ticks(self)
-    cpdef TradeTick _build_tick_from_values(self, str[:] values, datetime timestamp)
+    cpdef TradeTick _build_tick_from_values(self, str[:] values, int64_t timestamp_ns)
 
 
 cdef class BarDataWrangler:
+    cdef BarType _bar_type
     cdef int _price_precision
     cdef int _size_precision
     cdef object _data
 
-    cpdef list build_bars_all(self)
-    cpdef list build_bars_from(self, int index=*)
-    cpdef list build_bars_range(self, int start=*, int end=*)
-    cpdef Bar _build_bar(self, double[:] values, datetime timestamp)
+    cpdef Bar _build_bar(self, double[:] values, int64_t timestamp_ns)

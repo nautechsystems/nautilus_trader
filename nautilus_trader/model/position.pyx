@@ -70,10 +70,10 @@ cdef class Position:
         self.relative_qty = Decimal()  # Initialized in apply()
         self.quantity = Quantity()     # Initialized in apply()
         self.peak_qty = Quantity()     # Initialized in apply()
-        self.timestamp = event.execution_time
-        self.opened_time = event.execution_time
-        self.closed_time = None    # Can be None
-        self.open_duration = None  # Can be None
+        self.timestamp_ns = event.execution_ns
+        self.opened_timestamp_ns = event.execution_ns
+        self.closed_timestamp_ns = 0
+        self.open_duration_ns = 0
         self.avg_px_open = event.fill_price.as_decimal()
         self.avg_px_close = None      # Can be None
         self.quote_currency = event.currency
@@ -365,8 +365,8 @@ cdef class Position:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
-            self.closed_time = event.execution_time
-            self.open_duration = self.closed_time - self.opened_time
+            self.closed_timestamp_ns = event.execution_ns
+            self.open_duration_ns = self.closed_timestamp_ns - self.opened_timestamp_ns
 
     cpdef Money notional_value(self, Price last):
         """

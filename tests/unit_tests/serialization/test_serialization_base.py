@@ -31,7 +31,6 @@ from nautilus_trader.serialization.base import InstrumentSerializer
 from nautilus_trader.serialization.base import OrderSerializer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -75,7 +74,7 @@ class SerializationBaseTests(unittest.TestCase):
             data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=uuid4(),
-            command_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         serializer = CommandSerializer()

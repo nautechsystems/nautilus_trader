@@ -258,8 +258,8 @@ cdef class RiskEngine(Component):
         cdef OrderDenied denied = OrderDenied(
             cl_ord_id=order.cl_ord_id,
             reason=reason,
-            event_id=self._uuid_factory.generate_c(),
-            event_timestamp=self._clock.utc_now(),
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._exec_engine.process(denied)
