@@ -80,7 +80,7 @@ def test_order_submit_to_betfair(
             instrument_id=instrument_id,
             order_side=OrderSide.BUY,
             quantity=Quantity(10),
-            price=Price(100),
+            price=Price(0.33, 5),
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=uuid,
@@ -101,7 +101,7 @@ def test_order_submit_to_betfair(
                 "limitOrder": {
                     "minFillSize": 0,
                     "persistenceType": "PERSIST",
-                    "price": 95.0,
+                    "price": 3.05,
                     "size": 10.0,
                 },
                 "orderType": "LIMIT",

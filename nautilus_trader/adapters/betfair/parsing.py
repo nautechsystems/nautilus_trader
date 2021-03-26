@@ -63,9 +63,9 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 handicap=instrument.selection_handicap or None,
                 limit_order=limit_order(
                     size=float(order.quantity),
-                    price=probability_to_price(
-                        probability=order.price, side=order.side
-                    ).value,
+                    price=float(
+                        probability_to_price(probability=order.price, side=order.side)
+                    ),
                     persistence_type="PERSIST",
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
@@ -193,7 +193,9 @@ def build_market_update_messages(
                             if volume == 0
                             else OrderBookOperationType.UPDATE,
                             order=Order(
-                                price=price_to_probability(price),
+                                price=price_to_probability(
+                                    price, side=B2N_MARKET_STREAM_SIDE[side]
+                                ),
                                 volume=volume,
                                 side=B2N_MARKET_STREAM_SIDE[side],
                             ),
