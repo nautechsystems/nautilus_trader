@@ -33,4 +33,4 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=*, dict kwargs=*) except *
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *
     cpdef void handle_data(self, Data data)
-    cpdef void _on_market_update(self, dict update) except *
+    cpdef void _on_market_update(self, bytes raw) except *

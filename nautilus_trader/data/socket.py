@@ -1,7 +1,8 @@
 import asyncio
 import json
-import logging
 from typing import Optional
+
+from nautilus_trader.common.logging import LoggerAdapter
 
 
 DEFAULT_CRLF = b"\r\n"
@@ -13,7 +14,8 @@ class SocketClient:
         self,
         host,
         port,
-        message_handler,
+        logger: LoggerAdapter,
+        message_handler: callable,
         loop=None,
         crlf=None,
         encoding="utf-8",
@@ -32,6 +34,7 @@ class SocketClient:
         super().__init__()
         self.host = host
         self.port = port
+        self.logger = logger
         self.message_handler = message_handler
         self.loop = loop or asyncio.get_event_loop()
         self.crlf = crlf or DEFAULT_CRLF
@@ -59,7 +62,7 @@ class SocketClient:
             raw = json.dumps(raw)
         if not isinstance(raw, bytes):
             raw = raw.encode(self.encoding)
-        logging.info(raw)
+        self.logger.debug(raw)
         self.writer.write(raw + self.crlf)
         await self.writer.drain()
 
@@ -69,7 +72,7 @@ class SocketClient:
         while not self.stop:
             try:
                 raw = await self.reader.readuntil(separator=self.crlf)
-                logging.debug(raw)
+                self.logger.debug(raw)
                 self.message_handler(raw.rstrip(self.crlf))
                 await asyncio.sleep(0)
             except ConnectionResetError:

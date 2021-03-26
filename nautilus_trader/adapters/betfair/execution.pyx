@@ -19,6 +19,7 @@ from functools import partial
 from typing import Dict, List, Optional
 
 import betfairlightweight
+import orjson
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -58,7 +59,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     def __init__(
         self,
-        betfairlightweight.APIClient client not None,
+        client not None,
         AccountId account_id not None,
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
@@ -84,7 +85,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         """
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
-            load_all=True,
+            logger=logger,
+            load_all=False,
             market_filter=market_filter
         )
 
@@ -102,7 +104,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         self._client = client # type: betfairlightweight.APIClient
         self._stream = BetfairOrderStreamClient(
-            client=self._client, message_handler=self.handle_order_stream_update,
+            client=self._client, logger=logger, message_handler=self.handle_order_stream_update,
         )
         self.is_connected = False
         self.order_id_to_cl_ord_id = {}  # type: Dict[str, ClientOrderId]
@@ -191,9 +193,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     # -- Order stream API ---------------------------------------------------------
 
-    cpdef void handle_order_stream_update(self, dict raw) except *:
+    cpdef void handle_order_stream_update(self, bytes raw) except *:
+        cdef dict update = orjson.loads(raw)  # type: dict
         """ Handle an update from the order stream socket """
-        for market in raw.get("oc", []):
+        for market in update.get("oc", []):
             market_id = market["id"]
             for selection in market.get("orc", []):
                 instrument = self._instrument_provider.get_betting_instrument(

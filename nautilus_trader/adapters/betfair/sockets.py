@@ -2,11 +2,16 @@ from betfairlightweight import APIClient
 from betfairlightweight.filters import streaming_market_data_filter
 from betfairlightweight.filters import streaming_market_filter
 from betfairlightweight.filters import streaming_order_filter
+import orjson
 
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.data.socket import SocketClient
 
 
-HOST = "stream-api.betfair.com"
+# TODO - FIX!!
+# HOST = "stream-api.betfair.com"
+HOST = "stream-api-integration.betfair.com"
 PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
@@ -17,6 +22,7 @@ class BetfairStreamClient(SocketClient):
     def __init__(
         self,
         client: APIClient,
+        logger: LoggerAdapter,
         message_handler,
         loop=None,
         host=None,
@@ -28,6 +34,7 @@ class BetfairStreamClient(SocketClient):
             loop=loop,
             host=host or HOST,
             port=port or PORT,
+            logger=logger,
             message_handler=message_handler,
             crlf=crlf or CRLF,
             encoding=encoding or ENCODING,
@@ -41,6 +48,7 @@ class BetfairStreamClient(SocketClient):
         ), f"Must login to APIClient before calling connect on {self.__class__}"
         await super().connect()
         self.loop.create_task(self.start())
+        self.loop.call_later(10, self.send(raw=orjson.dumps({"op": "heartbeat"})))
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID
@@ -60,13 +68,19 @@ class BetfairOrderStreamClient(BetfairStreamClient):
     def __init__(
         self,
         client: APIClient,
+        logger: Logger,
         message_handler,
         partition_matched_by_strategy_ref=True,
         include_overall_position=None,
         customer_strategy_refs=None,
         **kwargs,
     ):
-        super().__init__(client=client, message_handler=message_handler, **kwargs)
+        super().__init__(
+            client=client,
+            logger=LoggerAdapter("BetfairOrderStreamClient", logger),
+            message_handler=message_handler,
+            **kwargs,
+        )
         self.order_filter = streaming_order_filter(
             include_overall_position=include_overall_position,
             customer_strategy_refs=customer_strategy_refs,
@@ -86,9 +100,16 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
-    def __init__(self, client: APIClient, message_handler, **kwargs):
+    def __init__(
+        self, client: APIClient, logger: Logger, message_handler: callable, **kwargs
+    ):
         self.subscription_message = None
-        super().__init__(client, message_handler, **kwargs)
+        super().__init__(
+            client=client,
+            logger=LoggerAdapter("BetfairOrderStreamClient", logger),
+            message_handler=message_handler,
+            **kwargs,
+        )
 
     # TODO - Add support for initial_clk/clk reconnection
     async def send_subscription_message(

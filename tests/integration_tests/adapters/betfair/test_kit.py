@@ -1,3 +1,4 @@
+import pathlib
 from unittest import mock
 
 import betfairlightweight
@@ -26,7 +27,9 @@ from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.stubs import TestStubs
 
 
-TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
+TEST_PATH = pathlib.Path(
+    TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
+)
 
 
 class BetfairTestStubs(TestStubs):
@@ -46,6 +49,7 @@ class BetfairTestStubs(TestStubs):
         )
         return BetfairInstrumentProvider(
             client=betfair_client,
+            logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
             market_filter={"event_type_name": "Tennis"},
             load_all=False,
         )
@@ -178,70 +182,82 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def navigation():
-        return orjson.loads(open(TEST_PATH + "navigation.json").read())
+        return orjson.loads((TEST_PATH / "navigation.json").read_bytes())
 
     @staticmethod
     def market_catalogue():
-        return orjson.loads(open(TEST_PATH + "market_catalogue.json").read())
+        return orjson.loads((TEST_PATH / "market_catalogue.json").read_bytes())
 
     @staticmethod
     def account_detail():
-        return orjson.loads(open(TEST_PATH + "account_detail.json").read())
+        return orjson.loads((TEST_PATH / "account_detail.json").read_bytes())
 
     @staticmethod
     def account_funds_no_exposure():
-        return orjson.loads(open(TEST_PATH + "account_funds_no_exposure.json").read())
+        return orjson.loads((TEST_PATH / "account_funds_no_exposure.json").read_bytes())
 
     @staticmethod
     def account_funds_with_exposure():
-        return orjson.loads(open(TEST_PATH + "account_funds_with_exposure.json").read())
-
-    @staticmethod
-    def cleared_orders():
-        return orjson.loads(open(TEST_PATH + "cleared_orders.json").read())
-
-    @staticmethod
-    def current_orders():
-        return orjson.loads(open(TEST_PATH + "current_orders.json").read())
-
-    @staticmethod
-    def current_orders_empty():
-        return orjson.loads(open(TEST_PATH + "current_orders_empty.json").read())
-
-    @staticmethod
-    def streaming_ocm_FULL_IMAGE():
-        return orjson.loads(open(TEST_PATH + "streaming_ocm_FULL_IMAGE.json").read())
-
-    @staticmethod
-    def streaming_ocm_EMPTY_IMAGE():
-        return orjson.loads(open(TEST_PATH + "streaming_ocm_EMPTY_IMAGE.json").read())
-
-    @staticmethod
-    def streaming_ocm_NEW_FULL_IMAGE():
         return orjson.loads(
-            open(TEST_PATH + "streaming_ocm_NEW_FULL_IMAGE.json").read()
+            (TEST_PATH / "account_funds_with_exposure.json").read_bytes()
         )
 
     @staticmethod
+    def cleared_orders():
+        return orjson.loads((TEST_PATH / "cleared_orders.json").read_bytes())
+
+    @staticmethod
+    def current_orders():
+        return orjson.loads((TEST_PATH / "current_orders.json").read_bytes())
+
+    @staticmethod
+    def current_orders_empty():
+        return orjson.loads((TEST_PATH / "current_orders_empty.json").read_bytes())
+
+    @staticmethod
+    def streaming_ocm_FULL_IMAGE():
+        return (TEST_PATH / "streaming_ocm_FULL_IMAGE.json").read_bytes()
+
+    @staticmethod
+    def streaming_ocm_EMPTY_IMAGE():
+        return (TEST_PATH / "streaming_ocm_EMPTY_IMAGE.json").read_bytes()
+
+    @staticmethod
+    def streaming_ocm_NEW_FULL_IMAGE():
+        return (TEST_PATH / "streaming_ocm_NEW_FULL_IMAGE.json").read_bytes()
+
+    @staticmethod
     def streaming_ocm_SUB_IMAGE():
-        return orjson.loads(open(TEST_PATH + "streaming_ocm_SUB_IMAGE.json").read())
+        return (TEST_PATH / "streaming_ocm_SUB_IMAGE.json").read_bytes()
 
     @staticmethod
     def streaming_ocm_UPDATE():
-        return orjson.loads(open(TEST_PATH + "streaming_ocm_UPDATE.json").read())
+        return (TEST_PATH / "streaming_ocm_UPDATE.json").read_bytes()
+
+    @staticmethod
+    def streaming_mcm_HEARTBEAT():
+        return (TEST_PATH / "streaming_mcm_HEARTBEAT.json").read_bytes()
+
+    @staticmethod
+    def streaming_mcm_SUB_IMAGE():
+        return (TEST_PATH / "streaming_mcm_SUB_IMAGE.json").read_bytes()
+
+    @staticmethod
+    def streaming_mcm_SUB_IMAGE_no_market_def():
+        return (TEST_PATH / "streaming_mcm_SUB_IMAGE_no_market_def.json").read_bytes()
 
     @staticmethod
     def streaming_mcm_RESUB_DELTA():
-        return orjson.loads(open(TEST_PATH + "streaming_mcm_RESUB_DELTA.json").read())
+        return (TEST_PATH / "streaming_mcm_RESUB_DELTA.json").read_bytes()
 
     @staticmethod
     def streaming_mcm_UPDATE():
-        return orjson.loads(open(TEST_PATH + "streaming_mcm_UPDATE.json").read())
+        return (TEST_PATH / "streaming_mcm_UPDATE.json").read_bytes()
 
     @staticmethod
     def streaming_mcm_UPDATE_md():
-        return orjson.loads(open(TEST_PATH + "streaming_mcm_UPDATE_md.json").read())
+        return (TEST_PATH / "streaming_mcm_UPDATE_md.json").read_bytes()
 
     @staticmethod
     def streaming_mcm_UPDATE_tv():
-        return orjson.loads(open(TEST_PATH + "streaming_mcm_UPDATE_tv.json").read())
+        return (TEST_PATH / "streaming_mcm_UPDATE_tv.json").read_bytes()

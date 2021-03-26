@@ -37,6 +37,9 @@ def test_load_markets(provider, betfair_client):
     )
     assert len(markets) == 302
 
+    markets = load_markets(betfair_client, market_filter={"market_id": "1.177125728"})
+    assert len(markets) == 1
+
 
 def test_load_markets_metadata(betfair_client):
     markets = load_markets(

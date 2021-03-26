@@ -80,12 +80,14 @@ class DumbQuoter(TradingStrategy):
         )
 
     def on_data(self, data: GenericData):
-        self.log.info(data)
-        if data.data_type.data_type == InstrumentSearch:
+        self.log.info(str(data))
+        if data.data_type.type == InstrumentSearch:
             # Find and set instrument
-            instruments = data.data
-            self.log.info(f"Received {len(instruments)} from instrument search")
-            self.instrument_id = instruments[0].id
+            instrument_search = data.data
+            self.log.info(
+                f"Received {len(instrument_search.instruments)} from instrument search"
+            )
+            self.instrument_id = instrument_search.instruments[0].id
             # Subscribe to live data
             self.subscribe_order_book(
                 instrument_id=self.instrument_id,

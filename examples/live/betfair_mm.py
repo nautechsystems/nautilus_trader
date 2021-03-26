@@ -37,9 +37,9 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
-        "connection_timeout": 5.0,  # Timeout for successful connections for all engine clients
-        "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
-        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
+        "connection_timeout": 15.0,  # Timeout for successful connections for all engine clients
+        "disconnection_timeout": 15.0,  # Timeout for successful disconnection for all engine clients
+        "check_residuals_delay": 15.0,  # How long to wait after stopping for residual events (secs)
     },
     "logging": {
         "log_level_console": "DBG",
@@ -66,7 +66,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
-            "market_filter": {"market_id": "1.180634014"},
+            "market_filter": {"market_id": "1.181012324"},
         },
     },
     "exec_clients": {
@@ -75,7 +75,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
-            "market_filter": {"market_id": "1.180634014"},
+            "market_filter": {"market_id": "1.181012324"},
             "sandbox_mode": False,  # If clients use the testnet
         },
     },
@@ -87,7 +87,7 @@ config = {
 # file.
 
 strategy = DumbQuoter(
-    instrument_filter={"market_id": "1.180634015"},
+    instrument_filter={"market_id": "1.181012324"},
     trade_size=Decimal("0.05"),
     order_id_tag="001",
 )

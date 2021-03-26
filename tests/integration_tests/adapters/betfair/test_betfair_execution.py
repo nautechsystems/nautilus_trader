@@ -17,6 +17,7 @@ import datetime
 import os
 
 import betfairlightweight
+import orjson
 import pytest
 
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
@@ -213,7 +214,9 @@ def _prefill_order_id_to_cl_ord_id(raw):
 async def test_order_stream_full_image(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_FULL_IMAGE()
     mocker.patch.object(
-        execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
+        execution_client,
+        "order_id_to_cl_ord_id",
+        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
@@ -233,7 +236,9 @@ async def test_order_stream_empty_image(execution_client, exec_engine):
 async def test_order_stream_new_full_image(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_NEW_FULL_IMAGE()
     mocker.patch.object(
-        execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
+        execution_client,
+        "order_id_to_cl_ord_id",
+        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
@@ -246,7 +251,9 @@ async def test_order_stream_new_full_image(mocker, execution_client, exec_engine
 async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_SUB_IMAGE()
     mocker.patch.object(
-        execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
+        execution_client,
+        "order_id_to_cl_ord_id",
+        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
@@ -258,7 +265,9 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_UPDATE()
 
     mocker.patch.object(
-        execution_client, "order_id_to_cl_ord_id", _prefill_order_id_to_cl_ord_id(raw)
+        execution_client,
+        "order_id_to_cl_ord_id",
+        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)

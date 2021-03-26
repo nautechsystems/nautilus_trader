@@ -70,6 +70,7 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
             engine=engine,
             clock=clock,
             logger=logger,
+            market_filter=config.get("market_filter", {})
         )
         return data_client
 
@@ -104,7 +105,7 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         Returns
         -------
-        BetfairDataClient, BetfairExecClient
+        BetfairExecClient
 
         """
         # Create client
@@ -129,5 +130,6 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             engine=engine,
             clock=clock,
             logger=logger,
+            market_filter=config.get("market_filter", {})
         )
         return exec_client

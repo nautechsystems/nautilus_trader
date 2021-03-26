@@ -146,13 +146,17 @@ def betting_instrument(provider):
 
 
 @pytest.fixture()
-def betfair_order_socket(betfair_client):
-    return BetfairOrderStreamClient(client=betfair_client, message_handler=None)
+def betfair_order_socket(betfair_client, live_logger):
+    return BetfairOrderStreamClient(
+        client=betfair_client, logger=live_logger, message_handler=None
+    )
 
 
 @pytest.fixture()
 def betfair_market_socket():
-    return BetfairMarketStreamClient(client=betfair_client, message_handler=None)
+    return BetfairMarketStreamClient(
+        client=betfair_client, logger=live_logger, message_handler=None
+    )
 
 
 @pytest.fixture()
@@ -165,6 +169,7 @@ async def execution_client(
         engine=exec_engine,
         clock=clock,
         logger=live_logger,
+        market_filter={},
     )
     client.instrument_provider().load_all()
     exec_engine.register_client(client)
@@ -178,6 +183,7 @@ def betfair_data_client(betfair_client, data_engine, clock, live_logger):
         engine=data_engine,
         clock=clock,
         logger=live_logger,
+        market_filter={},
     )
     client.instrument_provider().load_all()
     data_engine.register_client(client)

@@ -15,9 +15,11 @@
 
 import pytest
 
+from adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
-from nautilus_trader.adapters.betfair.factory import BetfairClientsFactory
+from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -81,10 +83,17 @@ def test_create(mocker, data_engine, exec_engine, clock, live_logger):
     mocker.patch("betfairlightweight.endpoints.login.Login.__call__")
     # mock_login = mocker.patch("betfairlightweight.endpoints.login.Login.request")
 
-    data_client, exec_client = BetfairClientsFactory.create(
+    data_client = BetfairLiveDataClientFactory.create(
+        name=BETFAIR_VENUE.value,
         config=config,
-        data_engine=data_engine,
-        exec_engine=exec_engine,
+        engine=data_engine,
+        clock=clock,
+        logger=live_logger,
+    )
+    exec_client = BetfairLiveExecutionClientFactory.create(
+        name=BETFAIR_VENUE.value,
+        config=config,
+        engine=exec_engine,
         clock=clock,
         logger=live_logger,
     )

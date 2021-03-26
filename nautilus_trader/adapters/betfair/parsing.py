@@ -142,6 +142,7 @@ def build_market_snapshot_messages(
                     ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atb"]
                     assert len(bid_keys) <= 1
                     assert len(ask_keys) <= 1
+                    instrument_provider._log.info(f"Selection: {str(selection)}")
                     snapshot = OrderBookSnapshot(
                         level=OrderBookLevel.L2,
                         instrument_id=instrument.id,
@@ -241,19 +242,20 @@ def build_market_update_messages(
     return updates
 
 
-def on_market_update(raw: dict, instrument_provider: BetfairInstrumentProvider):
-    if raw.get("ct") == "HEARTBEAT":
+def on_market_update(update: dict, instrument_provider: BetfairInstrumentProvider):
+    if update.get("ct") == "HEARTBEAT":
         # TODO - Do we send out heartbeats
         return []
-    for mc in raw.get("mc", []):
+    for mc in update.get("mc", []):
         if mc.get("img"):
             return build_market_snapshot_messages(
-                raw, instrument_provider=instrument_provider
+                update, instrument_provider=instrument_provider
             )
         else:
             return build_market_update_messages(
-                raw, instrument_provider=instrument_provider
+                update, instrument_provider=instrument_provider
             )
+    return []
 
 
 # TODO - Need to handle pagination > 1000 orders

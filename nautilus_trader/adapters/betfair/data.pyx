@@ -17,9 +17,12 @@ import asyncio
 
 import betfairlightweight
 from betfairlightweight import APIClient
+import orjson
 
 from nautilus_trader.common.clock cimport LiveClock
+
 from nautilus_trader.common.enums import LogColor
+
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
@@ -29,7 +32,10 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport BettingInstrument
+
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
+
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.model.data cimport Data
 
@@ -62,7 +68,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     def __init__(
         self,
-        betfairlightweight.APIClient client not None,
+        client not None,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -87,11 +93,12 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         """
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
-            load_all=True,
+            logger=logger,
+            load_all=False,
             market_filter=market_filter
         )
         super().__init__(
-            "BetfairDataClient",
+            BETFAIR_VENUE.value,
             engine,
             clock,
             logger,
@@ -100,7 +107,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._client = client  # type: APIClient
         self._instrument_provider = instrument_provider
         self._stream = BetfairMarketStreamClient(
-            client=self._client, message_handler=self._on_market_update,
+            client=self._client, logger=logger, message_handler=self._on_market_update,
         )
         self.is_connected = False
 
@@ -183,9 +190,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 # -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request(self, DataType data_type, UUID correlation_id) except *:
-        print(data_type,data_type.type, InstrumentSearch,  data_type.type == InstrumentSearch)
         if data_type.type == InstrumentSearch:
-            print("HANDLING")
             # Strategy has requested a list of instruments
             instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
             self._handle_data_response(
@@ -225,9 +230,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             self._log.warning(f"Already subscribed to market_id: {instrument.market_id} [Instrument: {instrument_id.symbol}] <OrderBook> data.")
             return
 
-        self._stream.send_subscription_message(
-            market_ids=[instrument.market_id]
-        )
+        self._loop.create_task(self._stream.send_subscription_message(market_ids=[instrument.market_id]))
 
         self._log.info(f"Subscribed to market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.")
 
@@ -260,7 +263,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
-    cpdef void _on_market_update(self, dict update) except *:
-        updates = on_market_update(raw=update, instrument_provider=self.instrument_provider())
+    cpdef void _on_market_update(self, bytes raw) except *:
+        cdef dict update = orjson.loads(raw)  # type: dict
+        updates = on_market_update(update=update, instrument_provider=self.instrument_provider())
+        if not updates:
+            self._log.warning(f"Received message but parsed no updates: {raw}")
         for upd in updates:
             self.handle_data(data=upd)
