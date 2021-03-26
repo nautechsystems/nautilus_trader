@@ -18,10 +18,14 @@ import os
 import betfairlightweight
 import pytest
 
-from adapters.betfair.data import InstrumentSearch
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
+from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.orderbook.book import L2OrderBook
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -146,3 +150,11 @@ async def test_request_search_instruments(betfair_data_client, data_engine, uuid
     await asyncio.sleep(0)
     resp = data_engine.responses[0]
     assert len(resp.data.data.instruments) == 495
+
+
+def test_orderbook_repr(betfair_data_client, data_engine):
+    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
+    ob_snap = data_engine.events[0]
+    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
+    ob.apply_snapshot(ob_snap)
+    print(ob.pprint())

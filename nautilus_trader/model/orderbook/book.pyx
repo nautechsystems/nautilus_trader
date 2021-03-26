@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from operator import itemgetter
 
 from tabulate import tabulate
 
@@ -379,31 +380,27 @@ cdef class OrderBook:
         else:
             return None
 
-    cpdef str pprint(self, int num_levels=3):
-        levels = reversed(
-            [
-                lvl
-                for lvl in self.bids.levels[-num_levels:]
-                           + self.asks.levels[:num_levels]
-            ]
-        )
+    cpdef str pprint(self, int num_levels=3, show='volume'):
+        levels = [(lvl.price(), lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]]
+        levels = list(reversed(sorted(levels, key=itemgetter(0))))
+        print(levels)
         data = [
             {
                 "bids": [
-                            order.id
+                            getattr(order, show)
                             for order in level.orders
                             if level.price() in self.bids.prices()
                         ]
                         or None,
                 "price": level.price(),
                 "asks": [
-                            order.id
+                            getattr(order, show)
                             for order in level.orders
                             if level.price() in self.asks.prices()
                         ]
                         or None,
             }
-            for level in levels
+            for _, level in levels
         ]
         return tabulate(
             data, headers="keys", numalign="center", floatfmt=".2f", tablefmt="fancy"

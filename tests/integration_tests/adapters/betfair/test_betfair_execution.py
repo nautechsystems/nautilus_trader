@@ -210,6 +210,7 @@ def _prefill_order_id_to_cl_ord_id(raw):
     return {oid: ClientOrderId(str(i)) for i, oid in enumerate(order_ids)}
 
 
+# TODO - could add better assertions here to ensure all fields are flowing through correctly on at least 1 order?
 @pytest.mark.asyncio
 async def test_order_stream_full_image(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_FULL_IMAGE()
@@ -221,7 +222,6 @@ async def test_order_stream_full_image(mocker, execution_client, exec_engine):
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
     assert len(exec_engine.events) == 6
-    # TODO - could add better assertions here to ensure all fields are flowing through correctly on at least 1 order?
 
 
 @pytest.mark.asyncio

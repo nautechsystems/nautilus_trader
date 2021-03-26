@@ -55,7 +55,7 @@ cdef class OrderBook:
     cpdef best_bid_qty(self)
     cpdef best_ask_qty(self)
     cpdef spread(self)
-    cpdef str pprint(self, int num_levels=*)
+    cpdef str pprint(self, int num_levels=*, show=*)
 
 
 cdef class L3OrderBook(OrderBook):

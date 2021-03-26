@@ -100,9 +100,12 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
             self._log.info(f"Searching for instruments with filter: {instrument_filter}")
             self._load_instruments(market_filter=instrument_filter)
             self._searched_filters.add(key)
-        return [
+        instruments = [
             ins for ins in self.list_instruments() if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
         ]
+        for ins in instruments:
+            self._log.debug(f"Found instrument: {ins}")
+        return instruments
 
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
         """ Performance friendly instrument lookup """
