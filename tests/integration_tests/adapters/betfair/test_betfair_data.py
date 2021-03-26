@@ -61,6 +61,27 @@ def test_market_sub_image_market_def(betfair_data_client, data_engine):
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["OrderBookSnapshot"] * 7
     assert result == expected
+    # Check prices are probabilities
+    result = [
+        float(order[0])
+        for ob_snap in data_engine.events
+        for order in ob_snap.bids + ob_snap.asks
+    ]
+    expected = [
+        0.02174,
+        0.39370,
+        0.36765,
+        0.21739,
+        0.00102,
+        0.17241,
+        0.00102,
+        0.55556,
+        0.45872,
+        0.21739,
+        0.00769,
+        0.02381,
+    ]
+    assert result == expected
 
 
 def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
@@ -87,6 +108,9 @@ def test_market_update(betfair_data_client, data_engine):
     result = [op.op_type for op in data_engine.events[0].ops]
     expected = [OrderBookOperationType.UPDATE, OrderBookOperationType.DELETE]
     assert result == expected
+    # Ensure order prices are coming through as probability
+    update_op = data_engine.events[0].ops[0]
+    assert update_op.order.price == 0.21277
 
 
 @pytest.mark.skip  # TODO - waiting for market status implementation

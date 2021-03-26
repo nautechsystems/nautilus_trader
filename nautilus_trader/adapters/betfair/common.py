@@ -3,6 +3,7 @@ import numpy as np
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
 
 
 BETFAIR_VENUE = Venue("BETFAIR")
@@ -46,6 +47,8 @@ B2N_ORDER_STREAM_SIDE = {
     "L": OrderSide.SELL,
 }
 
+# TODO - Clean this up with Price() objects?
+
 
 def parse_price(p):
     return int(round(p * 100))
@@ -87,10 +90,56 @@ all_probabilities = np.asarray(sorted(map(float, probability_price_map)))
 all_prices = np.asarray(np.asarray(list(price_probability_map)) / 100.0)
 
 
-def round_price_to_betfair(price, side):
+def round_probability(probability, side):
     """ If we have a probability in between two prices, round to the better price """
-    idx = all_prices.searchsorted(price)
+    if probability in all_probabilities:
+        return probability
+    idx = all_probabilities.searchsorted(probability)
     if side == OrderSide.SELL:
-        return all_prices[idx]
+        return all_probabilities[idx]
     elif side == OrderSide.BUY:
-        return all_prices[idx - 1]
+        return all_probabilities[idx - 1]
+
+
+def round_price(price, side):
+    """ If we have a probability in between two prices, round to the better price """
+    if price in all_prices:
+        return price
+    else:
+        idx = all_prices.searchsorted(price)
+        if side == OrderSide.BUY:
+            return all_prices[idx]
+        elif side == OrderSide.SELL:
+            return all_prices[idx - 1]
+
+
+def price_to_probability(price, side=None) -> Price:
+    """
+    Convert a bet price into a probability, rounded to the "better" probability (based on the side) if a the price
+    is between the real ticks for betfair prices.
+    """
+    rounded = round(price * 100)
+    if rounded not in price_probability_map:
+        if side is None:
+            raise ValueError(
+                f"If not passing a side, price ({price}) must exist in `price_probability_map`"
+            )
+        rounded = round(round_price(price=price, side=side) * 100)
+    probability = float(price_probability_map[rounded])
+    return Price(probability, precision=5)
+
+
+def probability_to_price(probability, side=None) -> Price:
+    """
+    Convert a bet probability into a betting price, rounded to the "better" price (based on the side) if a the
+    probability is between the real ticks for betfair prices.
+    """
+    parsed = parse_prob(probability)
+    if parsed not in probability_price_map:
+        if side is None:
+            raise ValueError(
+                f"If not passing a side, probability ({probability}) must exist in `probability_price_map`"
+            )
+        parsed = parse_prob(round_probability(probability=probability, side=side))
+    price = float(probability_price_map[parsed]) / 100.0
+    return Price(price, precision=5)

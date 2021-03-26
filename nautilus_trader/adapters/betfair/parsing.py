@@ -13,7 +13,8 @@ from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
 from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
-from nautilus_trader.adapters.betfair.common import round_price_to_betfair
+from nautilus_trader.adapters.betfair.common import price_to_probability
+from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.core.datetime import from_unix_time_ms
 from nautilus_trader.execution.messages import ExecutionReport
@@ -62,7 +63,9 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 handicap=instrument.selection_handicap or None,
                 limit_order=limit_order(
                     size=float(order.quantity),
-                    price=round_price_to_betfair(price=order.price, side=order.side),
+                    price=probability_to_price(
+                        probability=order.price, side=order.side
+                    ).value,
                     persistence_type="PERSIST",
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
@@ -142,32 +145,25 @@ def build_market_snapshot_messages(
                     ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atb"]
                     assert len(bid_keys) <= 1
                     assert len(ask_keys) <= 1
-                    # TODO Clean this up
+                    # TODO Clean this crap up
                     if bid_keys[0] == "atb":
-                        bids = [
-                            Order(price=p, volume=q, side=OrderSide.BUY)
-                            for p, q in selection.get("atb", [])
-                        ]
+                        bids = selection.get("atb", [])
                     else:
-                        bids = [
-                            Order(price=p, volume=q, side=OrderSide.BUY)
-                            for _, p, q in selection.get((bid_keys or ["atb"])[0], [])
-                        ]
+                        bids = [(p, v) for _, p, v in selection.get(bid_keys[0], [])]
                     if ask_keys[0] == "atl":
-                        asks = [
-                            Order(price=p, volume=q, side=OrderSide.BUY)
-                            for p, q in selection.get("atl", [])
-                        ]
+                        asks = selection.get("atl", [])
                     else:
-                        asks = [
-                            Order(price=p, volume=q, side=OrderSide.SELL)
-                            for _, p, q in selection.get((bid_keys or ["atl"])[0], [])
-                        ]
+                        asks = [(p, v) for _, p, v in selection.get(ask_keys[0], [])]
                     snapshot = OrderBookSnapshot(
                         level=OrderBookLevel.L2,
                         instrument_id=instrument.id,
-                        bids=bids,
-                        asks=asks,
+                        bids=[
+                            (price_to_probability(p, OrderSide.BUY), v) for p, v in bids
+                        ],
+                        asks=[
+                            (price_to_probability(p, OrderSide.SELL), v)
+                            for p, v in asks
+                        ],
                         timestamp=from_unix_time_ms(raw["pt"]),
                     )
                     updates.append(snapshot)
@@ -197,7 +193,7 @@ def build_market_update_messages(
                             if volume == 0
                             else OrderBookOperationType.UPDATE,
                             order=Order(
-                                price=price,
+                                price=price_to_probability(price),
                                 volume=volume,
                                 side=B2N_MARKET_STREAM_SIDE[side],
                             ),
@@ -214,7 +210,7 @@ def build_market_update_messages(
             for price, volume in runner.get("trd", []):
                 trade_tick = TradeTick(
                     instrument_id=instrument.id,
-                    price=Price(price),
+                    price=Price(price_to_probability(price)),
                     quantity=Quantity(volume),
                     side=OrderSide.BUY,
                     # TradeMatchId(trade_match_id),

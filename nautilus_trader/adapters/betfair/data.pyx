@@ -269,4 +269,5 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         if not updates:
             self._log.warning(f"Received message but parsed no updates: {raw}")
         for upd in updates:
+            self._log.debug(str(upd))
             self.handle_data(data=upd)
