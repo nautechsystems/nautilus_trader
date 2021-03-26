@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Optional
 
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import LoggerAdapter
 
 
@@ -62,7 +63,7 @@ class SocketClient:
             raw = json.dumps(raw)
         if not isinstance(raw, bytes):
             raw = raw.encode(self.encoding)
-        self.logger.debug(raw)
+        self.logger.debug(raw.decode(), color=LogColor.YELLOW)
         self.writer.write(raw + self.crlf)
         await self.writer.drain()
 
@@ -72,7 +73,7 @@ class SocketClient:
         while not self.stop:
             try:
                 raw = await self.reader.readuntil(separator=self.crlf)
-                self.logger.debug(raw)
+                self.logger.debug(raw.decode())
                 self.message_handler(raw.rstrip(self.crlf))
                 await asyncio.sleep(0)
             except ConnectionResetError:

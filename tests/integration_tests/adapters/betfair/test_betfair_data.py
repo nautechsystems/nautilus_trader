@@ -105,6 +105,13 @@ def test_market_update_tv(betfair_data_client, data_engine):
     assert result == expected
 
 
+def test_market_update_live(betfair_data_client, data_engine):
+    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
+    result = [type(event).__name__ for event in data_engine.events]
+    expected = ["OrderBookSnapshot"] * 2
+    assert result == expected
+
+
 @pytest.mark.asyncio
 async def test_request_search_instruments(betfair_data_client, data_engine, uuid):
     req = DataType(

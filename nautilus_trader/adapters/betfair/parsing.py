@@ -142,18 +142,32 @@ def build_market_snapshot_messages(
                     ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atb"]
                     assert len(bid_keys) <= 1
                     assert len(ask_keys) <= 1
-                    instrument_provider._log.info(f"Selection: {str(selection)}")
+                    # TODO Clean this up
+                    if bid_keys[0] == "atb":
+                        bids = [
+                            Order(price=p, volume=q, side=OrderSide.BUY)
+                            for p, q in selection.get("atb", [])
+                        ]
+                    else:
+                        bids = [
+                            Order(price=p, volume=q, side=OrderSide.BUY)
+                            for _, p, q in selection.get((bid_keys or ["atb"])[0], [])
+                        ]
+                    if ask_keys[0] == "atl":
+                        asks = [
+                            Order(price=p, volume=q, side=OrderSide.BUY)
+                            for p, q in selection.get("atl", [])
+                        ]
+                    else:
+                        asks = [
+                            Order(price=p, volume=q, side=OrderSide.SELL)
+                            for _, p, q in selection.get((bid_keys or ["atl"])[0], [])
+                        ]
                     snapshot = OrderBookSnapshot(
                         level=OrderBookLevel.L2,
                         instrument_id=instrument.id,
-                        bids=[
-                            Order(price=p, volume=q, side=OrderSide.BUY)
-                            for _, p, q in selection.get((bid_keys or ["atb"])[0], [])
-                        ],
-                        asks=[
-                            Order(price=p, volume=q, side=OrderSide.SELL)
-                            for _, p, q in selection.get((bid_keys or ["atl"])[0], [])
-                        ],
+                        bids=bids,
+                        asks=asks,
                         timestamp=from_unix_time_ms(raw["pt"]),
                     )
                     updates.append(snapshot)
