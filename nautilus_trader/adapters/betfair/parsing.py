@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import itertools
 from typing import List, Optional, Union
 
@@ -17,6 +18,7 @@ from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.core.datetime import from_unix_time_ms
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
@@ -31,6 +33,7 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -44,6 +47,7 @@ from nautilus_trader.model.tick import TradeTick
 
 
 # TODO - Investigate more order types
+sha256 = hashlib.sha256()
 
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
@@ -218,12 +222,24 @@ def build_market_update_messages(
             updates.append(ob_update)
 
             for price, volume in runner.get("trd", []):
+                # Betfair doesn't publish trade ids, so we make our own
+                # TODO - should we use clk here?
+                trade_id = hash_json(
+                    data=(
+                        raw["pt"],
+                        market_id,
+                        str(runner["id"]),
+                        str(runner.get("hc", "0.0")),
+                        price,
+                        volume,
+                    )
+                )
                 trade_tick = TradeTick(
                     instrument_id=instrument.id,
                     price=Price(price_to_probability(price)),
-                    quantity=Quantity(volume),
+                    size=Quantity(volume, precision=4),
                     side=OrderSide.BUY,
-                    # TradeMatchId(trade_match_id),
+                    match_id=TradeMatchId(trade_id),
                     timestamp=from_unix_time_ms(raw["pt"]),
                 )
                 updates.append(trade_tick)

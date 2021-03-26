@@ -1,4 +1,7 @@
+import hashlib
 from typing import Dict
+
+import orjson
 
 
 def flatten_tree(y: Dict, **filters):
@@ -38,3 +41,8 @@ def chunk(list_like, n):
     """ Yield successive n-sized chunks from l."""
     for i in range(0, len(list_like), n):
         yield list_like[i : i + n]
+
+
+def hash_json(data):
+    h = hashlib.sha256(orjson.dumps(data))
+    return h.hexdigest()

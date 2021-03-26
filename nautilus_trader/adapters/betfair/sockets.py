@@ -106,7 +106,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         self.subscription_message = None
         super().__init__(
             client=client,
-            logger=LoggerAdapter("BetfairOrderStreamClient", logger),
+            logger=LoggerAdapter("BetfairMarketStreamClient", logger),
             message_handler=message_handler,
             **kwargs,
         )

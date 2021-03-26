@@ -243,6 +243,10 @@ class BetfairTestStubs(TestStubs):
         return (TEST_PATH / "streaming_mcm_live_IMAGE.json").read_bytes()
 
     @staticmethod
+    def streaming_mcm_live_UPDATE():
+        return (TEST_PATH / "streaming_mcm_live_UPDATE.json").read_bytes()
+
+    @staticmethod
     def streaming_mcm_SUB_IMAGE():
         return (TEST_PATH / "streaming_mcm_SUB_IMAGE.json").read_bytes()
 

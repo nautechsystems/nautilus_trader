@@ -66,25 +66,27 @@ def test_market_sub_image_market_def(betfair_data_client, data_engine):
     expected = ["OrderBookSnapshot"] * 7
     assert result == expected
     # Check prices are probabilities
-    result = [
+    result = set(
         float(order[0])
         for ob_snap in data_engine.events
         for order in ob_snap.bids + ob_snap.asks
-    ]
-    expected = [
-        0.02174,
-        0.39370,
-        0.36765,
-        0.21739,
-        0.00102,
-        0.17241,
-        0.00102,
-        0.55556,
-        0.45872,
-        0.21739,
-        0.00769,
-        0.02381,
-    ]
+    )
+    expected = set(
+        [
+            0.02174,
+            0.39370,
+            0.36765,
+            0.21739,
+            0.00102,
+            0.17241,
+            0.00102,
+            0.55556,
+            0.45872,
+            0.21739,
+            0.00769,
+            0.02381,
+        ]
+    )
     assert result == expected
 
 
@@ -133,10 +135,17 @@ def test_market_update_tv(betfair_data_client, data_engine):
     assert result == expected
 
 
-def test_market_update_live(betfair_data_client, data_engine):
+def test_market_update_live_image(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["OrderBookSnapshot"] * 2
+    assert result == expected
+
+
+def test_market_update_live_update(betfair_data_client, data_engine):
+    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_UPDATE())
+    result = [type(event).__name__ for event in data_engine.events]
+    expected = ["OrderBookOperations", "TradeTick"]
     assert result == expected
 
 
