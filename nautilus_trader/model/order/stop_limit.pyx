@@ -144,13 +144,13 @@ cdef class StopLimitOrder(PassiveOrder):
         self.is_hidden = hidden
 
     def __repr__(self) -> str:
-        cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
+        cdef str id_string = f", id={self.id.value})" if self.id.not_null() else ")"
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id.value}, "
-                f"{id_string}"
-                f"state={self._fsm.state_string_c()}, "
+                f"{self.status_string_c()}, "
                 f"trigger={self.trigger}, "
-                f"{self.status_string_c()})")
+                f"state={self._fsm.state_string_c()}, "
+                f"cl_ord_id={self.cl_ord_id.value}"
+                f"{id_string}")
 
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized event):

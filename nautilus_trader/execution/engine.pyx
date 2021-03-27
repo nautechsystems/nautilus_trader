@@ -657,7 +657,7 @@ cdef class ExecutionEngine(Component):
             self.cache.add_account(account)
             self._portfolio.register_account(account)
         else:
-            account.apply_c(event)
+            account.apply(event=event)
             self.cache.update_account(account)
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
@@ -706,7 +706,7 @@ cdef class ExecutionEngine(Component):
 
         try:
             # Protected against duplicate OrderFilled
-            order.apply_c(event)
+            order.apply(event=event)
         except (KeyError, InvalidStateTrigger)  as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
@@ -776,7 +776,7 @@ cdef class ExecutionEngine(Component):
             self._update_position(position, fill)
 
     cdef inline void _open_position(self, OrderFilled fill) except *:
-        cdef Position position = Position(fill)
+        cdef Position position = Position(fill=fill)
         self.cache.add_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
@@ -790,7 +790,7 @@ cdef class ExecutionEngine(Component):
 
         try:
             # Protected against duplicate OrderFilled
-            position.apply_c(fill)
+            position.apply(fill=fill)
         except KeyError as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
@@ -841,7 +841,7 @@ cdef class ExecutionEngine(Component):
         )
 
         # Close original position
-        position.apply_c(fill_split1)
+        position.apply(fill=fill_split1)
         self.cache.update_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
@@ -876,7 +876,7 @@ cdef class ExecutionEngine(Component):
             fill.timestamp_ns,
         )
 
-        cdef Position position_flip = Position(fill_split2)
+        cdef Position position_flip = Position(fill=fill_split2)
         self.cache.add_position(position_flip)
         self.process(self._pos_opened_event(position_flip, fill_split2))
 

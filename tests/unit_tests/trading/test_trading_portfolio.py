@@ -345,7 +345,7 @@ class PortfolioTests(unittest.TestCase):
             Quantity("10.50000000"),
         )
 
-        filled1 = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
@@ -353,7 +353,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("25000.00"),
         )
 
-        filled2 = TestStubs.event_order_filled(
+        fill2 = TestStubs.event_order_filled(
             order2,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
@@ -361,8 +361,8 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("25000.00"),
         )
 
-        position1 = Position(filled1)
-        position1.apply(filled2)
+        position1 = Position(fill=fill1)
+        position1.apply(fill=fill2)
 
         order3 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -370,7 +370,7 @@ class PortfolioTests(unittest.TestCase):
             Quantity("10.00000000"),
         )
 
-        filled3 = TestStubs.event_order_filled(
+        fill3 = TestStubs.event_order_filled(
             order3,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-2"),
@@ -378,7 +378,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("25000.00"),
         )
 
-        position2 = Position(filled3)
+        position2 = Position(fill=fill3)
 
         # Update the last quote
         last = QuoteTick(
@@ -425,7 +425,7 @@ class PortfolioTests(unittest.TestCase):
         self.data_cache.add_quote_tick(last)
         self.portfolio.update_tick(last)
 
-        position = Position(fill)
+        position = Position(fill=fill)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_opened(position))
@@ -483,7 +483,7 @@ class PortfolioTests(unittest.TestCase):
         self.data_cache.add_quote_tick(last)
         self.portfolio.update_tick(last)
 
-        position = Position(fill)
+        position = Position(fill=fill)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_opened(position))
@@ -566,7 +566,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("376.05"),
         )
 
-        position = Position(fill)
+        position = Position(fill=fill)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_opened(position))
@@ -612,7 +612,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("376.05"),
         )
 
-        position = Position(fill)
+        position = Position(fill=fill)
 
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
@@ -661,7 +661,7 @@ class PortfolioTests(unittest.TestCase):
             0,
         )
 
-        position = Position(fill)
+        position = Position(fill=fill)
 
         self.portfolio.update_position(TestStubs.event_position_opened(position))
         self.data_cache.add_quote_tick(last_ethusd)
@@ -725,7 +725,7 @@ class PortfolioTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
@@ -733,7 +733,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        order2_filled = TestStubs.event_order_filled(
+        fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
@@ -741,8 +741,8 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        position1 = Position(order1_filled)
-        position2 = Position(order2_filled)
+        position1 = Position(fill=fill1)
+        position2 = Position(fill=fill2)
         position_opened1 = TestStubs.event_position_opened(position1)
         position_opened2 = TestStubs.event_position_opened(position2)
 
@@ -811,7 +811,7 @@ class PortfolioTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -819,7 +819,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        position = Position(order1_filled)
+        position = Position(fill=fill1)
 
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
@@ -837,7 +837,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        position.apply(order2_filled)
+        position.apply(fill=order2_filled)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_changed(position))
@@ -886,7 +886,7 @@ class PortfolioTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
@@ -894,7 +894,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        position = Position(order1_filled)
+        position = Position(fill=fill1)
 
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
@@ -912,7 +912,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00010"),
         )
 
-        position.apply(order2_filled)
+        position.apply(fill=order2_filled)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_closed(position))
@@ -969,7 +969,7 @@ class PortfolioTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-1"),
@@ -977,7 +977,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        order2_filled = TestStubs.event_order_filled(
+        fill2 = TestStubs.event_order_filled(
             order2,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
@@ -985,7 +985,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        order3_filled = TestStubs.event_order_filled(
+        fill3 = TestStubs.event_order_filled(
             order3,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
@@ -993,7 +993,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        order4_filled = TestStubs.event_order_filled(
+        fill4 = TestStubs.event_order_filled(
             order4,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
@@ -1001,9 +1001,9 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00100"),
         )
 
-        position1 = Position(order1_filled)
-        position2 = Position(order2_filled)
-        position3 = Position(order3_filled)
+        position1 = Position(fill=fill1)
+        position2 = Position(fill=fill2)
+        position3 = Position(fill=fill3)
 
         last_audusd = QuoteTick(
             AUDUSD_SIM.id,
@@ -1033,7 +1033,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_opened(position2))
         self.portfolio.update_position(TestStubs.event_position_opened(position3))
 
-        position3.apply(order4_filled)
+        position3.apply(fill=fill4)
         self.portfolio.update_position(TestStubs.event_position_closed(position3))
 
         # Assert

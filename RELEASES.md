@@ -24,7 +24,6 @@ financial market terminology with reference to the FIX5.0 SP2 spec.
 - Rename `Position.peak_quantity` to `Position.peak_qty`.
 
 ## Enhancements
-- Add Betfair adapter.
 - Add optional `broker` property to `Venue` to assist with routing.
 - Enhance state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`.
 
