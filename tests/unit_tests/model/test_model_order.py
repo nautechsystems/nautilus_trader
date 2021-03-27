@@ -65,17 +65,16 @@ class OrderTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-    def test_opposite_side_given_undefined_raises_value_error(self):
+    def test_opposite_side_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Order.opposite_side, OrderSide.UNDEFINED)
+        self.assertRaises(ValueError, Order.opposite_side, 0)
 
-    def test_flatten_side_given_undefined_or_flat_raises_value_error(self):
+    def test_flatten_side_given_invalid_value_or_flat_raises_value_error(self):
         # Arrange
         # Act
-        # Assert
-        self.assertRaises(ValueError, Order.flatten_side, PositionSide.UNDEFINED)
+        self.assertRaises(ValueError, Order.flatten_side, 0)
         self.assertRaises(ValueError, Order.flatten_side, PositionSide.FLAT)
 
     @parameterized.expand(

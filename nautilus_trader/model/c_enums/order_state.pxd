@@ -15,7 +15,6 @@
 
 
 cpdef enum OrderState:
-    UNDEFINED = 0,  # Invalid value
     INITIALIZED = 1,
     INVALID = 2,
     DENIED = 3,
@@ -35,4 +34,4 @@ cdef class OrderStateParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderState from_str(str value)
+    cdef OrderState from_str(str value) except *

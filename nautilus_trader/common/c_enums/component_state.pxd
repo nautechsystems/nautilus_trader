@@ -15,7 +15,6 @@
 
 
 cpdef enum ComponentState:
-    UNDEFINED = 0,  # Invalid value
     INITIALIZED = 1,
     STARTING = 2,
     RUNNING = 3,
@@ -34,4 +33,4 @@ cdef class ComponentStateParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef ComponentState from_str(str value)
+    cdef ComponentState from_str(str value) except *

@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from parameterized import parameterized
+import pytest
 
 from nautilus_trader.common.c_enums.component_state import ComponentState
 from nautilus_trader.common.c_enums.component_state import ComponentStateParser
@@ -23,10 +22,19 @@ from nautilus_trader.common.c_enums.component_trigger import ComponentTrigger
 from nautilus_trader.common.c_enums.component_trigger import ComponentTriggerParser
 
 
-class ComponentStateTests(unittest.TestCase):
+class TestComponentState:
+    def test_component_state_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            ComponentStateParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            ComponentStateParser.from_str_py("")
+
     @parameterized.expand(
         [
-            [ComponentState.UNDEFINED, "UNDEFINED"],
             [ComponentState.INITIALIZED, "INITIALIZED"],
             [ComponentState.STARTING, "STARTING"],
             [ComponentState.RUNNING, "RUNNING"],
@@ -45,12 +53,10 @@ class ComponentStateTests(unittest.TestCase):
         result = ComponentStateParser.to_str_py(enum)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
     @parameterized.expand(
         [
-            ["", ComponentState.UNDEFINED],
-            ["UNDEFINED", ComponentState.UNDEFINED],
             ["INITIALIZED", ComponentState.INITIALIZED],
             ["STARTING", ComponentState.STARTING],
             ["RUNNING", ComponentState.RUNNING],
@@ -69,13 +75,22 @@ class ComponentStateTests(unittest.TestCase):
         result = ComponentStateParser.from_str_py(string)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
 
-class ComponentTriggerTests(unittest.TestCase):
+class TestComponentTrigger:
+    def test_component_trigger_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            ComponentTriggerParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            ComponentTriggerParser.from_str_py("")
+
     @parameterized.expand(
         [
-            [ComponentTrigger.UNDEFINED, "UNDEFINED"],
             [ComponentTrigger.START, "START"],
             [ComponentTrigger.RUNNING, "RUNNING"],
             [ComponentTrigger.STOP, "STOP"],
@@ -92,12 +107,10 @@ class ComponentTriggerTests(unittest.TestCase):
         result = ComponentTriggerParser.to_str_py(enum)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
     @parameterized.expand(
         [
-            ["", ComponentTrigger.UNDEFINED],
-            ["UNDEFINED", ComponentTrigger.UNDEFINED],
             ["START", ComponentTrigger.START],
             ["RUNNING", ComponentTrigger.RUNNING],
             ["STOP", ComponentTrigger.STOP],
@@ -114,4 +127,4 @@ class ComponentTriggerTests(unittest.TestCase):
         result = ComponentTriggerParser.from_str_py(string)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected

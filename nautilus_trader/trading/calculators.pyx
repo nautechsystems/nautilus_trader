@@ -66,7 +66,7 @@ cdef class ExchangeRateCalculator:
         ValueError
             If bid_quotes length is not equal to ask_quotes length.
         ValueError
-            If price_type is UNDEFINED or LAST.
+            If price_type is LAST.
 
         Notes
         -----
@@ -77,7 +77,7 @@ cdef class ExchangeRateCalculator:
         Condition.not_none(to_currency, "to_currency")
         Condition.not_none(bid_quotes, "bid_quotes")
         Condition.not_none(ask_quotes, "ask_quotes")
-        Condition.true(price_type != PriceType.UNDEFINED and price_type != PriceType.LAST, "price_type was UNDEFINED or LAST")
+        Condition.true(price_type != PriceType.LAST, "price_type was invalid (LAST)")
 
         if from_currency == to_currency:
             return Decimal(1)  # No conversion necessary

@@ -15,7 +15,6 @@
 
 
 cpdef enum PositionSide:
-    UNDEFINED = 0,  # Invalid value
     FLAT = 1,
     LONG = 2,
     SHORT = 3,
@@ -27,4 +26,4 @@ cdef class PositionSideParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef PositionSide from_str(str value)
+    cdef PositionSide from_str(str value) except *

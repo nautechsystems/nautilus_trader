@@ -343,8 +343,6 @@ cdef class BacktestEngine:
         ------
         ValueError
             If an exchange of venue is already registered with the engine.
-        ValueError
-            If oms_type is UNDEFINED.
 
         """
         if modules is None:
@@ -353,7 +351,6 @@ cdef class BacktestEngine:
             fill_model = FillModel()
         Condition.not_none(venue, "venue")
         Condition.not_in(venue, self._exchanges, "venue", "self._exchanges")
-        Condition.not_equal(oms_type, OMSType.UNDEFINED, "oms_type", "UNDEFINED")
         Condition.not_none(starting_balances, "starting_balances")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules")

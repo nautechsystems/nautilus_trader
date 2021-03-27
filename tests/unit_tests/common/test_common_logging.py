@@ -30,7 +30,6 @@ from nautilus_trader.common.logging import TestLogger
 class LogLevelParserTests(unittest.TestCase):
     @parameterized.expand(
         [
-            [LogLevel.UNDEFINED, "UNDEFINED"],
             [LogLevel.VERBOSE, "VRB"],
             [LogLevel.DEBUG, "DBG"],
             [LogLevel.INFO, "INF"],
@@ -50,8 +49,6 @@ class LogLevelParserTests(unittest.TestCase):
 
     @parameterized.expand(
         [
-            ["", LogLevel.UNDEFINED],
-            ["UNDEFINED", LogLevel.UNDEFINED],
             ["VRB", LogLevel.VERBOSE],
             ["DBG", LogLevel.DEBUG],
             ["INF", LogLevel.INFO],

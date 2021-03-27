@@ -363,16 +363,21 @@ cdef class Order:
 
     @staticmethod
     cdef OrderSide opposite_side_c(OrderSide side) except *:
-        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
-
-        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
+        if side == OrderSide.BUY:
+            return OrderSide.SELL
+        elif side == OrderSide.SELL:
+            return OrderSide.BUY
+        else:
+            raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
     cdef inline OrderSide flatten_side_c(PositionSide side) except *:
-        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
-        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
-
-        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
+        if side == PositionSide.LONG:
+            return OrderSide.SELL
+        elif side == PositionSide.SHORT:
+            return OrderSide.BUY
+        else:
+            raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
     def opposite_side(OrderSide side) -> OrderSide:
@@ -403,12 +408,11 @@ cdef class Order:
 
         Returns
         -------
-        OrderSide
+        OrderSide or None
 
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED or FLAT.
+        Warnings
+        --------
+        Will return None if given PositionSide.FLAT.
 
         """
         return Order.flatten_side_c(side)
@@ -580,20 +584,10 @@ cdef class PassiveOrder(Order):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If order_type is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
-        ValueError
             If time_in_force is GTD and the expire_time is None.
 
         """
-        # Condition for order_side not UNDEFINED checked in OrderInitialized
-        # Condition for order_type not UNDEFINED checked in OrderInitialized
-        # Condition for time_in_force not UNDEFINED checked in OrderInitialized
         Condition.positive(quantity, "quantity")
-        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
             Condition.not_none(expire_time, "expire_time")

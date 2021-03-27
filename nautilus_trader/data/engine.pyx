@@ -599,6 +599,7 @@ cdef class DataEngine(Component):
                 instrument_id=instrument_id,
                 level=metadata[LEVEL],
             )
+
             self.cache.add_order_book(order_book)
 
         # Always re-subscribe to override previous settings

@@ -15,7 +15,6 @@
 
 
 cpdef enum PriceType:
-    UNDEFINED = 0,  # Invalid value
     BID = 1,
     ASK = 2,
     MID = 3,
@@ -28,4 +27,4 @@ cdef class PriceTypeParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef PriceType from_str(str value)
+    cdef PriceType from_str(str value) except *

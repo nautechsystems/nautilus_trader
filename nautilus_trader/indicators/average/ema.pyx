@@ -27,7 +27,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
     rolling window.
     """
 
-    def __init__(self, int period, PriceType price_type=PriceType.UNDEFINED):
+    def __init__(self, int period, PriceType price_type=PriceType.LAST):
         """
         Initialize a new instance of the `ExponentialMovingAverage` class.
 

@@ -413,14 +413,8 @@ cdef class DataCache(DataCacheFacade):
         -------
         Price or None
 
-        Raises
-        ------
-        ValueError
-            If price_type is UNDEFINED.
-
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_equal(price_type, PriceType.UNDEFINED, "price_type", "UNDEFINED")
 
         cdef TradeTick trade_tick
         cdef QuoteTick quote_tick
@@ -705,7 +699,7 @@ cdef class DataCache(DataCacheFacade):
         Raises
         ------
         ValueError
-            If price_type is UNDEFINED or LAST.
+            If price_type is LAST.
 
         """
         Condition.not_none(from_currency, "from_currency")

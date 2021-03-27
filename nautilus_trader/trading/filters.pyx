@@ -30,7 +30,6 @@ from nautilus_trader.core.datetime cimport is_datetime_utc
 
 @unique
 class ForexSession(Enum):
-    UNDEFINED = 0,
     SYDNEY = 1,
     TOKYO = 2,
     LONDON = 3,
@@ -320,7 +319,6 @@ cdef class ForexSessionFilter:
 
 @unique
 class NewsImpact(Enum):
-    UNDEFINED = 0,
     NONE = 1,
     LOW = 2,
     MEDIUM = 3,

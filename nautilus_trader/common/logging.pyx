@@ -77,8 +77,6 @@ cdef class LogLevelParser:
             return "CRT"
         elif value == 7:
             return "FTL"
-        else:
-            return "UNDEFINED"
 
     @staticmethod
     cdef LogLevel from_str(str value):
@@ -96,8 +94,6 @@ cdef class LogLevelParser:
             return LogLevel.CRITICAL
         elif value == "FTL":
             return LogLevel.FATAL
-        else:
-            return LogLevel.UNDEFINED
 
     @staticmethod
     def to_str_py(int value):
