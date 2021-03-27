@@ -59,6 +59,8 @@ cdef class OrderBook:
         self.last_update_timestamp_ns = 0
         self.last_update_id = 0
 
+        # TODO: Id updates
+
     @staticmethod
     def create(InstrumentId instrument_id, OrderBookLevel level):
         """
@@ -144,6 +146,8 @@ cdef class OrderBook:
         for ask in snapshot.asks:
             self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
 
+        self.last_update_timestamp_ns = snapshot.timestamp_ns
+
     cpdef void apply_operations(self, OrderBookOperations operations) except *:
         """
         Apply the bulk operations to the order book.
@@ -164,6 +168,8 @@ cdef class OrderBook:
         cdef OrderBookOperation op
         for op in operations.ops:
             self._apply_operation(op)
+
+        self.last_update_timestamp_ns = operations.timestamp_ns
 
     cpdef void check_integrity(self) except *:
         """
@@ -711,7 +717,7 @@ cdef class OrderBookOperation:
         order : Order
             The order to apply.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the operations.
+            The Unix timestamp (nanos) of the operation.
 
         """
         self.type = op_type
