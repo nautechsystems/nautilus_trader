@@ -261,7 +261,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
-        cdef long total_size = 0
+        cdef int64_t total_size = 0
 
         cdef datetime start = nanos_to_unix_dt(start_ns)
         cdef datetime stop = nanos_to_unix_dt(stop_ns)
