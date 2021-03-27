@@ -158,12 +158,12 @@ cdef class OrderFactory:
 
         """
         return MarketOrder(
-            self._id_generator.generate(),
-            self.strategy_id,
-            instrument_id,
-            order_side,
-            quantity,
-            time_in_force,
+            cl_ord_id=self._id_generator.generate(),
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            order_side=order_side,
+            quantity=quantity,
+            time_in_force=time_in_force,
             init_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -227,11 +227,11 @@ cdef class OrderFactory:
 
         """
         return LimitOrder(
-            self._id_generator.generate(),
-            self.strategy_id,
-            instrument_id,
-            order_side,
-            quantity,
+            cl_ord_id=self._id_generator.generate(),
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            order_side=order_side,
+            quantity=quantity,
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
@@ -291,11 +291,11 @@ cdef class OrderFactory:
 
         """
         return StopMarketOrder(
-            self._id_generator.generate(),
-            self.strategy_id,
-            instrument_id,
-            order_side,
-            quantity,
+            cl_ord_id=self._id_generator.generate(),
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            order_side=order_side,
+            quantity=quantity,
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
@@ -366,11 +366,11 @@ cdef class OrderFactory:
 
         """
         return StopLimitOrder(
-            self._id_generator.generate(),
-            self.strategy_id,
-            instrument_id,
-            order_side,
-            quantity,
+            cl_ord_id=self._id_generator.generate(),
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            order_side=order_side,
+            quantity=quantity,
             price=price,
             trigger=trigger,
             time_in_force=time_in_force,
@@ -443,21 +443,21 @@ cdef class OrderFactory:
                 Condition.true(entry_order.price > take_profit, "entry_order.price > take_profit")
 
         cdef StopMarketOrder stop_loss_order = self.stop_market(
-            entry_order.instrument_id,
-            Order.opposite_side_c(entry_order.side),
-            entry_order.quantity,
-            stop_loss,
-            sl_tif,
+            instrument_id=entry_order.instrument_id,
+            order_side=Order.opposite_side_c(entry_order.side),
+            quantity=entry_order.quantity,
+            price=stop_loss,
+            time_in_force=sl_tif,
             expire_time=None,
             reduce_only=True,
         )
 
         cdef LimitOrder take_profit_order = self.limit(
-            entry_order.instrument_id,
-            Order.opposite_side_c(entry_order.side),
-            entry_order.quantity,
-            take_profit,
-            tp_tif,
+            instrument_id=entry_order.instrument_id,
+            order_side=Order.opposite_side_c(entry_order.side),
+            quantity=entry_order.quantity,
+            price=take_profit,
+            time_in_force=tp_tif,
             expire_time=None,
             reduce_only=True,
         )

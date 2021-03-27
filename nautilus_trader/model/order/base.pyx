@@ -92,13 +92,13 @@ cdef class Order:
     This class should not be used directly, but through its concrete subclasses.
     """
 
-    def __init__(self, OrderInitialized event not None):
+    def __init__(self, OrderInitialized init not None):
         """
         Initialize a new instance of the `Order` class.
 
         Parameters
         ----------
-        event : OrderInitialized
+        init : OrderInitialized
             The order initialized event.
 
         Raises
@@ -107,9 +107,9 @@ cdef class Order:
             If event.strategy_id has a 'NULL' value.
 
         """
-        Condition.true(event.strategy_id.not_null(), f"event.strategy_id.value was 'NULL'")
+        Condition.true(init.strategy_id.not_null(), f"init.strategy_id.value was 'NULL'")
 
-        self._events = [event]    # type: list[OrderEvent]
+        self._events = [init]    # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
@@ -118,25 +118,25 @@ cdef class Order:
             state_parser=OrderStateParser.to_str,
         )
 
-        self.cl_ord_id = event.cl_ord_id
+        self.cl_ord_id = init.cl_ord_id
         self.id = OrderId.null_c()
         self.position_id = PositionId.null_c()
-        self.strategy_id = event.strategy_id
-        self.account_id = None        # Can be None
-        self.execution_id = None      # Can be None
-        self.instrument_id = event.instrument_id
-        self.symbol = event.instrument_id.symbol
-        self.venue = event.instrument_id.venue
-        self.side = event.order_side
-        self.type = event.order_type
-        self.quantity = event.quantity
-        self.timestamp_ns = event.timestamp_ns
-        self.time_in_force = event.time_in_force
+        self.strategy_id = init.strategy_id
+        self.account_id = None    # Can be None
+        self.execution_id = None  # Can be None
+        self.instrument_id = init.instrument_id
+        self.symbol = init.instrument_id.symbol
+        self.venue = init.instrument_id.venue
+        self.side = init.order_side
+        self.type = init.order_type
+        self.quantity = init.quantity
+        self.timestamp_ns = init.timestamp_ns
+        self.time_in_force = init.time_in_force
         self.filled_qty = Quantity()
         self.execution_ns = 0
         self.avg_px = None  # Can be None
         self.slippage = Decimal()
-        self.init_id = event.id
+        self.init_id = init.id
 
     def __eq__(self, Order other) -> bool:
         return self.cl_ord_id.value == other.cl_ord_id.value
@@ -605,7 +605,7 @@ cdef class PassiveOrder(Order):
         if expire_time is not None:
             options[EXPIRE_TIME] = expire_time
 
-        cdef OrderInitialized init_event = OrderInitialized(
+        cdef OrderInitialized init = OrderInitialized(
             cl_ord_id=cl_ord_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -618,7 +618,7 @@ cdef class PassiveOrder(Order):
             options=options,
         )
 
-        super().__init__(init_event)
+        super().__init__(init=init)
 
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
