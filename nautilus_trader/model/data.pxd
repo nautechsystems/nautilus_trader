@@ -26,9 +26,9 @@ cdef class DataType:
     cdef int _hash
 
     cdef readonly type type
-    """The PyObject type of the data.\n\n:returns: `type`"""
+    """The `PyObject` type of the data.\n\n:returns: `type`"""
     cdef readonly dict metadata
-    """The data types metadata.\n\n:returns: `set[str, object]`"""
+    """The data types metadata.\n\n:returns: `dict[str, object]`"""
 
 
 cdef class GenericData(Data):

@@ -47,10 +47,12 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         """
         Initialize a new instance of the `BacktestDataProducer` class.
 
+        Parameters
+        ----------
         instruments : list[Instrument]
             The instruments for the data client.
-        venue : Venue
-            The venue for the data client.
+        name : str
+            The name of the data client.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
