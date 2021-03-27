@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import orjson
+import pytest
 
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
@@ -29,6 +30,7 @@ def _fix_ids(r):
     )
 
 
+@pytest.mark.skip
 def test_betfair_orderbook(betfair_data_client, provider):
     provider.search_markets(market_filter={"market_id": "1.180737206"})
 
