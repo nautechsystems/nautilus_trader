@@ -30,7 +30,6 @@ cdef str RES
 
 
 cpdef enum LogLevel:
-    UNDEFINED = 0,  # Invalid value
     VERBOSE = 1,
     DEBUG = 2,
     INFO = 3,

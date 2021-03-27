@@ -85,7 +85,7 @@ cdef class QuoteTickDataWrangler:
         self.instrument = instrument
 
         self.processed_data = []
-        self.resolution = BarAggregation.UNDEFINED
+        self.resolution = BarAggregation.DAY
 
     def pre_process(self, int instrument_indexer, random_seed=None):
         """

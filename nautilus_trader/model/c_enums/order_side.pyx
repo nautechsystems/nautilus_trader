@@ -22,16 +22,16 @@ cdef class OrderSideParser:
         elif value == 2:
             return "SELL"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderSide from_str(str value):
+    cdef OrderSide from_str(str value) except *:
         if value == "BUY":
             return OrderSide.BUY
         elif value == "SELL":
             return OrderSide.SELL
         else:
-            return OrderSide.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

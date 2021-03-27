@@ -173,19 +173,7 @@ cdef class OrderInitialized(OrderEvent):
             The order initialization options. Contains mappings for specific
             order parameters.
 
-        Raises
-        ------
-        ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If order_type is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
-
         """
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.not_equal(order_type, OrderType.UNDEFINED, "order_type", "UNDEFINED")
-        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         super().__init__(
             cl_ord_id,
             OrderId.null_c(),  # Pending assignment by exchange/broker
@@ -843,8 +831,6 @@ cdef class OrderFilled(OrderEvent):
         """
         if info is None:
             info = {}
-        Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         super().__init__(
             cl_ord_id,
             order_id,

@@ -58,13 +58,10 @@ class PositionTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-    def test_side_from_order_side_given_undefined_raises_value_error(self):
+    def test_side_from_order_side_given_invalid_value_returns_none(self):
         # Arrange
         # Act
-        # Assert
-        self.assertRaises(
-            ValueError, Position.side_from_order_side, OrderSide.UNDEFINED
-        )
+        self.assertRaises(ValueError, Position.side_from_order_side, 0)
 
     @parameterized.expand(
         [

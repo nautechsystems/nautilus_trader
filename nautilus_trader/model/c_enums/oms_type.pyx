@@ -22,16 +22,16 @@ cdef class OMSTypeParser:
         elif value == 2:
             return "HEDGING"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OMSType from_str(str value):
+    cdef OMSType from_str(str value) except *:
         if value == "NETTING":
             return OMSType.NETTING
         elif value == "HEDGING":
             return OMSType.HEDGING
         else:
-            return OMSType.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

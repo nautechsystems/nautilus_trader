@@ -150,10 +150,6 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
-        ValueError
             If time_in_force is other than GTC, IOC or FOK.
 
         """
@@ -214,10 +210,6 @@ cdef class OrderFactory:
         ------
         ValueError
             If quantity is not positive (> 0).
-        ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is GTD expire_time is None.
         ValueError
@@ -282,10 +274,6 @@ cdef class OrderFactory:
         ------
         ValueError
             If quantity is not positive (> 0).
-        ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is GTD expire_time is None.
 
@@ -353,10 +341,6 @@ cdef class OrderFactory:
         ------
         ValueError
             If quantity is not positive (> 0).
-        ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is GTD and expire_time is None.
         ValueError

@@ -38,7 +38,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         int period_er,
         int period_alpha_fast,
         int period_alpha_slow,
-        PriceType price_type=PriceType.UNDEFINED,
+        PriceType price_type=PriceType.LAST,
     ):
         """
         Initialize a new instance of the `AdaptiveMovingAverage` class.

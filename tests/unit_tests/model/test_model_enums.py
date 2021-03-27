@@ -48,10 +48,19 @@ from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
 
 
 class TestAggressorSide:
+    def test_aggressor_side_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            AggressorSideParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            AggressorSideParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [AggressorSide.UNDEFINED, "UNDEFINED"],
             [AggressorSide.BUY, "BUY"],
             [AggressorSide.SELL, "SELL"],
         ],
@@ -67,13 +76,11 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", AggressorSide.UNDEFINED],
-            ["UNDEFINED", AggressorSide.UNDEFINED],
             ["BUY", AggressorSide.BUY],
             ["SELL", AggressorSide.SELL],
         ],
     )
-    def test_order_side_from_str(self, string, expected):
+    def test_aggressor_side_from_str(self, string, expected):
         # Arrange
         # Act
         result = AggressorSideParser.from_str_py(string)
@@ -83,10 +90,19 @@ class TestAggressorSide:
 
 
 class TestAssetClass:
+    def test_asset_class_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            AssetClassParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            AssetClassParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [AssetClass.UNDEFINED, "UNDEFINED"],
             [AssetClass.FX, "FX"],
             [AssetClass.STOCK, "STOCK"],
             [AssetClass.COMMODITY, "COMMODITY"],
@@ -107,8 +123,6 @@ class TestAssetClass:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", AssetClass.UNDEFINED],
-            ["UNDEFINED", AssetClass.UNDEFINED],
             ["FX", AssetClass.FX],
             ["STOCK", AssetClass.STOCK],
             ["COMMODITY", AssetClass.COMMODITY],
@@ -128,10 +142,19 @@ class TestAssetClass:
 
 
 class TestAssetType:
+    def test_asset_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            AssetTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            AssetTypeParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [AssetType.UNDEFINED, "UNDEFINED"],
             [AssetType.SPOT, "SPOT"],
             [AssetType.SWAP, "SWAP"],
             [AssetType.FUTURE, "FUTURE"],
@@ -152,8 +175,6 @@ class TestAssetType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", AssetType.UNDEFINED],
-            ["UNDEFINED", AssetType.UNDEFINED],
             ["SPOT", AssetType.SPOT],
             ["SWAP", AssetType.SWAP],
             ["FUTURE", AssetType.FUTURE],
@@ -173,10 +194,19 @@ class TestAssetType:
 
 
 class TestBarAggregation:
+    def test_bar_aggregation_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            BarAggregationParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            BarAggregationParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [BarAggregation.UNDEFINED, "UNDEFINED"],
             [BarAggregation.TICK, "TICK"],
             [BarAggregation.TICK_IMBALANCE, "TICK_IMBALANCE"],
             [BarAggregation.TICK_RUNS, "TICK_RUNS"],
@@ -203,8 +233,6 @@ class TestBarAggregation:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", BarAggregation.UNDEFINED],
-            ["UNDEFINED", BarAggregation.UNDEFINED],
             ["TICK", BarAggregation.TICK],
             ["TICK_IMBALANCE", BarAggregation.TICK_IMBALANCE],
             ["TICK_RUNS", BarAggregation.TICK_RUNS],
@@ -230,10 +258,19 @@ class TestBarAggregation:
 
 
 class TestCurrencyType:
+    def test_currency_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            CurrencyTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            CurrencyTypeParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [CurrencyType.UNDEFINED, "UNDEFINED"],
             [CurrencyType.CRYPTO, "CRYPTO"],
             [CurrencyType.FIAT, "FIAT"],
         ],
@@ -249,8 +286,6 @@ class TestCurrencyType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", CurrencyType.UNDEFINED],
-            ["UNDEFINED", CurrencyType.UNDEFINED],
             ["CRYPTO", CurrencyType.CRYPTO],
             ["FIAT", CurrencyType.FIAT],
         ],
@@ -265,6 +300,16 @@ class TestCurrencyType:
 
 
 class TestLiquiditySide:
+    def test_liquidity_side_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            LiquiditySideParser.to_str_py(9)
+
+        with pytest.raises(ValueError):
+            LiquiditySideParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -284,7 +329,6 @@ class TestLiquiditySide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", LiquiditySide.NONE],
             ["NONE", LiquiditySide.NONE],
             ["MAKER", LiquiditySide.MAKER],
             ["TAKER", LiquiditySide.TAKER],
@@ -300,10 +344,19 @@ class TestLiquiditySide:
 
 
 class TestOMSType:
+    def test_oms_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            OMSTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            OMSTypeParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OMSType.UNDEFINED, "UNDEFINED"],
             [OMSType.NETTING, "NETTING"],
             [OMSType.HEDGING, "HEDGING"],
         ],
@@ -319,8 +372,6 @@ class TestOMSType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", OMSType.UNDEFINED],
-            ["UNDEFINED", OMSType.UNDEFINED],
             ["NETTING", OMSType.NETTING],
             ["HEDGING", OMSType.HEDGING],
         ],
@@ -335,10 +386,19 @@ class TestOMSType:
 
 
 class TestOrderSide:
+    def test_order_side_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            OrderSideParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            OrderSideParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderSide.UNDEFINED, "UNDEFINED"],
             [OrderSide.BUY, "BUY"],
             [OrderSide.SELL, "SELL"],
         ],
@@ -354,8 +414,6 @@ class TestOrderSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", OrderSide.UNDEFINED],
-            ["UNDEFINED", OrderSide.UNDEFINED],
             ["BUY", OrderSide.BUY],
             ["SELL", OrderSide.SELL],
         ],
@@ -370,10 +428,19 @@ class TestOrderSide:
 
 
 class TestOrderState:
+    def test_order_state_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            OrderStateParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            OrderStateParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderState.UNDEFINED, "UNDEFINED"],
             [OrderState.INITIALIZED, "INITIALIZED"],
             [OrderState.INVALID, "INVALID"],
             [OrderState.DENIED, "DENIED"],
@@ -398,8 +465,6 @@ class TestOrderState:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", OrderState.UNDEFINED],
-            ["UNDEFINED", OrderState.UNDEFINED],
             ["INITIALIZED", OrderState.INITIALIZED],
             ["INVALID", OrderState.INVALID],
             ["DENIED", OrderState.DENIED],
@@ -423,10 +488,19 @@ class TestOrderState:
 
 
 class TestOrderType:
+    def test_order_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            OrderTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            OrderTypeParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderType.UNDEFINED, "UNDEFINED"],
             [OrderType.MARKET, "MARKET"],
             [OrderType.LIMIT, "LIMIT"],
             [OrderType.STOP_MARKET, "STOP_MARKET"],
@@ -444,8 +518,6 @@ class TestOrderType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", OrderType.UNDEFINED],
-            ["UNDEFINED", OrderType.UNDEFINED],
             ["MARKET", OrderType.MARKET],
             ["LIMIT", OrderType.LIMIT],
             ["STOP_MARKET", OrderType.STOP_MARKET],
@@ -462,6 +534,16 @@ class TestOrderType:
 
 
 class TestOrderBookLevel:
+    def test_orderbook_level_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            OrderBookLevelParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            OrderBookLevelParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -500,6 +582,16 @@ class TestOrderBookLevel:
 
 
 class TestOrderBookOperationType:
+    def test_orderbook_op_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            OrderBookOperationTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            OrderBookOperationTypeParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
@@ -538,10 +630,19 @@ class TestOrderBookOperationType:
 
 
 class TestPositionSide:
+    def test_position_side_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            PositionSideParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            PositionSideParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [PositionSide.UNDEFINED, "UNDEFINED"],
             [PositionSide.FLAT, "FLAT"],
             [PositionSide.LONG, "LONG"],
             [PositionSide.SHORT, "SHORT"],
@@ -558,8 +659,6 @@ class TestPositionSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", PositionSide.UNDEFINED],
-            ["UNDEFINED", PositionSide.UNDEFINED],
             ["FLAT", PositionSide.FLAT],
             ["LONG", PositionSide.LONG],
             ["SHORT", PositionSide.SHORT],
@@ -575,10 +674,19 @@ class TestPositionSide:
 
 
 class TestPriceType:
+    def test_price_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            PriceTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            PriceTypeParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [PriceType.UNDEFINED, "UNDEFINED"],
             [PriceType.BID, "BID"],
             [PriceType.ASK, "ASK"],
             [PriceType.MID, "MID"],
@@ -596,8 +704,6 @@ class TestPriceType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", PriceType.UNDEFINED],
-            ["UNDEFINED", PriceType.UNDEFINED],
             ["ASK", PriceType.ASK],
             ["MID", PriceType.MID],
             ["LAST", PriceType.LAST],
@@ -613,10 +719,19 @@ class TestPriceType:
 
 
 class TestTimeInForce:
+    def test_time_in_force_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            TimeInForceParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            TimeInForceParser.from_str_py("")
+
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [TimeInForce.UNDEFINED, "UNDEFINED"],
             [TimeInForce.DAY, "DAY"],
             [TimeInForce.GTC, "GTC"],
             [TimeInForce.IOC, "IOC"],
@@ -635,8 +750,6 @@ class TestTimeInForce:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["", TimeInForce.UNDEFINED],
-            ["UNDEFINED", TimeInForce.UNDEFINED],
             ["DAY", TimeInForce.DAY],
             ["GTC", TimeInForce.GTC],
             ["IOC", TimeInForce.IOC],

@@ -44,10 +44,10 @@ cdef class BarAggregationParser:
         elif value == 13:
             return "DAY"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef BarAggregation from_str(str value):
+    cdef BarAggregation from_str(str value) except *:
         if value == "TICK":
             return BarAggregation.TICK
         elif value == "TICK_IMBALANCE":
@@ -75,7 +75,7 @@ cdef class BarAggregationParser:
         elif value == "DAY":
             return BarAggregation.DAY
         else:
-            return BarAggregation.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

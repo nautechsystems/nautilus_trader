@@ -427,7 +427,6 @@ cdef class SimulatedExchange:
     cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type):
         Condition.not_none(from_currency, "from_currency")
         Condition.not_none(to_currency, "to_currency")
-        Condition.not_equal(price_type, PriceType.UNDEFINED, "price_type", "UNDEFINED")
 
         return self.xrate_calculator.get_rate(
             from_currency=from_currency,

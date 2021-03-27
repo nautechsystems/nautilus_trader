@@ -32,10 +32,10 @@ cdef class AssetTypeParser:
         elif value == 7:
             return "WARRANT"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef AssetType from_str(str value):
+    cdef AssetType from_str(str value) except *:
         if value == "SPOT":
             return AssetType.SPOT
         elif value == "SWAP":
@@ -51,7 +51,7 @@ cdef class AssetTypeParser:
         elif value == "WARRANT":
             return AssetType.WARRANT
         else:
-            return AssetType.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

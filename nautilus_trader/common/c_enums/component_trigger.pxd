@@ -15,7 +15,6 @@
 
 
 cpdef enum ComponentTrigger:
-    UNDEFINED = 0,  # Invalid value
     START = 1,
     RUNNING = 2,
     STOP = 3,
@@ -32,4 +31,4 @@ cdef class ComponentTriggerParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef ComponentTrigger from_str(str value)
+    cdef ComponentTrigger from_str(str value) except *

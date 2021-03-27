@@ -24,16 +24,18 @@ cdef class OrderBookLevelParser:
         elif value == 3:
             return "L3"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderBookLevel from_str(str value):
+    cdef OrderBookLevel from_str(str value) except *:
         if value == "L1":
             return OrderBookLevel.L1
         elif value == "L2":
             return OrderBookLevel.L2
         elif value == "L3":
             return OrderBookLevel.L3
+        else:
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

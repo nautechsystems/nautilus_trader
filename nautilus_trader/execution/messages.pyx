@@ -57,14 +57,7 @@ cdef class OrderStatusReport:
         timestamp_ns : int64
             The Unix timestamp (nanos) of the report.
 
-        Raises
-        ------
-        ValueError
-            If order_state is UNDEFINED.
-
         """
-        Condition.not_equal(order_state, OrderState.UNDEFINED, "order_state", "UNDEFINED")
-
         self.cl_ord_id = cl_ord_id
         self.order_id = order_id
         self.order_state = order_state
@@ -97,14 +90,7 @@ cdef class PositionStatusReport:
         timestamp_ns : int64
             The Unix timestamp (nanos) of the report.
 
-        Raises
-        ------
-        ValueError
-            If position_side is UNDEFINED.
-
         """
-        Condition.not_equal(position_side, PositionSide.UNDEFINED, "position_side", "UNDEFINED")
-
         self.instrument_id = instrument_id
         self.side = position_side
         self.qty = qty

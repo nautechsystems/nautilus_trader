@@ -15,7 +15,6 @@
 
 
 cpdef enum TimeInForce:
-    UNDEFINED = 0,  # Invalid value
     DAY = 1,
     GTC = 2,
     IOC = 3,
@@ -29,4 +28,4 @@ cdef class TimeInForceParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef TimeInForce from_str(str value)
+    cdef TimeInForce from_str(str value) except *

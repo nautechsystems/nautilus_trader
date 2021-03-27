@@ -26,4 +26,4 @@ cdef class OrderBookLevelParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderBookLevel from_str(str value)
+    cdef OrderBookLevel from_str(str value) except *
