@@ -236,7 +236,7 @@ value_bars  = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 
 Bars can be either internally or externally aggregated (alternative bar types are
 only available by internal aggregation). External aggregation is normally for
-standard bar periods as available from the provider through an integrations
+standard bar periods as available from the data client through an integrations
 adapter.
 
 Custom data types can also be requested through a users custom handler, and fed

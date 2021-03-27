@@ -447,7 +447,7 @@ class CCXTDataClientTests(unittest.TestCase):
             handler = ObjectStorer()
 
             request = DataRequest(
-                provider=BINANCE.value,
+                client_name=BINANCE.value,
                 data_type=DataType(
                     TradeTick,
                     metadata={
@@ -494,7 +494,7 @@ class CCXTDataClientTests(unittest.TestCase):
             bar_type = BarType(instrument_id=ETHUSDT, bar_spec=bar_spec)
 
             request = DataRequest(
-                provider=BINANCE.value,
+                client_name=BINANCE.value,
                 data_type=DataType(
                     Bar,
                     metadata={

@@ -721,23 +721,23 @@ cdef class TradingStrategy(Component):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, str provider, DataType data_type) except *:
+    cpdef void subscribe_data(self, str client_name, DataType data_type) except *:
         """
         Subscribe to data of the given data type.
 
         Parameters
         ----------
-        provider : str
-            The data provider name (normally corresponding to the data client name).
+        client_name : str
+            The data client name.
         data_type : DataType
             The data type to subscribe to.
 
         """
-        Condition.valid_string(provider, "provider")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.valid_string(client_name, "client_name")
+        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
-            provider=provider,
+            client_name=client_name,
             data_type=data_type,
             handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
@@ -760,7 +760,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
@@ -809,13 +809,13 @@ cdef class TradingStrategy(Component):
             If delay is not None and interval is None.
 
         """
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "self._data_engine")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval, "interval")
 
         cdef Subscribe command = Subscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(OrderBook, metadata={
                 INSTRUMENT_ID: instrument_id,
                 LEVEL: level,
@@ -841,10 +841,10 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
@@ -867,7 +867,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
@@ -887,10 +887,10 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
-            provider=bar_type.venue.value,
+            client_name=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
@@ -899,23 +899,23 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_data(self, str provider, DataType data_type) except *:
+    cpdef void unsubscribe_data(self, str client_name, DataType data_type) except *:
         """
         Unsubscribe from data of the given data type.
 
         Parameters
         ----------
-        provider : str
-            The data provider name (normally corresponding to the data client name).
+        client_name : str
+            The data client name.
         data_type : DataType
             The data type to unsubscribe from.
 
         """
-        Condition.valid_string(provider, "provider")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.valid_string(client_name, "client_name")
+        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=provider,
+            client_name=client_name,
             data_type=data_type,
             handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
@@ -935,10 +935,10 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
@@ -962,11 +962,11 @@ cdef class TradingStrategy(Component):
             The order book snapshot interval in seconds.
 
         """
-        Condition.not_none(self._data_engine, "data_client")
         Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(OrderBook, metadata={
                 INSTRUMENT_ID: instrument_id,
                 INTERVAL: interval,
@@ -989,10 +989,10 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
@@ -1015,7 +1015,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
@@ -1038,7 +1038,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            provider=bar_type.venue.value,
+            client_name=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
@@ -1049,23 +1049,23 @@ cdef class TradingStrategy(Component):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, str provider, DataType data_type) except *:
+    cpdef void request_data(self, str client_name, DataType data_type) except *:
         """
-        Request custom data for the given data type from the given provider.
+        Request custom data for the given data type from the given data client.
 
         Parameters
         ----------
-        provider : str
+        client_name : str
             The data client name.
         data_type : DataType
             The data type for the request.
 
         """
-        Condition.valid_string(provider, "provider")
+        Condition.valid_string(client_name, "client_name")
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef DataRequest request = DataRequest(
-            provider=provider,
+            client_name=client_name,
             data_type=data_type,
             callback=self.handle_data,
             request_id=self.uuid_factory.generate(),
@@ -1106,7 +1106,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(QuoteTick, metadata={
                 INSTRUMENT_ID: instrument_id,
                 FROM_DATETIME: from_datetime,
@@ -1152,7 +1152,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            provider=instrument_id.venue.value,
+            client_name=instrument_id.venue.value,
             data_type=DataType(TradeTick, metadata={
                 INSTRUMENT_ID: instrument_id,
                 FROM_DATETIME: from_datetime,
@@ -1198,7 +1198,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            provider=bar_type.venue.value,
+            client_name=bar_type.venue.value,
             data_type=DataType(Bar, metadata={
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: from_datetime,
