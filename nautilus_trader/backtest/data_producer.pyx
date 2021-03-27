@@ -25,7 +25,7 @@ import pandas as pd
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -33,7 +33,7 @@ from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.core.functions cimport format_bytes
-from nautilus_trader.core.functions cimport get_size_of
+from nautilus_trader.core.functions import get_size_of  # Not cimport
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.engine cimport DataEngine
@@ -53,10 +53,6 @@ cdef class DataProducerFacade:
     """
     Provides a read-only facade for data producers.
     """
-
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
         """Abstract method (implement in subclass)."""
@@ -242,7 +238,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         return self._log
 
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
+    def setup(self, int64_t start_ns, int64_t stop_ns):
         """
         Setup tick data for a backtest run.
 
@@ -261,7 +257,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
-        cdef long total_size = 0
+        cdef uint64_t total_size = 0
 
         cdef datetime start = nanos_to_unix_dt(start_ns)
         cdef datetime stop = nanos_to_unix_dt(stop_ns)
@@ -473,7 +469,7 @@ cdef class CachedProducer(DataProducerFacade):
 
         self._create_data_cache()
 
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
+    def setup(self, int64_t start_ns, int64_t stop_ns):
         """
         Setup tick data for a backtest run.
 

@@ -42,7 +42,7 @@ from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
-from nautilus_trader.core.functions cimport get_size_of
+from nautilus_trader.core.functions import get_size_of  # Not cimport
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine

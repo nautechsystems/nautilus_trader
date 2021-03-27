@@ -20,13 +20,14 @@ import cython
 
 from libc.math cimport pow
 from libc.math cimport sqrt
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef int bisect_double_left(list a, double x, int lo=0, hi=None) except *:
+cpdef inline int bisect_double_left(list a, double x, int lo=0, hi=None) except *:
     """
     Return the index where to insert item x in list a, assuming a is sorted.
     The return value i is such that all e in a[:i] have e <= x, and all e in
@@ -34,6 +35,10 @@ cpdef int bisect_double_left(list a, double x, int lo=0, hi=None) except *:
     insert just after the rightmost x already there.
     Optional args lo (default 0) and hi (default len(a)) bound the
     slice of a to be searched.
+
+    Returns
+    -------
+    int
 
     Raises
     ------
@@ -59,7 +64,7 @@ cpdef int bisect_double_left(list a, double x, int lo=0, hi=None) except *:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef int bisect_double_right(list a, double x, int lo=0, hi=None) except *:
+cpdef inline int bisect_double_right(list a, double x, int lo=0, hi=None) except *:
     """
     Return the index where to insert item x in list a, assuming a is sorted.
     The return value i is such that all e in a[:i] have e <= x, and all e in
@@ -67,6 +72,10 @@ cpdef int bisect_double_right(list a, double x, int lo=0, hi=None) except *:
     insert just after the rightmost x already there.
     Optional args lo (default 0) and hi (default len(a)) bound the
     slice of a to be searched.
+
+    Returns
+    -------
+    int
 
     Raises
     ------
@@ -246,12 +255,25 @@ cpdef inline double basis_points_as_percentage(double basis_points) except *:
 
 
 # Closures in cpdef functions not yet supported (10/02/20)
-cdef long get_size_of(obj) except *:
+def get_size_of(obj):
+    """
+    Return the bytes size in memory of the given object.
+
+    Parameters
+    ----------
+    obj : object
+        The object to analyze.
+
+    Returns
+    -------
+    uint64
+
+    """
     Condition.not_none(obj, "obj")
 
     cdef set marked = {id(obj)}
     obj_q = [obj]
-    cdef long size = 0
+    cdef uint64_t size = 0
 
     while obj_q:
         size += sum(map(sys.getsizeof, obj_q))

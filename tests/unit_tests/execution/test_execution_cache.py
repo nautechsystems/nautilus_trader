@@ -267,14 +267,14 @@ class ExecutionCacheTests(unittest.TestCase):
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
-        order_filled = TestStubs.event_order_filled(
+        fill = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             last_px=Price("1.00000"),
         )
 
-        position = Position(order_filled)
+        position = Position(fill=fill)
 
         # Act
         self.cache.add_position(position)
@@ -319,14 +319,14 @@ class ExecutionCacheTests(unittest.TestCase):
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
-        order_filled = TestStubs.event_order_filled(
+        fill = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             last_px=Price("1.00000"),
         )
 
-        position = Position(order_filled)
+        position = Position(fill=fill)
         self.cache.add_position(position)
 
         # Act
@@ -347,10 +347,10 @@ class ExecutionCacheTests(unittest.TestCase):
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(event=TestStubs.event_order_submitted(order))
         self.cache.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(event=TestStubs.event_order_accepted(order))
 
         # Act
         self.cache.update_order(order)
@@ -397,17 +397,17 @@ class ExecutionCacheTests(unittest.TestCase):
 
         position_id = PositionId("P-1")
         self.cache.add_order(order, position_id)
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(event=TestStubs.event_order_submitted(order))
         self.cache.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(event=TestStubs.event_order_accepted(order))
         self.cache.update_order(order)
 
-        order.apply(
-            TestStubs.event_order_filled(
-                order, instrument=AUDUSD_SIM, last_px=Price("1.00001")
-            ),
+        fill = TestStubs.event_order_filled(
+            order, instrument=AUDUSD_SIM, last_px=Price("1.00001")
         )
+
+        order.apply(event=fill)
 
         # Act
         self.cache.update_order(order)
@@ -458,14 +458,14 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order1.apply(TestStubs.event_order_accepted(order1))
         self.cache.update_order(order1)
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             last_px=Price("1.00001"),
         )
 
-        position = Position(order1_filled)
+        position = Position(fill=fill1)
 
         # Act
         self.cache.add_position(position)
@@ -518,14 +518,14 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order1.apply(TestStubs.event_order_accepted(order1))
         self.cache.update_order(order1)
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             last_px=Price("1.00001"),
         )
 
-        position = Position(order1_filled)
+        position = Position(fill=fill1)
         self.cache.add_position(position)
 
         order2 = self.strategy.order_factory.market(
@@ -546,7 +546,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price("1.00001"),
         )
 
-        position.apply(order2_filled)
+        position.apply(fill=order2_filled)
 
         # Act
         self.cache.update_position(position)
@@ -626,14 +626,14 @@ class ExecutionCacheTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
         self.cache.update_order(order1)
 
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
             last_px=Price("1.00000"),
         )
 
-        position1 = Position(order1_filled)
+        position1 = Position(fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
@@ -676,13 +676,13 @@ class ExecutionCacheTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
         self.cache.update_order(order1)
 
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
             last_px=Price("1.00000"),
         )
-        position1 = Position(order1_filled)
+        position1 = Position(fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
@@ -729,14 +729,14 @@ class ExecutionCacheTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
         self.cache.update_order(order1)
 
-        order1_filled = TestStubs.event_order_filled(
+        fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
             last_px=Price("1.00000"),
         )
 
-        position1 = Position(order1_filled)
+        position1 = Position(fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 

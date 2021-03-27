@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -35,4 +37,4 @@ cdef class BacktestDataContainer:
     cpdef void check_integrity(self) except *
     cpdef bint has_quote_data(self, InstrumentId instrument_id) except *
     cpdef bint has_trade_data(self, InstrumentId instrument_id) except *
-    cpdef long total_data_size(self)
+    cpdef int64_t total_data_size(self)

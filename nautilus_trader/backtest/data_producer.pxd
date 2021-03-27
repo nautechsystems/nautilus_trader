@@ -33,7 +33,6 @@ cdef class DataProducerFacade:
     cdef readonly int64_t max_timestamp_ns
     cdef readonly bint has_data
 
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *
     cpdef void reset(self) except *
     cpdef Data next(self)
 
@@ -69,7 +68,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef TradeTick _next_trade_tick
 
     cpdef LoggerAdapter get_logger(self)
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *
     cpdef void reset(self) except *
     cpdef void clear(self) except *
     cpdef Data next(self)
@@ -90,7 +88,6 @@ cdef class CachedProducer(DataProducerFacade):
     cdef int _init_start_tick_index
     cdef int _init_stop_tick_index
 
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *
     cpdef void reset(self) except *
     cpdef Data next(self)
     cdef void _create_data_cache(self) except *

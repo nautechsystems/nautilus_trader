@@ -115,7 +115,6 @@ cdef class Order:
     cdef inline OrderSide flatten_side_c(PositionSide side) except *
 
     cpdef void apply(self, OrderEvent event) except *
-    cdef void apply_c(self, OrderEvent event) except *
 
     cdef void _invalid(self, OrderInvalid event) except *
     cdef void _denied(self, OrderDenied event) except *

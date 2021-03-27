@@ -148,12 +148,12 @@ cdef class Order:
         return hash(self.cl_ord_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
+        cdef str id_string = f", id={self.id.value})" if self.id.not_null() else ")"
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id.value}, "
-                f"{id_string}"
+                f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
-                f"{self.status_string_c()})")
+                f"cl_ord_id={self.cl_ord_id.value}"
+                f"{id_string}")
 
     cdef OrderState state_c(self) except *:
         return <OrderState>self._fsm.state
@@ -432,9 +432,6 @@ cdef class Order:
             If event is OrderFilled and event.execution_id already applied to the order.
 
         """
-        self.apply_c(event)
-
-    cdef void apply_c(self, OrderEvent event) except *:
         Condition.not_none(event, "event")
         Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
 

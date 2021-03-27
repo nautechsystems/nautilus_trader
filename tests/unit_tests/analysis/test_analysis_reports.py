@@ -236,10 +236,10 @@ class ReportProviderTests(unittest.TestCase):
             last_px=Price("1.00010"),
         )
 
-        position1 = Position(fill1)
+        position1 = Position(fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(fill1)
+        position2 = Position(fill=fill1)
         position2.apply(fill2)
 
         positions = [position1, position2]
