@@ -90,10 +90,14 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         Raises
         ------
         """
+
+        self._client = client  # type: APIClient
+        self._client.login()
+
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
             logger=logger,
-            load_all=False,
+            load_all=True,
             market_filter=market_filter
         )
         super().__init__(
@@ -102,8 +106,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             clock,
             logger,
         )
-
-        self._client = client  # type: APIClient
         self._instrument_provider = instrument_provider
         self._stream = BetfairMarketStreamClient(
             client=self._client, logger=logger, message_handler=self._on_market_update,

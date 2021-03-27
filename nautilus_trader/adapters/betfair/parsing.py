@@ -59,7 +59,6 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
         # Used to de-dupe orders on betfair server side
         "customer_ref": order.cl_ord_id.value,
         "customer_strategy_ref": f"{command.account_id}-{command.strategy_id}",
-        "async": True,  # Order updates will be sent via stream API
         "instructions": [
             place_instruction(
                 order_type="LIMIT",
@@ -212,6 +211,7 @@ def build_market_update_messages(
                                 volume=volume,
                                 side=B2N_MARKET_STREAM_SIDE[side],
                             ),
+                            timestamp_ns=millis_to_nanos(raw["pt"]),
                         )
                     )
             ob_update = OrderBookOperations(

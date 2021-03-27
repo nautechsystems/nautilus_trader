@@ -88,10 +88,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             The logger for the client.
 
         """
+        self._client = client # type: betfairlightweight.APIClient
+        self._client.login()
+
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
             logger=logger,
-            load_all=False,
+            load_all=True,
             market_filter=market_filter
         )
 
@@ -107,7 +110,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             }
         )
 
-        self._client = client # type: betfairlightweight.APIClient
+
         self._stream = BetfairOrderStreamClient(
             client=self._client, logger=logger, message_handler=self.handle_order_stream_update,
         )

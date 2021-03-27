@@ -38,7 +38,7 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
-        "connection_timeout": 15.0,  # Timeout for successful connections for all engine clients
+        "connection_timeout": 20.0,  # Timeout for successful connections for all engine clients
         "disconnection_timeout": 15.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 15.0,  # How long to wait after stopping for residual events (secs)
     },
@@ -89,7 +89,7 @@ config = {
 
 strategy = DumbQuoter(
     instrument_filter={"market_id": market_id},
-    trade_size=Decimal("0.05"),
+    trade_size=Decimal(10.0),
     order_id_tag="001",
 )
 
