@@ -1,3 +1,18 @@
+# NautilusTrader 1.113.0 Beta - Release Notes
+
+
+
+## Breaking Changes
+- None
+
+## Enhancements
+- None
+
+## Fixes
+- Removed `UNDEFINED` enum values.
+
+---
+
 # NautilusTrader 1.112.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**
