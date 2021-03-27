@@ -13,6 +13,8 @@ closely with established financial market terminology with reference to the
 FIX5.0 SP2 specification, and CME MDP 3.0.
 
 ## Breaking Changes
+- Move `BarType` into `Bar` as a property.
+- Change signature of `Bar` handling methods due to above.
 - Remove `Instrument.leverage` (incorrect place for concept).
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
 - Change serialization of timestamp datatype to `int64`.
