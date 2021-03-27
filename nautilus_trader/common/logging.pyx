@@ -31,6 +31,7 @@ import scipy
 from nautilus_trader import __version__
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
@@ -117,7 +118,7 @@ cdef class LogMessage:
         LogLevel level,
         LogColor color,
         str text not None,
-        long thread_id=0,
+        int64_t thread_id=0,
     ):
         """
         Initialize a new instance of the `LogMessage` class.
@@ -132,7 +133,7 @@ cdef class LogMessage:
             The log message color.
         text : str
             The log message text.
-        thread_id : long, optional
+        thread_id : int64, optional
             The thread the log message was created on.
 
         """
@@ -238,7 +239,7 @@ cdef class Logger:
         self._log_thread = log_thread
         self._log_to_file = log_to_file
         self._log_file_path = log_file_path
-        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.utc_now_c().date().isoformat()}.log"
+        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.utc_now().date().isoformat()}.log"
         self._log_store = []
         self._logger = logging.getLogger(name)
         self._logger.setLevel(logging.DEBUG)
@@ -493,7 +494,7 @@ cdef class LoggerAdapter:
     ) except *:
         if not self.is_bypassed:
             self._logger.log(LogMessage(
-                self._logger.clock.utc_now_c(),
+                self._logger.clock.utc_now(),
                 level,
                 color,
                 self._format_message(message),
@@ -744,7 +745,7 @@ cdef class LiveLogger(Logger):
             self._queue.put_nowait(message)
         except queue.Full:
             queue_full_msg = LogMessage(
-                timestamp=self.clock.utc_now_c(),
+                timestamp=self.clock.utc_now(),
                 level=LogLevel.WARNING,
                 text=f"LiveLogger: Blocking on `put` as queue full at {self._queue.qsize()} items.",
                 thread_id=threading.current_thread().ident,

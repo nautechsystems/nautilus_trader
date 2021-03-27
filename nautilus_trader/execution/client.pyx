@@ -24,7 +24,6 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class ExecutionClient:
@@ -36,7 +35,7 @@ cdef class ExecutionClient:
 
     def __init__(
         self,
-        Venue venue not None,
+        str name not None,
         AccountId account_id not None,
         ExecutionEngine engine not None,
         Clock clock not None,
@@ -48,8 +47,8 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        venue : Venue
-            The trading venue identifier for the client.
+        name : Venue
+            The data client name.
         account_id : AccountId
             The account identifier for the client.
         engine : ExecutionEngine
@@ -62,24 +61,26 @@ cdef class ExecutionClient:
             The configuration options.
 
         """
+        Condition.valid_string(name, "name")
+        Condition.equal(name, account_id.issuer_as_venue().value, "venue", "account_id.issuer_as_venue()")
+
         if config is None:
             config = {}
-        Condition.equal(venue, account_id.issuer_as_venue(), "venue", "account_id.issuer_as_venue()")
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(config.get("name", f"ExecClient-{venue.value}"), logger)
+        self._log = LoggerAdapter(config.get("name", f"ExecClient-{name}"), logger)
         self._engine = engine
         self._config = config
 
-        self.venue = venue
+        self.name = name
         self.account_id = account_id
         self.is_connected = False
 
         self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}-{self.venue}"
+        return f"{type(self).__name__}-{self.name}"
 
     cpdef void _set_connected(self, bint value=True) except *:
         """

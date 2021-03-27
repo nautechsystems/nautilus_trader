@@ -18,11 +18,9 @@ from datetime import timedelta
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.throttler import Throttler
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestThrottler:
-
     def setup(self):
         # Fixture setup
         self.clock = TestClock()
@@ -91,7 +89,7 @@ class TestThrottler:
         self.throttler.send(item)
 
         # Act: Trigger refresh token time alert
-        events = self.clock.advance_time(UNIX_EPOCH + timedelta(seconds=1))
+        events = self.clock.advance_time(1_000_000_000)
         events[0].handle_py()
 
         # Assert: Remaining items sent

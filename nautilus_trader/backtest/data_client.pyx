@@ -26,6 +26,7 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
@@ -142,7 +143,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        int level,
+        OrderBookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -153,8 +154,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : int
-            The order book data level (L1, L2, L3).
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional

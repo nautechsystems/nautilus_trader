@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
@@ -49,7 +49,7 @@ cdef class AccountState(Event):
         list balances_locked not None,
         dict info not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `AccountState` class.
@@ -68,11 +68,11 @@ cdef class AccountState(Event):
             The additional implementation specific account information.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
-        super().__init__(event_id, event_timestamp)
+        super().__init__(event_id, timestamp_ns)
 
         self.account_id = account_id
         self.balances = balances
@@ -100,7 +100,7 @@ cdef class OrderEvent(Event):
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderEvent` base class.
@@ -113,11 +113,11 @@ cdef class OrderEvent(Event):
             The exchange/broker order identifier.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
-        super().__init__(event_id, event_timestamp)
+        super().__init__(event_id, timestamp_ns)
 
         self.cl_ord_id = cl_ord_id
         self.order_id = order_id
@@ -143,7 +143,7 @@ cdef class OrderInitialized(OrderEvent):
         Quantity quantity not None,
         TimeInForce time_in_force,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
         dict options not None,
     ):
         """
@@ -167,8 +167,8 @@ cdef class OrderInitialized(OrderEvent):
             The order time-in-force.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
         options : dict[str, str]
             The order initialization options. Contains mappings for specific
             order parameters.
@@ -190,7 +190,7 @@ cdef class OrderInitialized(OrderEvent):
             cl_ord_id,
             OrderId.null_c(),  # Pending assignment by exchange/broker
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.cl_ord_id = cl_ord_id
@@ -224,7 +224,7 @@ cdef class OrderInvalid(OrderEvent):
         ClientOrderId cl_ord_id not None,
         str reason not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderInvalid` class.
@@ -237,8 +237,8 @@ cdef class OrderInvalid(OrderEvent):
             The order invalid reason.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         Raises
         ------
@@ -251,7 +251,7 @@ cdef class OrderInvalid(OrderEvent):
             cl_ord_id,
             OrderId.null_c(),  # Never assigned
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.reason = reason
@@ -276,7 +276,7 @@ cdef class OrderDenied(OrderEvent):
         ClientOrderId cl_ord_id not None,
         str reason not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderDenied` class.
@@ -289,8 +289,8 @@ cdef class OrderDenied(OrderEvent):
             The order denied reason.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         Raises
         ------
@@ -303,7 +303,7 @@ cdef class OrderDenied(OrderEvent):
             cl_ord_id,
             OrderId.null_c(),  # Never assigned
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.reason = reason
@@ -325,9 +325,9 @@ cdef class OrderSubmitted(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        datetime submitted_time not None,
+        int64_t submitted_ns,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderSubmitted` class.
@@ -338,23 +338,23 @@ cdef class OrderSubmitted(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        submitted_time : datetime
-            The order submitted time.
+        submitted_ns : int64
+            The Unix timestamp (nanos) when the order was submitted.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         super().__init__(
             cl_ord_id,
             OrderId.null_c(),  # Pending accepted
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
-        self.submitted_time = submitted_time
+        self.submitted_ns = submitted_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -372,10 +372,10 @@ cdef class OrderRejected(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        datetime rejected_time not None,
+        int64_t rejected_ns,
         str reason not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderRejected` class.
@@ -386,14 +386,14 @@ cdef class OrderRejected(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        rejected_time : datetime
+        rejected_ns : int64
             The order rejected time.
         reason : datetime
             The order rejected reason.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         Raises
         ------
@@ -406,11 +406,11 @@ cdef class OrderRejected(OrderEvent):
             cl_ord_id,
             OrderId.null_c(),  # Not assigned on rejection
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
-        self.rejected_time = rejected_time
+        self.rejected_ns = rejected_ns
         self.reason = reason
 
     def __repr__(self) -> str:
@@ -439,9 +439,9 @@ cdef class OrderAccepted(OrderEvent):
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
-        datetime accepted_time not None,
+        int64_t accepted_ns,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderAccepted` class.
@@ -454,23 +454,23 @@ cdef class OrderAccepted(OrderEvent):
             The client order identifier.
         order_id : OrderId
             The exchange/broker order identifier.
-        accepted_time : datetime
+        accepted_ns : int64
             The order accepted time.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         super().__init__(
             cl_ord_id,
             order_id,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
-        self.accepted_time = accepted_time
+        self.accepted_ns = accepted_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -491,11 +491,11 @@ cdef class OrderCancelReject(OrderEvent):
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
-        datetime rejected_time not None,
+        int64_t rejected_ns,
         str response_to not None,
         str reason not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderCancelReject` class.
@@ -508,7 +508,7 @@ cdef class OrderCancelReject(OrderEvent):
             The client order identifier.
         order_id : OrderId
             The exchange/broker order identifier.
-        rejected_time : datetime
+        rejected_ns : datetime
             The order cancel reject time.
         response_to : str
             The order cancel reject response.
@@ -516,8 +516,8 @@ cdef class OrderCancelReject(OrderEvent):
             The order cancel reject reason.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         Raises
         ------
@@ -533,11 +533,11 @@ cdef class OrderCancelReject(OrderEvent):
             cl_ord_id,
             order_id,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
-        self.rejected_time = rejected_time
+        self.rejected_ns = rejected_ns
         self.response_to = response_to
         self.reason = reason
 
@@ -561,9 +561,9 @@ cdef class OrderCancelled(OrderEvent):
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
-        datetime cancelled_time not None,
+        int64_t cancelled_ns,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderCancelled` class.
@@ -576,23 +576,23 @@ cdef class OrderCancelled(OrderEvent):
             The client order identifier.
         order_id : OrderId
             The exchange/broker order identifier.
-        cancelled_time : datetime
+        cancelled_ns : int64
             The event order cancelled time.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         super().__init__(
             cl_ord_id,
             order_id,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
-        self.cancelled_time = cancelled_time
+        self.cancelled_ns = cancelled_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -615,9 +615,9 @@ cdef class OrderAmended(OrderEvent):
         OrderId order_id not None,
         Quantity quantity not None,
         Price price not None,
-        datetime amended_time not None,
+        int64_t amended_ns,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderAmended` class.
@@ -634,25 +634,25 @@ cdef class OrderAmended(OrderEvent):
             The orders current quantity.
         price : Price
             The orders current price.
-        amended_time : datetime
+        amended_ns : int64
             The amended time.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         super().__init__(
             cl_ord_id,
             order_id,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
         self.quantity = quantity
         self.price = price
-        self.amended_time = amended_time
+        self.amended_ns = amended_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -674,9 +674,9 @@ cdef class OrderExpired(OrderEvent):
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
-        datetime expired_time not None,
+        int64_t expired_ns,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderExpired` class.
@@ -689,23 +689,23 @@ cdef class OrderExpired(OrderEvent):
             The client order identifier.
         order_id : OrderId
             The exchange/broker order identifier.
-        expired_time : datetime
+        expired_ns : int64
             The order expired time.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         super().__init__(
             cl_ord_id,
             order_id,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
-        self.expired_time = expired_time
+        self.expired_ns = expired_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -725,9 +725,9 @@ cdef class OrderTriggered(OrderEvent):
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
-        datetime triggered_time not None,
+        int64_t triggered_ns,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderTriggered` class.
@@ -740,23 +740,23 @@ cdef class OrderTriggered(OrderEvent):
             The client order identifier.
         order_id : OrderId
             The exchange/broker order identifier.
-        triggered_time : datetime
+        triggered_ns : int64
             The order triggered time.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         super().__init__(
             cl_ord_id,
             order_id,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
-        self.triggered_time = triggered_time
+        self.triggered_ns = triggered_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -781,17 +781,17 @@ cdef class OrderFilled(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
-        Quantity fill_qty not None,
+        Quantity last_qty not None,
+        Price last_px not None,
         Quantity cum_qty not None,
         Quantity leaves_qty not None,
-        Price fill_price not None,
         Currency currency not None,
         bint is_inverse,
         Money commission not None,
         LiquiditySide liquidity_side,
-        datetime execution_time not None,
+        int64_t execution_ns,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
         dict info=None,
     ):
         """
@@ -815,14 +815,14 @@ cdef class OrderFilled(OrderEvent):
             The instrument identifier.
         order_side : OrderSide (Enum)
             The execution order side.
-        fill_qty : Quantity
-            The filled quantity for this execution.
+        last_qty : Quantity
+            The fill quantity for this execution.
+        last_px : Price
+            The fill price for this execution (not average price).
         cum_qty : Quantity
             The cumulative filled quantity for the order.
         leaves_qty : Quantity
-            The quantity open for further execution.
-        fill_price : Price
-            The fill price for this execution (not average).
+            The order quantity open for further execution.
         currency : Currency
             The currency of the price.
         is_inverse : bool
@@ -831,12 +831,12 @@ cdef class OrderFilled(OrderEvent):
             The fill commission.
         liquidity_side : LiquiditySide (Enum)
             The execution liquidity side.
-        execution_time : datetime
-            The execution time.
+        execution_ns : int64
+            The Unix timestamp (nanos) of the execution.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
         info : dict[str, object], optional
             The additional fill information.
 
@@ -849,7 +849,7 @@ cdef class OrderFilled(OrderEvent):
             cl_ord_id,
             order_id,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
         self.account_id = account_id
@@ -858,15 +858,15 @@ cdef class OrderFilled(OrderEvent):
         self.strategy_id = strategy_id
         self.instrument_id = instrument_id
         self.order_side = order_side
-        self.fill_qty = fill_qty
+        self.last_qty = last_qty
+        self.last_px = last_px
         self.cum_qty = cum_qty
         self.leaves_qty = leaves_qty
-        self.fill_price = fill_price
         self.currency = currency
         self.is_inverse = is_inverse
         self.commission = commission
         self.liquidity_side = liquidity_side
-        self.execution_time = execution_time
+        self.execution_ns = execution_ns
         self.info = info
 
     def __repr__(self) -> str:
@@ -879,8 +879,8 @@ cdef class OrderFilled(OrderEvent):
                 f"instrument_id={self.instrument_id}, "
                 f"side={OrderSideParser.to_str(self.order_side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
-                f"fill_qty={self.fill_qty.to_str()}, "
-                f"fill_price={self.fill_price} {self.currency.code}, "
+                f"last_qty={self.last_qty.to_str()}, "
+                f"last_px={self.last_px} {self.currency.code}, "
                 f"cum_qty={self.cum_qty.to_str()}, "
                 f"leaves_qty={self.leaves_qty.to_str()}, "
                 f"commission={self.commission.to_str()}, "
@@ -899,7 +899,7 @@ cdef class PositionEvent(Event):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `PositionEvent` class.
@@ -912,11 +912,11 @@ cdef class PositionEvent(Event):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
-        super().__init__(event_id, event_timestamp)
+        super().__init__(event_id, timestamp_ns)
 
         self.position = position
         self.order_fill = order_fill
@@ -932,7 +932,7 @@ cdef class PositionOpened(PositionEvent):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `PositionOpened` class.
@@ -945,8 +945,8 @@ cdef class PositionOpened(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         assert position.is_open_c()  # Design-time check
@@ -954,7 +954,7 @@ cdef class PositionOpened(PositionEvent):
             position,
             order_fill,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
     def __repr__(self) -> str:
@@ -963,7 +963,7 @@ cdef class PositionOpened(PositionEvent):
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"avg_open={round(self.position.avg_open, 5)}, "
+                f"avg_px_open={round(self.position.avg_px_open, 5)}, "
                 f"{self.position.status_string_c()}, "
                 f"event_id={self.id})")
 
@@ -978,7 +978,7 @@ cdef class PositionChanged(PositionEvent):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `PositionChanged` class.
@@ -991,8 +991,8 @@ cdef class PositionChanged(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         Raises
         ------
@@ -1005,7 +1005,7 @@ cdef class PositionChanged(PositionEvent):
             position,
             order_fill,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
     def __repr__(self) -> str:
@@ -1014,7 +1014,7 @@ cdef class PositionChanged(PositionEvent):
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"avg_open={self.position.avg_open}, "
+                f"avg_px_open={self.position.avg_px_open}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
@@ -1032,7 +1032,7 @@ cdef class PositionClosed(PositionEvent):
         Position position not None,
         OrderEvent order_fill not None,
         UUID event_id not None,
-        datetime event_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `PositionClosed` class.
@@ -1045,8 +1045,8 @@ cdef class PositionClosed(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         Raises
         ------
@@ -1059,19 +1059,19 @@ cdef class PositionClosed(PositionEvent):
             position,
             order_fill,
             event_id,
-            event_timestamp,
+            timestamp_ns,
         )
 
     def __repr__(self) -> str:
-        cdef str duration = str(self.position.open_duration).replace("0 days ", "", 1)
+        cdef str duration = str(self.position.open_duration_ns).replace("0 days ", "", 1)
         return (f"{type(self).__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
                 f"duration={duration}, "
-                f"avg_open={self.position.avg_open}, "
-                f"avg_close={self.position.avg_close}, "
+                f"avg_px_open={self.position.avg_px_open}, "
+                f"avg_px_close={self.position.avg_px_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "

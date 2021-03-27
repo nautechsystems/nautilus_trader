@@ -40,12 +40,12 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class ExecutionClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -72,7 +72,7 @@ class ExecutionClientTests(unittest.TestCase):
         self.venue = Venue("SIM")
 
         self.client = ExecutionClient(
-            venue=self.venue,
+            name=self.venue.value,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -106,14 +106,14 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "001"),
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.assertRaises(NotImplementedError, self.client.submit_order, command)
@@ -134,29 +134,31 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            self.venue,
+            entry_order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "001"),
             bracket_order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
-        self.assertRaises(NotImplementedError, self.client.submit_bracket_order, command)
+        self.assertRaises(
+            NotImplementedError, self.client.submit_bracket_order, command
+        )
 
     def test_amend_order_raises_not_implemented_error(self):
         # Arrange
         # Act
         command = AmendOrder(
-            self.venue,
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456789"),
             Quantity(120000),
             Price("1.00000"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -166,13 +168,13 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = CancelOrder(
-            self.venue,
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456789"),
             OrderId("001"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -189,9 +191,9 @@ class ExecutionClientTests(unittest.TestCase):
         fill = TestStubs.event_order_filled(
             order,
             AUDUSD_SIM,
-            PositionId("P-123456"),
-            StrategyId("S", "001"),
-            Price("1.00001"),
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            last_px=Price("1.00001"),
         )
 
         # Act

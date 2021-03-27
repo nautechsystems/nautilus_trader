@@ -23,8 +23,10 @@ backtest related data - which can be passed to one or more `BacktestDataEngine`(
 import pandas as pd
 from pandas import DatetimeIndex
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport get_size_of
+from nautilus_trader.core.functions import get_size_of  # Not cimport
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -231,17 +233,17 @@ cdef class BacktestDataContainer:
         Condition.not_none(instrument_id, "instrument_id")
         return instrument_id in self.trade_ticks
 
-    cpdef long total_data_size(self):
+    cpdef int64_t total_data_size(self):
         """
         Return the total memory size of the data in the container.
 
         Returns
         -------
-        long
+        int64
             The total bytes.
 
         """
-        cdef long size = 0
+        cdef int64_t size = 0
         size += get_size_of(self.quote_ticks)
         size += get_size_of(self.trade_ticks)
         size += get_size_of(self.bars_bid)

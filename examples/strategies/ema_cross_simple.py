@@ -26,10 +26,11 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.market import MarketOrder
-from nautilus_trader.model.order_book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
+
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
@@ -96,7 +97,7 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_order_book(self.instrument_id, level=2, depth=20, interval=5)  # For debugging
+        # self.subscribe_order_book(self.instrument_id, level=2, depth=25, interval=5)  # For debugging
         # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 
@@ -154,24 +155,24 @@ class EMACross(TradingStrategy):
         # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    def on_bar(self, bar: Bar):
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} {repr(bar)}")
+        self.log.info(f"Received {repr(bar)}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]..."
+            )
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC

@@ -36,13 +36,13 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 SIM = Venue("SIM")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
 
 class ReportProviderTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
@@ -61,7 +61,7 @@ class ReportProviderTests(unittest.TestCase):
             balances_locked=[Money("0.00000000", BTC)],
             info={},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         account = Account(state)
@@ -132,7 +132,7 @@ class ReportProviderTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            fill_price=Price("0.80011"),
+            last_px=Price("0.80011"),
         )
 
         order1.apply(event)
@@ -149,10 +149,10 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
-        self.assertEqual(1500000, report.iloc[0]["quantity"])
-        self.assertEqual(0.80011, report.iloc[0]["avg_price"])
+        self.assertEqual(1500000, report.iloc[0]["qty"])
+        self.assertEqual(0.80011, report.iloc[0]["avg_px"])
         self.assertEqual(0.00001, report.iloc[0]["slippage"])
-        self.assertEqual("None", report.iloc[1]["avg_price"])
+        self.assertEqual("None", report.iloc[1]["avg_px"])
 
     def test_generate_order_fills_report(self):
         # Arrange
@@ -183,7 +183,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            fill_price=Price("0.80011"),
+            last_px=Price("0.80011"),
         )
 
         order1.apply(filled)
@@ -200,8 +200,8 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
-        self.assertEqual(1500000, report.iloc[0]["quantity"])
-        self.assertEqual(0.80011, report.iloc[0]["avg_price"])
+        self.assertEqual(1500000, report.iloc[0]["qty"])
+        self.assertEqual(0.80011, report.iloc[0]["avg_px"])
         self.assertEqual(0.00001, report.iloc[0]["slippage"])
 
     def test_generate_positions_report(self):
@@ -225,7 +225,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -233,13 +233,13 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123457"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
-        position1 = Position(fill1)
+        position1 = Position(fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(fill1)
+        position2 = Position(fill=fill1)
         position2.apply(fill2)
 
         positions = [position1, position2]
@@ -253,9 +253,9 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(position1.id.value, report.index[0])
         self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["entry"])
-        self.assertEqual(100000, report.iloc[0]["peak_quantity"])
-        self.assertEqual(1.0001, report.iloc[0]["avg_open"])
-        self.assertEqual(1.0001, report.iloc[0]["avg_close"])
+        self.assertEqual(100000, report.iloc[0]["peak_qty"])
+        self.assertEqual(1.0001, report.iloc[0]["avg_px_open"])
+        self.assertEqual(1.0001, report.iloc[0]["avg_px_close"])
         self.assertEqual(UNIX_EPOCH, report.iloc[0]["opened_time"])
         self.assertEqual(UNIX_EPOCH, report.iloc[0]["closed_time"])
         self.assertEqual(0, report.iloc[0]["realized_points"])

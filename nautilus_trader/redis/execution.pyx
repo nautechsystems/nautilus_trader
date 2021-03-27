@@ -217,7 +217,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes event
         cdef Account account = Account(self._event_serializer.deserialize(events[0]))
         for event in events[1:]:
-            account.apply_c(self._event_serializer.deserialize(event))
+            account.apply(event=self._event_serializer.deserialize(event))
 
         return account
 
@@ -259,7 +259,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef bytes event_bytes
         for event_bytes in events:
-            order.apply(self._event_serializer.deserialize(event_bytes))
+            order.apply(event=self._event_serializer.deserialize(event_bytes))
 
         return order
 
@@ -286,11 +286,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return None
 
         cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
-        cdef Position position = Position(event=initial)
+        cdef Position position = Position(fill=initial)
 
         cdef bytes event_bytes
         for event_bytes in events:
-            position.apply_c(self._event_serializer.deserialize(event_bytes))
+            position.apply(fill=self._event_serializer.deserialize(event_bytes))
 
         return position
 

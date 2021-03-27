@@ -35,3 +35,4 @@ logs/
 venv*/
 
 Cargo.lock
+.DS_Store # Mac

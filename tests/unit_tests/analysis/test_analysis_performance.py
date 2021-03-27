@@ -19,6 +19,7 @@ import unittest
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -29,12 +30,12 @@ from nautilus_trader.model.position import Position
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class AnalyzerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
@@ -52,13 +53,21 @@ class AnalyzerTests(unittest.TestCase):
         # Assert
         self.assertTrue(result.empty)
 
-    def test_get_realized_pnls_when_no_data_returns_empty_series(self):
+    def test_get_realized_pnls_when_no_data_returns_none(self):
         # Arrange
         # Act
         result = self.analyzer.get_realized_pnls()
 
         # Assert
-        self.assertTrue(result.empty)
+        self.assertIsNone(result)
+
+    def test_get_realized_pnls_with_currency_when_no_data_returns_none(self):
+        # Arrange
+        # Act
+        result = self.analyzer.get_realized_pnls(AUD)
+
+        # Assert
+        self.assertIsNone(result)
 
     def test_analyzer_tracks_daily_returns(self):
         # Arrange
@@ -123,7 +132,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -131,7 +140,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00010"),
+            last_px=Price("1.00010"),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -139,7 +148,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
         fill4 = TestStubs.event_order_filled(
@@ -147,13 +156,13 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00020"),
+            last_px=Price("1.00020"),
         )
 
-        position1 = Position(fill1)
+        position1 = Position(fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(fill3)
+        position2 = Position(fill=fill3)
         position2.apply(fill4)
 
         self.analyzer.add_positions([position1, position2])
@@ -163,5 +172,5 @@ class AnalyzerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, len(result))
-        self.assertEqual(6.0, result['P-1'])
-        self.assertEqual(16.0, result['P-2'])
+        self.assertEqual(6.0, result["P-1"])
+        self.assertEqual(16.0, result["P-2"])

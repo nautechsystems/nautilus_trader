@@ -22,46 +22,231 @@ import pytz
 
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
+from nautilus_trader.core.datetime import dt_to_unix_millis
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import format_iso8601
-from nautilus_trader.core.datetime import from_unix_time_ms
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
-from nautilus_trader.core.datetime import to_unix_time_ms
+from nautilus_trader.core.datetime import micros_to_nanos
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import nanos_to_micros
+from nautilus_trader.core.datetime import nanos_to_millis
+from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.datetime import nanos_to_timedelta
+from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.datetime import timedelta_to_nanos
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestDatetimeFunctions:
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-0.0001234, -123400],
+            [-1, -1_000_000_000],
+            [0, 0],
+            [1, 1_000_000_000],
+            [1.1, 1_100_000_000],
+            [42, 42_000_000_000],
+            [0.0001234, 123400],
+            [0.00000001, 10],
+            [0.000000001, 1],
+            [9.999999999, 9_999_999_999],
+        ],
+    )
+    def test_secs_to_nanos(self, value, expected):
+        # Arrange
+        # Act
+        result = secs_to_nanos(value)
+
+        # Assert
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
-        [[datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), -2674800000],
-         [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), 0],
-         [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc), 1357002000000],
-         [datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc), 1577934120001]],
+        [
+            [-0.0001234, -123],
+            [-1, -1_000_000],
+            [0, 0],
+            [1, 1_000_000],
+            [1.1, 1_100_000],
+            [42, 42_000_000],
+            [0.0001234, 123],
+            [0.00001, 10],
+            [0.000001, 1],
+            [9.999999, 9_999_999],
+        ],
     )
-    def test_to_posix_ms_with_various_values_returns_expected_long(self, value, expected):
+    def test_millis_to_nanos(self, value, expected):
         # Arrange
         # Act
-        posix = to_unix_time_ms(value)
+        result = millis_to_nanos(value)
 
         # Assert
-        assert expected == posix
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
-        [[-2674800000, datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc)],
-         [0, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
-         [1357002000000, datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)],
-         [1577934120001, datetime(2020, 1, 2, 3, 2, 0, 1000, tzinfo=pytz.utc)]],
+        [
+            [-0.1234, -123],
+            [-1, -1_000],
+            [0, 0],
+            [1, 1_000],
+            [1.1, 1_100],
+            [42, 42_000],
+            [0.1234, 123],
+            [0.01, 10],
+            [0.001, 1],
+            [9.999, 9_999],
+        ],
     )
-    def test_from_posix_ms_with_various_values_returns_expected_datetime(self, value, expected):
+    def test_micros_to_nanos(self, value, expected):
         # Arrange
         # Act
-        dt = from_unix_time_ms(value)
+        result = micros_to_nanos(value)
 
         # Assert
-        assert expected == dt
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-42_897_123_111, -42.897123111],
+            [-1, -1e-09],
+            [0, 0],
+            [1, 1e-09],
+            [1_000_000_000, 1],
+            [42_897_123_111, 42.897123111],
+        ],
+    )
+    def test_nanos_to_secs(self, value, expected):
+        # Arrange
+        # Act
+        result = nanos_to_secs(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-42_897_123_111, -42897],
+            [-1_000_000, -1],
+            [0, 0],
+            [1_000_000, 1],
+            [1_000_000_000, 1000],
+            [42_897_123_111, 42897],
+        ],
+    )
+    def test_nanos_to_millis(self, value, expected):
+        # Arrange
+        # Act
+        result = nanos_to_millis(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-42_897_123, -42897],
+            [-1_000, -1],
+            [0, 0],
+            [1_000, 1],
+            [1_000_000_000, 1_000_000],
+            [42_897_123, 42897],
+        ],
+    )
+    def test_nanos_to_micros(self, value, expected):
+        # Arrange
+        # Act
+        result = nanos_to_micros(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-100_000_000, timedelta(milliseconds=-100)],
+            [0, timedelta()],
+            [100_000_000, timedelta(milliseconds=100)],
+            [1_000_000, timedelta(milliseconds=1)],
+            [3_000, timedelta(microseconds=3)],
+            [43_200_000_000_000, timedelta(hours=12)],
+        ],
+    )
+    def test_nanos_to_timedelta(self, value, expected):
+        # Arrange
+        # Act
+        result = nanos_to_timedelta(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [UNIX_EPOCH - timedelta(milliseconds=100), -100_000_000],
+            [UNIX_EPOCH, 0],
+            [UNIX_EPOCH + timedelta(milliseconds=100), 100_000_000],
+            [UNIX_EPOCH + timedelta(milliseconds=1), 1_000_000],
+            [UNIX_EPOCH + timedelta(microseconds=3), 3_000],
+            [UNIX_EPOCH + timedelta(hours=12), 43_200_000_000_000],
+        ],
+    )
+    def test_dt_to_unix_nanos(self, value, expected):
+        # Arrange
+        # Act
+        result = dt_to_unix_nanos(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [timedelta(days=1), 86_400_000_000_000],
+            [timedelta(hours=1), 3_600_000_000_000],
+            [timedelta(minutes=1), 60_000_000_000],
+            [timedelta(seconds=1), 1_000_000_000],
+            [timedelta(milliseconds=1), 1_000_000],
+            [timedelta(microseconds=1), 1_000],
+            [timedelta(seconds=-1), -1_000_000_000],
+            [timedelta(milliseconds=-1), -1_000_000],
+            [timedelta(seconds=0.001234), 1_234_000],
+        ],
+    )
+    def test_timedelta_to_nanos(self, value, expected):
+        # Arrange
+        # Act
+        result = timedelta_to_nanos(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), -2674800000],
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), 0],
+            [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc), 1357002000000],
+            [
+                datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc),
+                1577934120001,
+            ],
+        ],
+    )
+    def test_dt_to_unix_millis_with_various_values_returns_expected_long(
+        self, value, expected
+    ):
+        # Arrange
+        # Act
+        result = dt_to_unix_millis(value)
+
+        # Assert
+        assert result == expected
 
     def test_is_datetime_utc_given_tz_naive_datetime_returns_false(self):
         # Arrange
@@ -91,8 +276,9 @@ class TestDatetimeFunctions:
         time_object1 = UNIX_EPOCH
         time_object2 = pd.Timestamp(UNIX_EPOCH)
 
-        time_object3 = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
-                                                   "2019-05-21T12:15:00+00:00"]})
+        time_object3 = pd.DataFrame(
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+        )
         time_object3.set_index("timestamp")
         time_object3.index = pd.to_datetime(time_object3.index)
 
@@ -133,12 +319,12 @@ class TestDatetimeFunctions:
         result5 = format_iso8601(dt5)
 
         # Assert
-        assert "1970-01-01 00:00:00+00:00" == str(pd.to_datetime(dt1, utc=True))
-        assert "1970-01-01T00:00:00.000Z" == result1
-        assert "1970-01-01T00:00:00.000Z" == result2
-        assert "1970-01-01T00:00:00.001Z" == result3
-        assert "1970-01-01T00:00:01.000Z" == result4
-        assert "1970-01-01T01:01:02.003Z" == result5
+        assert str(pd.to_datetime(dt1, utc=True)) == "1970-01-01 00:00:00+00:00"
+        assert result1 == "1970-01-01T00:00:00.000Z"
+        assert result2 == "1970-01-01T00:00:00.000Z"
+        assert result3 == "1970-01-01T00:00:00.001Z"
+        assert result4 == "1970-01-01T00:00:01.000Z"
+        assert result5 == "1970-01-01T01:01:02.003Z"
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
@@ -167,8 +353,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_given_tz_naive_pandas_timestamp(self):
         # Arrange
@@ -178,8 +364,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_datetime(self):
         # Arrange
@@ -189,8 +375,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_pandas(self):
         # Arrange
@@ -200,8 +386,8 @@ class TestDatetimeFunctions:
         result = as_utc_timestamp(timestamp)
 
         # Assert
-        assert pd.Timestamp("2013-02-01 00:00:00+00:00") == result
-        assert pytz.utc == result.tz
+        assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
+        assert result.tz == pytz.utc
 
     def test_as_utc_timestamp_equality(self):
         # Arrange
@@ -233,8 +419,9 @@ class TestDatetimeFunctions:
 
     def test_with_utc_index_given_tz_unaware_dataframe(self):
         # Arrange
-        data = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
-                                           "2019-05-21T12:15:00+00:00"]})
+        data = pd.DataFrame(
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+        )
         data.set_index("timestamp")
         data.index = pd.to_datetime(data.index)
 
@@ -242,12 +429,13 @@ class TestDatetimeFunctions:
         result = as_utc_index(data)
 
         # Assert
-        assert pytz.utc == result.index.tz
+        assert result.index.tz == pytz.utc
 
     def test_with_utc_index_given_tz_aware_dataframe(self):
         # Arrange
-        data = pd.DataFrame({"timestamp": ["2019-05-21T12:00:00+00:00",
-                                           "2019-05-21T12:15:00+00:00"]})
+        data = pd.DataFrame(
+            {"timestamp": ["2019-05-21T12:00:00+00:00", "2019-05-21T12:15:00+00:00"]}
+        )
         data.set_index("timestamp")
         data.index = pd.to_datetime(data.index, utc=True)
 
@@ -255,17 +443,24 @@ class TestDatetimeFunctions:
         result = as_utc_index(data)
 
         # Assert
-        assert pytz.utc == result.index.tz
+        assert result.index.tz == pytz.utc
 
     def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
         # Arrange
-        data1 = pd.DataFrame({"timestamp": ["2019-05-21 12:00:00",
-                                            "2019-05-21 12:15:00"]})
+        data1 = pd.DataFrame(
+            {"timestamp": ["2019-05-21 12:00:00", "2019-05-21 12:15:00"]}
+        )
         data1.set_index("timestamp")
         data1.index = pd.to_datetime(data1.index)
 
-        data2 = pd.DataFrame({"timestamp": [datetime(1970, 1, 1, 0, 0, 0, 0),
-                                            datetime(1970, 1, 1, 0, 0, 0, 0)]})
+        data2 = pd.DataFrame(
+            {
+                "timestamp": [
+                    datetime(1970, 1, 1, 0, 0, 0, 0),
+                    datetime(1970, 1, 1, 0, 0, 0, 0),
+                ]
+            }
+        )
         data2.set_index("timestamp")
         data2.index = pd.to_datetime(data2.index, utc=True)
 

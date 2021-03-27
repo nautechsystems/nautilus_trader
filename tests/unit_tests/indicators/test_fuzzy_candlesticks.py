@@ -26,11 +26,11 @@ from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class FuzzyCandlesticksTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.fc = FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)

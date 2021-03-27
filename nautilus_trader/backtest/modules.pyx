@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
@@ -22,6 +23,7 @@ import pytz
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -64,7 +66,7 @@ cdef class SimulationModule:
 
         self._exchange = exchange
 
-    cpdef void process(self, datetime now) except *:
+    cpdef void process(self, int64_t now_ns) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -102,18 +104,17 @@ cdef class FXRolloverInterestModule(SimulationModule):
         self._rollover_totals = {}
         self._day_number = 0
 
-    cpdef void process(self, datetime now) except *:
+    cpdef void process(self, int64_t now_ns) except *:
         """
         Process the given tick through the module.
 
         Parameters
         ----------
-        now : datetime
+        now_ns : int64
             The current time in the simulated exchange.
 
         """
-        Condition.not_none(now, "now")
-
+        cdef datetime now = nanos_to_unix_dt(nanos=now_ns)
         cdef datetime rollover_local
         if self._day_number != now.day:
             # Set account statistics for new day

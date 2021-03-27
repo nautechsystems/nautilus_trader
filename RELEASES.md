@@ -1,3 +1,44 @@
+# NautilusTrader 1.112.0 Beta - Release Notes
+
+**This release includes substantial breaking changes.**
+
+The platforms internal timestamping has been standardized to nanoseconds. This
+decision was made to increase the accuracy of backtests to nanosecond precision,
+improve data handling including order book and custom data for backtesting, and
+to future-proof the platform to a more professional standard. The top level user
+API still takes `datetime` and `timedelta` objects for usability.
+
+There has also been some standardization of naming conventions to align more
+closely with established financial market terminology with reference to the
+FIX5.0 SP2 specification, and CME MDP 3.0.
+
+## Breaking Changes
+- Move `BarType` into `Bar` as a property.
+- Change signature of `Bar` handling methods due to above.
+- Remove `Instrument.leverage` (incorrect place for concept).
+- Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
+- Change serialization of timestamp datatype to `int64`.
+- Extensive changes to serialization constant names.
+- Rename `OrderFilled.filled_qty` to `OrderFilled.last_qty`.
+- Rename `OrderFilled.filled_price` to `OrderFilled.last_px`.
+- Rename `avg_price` to `avg_px` in methods and properties.
+- Rename `avg_open` to `avg_px_open` in methods and properties.
+- Rename `avg_close` to `avg_px_close` in methods and properties.
+- Rename `Position.relative_quantity` to `Position.relative_qty`.
+- Rename `Position.peak_quantity` to `Position.peak_qty`.
+
+## Enhancements
+- Standardize nanosecond timestamps.
+- Add time unit conversion functions as found in `nautilus_trader.core.datetime`.
+- Add optional `broker` property to `Venue` to assist with routing.
+- Enhance state reconciliation from both `LiveExecutionEngine` and `LiveExecutionClient`.
+- Add internal messages to aid state reconciliation.
+
+## Fixes
+- `DataCache` incorrectly caching bars.
+
+---
+
 # NautilusTrader 1.111.0 Beta - Release Notes
 
 This release adds further enhancements to the platform.

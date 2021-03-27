@@ -45,13 +45,12 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import UNIX_EPOCH
+
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestEvents:
-
     def test_account_state_str_repr(self):
         # Arrange
         uuid = uuid4()
@@ -62,13 +61,19 @@ class TestEvents:
             balances_locked=[Money(0, USD)],
             info={},
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
         # Assert
-        assert f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})" == str(event)
-        assert f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})" == repr(event)
+        assert (
+            f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})"
+            == str(event)
+        )
+        assert (
+            f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})"
+            == repr(event)
+        )
 
     def test_order_initialized(self):
         # Arrange
@@ -82,14 +87,20 @@ class TestEvents:
             quantity=Quantity("0.561000"),
             time_in_force=TimeInForce.DAY,
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
-            options={"Price": "15200.10"}
+            timestamp_ns=0,
+            options={"Price": "15200.10"},
         )
 
         # Act
         # Assert
-        assert f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})" == str(event)
-        assert f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})" == repr(event)
+        assert (
+            f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})"
+            == str(event)
+        )
+        assert (
+            f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})"
+            == repr(event)
+        )
 
     def test_order_invalid(self):
         # Arrange
@@ -98,13 +109,19 @@ class TestEvents:
             cl_ord_id=ClientOrderId("O-2020872378423"),
             reason="DUPLICATE_CL_ORD_ID",
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
         # Assert
-        assert f"OrderInvalid(cl_ord_id=O-2020872378423, reason='DUPLICATE_CL_ORD_ID', event_id={uuid})" == str(event)
-        assert f"OrderInvalid(cl_ord_id=O-2020872378423, reason='DUPLICATE_CL_ORD_ID', event_id={uuid})" == repr(event)
+        assert (
+            f"OrderInvalid(cl_ord_id=O-2020872378423, reason='DUPLICATE_CL_ORD_ID', event_id={uuid})"
+            == str(event)
+        )
+        assert (
+            f"OrderInvalid(cl_ord_id=O-2020872378423, reason='DUPLICATE_CL_ORD_ID', event_id={uuid})"
+            == repr(event)
+        )
 
     def test_order_denied(self):
         # Arrange
@@ -113,12 +130,16 @@ class TestEvents:
             cl_ord_id=ClientOrderId("O-2020872378423"),
             reason="SINGLE_ORDER_RISK_EXCEEDED",
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert f"OrderDenied(cl_ord_id=O-2020872378423, reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", str(event)
-        assert f"OrderDenied(cl_ord_id=O-2020872378423, reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", repr(event)
+        assert f"OrderDenied(cl_ord_id=O-2020872378423, reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", (
+            str(event)
+        )
+        assert f"OrderDenied(cl_ord_id=O-2020872378423, reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", (
+            repr(event)
+        )
 
     def test_order_submitted(self):
         # Arrange
@@ -126,14 +147,18 @@ class TestEvents:
         event = OrderSubmitted(
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
-            submitted_time=UNIX_EPOCH,
+            submitted_ns=0,
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert f"OrderSubmitted(account_id=SIM-000, cl_ord_id=O-2020872378423, event_id={uuid})", str(event)
-        assert f"OrderSubmitted(account_id=SIM-000, cl_ord_id=O-2020872378423, event_id={uuid})", repr(event)
+        assert f"OrderSubmitted(account_id=SIM-000, cl_ord_id=O-2020872378423, event_id={uuid})", (
+            str(event)
+        )
+        assert f"OrderSubmitted(account_id=SIM-000, cl_ord_id=O-2020872378423, event_id={uuid})", (
+            repr(event)
+        )
 
     def test_order_rejected(self):
         # Arrange
@@ -141,15 +166,19 @@ class TestEvents:
         event = OrderRejected(
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
-            rejected_time=UNIX_EPOCH,
+            rejected_ns=0,
             reason="INSUFFICIENT_MARGIN",
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert f"OrderRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})", str(event)  # noqa
-        assert f"OrderRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})", repr(event)  # noqa
+        assert f"OrderRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})", str(
+            event
+        )  # noqa
+        assert f"OrderRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})", repr(
+            event
+        )  # noqa
 
     def test_order_accepted(self, order_id=None):
         if order_id is None:
@@ -161,14 +190,18 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=order_id,
-            accepted_time=UNIX_EPOCH,
+            accepted_ns=0,
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id={123456}, event_id={uuid})", str(event)  # noqa
-        assert f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id={123456}, event_id={uuid})", repr(event)  # noqa
+        assert f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id={123456}, event_id={uuid})", str(
+            event
+        )  # noqa
+        assert f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id={123456}, event_id={uuid})", repr(
+            event
+        )  # noqa
 
     def test_order_cancel_reject(self):
         # Arrange
@@ -177,20 +210,24 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=OrderId("123456"),
-            rejected_time=UNIX_EPOCH,
+            rejected_ns=0,
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert (f"OrderCancelReject(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-                f"event_id={uuid})" == str(event))
-        assert (f"OrderCancelReject(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-                f"event_id={uuid})" == repr(event))
+        assert (
+            f"OrderCancelReject(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})" == str(event)
+        )
+        assert (
+            f"OrderCancelReject(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})" == repr(event)
+        )
 
     def test_order_cancelled(self):
         # Arrange
@@ -199,16 +236,20 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=OrderId("123456"),
-            cancelled_time=UNIX_EPOCH,
+            cancelled_ns=0,
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert (f"OrderCancelled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                f"order_id=123456, event_id={uuid})" == str(event))
-        assert (f"OrderCancelled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                f"order_id=123456, event_id={uuid})" == repr(event))
+        assert (
+            f"OrderCancelled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"order_id=123456, event_id={uuid})" == str(event)
+        )
+        assert (
+            f"OrderCancelled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"order_id=123456, event_id={uuid})" == repr(event)
+        )
 
     def test_order_amended(self):
         # Arrange
@@ -218,17 +259,23 @@ class TestEvents:
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=OrderId("123456"),
             quantity=Quantity(500000),
-            price=Price('1.95000'),
-            amended_time=UNIX_EPOCH,
+            price=Price("1.95000"),
+            amended_ns=0,
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert (f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
-                f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})" == str(event))
-        assert (f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
-                f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})" == repr(event))
+        assert (
+            f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
+            f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
+            == str(event)
+        )
+        assert (
+            f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
+            f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
+            == repr(event)
+        )
 
     def test_order_expired(self):
         # Arrange
@@ -237,14 +284,20 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=OrderId("123456"),
-            expired_time=UNIX_EPOCH,
+            expired_ns=0,
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
-        assert f"OrderExpired(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id=123456, event_id={uuid})" == str(event)
-        assert f"OrderExpired(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id=123456, event_id={uuid})" == repr(event)
+        assert (
+            f"OrderExpired(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id=123456, event_id={uuid})"
+            == str(event)
+        )
+        assert (
+            f"OrderExpired(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id=123456, event_id={uuid})"
+            == repr(event)
+        )
 
     def test_order_filled(self):
         # Arrange
@@ -258,27 +311,32 @@ class TestEvents:
             strategy_id=StrategyId("SCALPER", "001"),
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             order_side=OrderSide.BUY,
-            fill_qty=Quantity("0.561000"),
+            last_qty=Quantity("0.561000"),
+            last_px=Price("15600.12445"),
             cum_qty=Quantity("0.561000"),
             leaves_qty=Quantity(0),
-            fill_price=Price("15600.12445"),
             currency=USDT,
             is_inverse=False,
             commission=Money("12.20000000", USDT),
             liquidity_side=LiquiditySide.MAKER,
-            execution_time=UNIX_EPOCH,
+            execution_ns=0,
             event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
+        print(event)
         # Act
-        assert (f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
-                f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
-                f"commission=12.20000000 USDT, event_id={uuid})" == str(event))
-        assert (f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
-                f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
-                f"commission=12.20000000 USDT, event_id={uuid})" == repr(event))
+        assert (
+            f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
+            f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
+            f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
+            f"commission=12.20000000 USDT, event_id={uuid})" == str(event)
+        )
+        assert (
+            f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
+            f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
+            f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
+            f"commission=12.20000000 USDT, event_id={uuid})" == repr(event)
+        )

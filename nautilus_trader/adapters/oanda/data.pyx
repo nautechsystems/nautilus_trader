@@ -30,17 +30,18 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -486,7 +487,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void _request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
         self._load_instruments()
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is not None:
             self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
         else:
@@ -506,9 +507,9 @@ cdef class OandaDataClient(LiveMarketDataClient):
         cdef InstrumentId instrument_id
         cdef Instrument instrument
         for instrument_id in self._subscribed_instruments:
-            instrument = self._instrument_provider.find_c(instrument_id)
+            instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
-                self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
+                self._loop.call_soon_threadsafe(self._handle_data_py, instrument)
             else:
                 self._log.error(f"Could not find instrument {instrument_id.symbol}.")
 
@@ -523,12 +524,10 @@ cdef class OandaDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ) except *:
-        cdef Instrument instrument = self._instrument_provider.find_c(bar_type.instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.instrument_id}).")
             return
-
-        oanda_name = instrument.info["name"]
 
         if bar_type.spec.price_type == PriceType.BID:
             pricing = "B"
@@ -601,14 +600,17 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         cdef dict res
         try:
-            req = InstrumentsCandles(instrument=oanda_name, params=params)
+            req = InstrumentsCandles(
+                instrument=instrument.symbol.value.replace('/', '_'),
+                params=params,
+            )
             res = self._client.request(req)
         except Exception as ex:
             self._log.error(str(ex))
             return
 
         cdef list data = res.get("candles", [])
-        if len(data) == 0:
+        if not data:
             self._log.error(f"No data returned for {bar_type}.")
             return
 
@@ -618,13 +620,13 @@ cdef class OandaDataClient(LiveMarketDataClient):
         for values in data:
             if not values["complete"]:
                 continue
-            bars.append(self._parse_bar(instrument, values, bar_type.spec.price_type))
+            bars.append(self._parse_bar(bar_type, instrument, values, bar_type.spec.price_type))
 
         # Set partial bar if last bar not complete
         cdef dict last_values = data[-1]
         cdef Bar partial_bar = None
         if not last_values["complete"]:
-            partial_bar = self._parse_bar(instrument, last_values, bar_type.spec.price_type)
+            partial_bar = self._parse_bar(bar_type, instrument, last_values, bar_type.spec.price_type)
 
         self._loop.call_soon_threadsafe(
             self._handle_bars_py,
@@ -655,7 +657,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
                         # Heartbeat
                         continue
                     tick = self._parse_quote_tick(instrument_id, res)
-                    self._handle_quote_tick_py(tick)
+                    self._handle_data_py(tick)
         except asyncio.CancelledError:
             pass  # Expected cancellation
         except Exception as ex:
@@ -668,10 +670,16 @@ cdef class OandaDataClient(LiveMarketDataClient):
             Price(values["asks"][0]["price"]),
             Quantity(1),
             Quantity(1),
-            pd.to_datetime(values["time"]),
+            dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
         )
 
-    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
+    cdef inline Bar _parse_bar(
+        self,
+        BarType bar_type,
+        Instrument instrument,
+        dict values,
+        PriceType price_type,
+    ):
         cdef dict prices
         if price_type == PriceType.BID:
             prices = values["bid"]
@@ -681,27 +689,19 @@ cdef class OandaDataClient(LiveMarketDataClient):
             prices = values["mid"]
 
         return Bar(
+            bar_type,
             Price(prices["o"], instrument.price_precision),
             Price(prices["h"], instrument.price_precision),
             Price(prices["l"], instrument.price_precision),
             Price(prices["c"], instrument.price_precision),
             Quantity(values["volume"], instrument.size_precision),
-            pd.to_datetime(values["time"]),
+            dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
         )
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument_py(self, Instrument instrument) except *:
-        self._engine.process(instrument)
-
-    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *:
-        self._engine.process(tick)
-
-    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *:
-        self._engine.process(tick)
-
-    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
-        self._engine.process(BarData(bar_type, bar))
+    cpdef void _handle_data_py(self, Data data) except *:
+        self._engine.process(data)
 
     cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
         self._handle_instruments(instruments, correlation_id)

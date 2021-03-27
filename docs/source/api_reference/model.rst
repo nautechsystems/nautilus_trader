@@ -94,6 +94,15 @@ Objects
    :members:
    :member-order: bysource
 
+Order Book
+----------
+
+.. automodule:: nautilus_trader.model.orderbook.book
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Market Order
 ------------
 

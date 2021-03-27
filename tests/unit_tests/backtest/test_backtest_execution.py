@@ -46,12 +46,12 @@ from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
 
+
 BINANCE = Venue("BINANCE")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class BacktestExecClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -160,14 +160,14 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            BINANCE,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -192,13 +192,13 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            BINANCE,
+            entry.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -216,13 +216,13 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = CancelOrder(
-            BINANCE,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
             order.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -241,14 +241,14 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         command = AmendOrder(
-            BINANCE,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
             Quantity(100),
             Price("1010.00"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act

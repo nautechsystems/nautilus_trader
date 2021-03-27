@@ -19,11 +19,11 @@ from nautilus_trader.indicators.base.indicator import Indicator
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class IndicatorTests(unittest.TestCase):
-
     def test_handle_quote_tick_raises_not_implemented_error(self):
         # Arrange
         indicator = Indicator([])

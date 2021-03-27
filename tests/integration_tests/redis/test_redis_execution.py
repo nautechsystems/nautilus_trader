@@ -46,6 +46,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 # Requirements:
@@ -53,7 +54,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class RedisExecutionDatabaseTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -64,8 +64,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.strategy.register_trader(self.trader_id, self.clock, self.logger)
 
         config = {
-            'host': 'localhost',
-            'port': 6379,
+            "host": "localhost",
+            "port": 6379,
         }
 
         self.database = RedisExecutionDatabase(
@@ -117,15 +117,15 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order)
 
-        position_id = PositionId('P-1')
-        order_filled = TestStubs.event_order_filled(
+        position_id = PositionId("P-1")
+        fill = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
-        position = Position(order_filled)
+        position = Position(fill=fill)
 
         # Act
         self.database.add_position(position)
@@ -156,10 +156,10 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order)
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(event=TestStubs.event_order_submitted(order))
         self.database.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(event=TestStubs.event_order_accepted(order))
 
         # Act
         self.database.update_order(order)
@@ -177,17 +177,19 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order)
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(event=TestStubs.event_order_submitted(order))
         self.database.update_order(order)
 
-        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(event=TestStubs.event_order_accepted(order))
         self.database.update_order(order)
 
-        order.apply(TestStubs.event_order_filled(
+        fill = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            fill_price=Price("1.00001"),
-        ))
+            last_px=Price("1.00001"),
+        )
+
+        order.apply(event=fill)
 
         # Act
         self.database.update_order(order)
@@ -203,7 +205,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         self.database.add_order(order1)
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -212,16 +214,18 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_accepted(order1))
         self.database.update_order(order1)
 
-        order1.apply(TestStubs.event_order_filled(
-            order1,
-            instrument=AUDUSD_SIM,
-            position_id=position_id,
-            fill_price=Price("1.00001"),
-        ))
+        order1.apply(
+            TestStubs.event_order_filled(
+                order1,
+                instrument=AUDUSD_SIM,
+                position_id=position_id,
+                last_px=Price("1.00001"),
+            )
+        )
         self.database.update_order(order1)
 
         # Act
-        position = Position(order1.last_event)
+        position = Position(fill=order1.last_event)
         self.database.add_position(position)
 
         order2 = self.strategy.order_factory.market(
@@ -242,13 +246,13 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             order2,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            fill_price=Price("1.00001"),
+            last_px=Price("1.00001"),
         )
 
         order2.apply(filled)
         self.database.update_order(order2)
 
-        position.apply(filled)
+        position.apply(fill=filled)
 
         # Act
         self.database.update_position(position)
@@ -258,7 +262,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_update_strategy(self):
         # Arrange
-        strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())
+        strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())
         strategy.register_trader(self.trader_id, self.clock, self.logger)
 
         # Act
@@ -266,7 +270,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_strategy(strategy.id)
 
         # Assert
-        self.assertEqual({"UserState": b'1'}, result)
+        self.assertEqual({"UserState": b"1"}, result)
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
@@ -377,7 +381,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
 
         # Act
         result = self.database.load_position(position_id)
@@ -395,15 +399,15 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order)
 
-        position_id = PositionId('P-1')
-        order_filled = TestStubs.event_order_filled(
+        position_id = PositionId("P-1")
+        fill = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
-        position = Position(order_filled)
+        position = Position(fill=fill)
 
         self.database.add_position(position)
 
@@ -473,17 +477,19 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order1)
 
-        position_id = PositionId('P-1')
+        position_id = PositionId("P-1")
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
-        order1.apply(TestStubs.event_order_filled(
-            order1,
-            instrument=AUDUSD_SIM,
-            position_id=position_id,
-            fill_price=Price("1.00001"),
-        ))
+        order1.apply(
+            TestStubs.event_order_filled(
+                order1,
+                instrument=AUDUSD_SIM,
+                position_id=position_id,
+                last_px=Price("1.00001"),
+            )
+        )
 
-        position = Position(order1.last_event)
+        position = Position(fill=order1.last_event)
         self.database.add_position(position)
 
         # Act
@@ -511,15 +517,15 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order1)
 
-        position1_id = PositionId('P-1')
-        filled = TestStubs.event_order_filled(
+        position1_id = PositionId("P-1")
+        fill = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            fill_price=Price("1.00000"),
+            last_px=Price("1.00000"),
         )
 
-        position1 = Position(filled)
+        position1 = Position(fill=fill)
         self.database.update_order(order1)
         self.database.add_position(position1)
 
@@ -547,21 +553,30 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
 
 class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
-        data.add_bars(self.usdjpy.id, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(self.usdjpy.id, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_bars(
+            self.usdjpy.id,
+            BarAggregation.MINUTE,
+            PriceType.BID,
+            TestDataProvider.usdjpy_1min_bid(),
+        )
+        data.add_bars(
+            self.usdjpy.id,
+            BarAggregation.MINUTE,
+            PriceType.ASK,
+            TestDataProvider.usdjpy_1min_ask(),
+        )
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[TradingStrategy('000')],
+            strategies=[TradingStrategy("000")],
             bypass_logging=False,  # Uncomment this to see integrity check failure messages
-            exec_db_type='redis',
+            exec_db_type="redis",
             exec_db_flush=False,
         )
 

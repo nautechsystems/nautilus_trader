@@ -27,13 +27,12 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
+
 
 AUDUSD = TestStubs.audusd_id()
 
 
 class SerializationPerformanceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
@@ -53,14 +52,14 @@ class SerializationPerformanceTests(unittest.TestCase):
         )
 
         self.command = SubmitOrder(
-            self.venue,
+            AUDUSD,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
             PositionId("P-123456"),
             self.order,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
     def serialize_submit_order(self):

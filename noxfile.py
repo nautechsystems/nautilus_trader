@@ -22,7 +22,8 @@ def tests_with_integration(session: Session) -> None:
     """Run the test suite including integration tests."""
     _setup_poetry(session)
     _run_pytest(
-        session, "--ignore=tests/performance_tests/",
+        session,
+        "--ignore=tests/performance_tests/",
     )
 
 

@@ -16,6 +16,7 @@
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
 
+
 # Fiat currencies
 AUD = Currency("AUD", precision=2, iso4217=036, name="Australian dollar", currency_type=CurrencyType.FIAT)
 BRL = Currency("BRL", precision=2, iso4217=986, name="Brazilian real", currency_type=CurrencyType.FIAT)

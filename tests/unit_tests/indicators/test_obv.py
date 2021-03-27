@@ -19,11 +19,11 @@ from nautilus_trader.indicators.obv import OnBalanceVolume
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class OnBalanceVolumeTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.obv = OnBalanceVolume(100)

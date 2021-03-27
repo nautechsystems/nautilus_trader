@@ -23,14 +23,13 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import UNIX_EPOCH
+
 
 AUDUSD = InstrumentId(Symbol("AUDUSD"), Venue("IDEALPRO"))
-MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
+MESSAGE = Message(MessageType.COMMAND, uuid4(), 0)
 
 
 class Experiments:
-
     @staticmethod
     def built_in_arithmetic():
         x = 1 + 1
@@ -58,7 +57,6 @@ class Experiments:
 
 
 class ExperimentsPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_builtin_arithmetic():
         PerformanceHarness.profile_function(Experiments.built_in_arithmetic, 100000, 1)

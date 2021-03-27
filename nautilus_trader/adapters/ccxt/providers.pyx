@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 from decimal import Decimal
 
 import ccxt
 
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
@@ -75,22 +75,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         self._client.load_markets(reload=True)
         self._load_currencies()
         self._load_instruments()
-
-    cpdef Currency currency(self, str code):
-        """
-        Return the currency with the given code (if found).
-
-        Parameters
-        ----------
-        code : str
-            The currency code.
-
-        Returns
-        -------
-        Currency or None
-
-        """
-        return self._currencies.get(code)
 
     cdef void _load_instruments(self) except *:
         cdef str k
@@ -236,7 +220,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             size_precision=size_precision,
             tick_size=tick_size,
             multiplier=Decimal(1),
-            leverage=Decimal(1),
             lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,
@@ -249,6 +232,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             maker_fee=maker_fee,
             taker_fee=taker_fee,
             financing={},
-            timestamp=datetime.utcnow(),
+            timestamp_ns=unix_timestamp_ns(),
             info=values,
         )

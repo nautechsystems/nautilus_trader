@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
@@ -61,7 +61,7 @@ cdef class MarketOrder(Order):
         Quantity quantity not None,
         TimeInForce time_in_force,
         UUID init_id not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `MarketOrder` class.
@@ -80,8 +80,8 @@ cdef class MarketOrder(Order):
             The order quantity (> 0).
         init_id : UUID
             The order initialization event identifier.
-        timestamp : datetime
-            The order initialization timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the order initialization.
 
         Raises
         ------
@@ -107,7 +107,7 @@ cdef class MarketOrder(Order):
             quantity=quantity,
             time_in_force=time_in_force,
             event_id=init_id,
-            event_timestamp=timestamp,
+            timestamp_ns=timestamp_ns,
             options={},
         )
 
@@ -144,7 +144,7 @@ cdef class MarketOrder(Order):
             quantity=event.quantity,
             time_in_force=event.time_in_force,
             init_id=event.id,
-            timestamp=event.timestamp,
+            timestamp_ns=event.timestamp_ns,
         )
 
     cdef str status_string_c(self):
@@ -155,12 +155,12 @@ cdef class MarketOrder(Order):
     cdef void _amended(self, OrderAmended event) except *:
         raise NotImplemented("Cannot amend a market order")
 
-    cdef void _filled(self, OrderFilled event) except *:
-        self.id = event.order_id
-        self.position_id = event.position_id
-        self.strategy_id = event.strategy_id
-        self._execution_ids.append(event.execution_id)
-        self.execution_id = event.execution_id
-        self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
-        self.filled_timestamp = event.timestamp
-        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
+    cdef void _filled(self, OrderFilled fill) except *:
+        self.id = fill.order_id
+        self.position_id = fill.position_id
+        self.strategy_id = fill.strategy_id
+        self._execution_ids.append(fill.execution_id)
+        self.execution_id = fill.execution_id
+        self.filled_qty = Quantity(self.filled_qty + fill.last_qty)
+        self.execution_ns = fill.execution_ns
+        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)

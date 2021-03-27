@@ -15,7 +15,6 @@
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
@@ -41,7 +40,7 @@ class MyStrategy(TradingStrategy):
         """
         # The order_id_tag should be unique at the 'trader level', here we are
         # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace('/', ""))
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", ""))
 
         # Custom strategy variables
         self.instrument_id = instrument_id
@@ -87,14 +86,12 @@ class MyStrategy(TradingStrategy):
         """
         pass
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    def on_bar(self, bar: Bar):
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 

@@ -17,10 +17,9 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.order_book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
@@ -47,10 +46,10 @@ cdef class DataCache(DataCacheFacade):
     cpdef void add_order_book(self, OrderBook order_book) except *
     cpdef void add_quote_tick(self, QuoteTick tick) except *
     cpdef void add_trade_tick(self, TradeTick tick) except *
-    cpdef void add_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void add_bar(self, Bar bar) except *
     cpdef void add_quote_ticks(self, list ticks) except *
     cpdef void add_trade_ticks(self, list ticks) except *
-    cpdef void add_bars(self, BarType bar_type, list bars) except *
+    cpdef void add_bars(self, list bars) except *
 
     cdef inline tuple _build_quote_table(self, Venue venue)
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *

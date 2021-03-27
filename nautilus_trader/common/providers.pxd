@@ -13,15 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
 
 cdef class InstrumentProvider:
     cdef dict _instruments
+    cdef dict _currencies
 
     cpdef void load_all(self) except *
     cpdef void load(self, InstrumentId instrument_id, dict details) except *
+    cpdef void add(self, Instrument instrument) except *
     cpdef dict get_all(self)
+    cpdef Currency currency(self, str code)
     cpdef Instrument find(self, InstrumentId instrument_id)
-    cdef Instrument find_c(self, InstrumentId instrument_id)

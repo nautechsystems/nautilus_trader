@@ -21,7 +21,6 @@ from nautilus_trader.common.queue import Queue
 
 
 class TestQueue:
-
     def test_queue_instantiation(self):
         # Arrange
         queue = Queue()

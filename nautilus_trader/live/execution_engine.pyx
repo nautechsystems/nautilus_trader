@@ -29,12 +29,12 @@ from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.execution.reports cimport ExecutionStateReport
+from nautilus_trader.execution.messages cimport ExecutionMassStatus
+from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -139,38 +139,57 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             True if states resolve within timeout, else False.
 
         """
-        self._log.info("Resolving states...")
+        # TODO: Refactor pass on this, plus above docs
+        cdef dict active_orders = {
+            order.cl_ord_id: order for order in self.cache.orders() if not order.is_completed_c()
+        }  # type: dict[ClientOrderId, Order]
 
-        cdef list orders = self.cache.orders()
-        cdef list open_orders = [order for order in orders if not order.is_completed_c()]
+        if not active_orders:
+            self._log.info(f"State reconciled.", LogColor.GREEN)
+            return True  # Execution states reconciled
+
+        cdef int count = len(active_orders)
+        self._log.info(
+            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
+            LogColor.BLUE,
+        )
 
         # Initialize order state map
-        cdef dict venue_orders = {}   # type: dict[Venue, list[Order]]
-        cdef Venue venue
-        for venue in self._clients.keys():
-            venue_orders[venue] = []
+        cdef dict client_orders = {
+            name: [] for name in self._clients.keys()
+        }   # type: dict[str, list[Order]]
 
         # Build order state map
         cdef Order order
-        for order in open_orders:
-            if order.venue in venue_orders:
-                venue_orders[order.venue].append(order)
+        for order in active_orders.values():
+            name = order.venue.first()
+            if name in client_orders:
+                client_orders[name].append(order)
             else:
-                self._log.error(f"Cannot resolve state. No registered"
-                                f"execution client for active {order}.")
+                self._log.error(f"Cannot reconcile state. No registered"
+                                f"execution client for {name} for active {order}.")
                 continue
 
-        cdef dict venue_reports = {}  # type: dict[Venue, ExecutionStateReport]
+        cdef dict client_mass_status = {}  # type: dict[str, ExecutionMassStatus]
 
         cdef LiveExecutionClient client
-        # Get state report from each client
-        for venue, client in self._clients.items():
-            venue_reports[venue] = await client.state_report(venue_orders[venue])
+        # Generate state report for each client
+        for name, client in self._clients.items():
+            client_mass_status[name] = await client.generate_mass_status(client_orders[name])
 
+        # Reconcile states
+        cdef ExecutionMassStatus mass_status
+        cdef OrderStatusReport order_state_report
+        for name, mass_status in client_mass_status.items():
+            for order_state_report in mass_status.order_reports().values():
+                order = active_orders.get(order_state_report.cl_ord_id)
+                exec_reports = mass_status.exec_reports().get(order.id, [])
+                await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
+
+        # Wait for state resolution until timeout...
         cdef int seconds = 10  # Hard coded for now
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
-        cdef OrderState target_state
-        cdef bint resolved
+        cdef OrderStatusReport state_report
         while True:
             if self._clock.utc_now() >= timeout:
                 self._log.error(f"Timed out ({seconds}s) waiting for "
@@ -178,20 +197,22 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 return False
 
             resolved = True
-            for order in open_orders:
-                target_state = venue_reports[order.venue].order_states.get(order.id, 0)
-                if order.state_c() != target_state:
-                    resolved = False  # Incorrect state
-                if target_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
-                    filled_qty = venue_reports[order.venue].order_filled[order.id]
-                    if order.filled_qty != filled_qty:
-                        resolved = False  # Incorrect filled quantity
+            for order in active_orders.values():
+                name = order.venue.first()
+                report = client_mass_status[name].order_reports().get(order.id)
+                if report is None:
+                    return False  # Will never resolve
+                if order.state_c() != report.order_state:
+                    resolved = False  # Incorrect state on this loop
+                if report.order_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
+                    if order.filled_qty != report.filled_qty:
+                        resolved = False  # Incorrect filled quantity on this loop
             if resolved:
                 break
             await asyncio.sleep(0.001)  # One millisecond sleep
 
         self._log.info(f"State reconciled.", LogColor.GREEN)
-        return True  # Execution states resolved
+        return True  # Execution states reconciled
 
     cpdef void kill(self) except *:
         """

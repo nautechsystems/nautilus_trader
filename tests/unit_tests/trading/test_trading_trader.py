@@ -40,11 +40,11 @@ from nautilus_trader.trading.trader import Trader
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TraderTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
@@ -61,7 +61,7 @@ class TraderTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=clock,
             logger=logger,
-            config={'use_previous_close': False},
+            config={"use_previous_close": False},
         )
 
         self.portfolio.register_cache(self.data_engine.cache)
@@ -156,8 +156,8 @@ class TraderTests(unittest.TestCase):
         # Assert
         self.assertTrue(StrategyId("TradingStrategy", "001") in status)
         self.assertTrue(StrategyId("TradingStrategy", "002") in status)
-        self.assertEqual('INITIALIZED', status[StrategyId("TradingStrategy", "001")])
-        self.assertEqual('INITIALIZED', status[StrategyId("TradingStrategy", "002")])
+        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy", "001")])
+        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy", "002")])
         self.assertEqual(2, len(status))
 
     def test_change_strategies(self):
@@ -194,8 +194,12 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(ComponentState.RUNNING, self.trader.state)
-        self.assertEqual('RUNNING', strategy_states[StrategyId("TradingStrategy", "001")])
-        self.assertEqual('RUNNING', strategy_states[StrategyId("TradingStrategy", "002")])
+        self.assertEqual(
+            "RUNNING", strategy_states[StrategyId("TradingStrategy", "001")]
+        )
+        self.assertEqual(
+            "RUNNING", strategy_states[StrategyId("TradingStrategy", "002")]
+        )
 
     def test_stop_a_running_trader(self):
         # Arrange
@@ -208,5 +212,9 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(ComponentState.STOPPED, self.trader.state)
-        self.assertEqual('STOPPED', strategy_states[StrategyId("TradingStrategy", "001")])
-        self.assertEqual('STOPPED', strategy_states[StrategyId("TradingStrategy", "002")])
+        self.assertEqual(
+            "STOPPED", strategy_states[StrategyId("TradingStrategy", "001")]
+        )
+        self.assertEqual(
+            "STOPPED", strategy_states[StrategyId("TradingStrategy", "002")]
+        )

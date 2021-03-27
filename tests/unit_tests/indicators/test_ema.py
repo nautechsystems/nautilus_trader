@@ -20,11 +20,11 @@ from nautilus_trader.model.enums import PriceType
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class ExponentialMovingAverageTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.ema = ExponentialMovingAverage(10)
@@ -33,14 +33,14 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual('ExponentialMovingAverage', self.ema.name)
+        self.assertEqual("ExponentialMovingAverage", self.ema.name)
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual('ExponentialMovingAverage(10)', str(self.ema))
-        self.assertEqual('ExponentialMovingAverage(10)', repr(self.ema))
+        self.assertEqual("ExponentialMovingAverage(10)", str(self.ema))
+        self.assertEqual("ExponentialMovingAverage(10)", repr(self.ema))
 
     def test_period_returns_expected_value(self):
         # Arrange

@@ -19,6 +19,9 @@ The `ExecutionCache` provides an interface for querying on orders and positions.
 
 import time
 
+from libc.math cimport lround
+from libc.stdint cimport int64_t
+
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -336,7 +339,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 error_count += 1
 
         # Finally
-        cdef long total_us = round((time.time() - ts) * 1000000)
+        cdef int64_t total_us = lround((time.time() - ts) * 1000000)
         if error_count == 0:
             self._log.info(f"Integrity check passed in {total_us}μs.", LogColor.GREEN)
             return True

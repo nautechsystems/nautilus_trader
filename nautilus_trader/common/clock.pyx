@@ -20,6 +20,7 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.timer cimport LoopTimer
 from nautilus_trader.common.timer cimport TestTimer
@@ -27,8 +28,13 @@ from nautilus_trader.common.timer cimport ThreadTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport UNIX_EPOCH
-from nautilus_trader.core.time cimport unix_time
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
+from nautilus_trader.core.datetime cimport nanos_to_secs
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
+from nautilus_trader.core.time cimport unix_timestamp
+from nautilus_trader.core.time cimport unix_timestamp_ns
+
+from nautilus_trader.core.datetime import timedelta_to_nanos
 
 
 cdef class Clock:
@@ -51,17 +57,42 @@ cdef class Clock:
         self.is_default_handler_registered = False
 
         self.timer_count = 0
-        self.next_event_time = None
         self.next_event_name = None
+        self.next_event_time = None
+        self.next_event_time_ns = 0
 
     cpdef datetime utc_now(self):
-        """Abstract method (implement in subclass)."""
-        # As the method implies, this should return a tz-aware UTC datetime
+        """
+        Return the current time (UTC).
+
+        Returns
+        -------
+        datetime
+            The current tz-aware UTC time of the clock.
+
+        """
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef datetime utc_now_c(self):
-        """Abstract method (implement in subclass)."""
-        # As the method implies, this should return a tz-aware UTC datetime
+    cpdef double timestamp(self) except *:
+        """
+        Return the current Unix time in seconds.
+
+        Returns
+        -------
+        double
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef int64_t timestamp_ns(self) except *:
+        """
+        Return the current Unix time in nanoseconds.
+
+        Returns
+        -------
+        int64
+
+        """
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef datetime local_now(self, tzinfo tz):
@@ -76,10 +107,10 @@ cdef class Clock:
         Returns
         -------
         datetime
-            tz-aware as local timezone.
+            tz-aware in local timezone.
 
         """
-        return self.utc_now_c().astimezone(tz)
+        return self.utc_now().astimezone(tz)
 
     cpdef timedelta delta(self, datetime time):
         """
@@ -98,18 +129,7 @@ cdef class Clock:
         """
         Condition.not_none(time, "time")
 
-        return self.utc_now_c() - time
-
-    cpdef double unix_time(self):
-        """
-        Return the current Unix time in seconds from the system clock.
-
-        Returns
-        -------
-        double
-
-        """
-        return unix_time()
+        return self.utc_now() - time
 
     cpdef list timer_names(self):
         """
@@ -204,17 +224,18 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
-        cdef datetime now = self.utc_now_c()
-        Condition.true(alert_time >= now, "alert_time was < now")
+        Condition.true(alert_time >= self.utc_now(), "alert_time was < self.utc_now()")
         Condition.callable(handler, "handler")
+
+        cdef int64_t alert_time_ns = dt_to_unix_nanos(alert_time)
+        cdef int64_t now_ns = self.timestamp_ns()
 
         cdef Timer timer = self._create_timer(
             name=name,
             callback=handler,
-            interval=alert_time - now,
-            now=now,
-            start_time=now,
-            stop_time=alert_time,
+            interval_ns=alert_time_ns - now_ns,
+            start_time_ns=now_ns,
+            stop_time_ns=alert_time_ns,
         )
 
         self._add_timer(timer, handler)
@@ -228,7 +249,7 @@ cdef class Clock:
         handler: callable=None,
     ) except *:
         """
-        Set a timer with the given interval.
+        Set a timer to run.
 
         The timer will run from the start time (optionally until the stop time).
         When the intervals are reached the handlers will be passed the
@@ -264,6 +285,8 @@ cdef class Clock:
             If handler is None and no default handler is registered.
 
         """
+        cdef datetime now = self.utc_now()  # Call here for greater accuracy
+
         Condition.valid_string(name, "name")
         Condition.not_none(interval, "interval")
         if handler is None:
@@ -273,20 +296,22 @@ cdef class Clock:
         Condition.true(interval.total_seconds() > 0, f"interval was {interval.total_seconds()}")
         Condition.callable(handler, "handler")
 
-        cdef datetime now = self.utc_now_c()
         if start_time is None:
             start_time = now
         if stop_time is not None:
             Condition.true(stop_time > now, "stop_time was < now")
             Condition.true(start_time + interval <= stop_time, "start_time + interval was > stop_time")
 
+        cdef int64_t interval_ns = timedelta_to_nanos(interval)
+        cdef int64_t start_time_ns = dt_to_unix_nanos(start_time)
+        cdef int64_t stop_time_ns = dt_to_unix_nanos(stop_time) if stop_time else 0
+
         cdef Timer timer = self._create_timer(
             name=name,
-            interval=interval,
+            interval_ns=interval_ns,
             callback=handler,
-            now=now,
-            start_time=start_time,
-            stop_time=stop_time,
+            start_time_ns=start_time_ns,
+            stop_time_ns=stop_time_ns,
         )
         self._add_timer(timer, handler)
 
@@ -331,10 +356,9 @@ cdef class Clock:
         self,
         str name,
         callback: callable,
-        timedelta interval,
-        datetime now,
-        datetime start_time,
-        datetime stop_time,
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -366,21 +390,21 @@ cdef class Clock:
     @cython.wraparound(False)
     cdef inline void _update_timing(self) except *:
         if self.timer_count == 0:
-            self.next_event_time = None
+            self.next_event_time_ns = 0
             return
         elif self.timer_count == 1:
-            self.next_event_time = self._stack[0].next_time
+            self.next_event_time_ns = self._stack[0].next_time_ns
             return
 
-        cdef datetime next_time = self._stack[0].next_time
-        cdef datetime observed
+        cdef int64_t next_time_ns = self._stack[0].next_time_ns
+        cdef int64_t observed_ns
         cdef int i
         for i in range(self.timer_count - 1):
-            observed = self._stack[i + 1].next_time
-            if observed < next_time:
-                next_time = observed
+            observed_ns = self._stack[i + 1].next_time_ns
+            if observed_ns < next_time_ns:
+                next_time_ns = observed_ns
 
-        self.next_event_time = next_time
+        self.next_event_time_ns = next_time_ns
 
 
 cdef class TestClock(Clock):
@@ -389,56 +413,75 @@ cdef class TestClock(Clock):
     """
     __test__ = False
 
-    def __init__(self, datetime initial_time not None=UNIX_EPOCH):
+    def __init__(self, int64_t initial_ns=0):
         """
         Initialize a new instance of the `TestClock` class.
 
         Parameters
         ----------
-        initial_time : datetime
-            The initial time for the clock.
+        initial_ns : int64
+            The initial Unix time for the clock (nanos).
 
         """
         super().__init__()
 
-        self._time = initial_time
+        self._time_ns = initial_ns
         self.is_test_clock = True
 
     cpdef datetime utc_now(self):
         """
+        Return the current time (UTC).
+
         Returns
         -------
         datetime
             The current tz-aware UTC time of the clock.
 
         """
-        return self._time
+        return nanos_to_unix_dt(nanos=self._time_ns)
 
-    cdef datetime utc_now_c(self):
-        return self._time
+    cpdef double timestamp(self) except *:
+        """
+        Return the current Unix time in seconds.
 
-    cpdef void set_time(self, datetime to_time) except *:
+        Returns
+        -------
+        double
+
+        """
+        return nanos_to_secs(self._time_ns)
+
+    cpdef int64_t timestamp_ns(self) except *:
+        """
+        Return the current Unix time in nanoseconds (ns).
+
+        Returns
+        -------
+        int64
+
+        """
+        return self._time_ns
+
+    cpdef void set_time(self, int64_t to_time_ns) except *:
         """
         Set the clocks datetime to the given time (UTC).
 
         Parameters
         ----------
-        to_time : datetime
-            The time to set.
+        to_time_ns : int64
+            The Unix time (nanos) to set.
 
         """
-        Condition.not_none(to_time, "to_time")
+        self._time_ns = to_time_ns
 
-        self._time = to_time
-
-    cpdef list advance_time(self, datetime to_time):
+    cpdef list advance_time(self, int64_t to_time_ns):
         """
         Advance the clocks time to the given `datetime`.
 
         Parameters
         ----------
-        to_time : datetime
-            The datetime to advance the clock to.
+        to_time_ns : int64
+            The Unix time (nanos) advance the clock to.
 
         Returns
         -------
@@ -451,46 +494,45 @@ cdef class TestClock(Clock):
             If to_time is < the clocks current time.
 
         """
-        Condition.not_none(to_time, "to_time")
-        Condition.true(to_time >= self._time, "to_time was < self._time")  # Ensure monotonic
+        # Ensure monotonic
+        Condition.true(to_time_ns >= self._time_ns, "to_time_ns was < self._time_ns")
 
         cdef list event_handlers = []
 
-        if self.timer_count == 0 or to_time < self.next_event_time:
-            self._time = to_time
+        if self.timer_count == 0 or to_time_ns < self.next_event_time_ns:
+            self._time_ns = to_time_ns
             return event_handlers  # No timer events to iterate
 
         # Iterate timer events
         cdef TestTimer timer
         cdef TimeEvent event
         for timer in self._stack:
-            for event in timer.advance(to_time):
+            for event in timer.advance(to_time_ns=to_time_ns):
                 event_handlers.append(TimeEventHandler(event, timer.callback))
 
         # Remove expired timers
         for timer in self._stack:
-            if timer.expired:
+            if timer.is_expired:
                 self._remove_timer(timer)
 
         self._update_timing()
-        self._time = to_time
+        self._time_ns = to_time_ns
         return sorted(event_handlers)
 
     cdef Timer _create_timer(
         self,
         str name,
         callback: callable,
-        timedelta interval,
-        datetime now,
-        datetime start_time,
-        datetime stop_time,
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns,
     ):
         return TestTimer(
             name=name,
             callback=callback,
-            interval=interval,
-            start_time=start_time,
-            stop_time=stop_time,
+            interval_ns=interval_ns,
+            start_time_ns=start_time_ns,
+            stop_time_ns=stop_time_ns,
         )
 
 
@@ -518,15 +560,14 @@ cdef class LiveClock(Clock):
 
     cpdef datetime utc_now(self):
         """
+        Return the current time (UTC).
+
         Returns
         -------
         datetime
             The current tz-aware UTC time of the clock.
 
         """
-        return self.utc_now_c()
-
-    cdef datetime utc_now_c(self):
         # Regarding the below call to pytz.utc
         # From the pytz docs https://pythonhosted.org/pytz/
         # -------------------------------------------------
@@ -538,45 +579,70 @@ cdef class LiveClock(Clock):
         # by humans.
         return datetime.now(tz=self._utc)
 
+    cpdef double timestamp(self) except *:
+        """
+        Return the current Unix time in seconds from the system clock.
+
+        Returns
+        -------
+        double
+
+        """
+        return unix_timestamp()
+
+    cpdef int64_t timestamp_ns(self) except *:
+        """
+        Return the current Unix time in nanoseconds (ns) from the system clock.
+
+        Returns
+        -------
+        int64
+
+        """
+        return unix_timestamp_ns()
+
     cdef Timer _create_timer(
         self,
         str name,
         callback: callable,
-        timedelta interval,
-        datetime now,
-        datetime start_time,
-        datetime stop_time,
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns,
     ):
         if self._loop is not None:
             return LoopTimer(
                 loop=self._loop,
                 name=name,
                 callback=self._raise_time_event,
-                interval=interval,
-                now=now,
-                start_time=start_time,
-                stop_time=stop_time,
+                interval_ns=interval_ns,
+                now_ns=self.timestamp_ns(),  # Timestamp now here for accuracy
+                start_time_ns=start_time_ns,
+                stop_time_ns=stop_time_ns,
             )
         else:
             return ThreadTimer(
                 name=name,
                 callback=self._raise_time_event,
-                interval=interval,
-                now=now,
-                start_time=start_time,
-                stop_time=stop_time,
+                interval_ns=interval_ns,
+                now_ns=self.timestamp_ns(),  # Timestamp now here for accuracy
+                start_time_ns=start_time_ns,
+                stop_time_ns=stop_time_ns,
             )
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
-        cdef datetime now = self.utc_now_c()
-        cdef TimeEvent event = timer.pop_event(self._uuid_factory.generate())
-        timer.iterate_next_time(now)
+        cdef int64_t timestamp_ns = self.timestamp_ns()
+        cdef TimeEvent event = timer.pop_event(
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=timestamp_ns,
+        )
+
+        timer.iterate_next_time(self.timestamp_ns())
         self._handle_time_event(event)
 
-        if timer.expired:
+        if timer.is_expired:
             self._remove_timer(timer)
         else:  # Continue timing
-            timer.repeat(now)
+            timer.repeat(now_ns=self.timestamp_ns())
             self._update_timing()
 
     cdef inline void _handle_time_event(self, TimeEvent event) except *:

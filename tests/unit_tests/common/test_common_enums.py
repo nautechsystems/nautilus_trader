@@ -24,20 +24,21 @@ from nautilus_trader.common.c_enums.component_trigger import ComponentTriggerPar
 
 
 class ComponentStateTests(unittest.TestCase):
-
-    @parameterized.expand([
-        [ComponentState.UNDEFINED, "UNDEFINED"],
-        [ComponentState.INITIALIZED, "INITIALIZED"],
-        [ComponentState.STARTING, "STARTING"],
-        [ComponentState.RUNNING, "RUNNING"],
-        [ComponentState.STOPPING, "STOPPING"],
-        [ComponentState.STOPPED, "STOPPED"],
-        [ComponentState.RESUMING, "RESUMING"],
-        [ComponentState.RESETTING, "RESETTING"],
-        [ComponentState.DISPOSING, "DISPOSING"],
-        [ComponentState.DISPOSED, "DISPOSED"],
-        [ComponentState.FAULTED, "FAULTED"],
-    ])
+    @parameterized.expand(
+        [
+            [ComponentState.UNDEFINED, "UNDEFINED"],
+            [ComponentState.INITIALIZED, "INITIALIZED"],
+            [ComponentState.STARTING, "STARTING"],
+            [ComponentState.RUNNING, "RUNNING"],
+            [ComponentState.STOPPING, "STOPPING"],
+            [ComponentState.STOPPED, "STOPPED"],
+            [ComponentState.RESUMING, "RESUMING"],
+            [ComponentState.RESETTING, "RESETTING"],
+            [ComponentState.DISPOSING, "DISPOSING"],
+            [ComponentState.DISPOSED, "DISPOSED"],
+            [ComponentState.FAULTED, "FAULTED"],
+        ]
+    )
     def test_component_state_to_str(self, enum, expected):
         # Arrange
         # Act
@@ -46,20 +47,22 @@ class ComponentStateTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, result)
 
-    @parameterized.expand([
-        ["", ComponentState.UNDEFINED],
-        ["UNDEFINED", ComponentState.UNDEFINED],
-        ["INITIALIZED", ComponentState.INITIALIZED],
-        ["STARTING", ComponentState.STARTING],
-        ["RUNNING", ComponentState.RUNNING],
-        ["STOPPING", ComponentState.STOPPING],
-        ["STOPPED", ComponentState.STOPPED],
-        ["RESUMING", ComponentState.RESUMING],
-        ["RESETTING", ComponentState.RESETTING],
-        ["DISPOSING", ComponentState.DISPOSING],
-        ["DISPOSED", ComponentState.DISPOSED],
-        ["FAULTED", ComponentState.FAULTED],
-    ])
+    @parameterized.expand(
+        [
+            ["", ComponentState.UNDEFINED],
+            ["UNDEFINED", ComponentState.UNDEFINED],
+            ["INITIALIZED", ComponentState.INITIALIZED],
+            ["STARTING", ComponentState.STARTING],
+            ["RUNNING", ComponentState.RUNNING],
+            ["STOPPING", ComponentState.STOPPING],
+            ["STOPPED", ComponentState.STOPPED],
+            ["RESUMING", ComponentState.RESUMING],
+            ["RESETTING", ComponentState.RESETTING],
+            ["DISPOSING", ComponentState.DISPOSING],
+            ["DISPOSED", ComponentState.DISPOSED],
+            ["FAULTED", ComponentState.FAULTED],
+        ]
+    )
     def test_component_state_from_str(self, string, expected):
         # Arrange
         # Act
@@ -70,18 +73,19 @@ class ComponentStateTests(unittest.TestCase):
 
 
 class ComponentTriggerTests(unittest.TestCase):
-
-    @parameterized.expand([
-        [ComponentTrigger.UNDEFINED, "UNDEFINED"],
-        [ComponentTrigger.START, "START"],
-        [ComponentTrigger.RUNNING, "RUNNING"],
-        [ComponentTrigger.STOP, "STOP"],
-        [ComponentTrigger.STOPPED, "STOPPED"],
-        [ComponentTrigger.RESUME, "RESUME"],
-        [ComponentTrigger.RESET, "RESET"],
-        [ComponentTrigger.DISPOSE, "DISPOSE"],
-        [ComponentTrigger.DISPOSED, "DISPOSED"],
-    ])
+    @parameterized.expand(
+        [
+            [ComponentTrigger.UNDEFINED, "UNDEFINED"],
+            [ComponentTrigger.START, "START"],
+            [ComponentTrigger.RUNNING, "RUNNING"],
+            [ComponentTrigger.STOP, "STOP"],
+            [ComponentTrigger.STOPPED, "STOPPED"],
+            [ComponentTrigger.RESUME, "RESUME"],
+            [ComponentTrigger.RESET, "RESET"],
+            [ComponentTrigger.DISPOSE, "DISPOSE"],
+            [ComponentTrigger.DISPOSED, "DISPOSED"],
+        ]
+    )
     def test_component_trigger_to_str(self, enum, expected):
         # Arrange
         # Act
@@ -90,18 +94,20 @@ class ComponentTriggerTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, result)
 
-    @parameterized.expand([
-        ["", ComponentTrigger.UNDEFINED],
-        ["UNDEFINED", ComponentTrigger.UNDEFINED],
-        ["START", ComponentTrigger.START],
-        ["RUNNING", ComponentTrigger.RUNNING],
-        ["STOP", ComponentTrigger.STOP],
-        ["STOPPED", ComponentTrigger.STOPPED],
-        ["RESUME", ComponentTrigger.RESUME],
-        ["RESET", ComponentTrigger.RESET],
-        ["DISPOSE", ComponentTrigger.DISPOSE],
-        ["DISPOSED", ComponentTrigger.DISPOSED],
-    ])
+    @parameterized.expand(
+        [
+            ["", ComponentTrigger.UNDEFINED],
+            ["UNDEFINED", ComponentTrigger.UNDEFINED],
+            ["START", ComponentTrigger.START],
+            ["RUNNING", ComponentTrigger.RUNNING],
+            ["STOP", ComponentTrigger.STOP],
+            ["STOPPED", ComponentTrigger.STOPPED],
+            ["RESUME", ComponentTrigger.RESUME],
+            ["RESET", ComponentTrigger.RESET],
+            ["DISPOSE", ComponentTrigger.DISPOSE],
+            ["DISPOSED", ComponentTrigger.DISPOSED],
+        ]
+    )
     def test_component_trigger_from_str(self, string, expected):
         # Arrange
         # Act

@@ -17,64 +17,73 @@ import json
 
 import ccxt
 
+
 # Requirements:
 # - An internet connection
 
 
 def request_instruments():
-    client = ccxt.binance({
-        "apiKey": "",
-        "secret": "",
-        "timeout": 10000,         # Hard coded for now
-        "enableRateLimit": True,  # Hard coded for now
-    })
+    client = ccxt.binance(
+        {
+            "apiKey": "",
+            "secret": "",
+            "timeout": 10000,  # Hard coded for now
+            "enableRateLimit": True,  # Hard coded for now
+        }
+    )
 
     client.load_markets()
     res = client.markets
 
-    with open("markets.json", 'w') as json_file:
+    with open("markets.json", "w") as json_file:
         json.dump(res, json_file)
 
 
 def request_currencies():
-    client = ccxt.binance({
-        "apiKey": "",
-        "secret": "",
-        "timeout": 10000,         # Hard coded for now
-        "enableRateLimit": True,  # Hard coded for now
-    })
+    client = ccxt.binance(
+        {
+            "apiKey": "",
+            "secret": "",
+            "timeout": 10000,  # Hard coded for now
+            "enableRateLimit": True,  # Hard coded for now
+        }
+    )
 
     client.load_markets()
     currencies = client.currencies
 
-    with open("currencies.json", 'w') as json_file:
+    with open("currencies.json", "w") as json_file:
         json.dump(currencies, json_file)
 
 
 def request_order_book():
-    client = ccxt.binance({
-        "apiKey": "",
-        "secret": "",
-        "timeout": 10000,         # Hard coded for now
-        "enableRateLimit": True,  # Hard coded for now
-    })
+    client = ccxt.binance(
+        {
+            "apiKey": "",
+            "secret": "",
+            "timeout": 10000,  # Hard coded for now
+            "enableRateLimit": True,  # Hard coded for now
+        }
+    )
 
     client.load_markets()
 
     order_book = client.fetch_order_book(
         "ETH/USDT",
     )
-    with open("fetch_order_book.json", 'w') as json_file:
+    with open("fetch_order_book.json", "w") as json_file:
         json.dump(order_book, json_file)
 
 
 def request_bars():
-    client = ccxt.binance({
-        "apiKey": "",
-        "secret": "",
-        "timeout": 10000,         # Hard coded for now
-        "enableRateLimit": True,  # Hard coded for now
-    })
+    client = ccxt.binance(
+        {
+            "apiKey": "",
+            "secret": "",
+            "timeout": 10000,  # Hard coded for now
+            "enableRateLimit": True,  # Hard coded for now
+        }
+    )
 
     client.load_markets()
 
@@ -83,17 +92,19 @@ def request_bars():
         "1m",
         limit=101,  # Simulate a user request of 100 accounting for partial bar
     )
-    with open("fetch_ohlcv.json", 'w') as json_file:
+    with open("fetch_ohlcv.json", "w") as json_file:
         json.dump(bars, json_file)
 
 
 def request_trades():
-    client = ccxt.binance({
-        "apiKey": "",
-        "secret": "",
-        "timeout": 10000,         # Hard coded for now
-        "enableRateLimit": True,  # Hard coded for now
-    })
+    client = ccxt.binance(
+        {
+            "apiKey": "",
+            "secret": "",
+            "timeout": 10000,  # Hard coded for now
+            "enableRateLimit": True,  # Hard coded for now
+        }
+    )
 
     client.load_markets()
 
@@ -101,7 +112,7 @@ def request_trades():
         "ETH/USDT",
         limit=100,
     )
-    with open("fetch_trades.json", 'w') as json_file:
+    with open("fetch_trades.json", "w") as json_file:
         json.dump(trades, json_file)
 
 

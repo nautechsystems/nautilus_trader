@@ -15,6 +15,7 @@
 
 from datetime import datetime
 import inspect
+from typing import List, Optional
 
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
@@ -23,15 +24,20 @@ from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.database import ExecutionDatabase
+from nautilus_trader.execution.messages import ExecutionReport
+from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.order.base import Order
 from nautilus_trader.model.position import Position
@@ -132,11 +138,11 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(tick)
 
-    def on_bar(self, bar_type, bar) -> None:
+    def on_bar(self, bar) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store((bar_type, bar))
+        self.object_storer.store(bar)
 
-        if bar_type != self.bar_type:
+        if bar.type != self.bar_type:
             return
 
         if self.ema1.value > self.ema2.value:
@@ -239,7 +245,7 @@ class KaboomStrategy(TradingStrategy):
     def on_trade_tick(self, tick) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_bar(self, bar_type, bar) -> None:
+    def on_bar(self, bar) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
     def on_data(self, data) -> None:
@@ -287,7 +293,7 @@ class MockMarketDataClient(MarketDataClient):
 
         self.calls = []
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+    # -- COMMANDS ----------------------------------------------------------------------------------
 
     def connect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -301,7 +307,7 @@ class MockMarketDataClient(MarketDataClient):
     def dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -339,12 +345,14 @@ class MockMarketDataClient(MarketDataClient):
     def unsubscribe_order_book(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+    # -- REQUESTS ----------------------------------------------------------------------------------
 
     def request(self, datatype: DataType, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID) -> None:
+    def request_instrument(
+        self, instrument_id: InstrumentId, correlation_id: UUID
+    ) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def request_instruments(self, correlation_id: UUID) -> None:
@@ -390,7 +398,7 @@ class MockExecutionClient(ExecutionClient):
 
     def __init__(
         self,
-        venue,
+        name,
         account_id,
         engine,
         clock,
@@ -401,7 +409,7 @@ class MockExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        venue : Venue
+        name : str
             The venue for the client.
         account_id : AccountId
             The account_id for the client.
@@ -414,7 +422,7 @@ class MockExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            venue,
+            name,
             account_id,
             engine,
             clock,
@@ -438,7 +446,7 @@ class MockExecutionClient(ExecutionClient):
     def reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+    # -- COMMANDS ----------------------------------------------------------------------------------
 
     def account_inquiry(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -461,6 +469,115 @@ class MockExecutionClient(ExecutionClient):
         self.commands.append(command)
 
 
+class MockLiveExecutionClient(LiveExecutionClient):
+    """
+    Provides a mock execution client for testing.
+
+    The client will append all method calls to the calls list.
+    """
+
+    def __init__(
+        self,
+        name,
+        account_id,
+        engine,
+        instrument_provider,
+        clock,
+        logger,
+    ):
+        """
+        Initialize a new instance of the `MockExecutionClient` class.
+
+        Parameters
+        ----------
+        name : str
+            The venue for the client.
+        account_id : AccountId
+            The account_id for the client.
+        engine : ExecutionEngine
+            The execution engine for the component.
+        instrument_provider : InstrumentProvider
+            The instrument provider for the client.
+        clock : Clock
+            The clock for the component.
+        logger : Logger
+            The logger for the component.
+
+        """
+        super().__init__(
+            name,
+            account_id,
+            engine,
+            instrument_provider,
+            clock,
+            logger,
+        )
+
+        self._order_status_reports = {}  # type: dict[OrderId, OrderStatusReport]
+        self._trades_lists = {}  # type: dict[OrderId, list[ExecutionReport]]
+
+        self.calls = []
+        self.commands = []
+
+    def add_order_status_report(self, report: OrderStatusReport) -> None:
+        self._order_status_reports[report.order_id] = report
+
+    def add_trades_list(self, order_id: OrderId, trades: List[ExecutionReport]) -> None:
+        self._trades_lists[order_id] = trades
+
+    def connect(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self._set_connected()
+
+    def disconnect(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self._set_connected(False)
+
+    def dispose(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def reset(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    # -- COMMANDS ----------------------------------------------------------------------------------
+
+    def account_inquiry(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
+    def submit_order(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
+    def submit_bracket_order(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
+    def amend_order(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
+    def cancel_order(self, command) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.commands.append(command)
+
+    async def generate_order_status_report(
+        self, order: Order
+    ) -> Optional[OrderStatusReport]:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        return self._order_status_reports[order.id]
+
+    async def generate_exec_reports(
+        self,
+        order_id: OrderId,
+        symbol: Symbol,
+        since: datetime = None,
+    ) -> List[ExecutionReport]:
+        print(self._trades_lists)
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        return self._trades_lists[order_id]
+
+
 class MockExecutionDatabase(ExecutionDatabase):
     """
     Provides a mock execution database for testing.
@@ -478,7 +595,7 @@ class MockExecutionDatabase(ExecutionDatabase):
         logger : Logger
             The logger for the database.
 
-    """
+        """
         super().__init__(trader_id, logger)
 
         self.accounts = {}

@@ -19,13 +19,12 @@ from nautilus_trader.core.uuid import UUID
 
 
 class TestUUID:
-
     def test_instantiate_with_invalid_bytes_length_raises_exception(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            UUID(b'\x12\x34\x56\x78' * 8)
+            UUID(b"\x12\x34\x56\x78" * 8)
 
     @pytest.mark.parametrize(
         "value",
@@ -41,20 +40,20 @@ class TestUUID:
     def test_instantiate_with_valid_bytes(self):
         # Arrange
         # Act
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Assert
         assert isinstance(uuid, UUID)
-        assert "UUID(\'12345678-1234-5678-1234-567812345678\')" == repr(uuid)
+        assert "UUID('12345678-1234-5678-1234-567812345678')" == repr(uuid)
         assert "12345678-1234-5678-1234-567812345678" == str(uuid)
         assert 24197857161011715162171839636988778104 == uuid.int_val
 
     def test_equality(self):
         # Arrange
         # Act
-        uuid1 = UUID(value=b'\x12\x34\x56\x78' * 4)
-        uuid2 = UUID(value=b'\x12\x34\x56\x78' * 4)
-        uuid3 = UUID(value=b'\x34\x56\x78\x99' * 4)
+        uuid1 = UUID(value=b"\x12\x34\x56\x78" * 4)
+        uuid2 = UUID(value=b"\x12\x34\x56\x78" * 4)
+        uuid3 = UUID(value=b"\x34\x56\x78\x99" * 4)
 
         # Assert
         assert uuid1 == uuid1
@@ -64,8 +63,8 @@ class TestUUID:
     def test_comparison(self):
         # Arrange
         # Act
-        uuid1 = UUID(value=b'\x12\x34\x56\x78' * 4)
-        uuid2 = UUID(value=b'\x34\x56\x78\x99' * 4)
+        uuid1 = UUID(value=b"\x12\x34\x56\x78" * 4)
+        uuid2 = UUID(value=b"\x34\x56\x78\x99" * 4)
 
         # Assert
         assert uuid1 <= uuid1
@@ -75,8 +74,8 @@ class TestUUID:
 
     def test_hash(self):
         # Arrange
-        uuid1 = UUID(value=b'\x12\x34\x56\x78' * 4)
-        uuid2 = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid1 = UUID(value=b"\x12\x34\x56\x78" * 4)
+        uuid2 = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -85,7 +84,7 @@ class TestUUID:
 
     def test_int(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -94,23 +93,23 @@ class TestUUID:
 
     def test_bytes(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
-        assert b'\x124Vx\x124Vx\x124Vx\x124Vx' == uuid.bytes
+        assert b"\x124Vx\x124Vx\x124Vx\x124Vx" == uuid.bytes
 
     def test_bytes_le(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
-        assert b'xV4\x124\x12xV\x124Vx\x124Vx' == uuid.bytes_le
+        assert b"xV4\x124\x12xV\x124Vx\x124Vx" == uuid.bytes_le
 
     def test_fields(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -118,7 +117,7 @@ class TestUUID:
 
     def test_time_low(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -126,7 +125,7 @@ class TestUUID:
 
     def test_time_mid(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -134,7 +133,7 @@ class TestUUID:
 
     def test_time_high_version(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -142,7 +141,7 @@ class TestUUID:
 
     def test_clock_seq_hi_variant(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -150,7 +149,7 @@ class TestUUID:
 
     def test_clock_seq_low(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -158,7 +157,7 @@ class TestUUID:
 
     def test_time(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -166,7 +165,7 @@ class TestUUID:
 
     def test_clock_seq(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -174,7 +173,7 @@ class TestUUID:
 
     def test_node(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -182,7 +181,7 @@ class TestUUID:
 
     def test_hex(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert
@@ -190,7 +189,7 @@ class TestUUID:
 
     def test_urn(self):
         # Arrange
-        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid = UUID(value=b"\x12\x34\x56\x78" * 4)
 
         # Act
         # Assert

@@ -41,12 +41,14 @@ cdef class IdentifierCache:
 
         Returns
         -------
-        TraderId or None
+        TraderId
 
         Raises
         ------
         ValueError
             If value is not a valid string.
+        ValueError
+            If cache does not contain value and value cannot be parsed.
 
         """
         Condition.valid_string(value, "value")
@@ -64,12 +66,14 @@ cdef class IdentifierCache:
 
         Returns
         -------
-        AccountId or None
+        AccountId
 
         Raises
         ------
         ValueError
             If value is not a valid string.
+        ValueError
+            If cache does not contain value and value cannot be parsed.
 
         """
         Condition.valid_string(value, "value")
@@ -85,12 +89,14 @@ cdef class IdentifierCache:
 
         Returns
         -------
-        StrategyId or None
+        StrategyId
 
         Raises
         ------
         ValueError
             If value is not a valid string.
+        ValueError
+            If cache does not contain value and value cannot be parsed.
 
         """
         Condition.valid_string(value, "value")
@@ -108,12 +114,14 @@ cdef class IdentifierCache:
 
         Returns
         -------
-        InstrumentId or None
+        InstrumentId
 
         Raises
         ------
         ValueError
             If value is not a valid string.
+        ValueError
+            If cache does not contain value and value cannot be parsed.
 
         """
         Condition.valid_string(value, "value")

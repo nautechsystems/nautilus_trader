@@ -15,8 +15,7 @@
 
 from decimal import Decimal
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -37,8 +36,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Position:
     cdef list _events
-    cdef object _buy_quantity
-    cdef object _sell_quantity
+    cdef list _execution_ids
+    cdef object _buy_qty
+    cdef object _sell_qty
     cdef dict _commissions
 
     cdef readonly PositionId id
@@ -60,27 +60,27 @@ cdef class Position:
     """The entry direction from open.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide` (Enum)"""
-    cdef readonly object relative_quantity
+    cdef readonly object relative_qty
     """The relative quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
-    cdef readonly Quantity peak_quantity
+    cdef readonly Quantity peak_qty
     """The peak directional quantity reached by the position.\n\n:returns: `Quantity`"""
     cdef readonly Currency quote_currency
     """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
-    cdef readonly datetime timestamp
-    """The position initialization timestamp.\n\n:returns: `datetime`"""
-    cdef readonly datetime opened_time
-    """The opened time.\n\n:returns: `datetime`"""
-    cdef readonly datetime closed_time
-    """The closed time.\n\n:returns: `datetime` or `None`"""
-    cdef readonly timedelta open_duration
-    """The total open duration.\n\n:returns: `timedelta` or `None`"""
-    cdef readonly object avg_open
+    cdef readonly int64_t timestamp_ns
+    """The position initialization Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly int64_t opened_timestamp_ns
+    """The opened time Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly int64_t closed_timestamp_ns
+    """The closed time Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly int64_t open_duration_ns
+    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly object avg_px_open
     """The average open price.\n\n:returns: `Decimal`"""
-    cdef readonly object avg_close
+    cdef readonly object avg_px_close
     """The average closing price.\n\n:returns: `Decimal` or `None`"""
     cdef readonly object realized_points
     """The realized points of the position.\n\n:returns: `Decimal`"""
@@ -107,21 +107,20 @@ cdef class Position:
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
-    cpdef void apply(self, OrderFilled event) except *
-    cdef void apply_c(self, OrderFilled event) except *
+    cpdef void apply(self, OrderFilled fill) except *
 
     cpdef Money notional_value(self, Price last)
-    cpdef Money calculate_pnl(self, avg_open: Decimal, avg_close: Decimal, quantity: Decimal)
+    cpdef Money calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)
     cpdef Money unrealized_pnl(self, Price last)
     cpdef Money total_pnl(self, Price last)
     cpdef list commissions(self)
 
-    cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
-    cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline object _calculate_avg_price(self, avg_price: Decimal, quantity: Decimal, OrderFilled event)
-    cdef inline object _calculate_avg_open_price(self, OrderFilled event)
-    cdef inline object _calculate_avg_close_price(self, OrderFilled event)
-    cdef inline object _calculate_points(self, avg_open: Decimal, avg_close: Decimal)
-    cdef inline object _calculate_points_inverse(self, avg_open: Decimal, avg_close: Decimal)
-    cdef inline object _calculate_return(self, avg_open: Decimal, avg_close: Decimal)
-    cdef inline object _calculate_pnl(self, avg_open: Decimal, avg_close: Decimal, quantity: Decimal)
+    cdef inline void _handle_buy_order_fill(self, OrderFilled fill) except *
+    cdef inline void _handle_sell_order_fill(self, OrderFilled fill) except *
+    cdef inline object _calculate_avg_px(self, avg_px: Decimal, qty: Decimal, OrderFilled fill)
+    cdef inline object _calculate_avg_px_open_px(self, OrderFilled fill)
+    cdef inline object _calculate_avg_px_close_px(self, OrderFilled fill)
+    cdef inline object _calculate_points(self, avg_px_open: Decimal, avg_px_close: Decimal)
+    cdef inline object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal)
+    cdef inline object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal)
+    cdef inline object _calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)

@@ -19,6 +19,7 @@ The top level package contains all sub-packages needed for NautilusTrader.
 
 import os
 
+
 # `importlib.metadata` is available from 3.8 onward.
 # Prior to that we need the `importlib_metadata` package.
 try:

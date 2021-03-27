@@ -38,13 +38,13 @@ from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 SIM = Venue("SIM")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class TestLiveRiskEngine:
-
     def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -78,7 +78,9 @@ class TestLiveRiskEngine:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        self.database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = BypassExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
@@ -89,7 +91,7 @@ class TestLiveRiskEngine:
 
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
-            self.venue,
+            self.venue.value,
             self.account_id,
             self.exec_engine,
             self.clock,
@@ -133,7 +135,7 @@ class TestLiveRiskEngine:
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         strategy = TradingStrategy(order_id_tag="001")
@@ -152,14 +154,14 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            Venue("SIM"),
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
@@ -178,7 +180,7 @@ class TestLiveRiskEngine:
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         strategy = TradingStrategy(order_id_tag="001")
@@ -197,14 +199,14 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            Venue("SIM"),
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         event = TestStubs.event_order_submitted(order)
@@ -277,14 +279,14 @@ class TestLiveRiskEngine:
             )
 
             submit_order = SubmitOrder(
-                Venue("SIM"),
+                order.instrument_id,
                 self.trader_id,
                 self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
                 self.uuid_factory.generate(),
-                self.clock.utc_now(),
+                self.clock.timestamp_ns(),
             )
 
             # Act

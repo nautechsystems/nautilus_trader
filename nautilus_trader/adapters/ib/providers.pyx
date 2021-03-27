@@ -23,6 +23,7 @@ from ib_insync.contract import ContractDetails
 
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.currency cimport Currency
@@ -116,7 +117,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         AssetClass asset_class,
         list details_list,
     ):
-        if len(details_list) == 0:
+        if not details_list:
             raise ValueError(f"No contract details found for the given instrument identifier {instrument_id}")
         elif len(details_list) > 1:
             raise ValueError(f"Multiple contract details found for the given instrument identifier {instrument_id}")
@@ -144,7 +145,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             price_precision=price_precision,
             tick_size=Decimal(f"{details.minTick:.{price_precision}f}"),
             lot_size=Quantity(1),
-            timestamp=datetime.utcnow(),
+            timestamp_ns=unix_timestamp_ns(),
         )
 
         return future

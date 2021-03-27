@@ -38,11 +38,11 @@ from tests.test_kit.mocks import MockExecutionDatabase
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestRiskEngine:
-
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -59,7 +59,9 @@ class TestRiskEngine:
         )
         self.portfolio.register_cache(DataCache(self.logger))
 
-        self.database = MockExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = MockExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = ExecutionEngine(
             database=self.database,
             portfolio=self.portfolio,
@@ -68,7 +70,7 @@ class TestRiskEngine:
         )
 
         self.exec_client = MockExecutionClient(
-            self.venue,
+            self.venue.value,
             self.account_id,
             self.exec_engine,
             self.clock,
@@ -92,7 +94,7 @@ class TestRiskEngine:
         result = self.risk_engine.registered_clients
 
         # Assert
-        assert result == [Venue('SIM')]
+        assert result == ["SIM"]
 
     def test_set_block_all_orders_changes_flag_value(self):
         # Arrange
@@ -105,9 +107,9 @@ class TestRiskEngine:
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
-            self.venue,
+            AUDUSD_SIM.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(random)
@@ -116,7 +118,7 @@ class TestRiskEngine:
         # Arrange
         random = Event(
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(random)
@@ -141,21 +143,21 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_order']
+        assert self.exec_client.calls == ["connect", "submit_order"]
 
     def test_submit_bracket_with_default_settings_sends_to_client(self):
         # Arrange
@@ -183,20 +185,20 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            self.venue,
+            entry.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         # Act
         self.risk_engine.execute(submit_bracket)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_bracket_order']
+        assert self.exec_client.calls == ["connect", "submit_bracket_order"]
 
     def test_submit_order_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -218,14 +220,14 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.set_block_all_orders()
@@ -234,7 +236,7 @@ class TestRiskEngine:
         self.exec_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_client.calls == ['connect']
+        assert self.exec_client.calls == ["connect"]
         assert self.exec_engine.event_count == 1
 
     def test_amend_order_with_default_settings_sends_to_client(self):
@@ -257,25 +259,25 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         amend = AmendOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
             order.quantity,
             Price("1.00010"),
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit)
@@ -284,7 +286,7 @@ class TestRiskEngine:
         self.risk_engine.execute(amend)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_order', 'amend_order']
+        assert self.exec_client.calls == ["connect", "submit_order", "amend_order"]
 
     def test_cancel_order_with_default_settings_sends_to_client(self):
         # Arrange
@@ -306,24 +308,24 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         cancel = CancelOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
             order.id,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(submit)
@@ -332,7 +334,7 @@ class TestRiskEngine:
         self.risk_engine.execute(cancel)
 
         # Assert
-        assert self.exec_client.calls == ['connect', 'submit_order', 'cancel_order']
+        assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
 
     def test_submit_bracket_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -360,13 +362,13 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            self.venue,
+            entry.instrument_id,
             self.trader_id,
             self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         self.risk_engine.set_block_all_orders()
@@ -375,5 +377,5 @@ class TestRiskEngine:
         self.exec_engine.execute(submit_bracket)
 
         # Assert
-        assert self.exec_client.calls == ['connect']
+        assert self.exec_client.calls == ["connect"]
         assert self.exec_engine.event_count == 3

@@ -22,7 +22,6 @@ from tests.test_kit.performance import PerformanceHarness
 
 
 class TestThrottlerPerformance:
-
     def setup(self):
         # Fixture setup
         self.clock = TestClock()

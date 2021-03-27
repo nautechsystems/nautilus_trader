@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
 import unittest
 
 from nautilus_trader.model.enums import OrderSide
@@ -24,13 +23,12 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import UNIX_EPOCH
+
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class QuoteTickTests(unittest.TestCase):
-
     def test_equality_and_comparisons(self):
         # Arrange
         # These are based on timestamp for tick sorting
@@ -40,7 +38,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH + timedelta(seconds=1),
+            timestamp_ns=1,
         )
 
         tick2 = QuoteTick(
@@ -49,7 +47,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH + timedelta(seconds=2),
+            timestamp_ns=2,
         )
 
         tick3 = QuoteTick(
@@ -58,12 +56,15 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH + timedelta(seconds=3),
+            timestamp_ns=3,
         )
 
         self.assertTrue(tick1 == tick1)
         self.assertTrue(tick1 != tick2)
-        self.assertEqual([tick1, tick2, tick3], sorted([tick2, tick3, tick1], key=lambda x: x.timestamp))
+        self.assertEqual(
+            [tick1, tick2, tick3],
+            sorted([tick2, tick3, tick1], key=lambda x: x.timestamp_ns),
+        )
 
     def test_tick_str_and_repr(self):
         # Arrange
@@ -73,7 +74,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -81,8 +82,11 @@ class QuoteTickTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual("AUD/USD.SIM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z", result0)
-        self.assertEqual("QuoteTick(AUD/USD.SIM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z)", result1)
+        self.assertEqual("AUD/USD.SIM,1.00000,1.00001,1,1,0", result0)
+        self.assertEqual(
+            "QuoteTick(AUD/USD.SIM,1.00000,1.00001,1,1,0)",
+            result1,
+        )
 
     def test_extract_price_with_invalid_price_raises_value_error(self):
         # Arrange
@@ -92,7 +96,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -107,7 +111,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -128,7 +132,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -143,7 +147,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(500000),
             Quantity(800000),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -175,11 +179,13 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
-        result = QuoteTick.from_serializable_str(AUDUSD_SIM.id, tick.to_serializable_str())
+        result = QuoteTick.from_serializable_str(
+            AUDUSD_SIM.id, tick.to_serializable_str()
+        )
 
         # Assert
         self.assertEqual(tick, result)
@@ -192,7 +198,7 @@ class QuoteTickTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -203,7 +209,6 @@ class QuoteTickTests(unittest.TestCase):
 
 
 class TradeTickTests(unittest.TestCase):
-
     def test_equality_and_comparisons(self):
         # Arrange
         # These are based on timestamp for tick sorting
@@ -213,7 +218,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity(50000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH + timedelta(seconds=1),
+            1000,
         )
 
         tick2 = TradeTick(
@@ -222,7 +227,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity(50000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH + timedelta(seconds=2),
+            2000,
         )
 
         tick3 = TradeTick(
@@ -231,11 +236,14 @@ class TradeTickTests(unittest.TestCase):
             Quantity(50000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH + timedelta(seconds=3),
+            3000,
         )
 
         self.assertTrue(tick1 == tick1)
-        self.assertEqual([tick1, tick2, tick3], sorted([tick2, tick3, tick1], key=lambda x: x.timestamp))
+        self.assertEqual(
+            [tick1, tick2, tick3],
+            sorted([tick2, tick3, tick1], key=lambda x: x.timestamp_ns),
+        )
 
     def test_str_and_repr(self):
         # Arrange
@@ -245,7 +253,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity(50000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -253,8 +261,11 @@ class TradeTickTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual("AUD/USD.SIM,1.00000,50000,BUY,123456789,1970-01-01T00:00:00.000Z", result0)
-        self.assertEqual("TradeTick(AUD/USD.SIM,1.00000,50000,BUY,123456789,1970-01-01T00:00:00.000Z)", result1)
+        self.assertEqual("AUD/USD.SIM,1.00000,50000,BUY,123456789,0", result0)
+        self.assertEqual(
+            "TradeTick(AUD/USD.SIM,1.00000,50000,BUY,123456789,0)",
+            result1,
+        )
 
     def test_from_serializable_given_malformed_string_raises_value_error(self):
         # Arrange
@@ -275,11 +286,13 @@ class TradeTickTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
-        result = TradeTick.from_serializable_str(AUDUSD_SIM.id, tick.to_serializable_str())
+        result = TradeTick.from_serializable_str(
+            AUDUSD_SIM.id, tick.to_serializable_str()
+        )
 
         # Assert
         self.assertEqual(tick, result)
@@ -292,7 +305,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act

@@ -23,7 +23,6 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class ExecutionClient:
@@ -33,8 +32,8 @@ cdef class ExecutionClient:
     cdef ExecutionEngine _engine
     cdef dict _config
 
-    cdef readonly Venue venue
-    """The clients venue.\n\n:returns: `Venue`"""
+    cdef readonly str name
+    """The clients name.\n\n:returns: `str`"""
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
     cdef readonly bint is_connected

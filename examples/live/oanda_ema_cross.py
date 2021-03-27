@@ -18,9 +18,13 @@ from decimal import Decimal
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
+
+sys.path.insert(
+    0, str(pathlib.Path(__file__).parents[2])
+)  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from nautilus_trader.adapters.oanda.factories import OandaDataClientFactory
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
@@ -29,20 +33,22 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
+
+# TODO: OandaExecutionClientFactory
+
+
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
 config = {
     "trader": {
-        "name": "TESTER",              # Not sent beyond system boundary
-        "id_tag": "001",               # Used to ensure orders are unique for this trader
+        "name": "TESTER",  # Not sent beyond system boundary
+        "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
-
     "system": {
-        "connection_timeout": 5.0,     # Timeout for successful connections for all engine clients
+        "connection_timeout": 5.0,  # Timeout for successful connections for all engine clients
         "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
-
     "logging": {
         "log_level_console": "INF",
         "log_level_file": "DBG",
@@ -51,27 +57,27 @@ config = {
         "log_to_file": False,
         "log_file_path": "logs/",
     },
-
     "exec_database": {
         "type": "redis",
         "host": "localhost",
         "port": 6379,
     },
-
     "risk": {},
-
     "strategy": {
         "load_state": True,  # Strategy state is loaded from the database on start
         "save_state": True,  # Strategy state is saved to the database on shutdown
     },
-
-    "adapters": {
-        "oanda": {
-            "data_client": True,               # If a data client should be created
-            "exec_client": True,               # If a exec client should be created
-            "api_token": "OANDA_API_TOKEN",    # value is the environment variable key
+    "data_clients": {
+        "OANDA": {
+            "api_token": "OANDA_API_TOKEN",  # value is the environment variable key
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
         },
+    },
+    "exec_clients": {
+        # "OANDA": {
+        #     "api_token": "OANDA_API_TOKEN",  # value is the environment variable key
+        #     "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
+        # },
     },
 }
 
@@ -134,6 +140,10 @@ strategies = [
 
 # Instantiate the node passing a list of strategies and configuration
 node = TradingNode(strategies=strategies, config=config)
+
+# Register your client factories with the node (can take user defined factories)
+node.add_data_client_factory("OANDA", OandaDataClientFactory)
+node.build()
 
 
 # Stop and dispose of the node with SIGINT/CTRL+C

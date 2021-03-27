@@ -14,8 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -25,6 +24,10 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
+
+
+cdef class LiveExecutionClientFactory:
+    pass
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -37,9 +40,9 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     cdef void _on_reset(self) except *
     cdef inline void _generate_order_invalid(self, ClientOrderId cl_ord_id, str reason) except *
-    cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp) except *
-    cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason, datetime timestamp) except *
-    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
+    cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, int64_t timestamp_ns) except *
+    cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason, int64_t timestamp_ns) except *
+    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, int64_t timestamp_ns) except *
     cdef inline void _generate_order_filled(
         self,
         ClientOrderId cl_ord_id,
@@ -47,14 +50,14 @@ cdef class LiveExecutionClient(ExecutionClient):
         ExecutionId execution_id,
         InstrumentId instrument_id,
         OrderSide order_side,
-        fill_qty: Decimal,
+        last_qty: Decimal,
+        last_px: Decimal,
         cum_qty: Decimal,
         leaves_qty: Decimal,
-        avg_px: Decimal,
         commission_amount: Decimal,
         str commission_currency,
         LiquiditySide liquidity_side,
-        datetime timestamp
+        int64_t timestamp_ns
     ) except *
-    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
-    cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
+    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, int64_t timestamp_ns) except *
+    cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, int64_t timestamp_ns) except *

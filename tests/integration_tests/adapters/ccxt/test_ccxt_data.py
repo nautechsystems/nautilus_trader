@@ -42,6 +42,7 @@ from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 
+
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
@@ -60,7 +61,6 @@ async def async_magic():
 
 
 class CCXTDataClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -448,15 +448,18 @@ class CCXTDataClientTests(unittest.TestCase):
 
             request = DataRequest(
                 provider=BINANCE.value,
-                data_type=DataType(TradeTick, metadata={
-                    "InstrumentId": ETHUSDT,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 100,
-                }),
+                data_type=DataType(
+                    TradeTick,
+                    metadata={
+                        "InstrumentId": ETHUSDT,
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 100,
+                    },
+                ),
                 callback=handler.store,
                 request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -492,15 +495,18 @@ class CCXTDataClientTests(unittest.TestCase):
 
             request = DataRequest(
                 provider=BINANCE.value,
-                data_type=DataType(Bar, metadata={
-                    "BarType": bar_type,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 100,
-                }),
-                callback=handler.store_2,
+                data_type=DataType(
+                    Bar,
+                    metadata={
+                        "BarType": bar_type,
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 100,
+                    },
+                ),
+                callback=handler.store,
                 request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -511,7 +517,7 @@ class CCXTDataClientTests(unittest.TestCase):
             # Assert
             self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
-            self.assertEqual(100, len(handler.get_store()[0][1]))
+            self.assertEqual(100, len(handler.get_store()[0]))
 
             # Tear Down
             self.data_engine.stop()

@@ -20,7 +20,6 @@ from tests.test_kit.stubs import TestStubs
 
 
 class StochasticsTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.stochastics = Stochastics(14, 3)

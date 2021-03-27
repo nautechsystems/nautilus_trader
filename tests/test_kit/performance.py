@@ -20,7 +20,6 @@ import timeit
 
 
 class PerformanceHarness:
-
     @staticmethod
     def profile_function(function, runs, iterations, print_output=True) -> float:
         """
@@ -53,7 +52,7 @@ class PerformanceHarness:
 
         Returns
         -------
-        float
+        double
 
         """
         if runs < 1:
@@ -65,15 +64,17 @@ class PerformanceHarness:
         minimum = min(results)  # In seconds
 
         if print_output:
-            result_milli = minimum * 1000          # 1,000ms in 1 second
-            result_micro = minimum * 1_000_000     # 1,000,000μs in 1 second
+            result_milli = minimum * 1000  # 1,000ms in 1 second
+            result_micro = minimum * 1_000_000  # 1,000,000μs in 1 second
             result_nano = minimum * 1_000_000_000  # 1,000,000,000ns in 1 second
             print(f"\nPerformance test: {str(inspect.getmembers(function)[4][1])} ")
-            print(f"# ~{result_milli:.1f}ms "
-                  f"/ ~{result_micro:.1f}μs "
-                  f"/ {result_nano:.0f}ns "
-                  f"minimum of {runs:,} runs @ {iterations:,} "
-                  f"iteration{'s' if iterations > 1 else ''} each run.")
+            print(
+                f"# ~{result_milli:.1f}ms "
+                f"/ ~{result_micro:.1f}μs "
+                f"/ {result_nano:.0f}ns "
+                f"minimum of {runs:,} runs @ {iterations:,} "
+                f"iteration{'s' if iterations > 1 else ''} each run."
+            )
 
         return minimum
 
@@ -90,7 +91,7 @@ class PerformanceHarness:
 
         Returns
         -------
-        int
+        int32
 
         """
         size = get_size_of(x)
@@ -112,7 +113,7 @@ def get_size_of(obj) -> int:
 
     Returns
     -------
-    int
+    int32
         The object size in bytes.
 
     """
@@ -130,7 +131,9 @@ def get_size_of(obj) -> int:
         # Filter object that are already marked.
         # Using dict notation will prevent repeated objects.
         new_ref = {
-            o_id: o for o_id, o in all_refs if o_id not in marked and not isinstance(o, type)
+            o_id: o
+            for o_id, o in all_refs
+            if o_id not in marked and not isinstance(o, type)
         }
 
         # The new obj_q will be the ones that were not marked,

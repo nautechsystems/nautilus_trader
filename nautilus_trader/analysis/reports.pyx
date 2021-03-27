@@ -16,6 +16,8 @@
 import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport nanos_to_timedelta
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
@@ -149,10 +151,10 @@ cdef class ReportProvider:
             "instrument_id": order.instrument_id.value,
             "side": OrderSideParser.to_str(order.side),
             "type": OrderTypeParser.to_str(order.type),
-            "quantity": order.quantity,
-            "avg_price": "None" if order.avg_price is None else float(order.avg_price),
+            "qty": order.quantity,
+            "avg_px": "None" if order.avg_px is None else float(order.avg_px),
             "slippage": float(order.slippage),
-            "timestamp": order.last_event_c().timestamp,
+            "timestamp": nanos_to_unix_dt(order.last_event_c().timestamp_ns),
         }
 
     cdef dict _position_to_dict(self, Position position):
@@ -161,12 +163,12 @@ cdef class ReportProvider:
             "instrument_id": position.instrument_id.value,
             "strategy_id": position.strategy_id.tag.value,
             "entry": OrderSideParser.to_str(position.entry),
-            "peak_quantity": position.peak_quantity,
-            "opened_time": position.opened_time,
-            "closed_time": position.closed_time,
-            "duration": position.open_duration,
-            "avg_open": float(position.avg_open),
-            "avg_close": float(position.avg_close),
+            "peak_qty": position.peak_qty,
+            "opened_time": nanos_to_unix_dt(position.opened_timestamp_ns),
+            "closed_time": nanos_to_unix_dt(position.closed_timestamp_ns),
+            "duration": nanos_to_timedelta(position.open_duration_ns),
+            "avg_px_open": float(position.avg_px_open),
+            "avg_px_close": float(position.avg_px_close),
             "realized_points": float(position.realized_points),
             "realized_return": float(position.realized_return),
             "realized_pnl": float(position.realized_pnl),
@@ -174,7 +176,7 @@ cdef class ReportProvider:
         }
 
     cdef dict _account_state_to_dict(self, AccountState event):
-        cdef dict data = {"timestamp": event.timestamp}
+        cdef dict data = {"timestamp": nanos_to_unix_dt(event.timestamp_ns)}
         for balance in event.balances:
             data[f"balance_{balance.currency}"] = balance
 

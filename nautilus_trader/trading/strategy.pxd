@@ -30,6 +30,7 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
@@ -44,7 +45,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.order.bracket cimport BracketOrder
-from nautilus_trader.model.order_book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -96,7 +97,7 @@ cdef class TradingStrategy(Component):
     cpdef void on_order_book(self, OrderBook order_book) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
-    cpdef void on_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, GenericData data) except *
     cpdef void on_event(self, Event event) except *
 
@@ -128,7 +129,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        int level=*,
+        OrderBookLevel level=*,
         int depth=*,
         int interval=*,
         dict kwargs=*,
@@ -169,7 +170,13 @@ cdef class TradingStrategy(Component):
 
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
-    cpdef void amend_order(self, PassiveOrder order, Quantity quantity=*, Price price=*) except *
+    cpdef void amend_order(
+        self,
+        PassiveOrder order,
+        Quantity quantity=*,
+        Price price=*,
+        Price trigger=*,
+    ) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *
     cpdef void flatten_position(self, Position position) except *
@@ -183,8 +190,8 @@ cdef class TradingStrategy(Component):
     cpdef void handle_quote_ticks(self, list ticks) except *
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
     cpdef void handle_trade_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *
+    cpdef void handle_bar(self, Bar bar, bint is_historical=*) except *
+    cpdef void handle_bars(self, list bars) except *
     cpdef void handle_data(self, GenericData data) except *
     cpdef void handle_event(self, Event event) except *
 

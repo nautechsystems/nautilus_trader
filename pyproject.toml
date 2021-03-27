@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.111.0"
+version = "1.112.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -33,7 +33,8 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-ccxt = "^1.43.25"
+betfairlightweight = "^2.12.1"
+ccxt = "^1.44.51"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 ib_insync = "^0.9.65"
@@ -49,6 +50,7 @@ pyarrow = "^3.0.0"
 pytz = "^2020.5"
 redis = "3.5.3"
 scipy = "^1.6.1"
+tabulate = "^0.8.9"
 uvloop = { version = "^0.14.0", markers = "sys_platform != 'win32'" }
 
 [tool.poetry.dev-dependencies]
@@ -58,12 +60,15 @@ uvloop = { version = "^0.14.0", markers = "sys_platform != 'win32'" }
 # possibly fixed in the next version of Cython.
 coverage = "^4.5.4"
 flake8 = "^3.9.0"
-isort = "^5.7.0"
+isort = "^5.8.0"
 nox = "^2020.12.31"
 parameterized = "^0.8.1"
-pre-commit = "2.10.0"
+pre-commit = "^2.11.1"
 pytest = "^6.2.2"
+pytest-asyncio = "^0.14.0"
+pytest-benchmark = "^3.2.3"
 pytest-cov = "^2.10.1"
+pytest-mock = "^3.5.1"
 pytest-xdist = { version = "^2.2.0", extras = ["psutil"] }
 sphinx = { version = "^3.4.3", optional = true }
 sphinx-rtd-theme = { version = "^0.5.1", optional = true }
@@ -90,7 +95,7 @@ filterwarnings = [
 # Style configs #
 #################
 [tool.isort]
-src_paths = ["examples", "nautilus_trader", "scripts", "tests", "build.py", "noxfile.py"]
+src_paths = ["examples", "nautilus_trader", "scripts", "tests", "tools", "build.py", "noxfile.py"]
 atomic = true
 combine_as_imports = true
 ensure_newline_before_comments = true
@@ -109,5 +114,35 @@ single_line_exclusions = "typing"
 use_parentheses = true
 
 [tool.black]
-target-version = ["py36", "py37", "py38", "py39"]
+target-version = ["py37", "py38"]
 include = '\.pyi?$'
+
+
+################
+# Lint configs #
+################
+[tool.flakehell]
+filename = ["*.py", "*.pyx", "*.pxd"]
+exclude = [".github", ".nox", ".pytest_cache", "__pycache__", "build", "dist", "docs", "noxfile.py"]
+format = "grouped"
+max_line_length = 120  # TODO: max_line_length config
+max_complexity = 10
+statistics = true
+
+[tool.flakehell.plugins]
+filename = ["*.py", "*.pyx", "*.pxd"]
+pyflakes = ["+*"]
+pycodestyle = ["+*", "-E203", "-E501", "-W503"]
+flake8-bandit = ["+*"]
+flake8-bugbear = ["+*"]
+flake8-rst-docstrings = ["+*"]
+pep8-naming = ["+*"]
+darglint = ["+*"]
+
+# E203: whitespace before ':'
+# E501: max_line_length
+# W503: in error will be amended by flake8 soon
+# https://www.flake8rules.com/rules/W503.html
+
+[tool.flakehell.exceptions."examples/"]
+pycodestyle = ["-E402"]  # Allows relative imports from examples

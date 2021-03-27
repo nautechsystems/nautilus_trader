@@ -16,9 +16,11 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
@@ -28,8 +30,12 @@ from nautilus_trader.model.order.bracket cimport BracketOrder
 
 
 cdef class TradingCommand(Command):
+    cdef readonly InstrumentId instrument_id
+    """The instrument identifier for the command.\n\n:returns: `InstrumentId`"""
+    cdef readonly Symbol symbol
+    """The symbol for the command.\n\n:returns: `Symbol`"""
     cdef readonly Venue venue
-    """The venue the command relates to.\n\n:returns: `Venue`"""
+    """The venue for the command.\n\n:returns: `Venue`"""
 
 
 cdef class SubmitOrder(TradingCommand):

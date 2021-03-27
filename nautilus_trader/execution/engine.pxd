@@ -107,11 +107,12 @@ cdef class ExecutionEngine(Component):
     cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *
     cdef inline void _confirm_position_id(self, OrderFilled fill) except *
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *
-    cdef inline void _handle_order_fill(self, OrderFilled event) except *
-    cdef inline void _open_position(self, OrderFilled event) except *
-    cdef inline void _update_position(self, Position position, OrderFilled event) except *
+    cdef inline void _handle_order_fill(self, OrderFilled fill) except *
+    cdef inline void _open_position(self, OrderFilled fill) except *
+    cdef inline void _update_position(self, Position position, OrderFilled fill) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
     cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+    cdef inline void _send_to_risk_engine(self, Event event) except *

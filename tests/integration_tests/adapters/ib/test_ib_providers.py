@@ -23,11 +23,11 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests import TESTS_PACKAGE_ROOT
 
+
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
 class TestIBInstrumentProvider:
-
     def test_load_futures_contract_instrument(self):
         # Arrange
         mock_client = MagicMock()

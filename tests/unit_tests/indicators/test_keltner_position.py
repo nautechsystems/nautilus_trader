@@ -19,11 +19,11 @@ from nautilus_trader.indicators.keltner_position import KeltnerPosition
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class KeltnerPositionTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.kp = KeltnerPosition(10, 2.5)
@@ -38,8 +38,12 @@ class KeltnerPositionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp))
-        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kp))
+        self.assertEqual(
+            "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp)
+        )
+        self.assertEqual(
+            "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kp)
+        )
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange

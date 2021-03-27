@@ -25,8 +25,8 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_unix_time_ms
-from nautilus_trader.core.datetime cimport to_unix_time_ms
+from nautilus_trader.core.datetime cimport dt_to_unix_millis
+from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
@@ -36,6 +36,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -43,7 +44,7 @@ from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order_book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -183,7 +184,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             return
 
         for instrument in self._instrument_provider.get_all().values():
-            self._handle_instrument(instrument)
+            self._handle_data(instrument)
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -197,24 +198,15 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     async def _disconnect(self):
         self._log.info("Disconnecting...")
 
-        stop_tasks = []
-
         # Cancel update instruments
         if self._update_instruments_task:
             self._update_instruments_task.cancel()
-            # TODO: This task is not finishing
-            # stop_tasks.append(self._update_instruments_task)
 
         # Cancel residual tasks
         for task in self._subscribed_trade_ticks.values():
             if not task.cancelled():
                 self._log.debug(f"Cancelling {task}...")
                 task.cancel()
-                # TODO: CCXT Pro issues for exchange.close()
-                # stop_tasks.append(task)
-
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks)
 
         # Ensure ccxt closed
         self._log.info("Closing WebSocket(s)...")
@@ -233,7 +225,6 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._log.info("Resetting...")
 
-        # TODO: Reset client
         self._instrument_provider = CCXTInstrumentProvider(
             client=self._client,
             load_all=False,
@@ -242,10 +233,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self._subscribed_instruments = set()
 
         # Check all tasks have been popped and cancelled
-        assert len(self._subscribed_order_books) == 0
-        assert len(self._subscribed_quote_ticks) == 0
-        assert len(self._subscribed_trade_ticks) == 0
-        assert len(self._subscribed_bars) == 0
+        assert not self._subscribed_order_books
+        assert not self._subscribed_quote_ticks
+        assert not self._subscribed_trade_ticks
+        assert not self._subscribed_bars
 
         self._log.info("Reset.")
 
@@ -282,7 +273,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        int level,
+        OrderBookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -293,8 +284,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : int
-            The order book data level (L1, L2, L3).
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -647,16 +638,19 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
+    cdef inline int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *:
+        return millis_to_nanos(millis)
+
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
-    async def _watch_order_book(self, InstrumentId instrument_id, int level, int depth, dict kwargs):
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+    async def _watch_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth, dict kwargs):
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to order book (no instrument for {instrument_id.symbol}).")
             return
 
-        cdef OrderBook order_book = None
+        cdef OrderBookSnapshot snapshot
         try:
             while True:
                 try:
@@ -665,10 +659,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                         limit=None if depth == 0 else depth,
                         params=kwargs,
                     )
-                    timestamp = lob["timestamp"]
-                    if timestamp is None:  # Compiled to fast C check
+                    timestamp_ms = lob["timestamp"]
+                    if timestamp_ms is None:
                         # First quote timestamp often None
-                        timestamp = self._client.milliseconds()
+                        timestamp_ms = self._client.milliseconds()
 
                     bids = lob.get("bids")
                     asks = lob.get("asks")
@@ -677,25 +671,17 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     if asks is None:
                         continue
 
-                    if order_book is None:
-                        order_book = OrderBook(
-                            instrument_id,
-                            level,
-                            depth,
-                            instrument.price_precision,
-                            instrument.size_precision,
-                            list(bids),
-                            list(asks),
-                            lob.get("nonce"),
-                            timestamp,
-                        )
+                    # Currently inefficient while using CCXT. The order book
+                    # is regenerated with a snapshot on every update.
+                    snapshot = OrderBookSnapshot(
+                        instrument_id=instrument.id,
+                        level=level,
+                        bids=list(bids),
+                        asks=list(asks),
+                        timestamp_ns=self._ccxt_to_timestamp_ns(millis=timestamp_ms)
+                    )
 
-                    else:
-                        # Currently inefficient while using CCXT. The order book
-                        # is regenerated with a snapshot on every update.
-                        order_book.apply_snapshot(list(bids), list(asks), lob.get("nonce"), timestamp)
-
-                    self._handle_order_book(order_book)
+                    self._handle_data(snapshot)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_order_book.__name__)
                     continue
@@ -705,7 +691,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             self._log.exception(ex)
 
     async def _watch_quotes(self, InstrumentId instrument_id):
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to quote ticks (no instrument for {instrument_id.symbol}).")
             return
@@ -790,7 +776,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -800,13 +786,13 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(best_ask, price_precision),
             Quantity(best_bid_size, size_precision),
             Quantity(best_ask_size, size_precision),
-            from_unix_time_ms(timestamp),
+            timestamp_ns,
         )
 
-        self._handle_quote_tick(tick)
+        self._handle_data(tick)
 
     async def _watch_trades(self, InstrumentId instrument_id):
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to trade ticks (no instrument for {instrument_id.symbol}).")
             return
@@ -836,7 +822,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     trade["side"],
                     trade["takerOrMaker"],
                     trade["id"],
-                    trade["timestamp"],
+                    self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
                     price_precision,
                     size_precision,
                 )
@@ -856,7 +842,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         str order_side,
         str liquidity_side,
         str trade_match_id,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -871,13 +857,13 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Quantity(amount, size_precision),
             side,
             TradeMatchId(trade_match_id),
-            from_unix_time_ms(timestamp),
+            timestamp_ns,
         )
 
-        self._handle_trade_tick(tick)
+        self._handle_data(tick)
 
     async def _watch_ohlcv(self, BarType bar_type):
-        cdef Instrument instrument = self._instrument_provider.find_c(bar_type.instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to bars (no instrument for {bar_type.instrument_id}).")
             return
@@ -895,8 +881,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
-        cdef long last_timestamp = 0
-        cdef long this_timestamp = 0
+        cdef int64_t last_timestamp = 0
+        cdef int64_t this_timestamp = 0
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
@@ -915,7 +901,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     exiting = True
 
                 bar = bars[0]  # Last closed bar
-                this_timestamp = bar[0]
+                this_timestamp = self._ccxt_to_timestamp_ns(millis=bar[0])
                 if last_timestamp == 0:
                     # Initialize last timestamp
                     last_timestamp = this_timestamp
@@ -950,20 +936,21 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *:
         cdef Bar bar = Bar(
+            bar_type,
             Price(open_price, price_precision),
             Price(high_price, price_precision),
             Price(low_price, price_precision),
             Price(close_price, price_precision),
             Quantity(volume, size_precision),
-            from_unix_time_ms(timestamp),
+            timestamp_ns,
         )
 
-        self._handle_bar(bar_type, bar)
+        self._handle_data(bar)
 
     async def _run_after_delay(self, double delay, coro):
         await asyncio.sleep(delay)
@@ -975,7 +962,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     async def _request_instrument(self, InstrumentId instrument_id, UUID correlation_id):
         await self._load_instruments()
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is not None:
             self._handle_instruments([instrument], correlation_id)
         else:
@@ -992,9 +979,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef InstrumentId instrument_id
         cdef Instrument instrument
         for instrument_id in self._subscribed_instruments:
-            instrument = self._instrument_provider.find_c(instrument_id)
+            instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
-                self._handle_instrument(instrument)
+                self._handle_data(instrument)
             else:
                 self._log.error(f"Could not find instrument {instrument_id.symbol}.")
 
@@ -1010,7 +997,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ):
-        cdef Instrument instrument = self._instrument_provider.find_c(instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot request trade ticks (no instrument for {instrument_id}).")
             return
@@ -1028,7 +1015,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         try:
             trades = await self._client.fetch_trades(
                 symbol=instrument_id.symbol.value,
-                since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
+                since=dt_to_unix_millis(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
         except CCXTError as ex:
@@ -1061,7 +1048,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         int limit,
         UUID correlation_id,
     ):
-        cdef Instrument instrument = self._instrument_provider.find_c(bar_type.instrument_id)
+        cdef Instrument instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.instrument_id}).")
             return
@@ -1107,7 +1094,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             data = await self._client.fetch_ohlcv(
                 symbol=bar_type.symbol.value,
                 timeframe=timeframe,
-                since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
+                since=dt_to_unix_millis(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
         except TypeError:
@@ -1126,7 +1113,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef int size_precision = instrument.size_precision
 
         # Set partial bar
-        cdef Bar partial_bar = self._parse_bar(data[-1], price_precision, size_precision)
+        cdef Bar partial_bar = self._parse_bar(
+            bar_type,
+            data[-1],
+            price_precision,
+            size_precision,
+        )
 
         # Delete last values
         del data[-1]
@@ -1134,7 +1126,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list bars = []  # type: list[Bar]
         cdef list values     # type: list[object]
         for values in data:
-            bars.append(self._parse_bar(values, price_precision, size_precision))
+            bars.append(self._parse_bar(
+                bar_type,
+                values,
+                price_precision,
+                size_precision,
+            ))
 
         self._handle_bars(
             bar_type,
@@ -1156,22 +1153,24 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Quantity(trade['amount'], size_precision),
             OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
             TradeMatchId(trade["id"]),
-            from_unix_time_ms(trade["timestamp"]),
+            self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
         )
 
     cdef inline Bar _parse_bar(
         self,
+        BarType bar_type,
         list values,
         int price_precision,
         int size_precision,
     ):
         return Bar(
+            bar_type,
             Price(values[1], price_precision),
             Price(values[2], price_precision),
             Price(values[3], price_precision),
             Price(values[4], price_precision),
             Quantity(values[5], size_precision),
-            from_unix_time_ms(values[0]),
+            self._ccxt_to_timestamp_ns(millis=values[0]),
         )
 
     cdef str _make_timeframe(self, BarSpecification bar_spec):

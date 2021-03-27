@@ -20,11 +20,11 @@ from nautilus_trader.indicators.hilbert_period import HilbertPeriod
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class HilbertPeriodTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.h_period = HilbertPeriod()

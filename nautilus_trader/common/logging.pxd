@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LogMessage
@@ -65,8 +66,8 @@ cdef class LogMessage:
     """The log text color.\n\n:returns: `LogColor` (Enum)"""
     cdef readonly str text
     """The log text.\n\n:returns: `str`"""
-    cdef readonly long thread_id
-    """The thread identifier.\n\n:returns: `long`"""
+    cdef readonly int64_t thread_id
+    """The thread identifier.\n\n:returns: `int64`"""
 
     cdef str level_string(self)
     cdef str as_string(self)

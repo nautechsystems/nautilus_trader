@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -35,26 +34,28 @@ cdef class TradingCommand(Command):
 
     def __init__(
         self,
-        Venue venue not None,
+        InstrumentId instrument_id not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `TradingCommand` class.
 
         Parameters
         ----------
-        venue : Venue
-            The venue the command relates to.
+        instrument_id : InstrumentId
+            The instrument identifier for the command.
         command_id : UUID
             The commands identifier.
-        command_timestamp : datetime
-            The commands timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(command_id, command_timestamp)
+        super().__init__(command_id, timestamp_ns)
 
-        self.venue = venue
+        self.instrument_id = instrument_id
+        self.symbol = instrument_id.symbol
+        self.venue = instrument_id.venue
 
 
 cdef class SubmitOrder(TradingCommand):
@@ -64,22 +65,22 @@ cdef class SubmitOrder(TradingCommand):
 
     def __init__(
         self,
-        Venue venue not None,
+        InstrumentId instrument_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
         StrategyId strategy_id not None,
         PositionId position_id not None,
         Order order not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `SubmitOrder` class.
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the command.
+        instrument_id : InstrumentId
+            The instrument identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -92,17 +93,11 @@ cdef class SubmitOrder(TradingCommand):
             The order to submit.
         command_id : UUID
             The commands identifier.
-        command_timestamp : datetime
-            The commands timestamp.
-
-        Raises
-        ------
-        ValueError
-            If venue is not equal to order.venue.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        Condition.equal(venue, order.venue, "venue", "order.venue")
-        super().__init__(venue, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -129,21 +124,21 @@ cdef class SubmitBracketOrder(TradingCommand):
 
     def __init__(
         self,
-        Venue venue not None,
+        InstrumentId instrument_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
         StrategyId strategy_id not None,
         BracketOrder bracket_order not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `SubmitBracketOrder` class.
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the command.
+        instrument_id : InstrumentId
+            The instrument identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -154,17 +149,11 @@ cdef class SubmitBracketOrder(TradingCommand):
             The bracket order to submit.
         command_id : UUID
             The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
-
-        Raises
-        ------
-        ValueError
-            If venue is not equal to order.venue.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        Condition.equal(venue, bracket_order.entry.venue, "venue", "bracket_order.entry.venue")
-        super().__init__(venue, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -173,7 +162,7 @@ cdef class SubmitBracketOrder(TradingCommand):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue.value}, "
+                f"instrument_id={self.instrument_id}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
@@ -193,22 +182,22 @@ cdef class AmendOrder(TradingCommand):
 
     def __init__(
         self,
-        Venue venue not None,
+        InstrumentId instrument_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
         Quantity quantity not None,
         Price price not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `AmendOrder` class.
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the command.
+        instrument_id : InstrumentId
+            The instrument identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -221,11 +210,11 @@ cdef class AmendOrder(TradingCommand):
             The price for the order (amending optional).
         command_id : UUID
             The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(venue, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -235,7 +224,7 @@ cdef class AmendOrder(TradingCommand):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue.value}, "
+                f"instrument_id={self.instrument_id}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
@@ -251,21 +240,21 @@ cdef class CancelOrder(TradingCommand):
 
     def __init__(
         self,
-        Venue venue not None,
+        InstrumentId instrument_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
         OrderId order_id not None,
         UUID command_id not None,
-        datetime command_timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `CancelOrder` class.
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the command.
+        instrument_id : InstrumentId
+            The instrument identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -276,11 +265,11 @@ cdef class CancelOrder(TradingCommand):
             The order identifier to cancel.
         command_id : UUID
             The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(venue, command_id, command_timestamp)
+        super().__init__(instrument_id, command_id, timestamp_ns)
 
         self.trader_id = trader_id
         self.account_id = account_id
@@ -289,7 +278,7 @@ cdef class CancelOrder(TradingCommand):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue.value}, "
+                f"instrument_id={self.instrument_id}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "

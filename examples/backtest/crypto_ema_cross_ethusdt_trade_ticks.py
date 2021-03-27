@@ -21,7 +21,10 @@ import sys
 import ccxt
 import pandas as pd
 
-sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
+
+sys.path.insert(
+    0, str(pathlib.Path(__file__).parents[2])
+)  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
@@ -39,6 +42,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit.providers import TestDataProvider
+
 
 if __name__ == "__main__":
     # Setup trading instruments
@@ -70,7 +74,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
-        use_data_cache=True,    # Pre-cache data for increased performance on repeated runs
+        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
         # exec_db_type="redis",
         # bypass_logging=True
     )
@@ -104,7 +108,8 @@ if __name__ == "__main__":
         100,
         "display.max_columns",
         None,
-        "display.width", 300,
+        "display.width",
+        300,
     ):
         print(engine.trader.generate_account_report(BINANCE))
         print(engine.trader.generate_order_fills_report())

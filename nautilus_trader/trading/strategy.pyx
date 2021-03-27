@@ -53,6 +53,8 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -370,14 +372,12 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
+    cpdef void on_bar(self, Bar bar) except *:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
@@ -707,7 +707,7 @@ cdef class TradingStrategy(Component):
 
         self._check_trader_registered()
 
-        if len(state) == 0:
+        if not state:
             self.log.info("No user state to load.", LogColor.BLUE)
             return
 
@@ -740,8 +740,8 @@ cdef class TradingStrategy(Component):
             provider=provider,
             data_type=data_type,
             handler=self.handle_data,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -763,8 +763,8 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -772,7 +772,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        int level=2,
+        OrderBookLevel level=OrderBookLevel.L2,
         int depth=0,
         int interval=0,
         dict kwargs=None,
@@ -792,8 +792,8 @@ cdef class TradingStrategy(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument identifier to subscribe to.
-        level : int
-            The order book data level (L1, L2, L3).
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval : int, optional
@@ -804,8 +804,6 @@ cdef class TradingStrategy(Component):
         Raises
         ------
         ValueError
-            If level is not in range 1-3.
-        ValueError
             If depth is negative.
         ValueError
             If delay is not None and interval is None.
@@ -813,7 +811,6 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(self._data_engine, "data_client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.in_range_int(level, 1, 3, "level")
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval, "interval")
 
@@ -827,8 +824,8 @@ cdef class TradingStrategy(Component):
                 KWARGS: kwargs,
             }),
             handler=self.handle_order_book,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -850,8 +847,8 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -873,8 +870,8 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -896,8 +893,8 @@ cdef class TradingStrategy(Component):
             provider=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -921,8 +918,8 @@ cdef class TradingStrategy(Component):
             provider=provider,
             data_type=data_type,
             handler=self.handle_data,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -944,15 +941,15 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=0) except *:
         """
-        Unsubscribe from streaming `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument identifier.
 
         The interval must match the previously defined interval if unsubscribing
         from snapshots.
@@ -975,8 +972,8 @@ cdef class TradingStrategy(Component):
                 INTERVAL: interval,
             }),
             handler=self.handle_order_book,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -998,8 +995,8 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1021,8 +1018,8 @@ cdef class TradingStrategy(Component):
             provider=instrument_id.venue.value,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1044,8 +1041,8 @@ cdef class TradingStrategy(Component):
             provider=bar_type.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
-            command_id=self.uuid_factory.generate_c(),
-            command_timestamp=self.clock.utc_now_c(),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1071,8 +1068,8 @@ cdef class TradingStrategy(Component):
             provider=provider,
             data_type=data_type,
             callback=self.handle_data,
-            request_id=self.uuid_factory.generate_c(),
-            request_timestamp=self.clock.utc_now_c(),
+            request_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1117,8 +1114,8 @@ cdef class TradingStrategy(Component):
                 LIMIT: self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_quote_ticks,
-            request_id=self.uuid_factory.generate_c(),
-            request_timestamp=self.clock.utc_now_c(),
+            request_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1163,8 +1160,8 @@ cdef class TradingStrategy(Component):
                 LIMIT: self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_trade_ticks,
-            request_id=self.uuid_factory.generate_c(),
-            request_timestamp=self.clock.utc_now_c(),
+            request_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1209,17 +1206,21 @@ cdef class TradingStrategy(Component):
                 LIMIT: self._data_engine.cache.bar_capacity,
             }),
             callback=self.handle_bars,
-            request_id=self.uuid_factory.generate_c(),
-            request_timestamp=self.clock.utc_now_c(),
+            request_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
-    cpdef void submit_order(self, Order order, PositionId position_id=None) except *:
+    cpdef void submit_order(
+        self,
+        Order order,
+        PositionId position_id=None,
+    ) except *:
         """
-        Submit the given order, optionally for the given position identifier.
+        Submit the given order with optional position identifier and routing instructions.
 
         A `SubmitOrder` command will be created and then sent to the
         `ExecutionEngine`.
@@ -1236,33 +1237,32 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
-        cdef Position position
         if position_id is None:
             # Null object pattern
             position_id = PositionId.null_c()
 
-        cdef AccountId account_id = self.execution.account_id(order.venue)
+        cdef AccountId account_id = self.execution.account_id(order.venue)  # TODO should be first()
         if account_id is None:
             self.log.error(f"Cannot submit order: "
                            f"no account registered for {order.venue}, {order}.")
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(
-            order.venue,
+            order.instrument_id,
             self.trader_id,
             account_id,
             self.id,
             position_id,
             order,
-            self.uuid_factory.generate_c(),
-            self.clock.utc_now_c(),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
 
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
         """
-        Submit the given bracket order.
+        Submit the given bracket order with optional routing instructions.
 
         A `SubmitBracketOrder` command with be created and sent to the
         `ExecutionEngine`.
@@ -1284,13 +1284,13 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
-            bracket_order.entry.instrument_id.venue,
+            bracket_order.entry.instrument_id,
             self.trader_id,
             account_id,
             self.id,
             bracket_order,
-            self.uuid_factory.generate_c(),
-            self.clock.utc_now_c(),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1300,9 +1300,10 @@ cdef class TradingStrategy(Component):
         PassiveOrder order,
         Quantity quantity=None,
         Price price=None,
+        Price trigger=None,
     ) except *:
         """
-        Amend the given order with the given quantity and/or price.
+        Amend the given order with optional parameters and routing instructions.
 
         An `AmendOrder` command is created and then sent to the
         `ExecutionEngine`. Either one or both values must differ from the
@@ -1321,6 +1322,13 @@ cdef class TradingStrategy(Component):
             The amended quantity for the given order.
         price : Price, optional
             The amended price for the given order.
+        trigger : Price, optional
+            The amended trigger price for the given order.
+
+        Raises
+        ------
+        ValueError
+            If trigger is not None and order.type != STOP_LIMIT
 
         References
         ----------
@@ -1330,20 +1338,27 @@ cdef class TradingStrategy(Component):
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._exec_engine, "self._exec_engine")
+        if trigger is not None:
+            Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
 
         cdef bint amending = False  # Set validation flag (must become true)
 
         if quantity is not None and quantity != order.quantity:
             amending = True
-            quantity = quantity
         else:
             quantity = order.quantity
 
         if price is not None and price != order.price:
             amending = True
-            price = price
         else:
             price = order.price
+
+        if trigger is not None:
+            if order.is_triggered:
+                self.log.warning(f"Cannot amend order for {repr(order.cl_ord_id)}: already triggered.")
+                return
+            if trigger != order.trigger:
+                amending = True
 
         if not amending:
             self.log.error(
@@ -1357,21 +1372,21 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef AmendOrder command = AmendOrder(
-            order.venue,
+            order.instrument_id,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
             quantity,
             price,
-            self.uuid_factory.generate_c(),
-            self.clock.utc_now_c(),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
 
     cpdef void cancel_order(self, Order order) except *:
         """
-        Cancel the given order.
+        Cancel the given order with optional routing instructions.
 
         A `CancelOrder` command will be created and then sent to the
         `ExecutionEngine`.
@@ -1395,13 +1410,13 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
-            order.venue,
+            order.instrument_id,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
             order.id,
-            self.uuid_factory.generate_c(),
-            self.clock.utc_now_c(),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1468,14 +1483,14 @@ cdef class TradingStrategy(Component):
 
         # Create command
         cdef SubmitOrder command = SubmitOrder(
-            position.venue,
+            position.instrument_id,
             self.trader_id,
             position.account_id,
             self.id,
             position.id,
             order,
-            self.uuid_factory.generate_c(),
-            self.clock.utc_now_c(),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
@@ -1695,7 +1710,7 @@ cdef class TradingStrategy(Component):
         for i in range(length):
             self.handle_trade_tick(ticks[i], is_historical=True)
 
-    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
+    cpdef void handle_bar(self, Bar bar, bint is_historical=False) except *:
         """
         Handle the given bar data.
 
@@ -1703,8 +1718,6 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        bar_type : BarType
-            The received bar type.
         bar : Bar
             The bar received.
         is_historical : bool
@@ -1715,11 +1728,10 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bar, "bar")
 
         # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar_type)  # Could be None
+        cdef list indicators = self._indicators_for_bars.get(bar.type)
         cdef Indicator indicator
         if indicators is not None:
             for indicator in indicators:
@@ -1730,21 +1742,19 @@ cdef class TradingStrategy(Component):
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_bar(bar_type, bar)
+                self.on_bar(bar)
             except Exception as ex:
                 self.log.exception(ex)
                 raise
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
+    cpdef void handle_bars(self, list bars) except *:
         """
         Handle the given bar data by handling each bar individually.
 
         Parameters
         ----------
-        bar_type : BarType
-            The received bar type.
         bars : list[Bar]
             The bars to handle.
 
@@ -1753,20 +1763,23 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bars, "bars")  # Can be empty
 
         cdef int length = len(bars)
         cdef Bar first = bars[0] if length > 0 else None
         cdef Bar last = bars[length - 1] if length > 0 else None
 
-        self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
+        if length > 0:
+            self.log.info(f"Received <Bar[{length}]> data for {first.type}.")
+        else:
+            self.log.error(f"Received <Bar[{length}]> data for unknown bar type.")
+            return  # TODO: Strategy shouldn't receive zero bars
 
-        if length > 0 and first.timestamp > last.timestamp:
+        if length > 0 and first.timestamp_ns > last.timestamp_ns:
             raise RuntimeError(f"Cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):
-            self.handle_bar(bar_type, bars[i], is_historical=True)
+            self.handle_bar(bars[i], is_historical=True)
 
     cpdef void handle_data(self, GenericData data) except *:
         """
