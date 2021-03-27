@@ -301,8 +301,8 @@ cdef class SimulatedExchange:
 
         Parameters
         ----------
-        now_ns : int64_t
-            The Unix timestamp (nanoseconds) now.
+        now_ns : int64
+            The Unix timestamp (nanos) now.
 
         """
         self._clock.set_time(to_time_ns=now_ns)
