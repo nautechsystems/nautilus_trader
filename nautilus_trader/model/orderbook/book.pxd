@@ -96,8 +96,10 @@ cdef class OrderBookOperations(Data):
     """The order book operations.\n\n:returns: `list`"""
 
 
-cdef class OrderBookOperation(Data):
+cdef class OrderBookOperation:
     cdef readonly OrderBookOperationType op_type
     """The type of operation (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookOperationType (Enum)`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of the operation.\n\n:returns: `int64`"""
