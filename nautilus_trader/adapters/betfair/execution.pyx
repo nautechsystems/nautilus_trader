@@ -24,9 +24,6 @@ import orjson
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-
-from nautilus_trader.core.datetime import from_unix_time_ms
-
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
@@ -50,6 +47,7 @@ from nautilus_trader.adapters.betfair.parsing import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.identifiers import ExecutionId
@@ -144,10 +142,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self._loop.run_in_executor(None, self._get_account_funds),
         ]
         result = await asyncio.gather(*aws)
-        print(result)
         account_details, account_funds = result
         account_state = betfair_account_to_account_state(
-            account_detail=account_details, account_funds=account_funds, event_id=self._uuid_factory.generate()
+            account_detail=account_details, account_funds=account_funds, event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns()
         )
         self._handle_event(account_state)
 
@@ -167,29 +165,35 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"SubmitOrder received {command}")
 
         self._generate_order_submitted(
-            cl_ord_id=command.order.cl_ord_id, timestamp=self._clock.unix_time(),
+            cl_ord_id=command.order.cl_ord_id, timestamp_ns=self._clock.timestamp_ns(),
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
         f = self._loop.run_in_executor(None, self._submit_order, command) # type: asyncio.Future
-        self._log.debug("future:", f)
-        f.add_done_callback(partial(self._post_submit_order, command=command))
+        self._log.debug(f"future: {f}")
+        f.add_done_callback(partial(self._post_submit_order, client_order_id=command.order.cl_ord_id))
 
     def _submit_order(self, SubmitOrder command):
-        instrument = self._instrument_provider._instruments[command.instrument_id]
+        instrument = self._instrument_provider.find(command.instrument_id)
         kw = order_submit_to_betfair(command=command, instrument=instrument)
         return self._client.betting.place_orders(**kw)
 
-    def _post_submit_order(self, resp, command):
-        self._log.debug("resp:", resp)
-        self._log.debug("command:", command)
+    def _post_submit_order(self, f: asyncio.Future, client_order_id):
+        self._log.debug(f"inside _post_submit_order")
+        self._log.debug(f"f: {f}")
+        try:
+            resp = f.result()
+            self._log.debug(f"resp: {resp}")
+        except Exception as e:
+            self._log.error(str(e))
+            return
         assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
         bet_id = resp['result']['instructionReports'][0]['betId']
-        self.order_id_to_cl_ord_id[bet_id] = command.order.cl_ord_id
+        self.order_id_to_cl_ord_id[bet_id] = client_order_id
         self._generate_order_accepted(
-            cl_ord_id=command.order.cl_ord_id,
+            cl_ord_id=client_order_id,
             order_id=bet_id,
-            timestamp=self._clock.unix_time(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
     # TODO - Does this also take 5s ??
@@ -255,34 +259,35 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             execution_id=execution_id,
                             instrument_id=instrument.id,
                             order_side=B2N_ORDER_STREAM_SIDE[order['side']],
-                            fill_qty=order['sm'],
-                            cum_qty=order['s'] - order['sr'],
-                            leaves_qty=order['sr'],
-                            avg_px=order['avp'],
+                            last_qty=Decimal(order['sm']),
+                            last_px=Decimal(order['p']),
+                            cum_qty=Decimal(order['s'] - order['sr']),
+                            leaves_qty=Decimal(order['sr']),
+                            # avg_px=order['avp'],
                             commission_amount=Decimal(0.0),
                             commission_currency=self.get_account_currency(),
                             liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
-                            timestamp=from_unix_time_ms(order['md']),
+                            timestamp_ns=millis_to_nanos(order['md']),
                         )
                     elif order["sm"] == 0 and any([order[x] != 0 for x in ("sc", "sl", "sv")]):
                         self._generate_order_cancelled(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
-                            timestamp=from_unix_time_ms(order['cd']),
+                            timestamp_ns=millis_to_nanos(order['cd']),
                         )
                     # This is a full order, none has traded yet (size_remaining = original placed size)
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
                         self._generate_order_accepted(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
-                            timestamp=from_unix_time_ms(order['pd']),
+                            timestamp_ns=millis_to_nanos(order['pd']),
                         )
                     # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
                         self._generate_order_accepted(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
-                            timestamp=from_unix_time_ms(order['pd']),
+                            timestamp_ns=millis_to_nanos(order['pd']),
                         )
                         self._generate_order_filled(
                             cl_ord_id=cl_ord_id,
@@ -290,14 +295,15 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             execution_id=execution_id,
                             instrument_id=instrument.id,
                             order_side=B2N_ORDER_STREAM_SIDE[order['side']],
-                            fill_qty=order['sm'],
-                            cum_qty=order['s'] - order['sr'],
-                            leaves_qty=order['sr'],
-                            avg_px=order['avp'],
+                            last_qty=Decimal(order['sm']),
+                            last_px=Decimal(order['p']),
+                            cum_qty=Decimal(order['s'] - order['sr']),
+                            leaves_qty=Decimal(order['sr']),
+                            # avg_px=Decimal(order['avp']),
                             commission_amount=Decimal(0.0),
                             commission_currency=self.get_account_currency(),  # TODO - look up on account
                             liquidity_side=LiquiditySide.NONE,
-                            timestamp=from_unix_time_ms(order['md']),
+                            timestamp_ns=millis_to_nanos(order['md']),
                         )
                     else:
                         self._log.error("Unknown order state: {order}")

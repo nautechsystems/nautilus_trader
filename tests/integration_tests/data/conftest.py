@@ -4,6 +4,9 @@ import time
 
 import pytest
 
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
+
 
 class ThreadedTCPRequestHandler(socketserver.StreamRequestHandler):
     def handle(self):
@@ -30,3 +33,9 @@ def socket_server() -> ThreadedTCPServer:
         server_thread.start()
         yield server
         server.shutdown()
+
+
+@pytest.fixture()
+def logger():
+    clock = LiveClock()
+    return LiveLogger(clock)

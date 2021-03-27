@@ -20,7 +20,7 @@ class BetfairStreamClient(SocketClient):
     def __init__(
         self,
         client: APIClient,
-        logger: LoggerAdapter,
+        logger_adapter: LoggerAdapter,
         message_handler,
         loop=None,
         host=None,
@@ -32,7 +32,7 @@ class BetfairStreamClient(SocketClient):
             loop=loop,
             host=host or HOST,
             port=port or PORT,
-            logger=logger,
+            logger_adapter=logger_adapter,
             message_handler=message_handler,
             crlf=crlf or CRLF,
             encoding=encoding or ENCODING,
@@ -74,7 +74,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
     ):
         super().__init__(
             client=client,
-            logger=LoggerAdapter("BetfairOrderStreamClient", logger),
+            logger_adapter=LoggerAdapter("BetfairOrderStreamClient", logger),
             message_handler=message_handler,
             **kwargs,
         )
@@ -103,7 +103,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         self.subscription_message = None
         super().__init__(
             client=client,
-            logger=LoggerAdapter("BetfairMarketStreamClient", logger),
+            logger_adapter=LoggerAdapter("BetfairMarketStreamClient", logger),
             message_handler=message_handler,
             **kwargs,
         )

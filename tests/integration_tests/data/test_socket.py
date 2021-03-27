@@ -1,10 +1,11 @@
 import pytest
 
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.data.socket import SocketClient
 
 
 @pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
+async def test_socket_base(socket_server, logger, event_loop):
     messages = []
 
     def handler(raw):
@@ -18,6 +19,7 @@ async def test_socket_base(socket_server, event_loop):
         port=port,
         message_handler=handler,
         loop=event_loop,
+        logger_adapter=LoggerAdapter("Socket", logger),
         ssl=False,
     )
     await client.start()

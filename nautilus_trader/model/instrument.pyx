@@ -542,7 +542,7 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str selection_handicap not None,
         str currency not None,
-        datetime timestamp=None,
+        int64_t timestamp_ns,
     ):
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
@@ -570,7 +570,6 @@ cdef class BettingInstrument(Instrument):
         self.selection_name = selection_name
         self.selection_handicap = selection_handicap
 
-
         super().__init__(
             instrument_id=InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name)),
             asset_class=AssetClass.BETTING,
@@ -595,9 +594,8 @@ cdef class BettingInstrument(Instrument):
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
             financing=dict(),
-            timestamp=datetime.utcnow(),
+            timestamp_ns=timestamp_ns,
             info=dict(),  # TODO - Add raw response?
-
         )
 
     def make_symbol(self):

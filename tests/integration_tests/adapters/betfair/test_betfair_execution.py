@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import asyncio
-import datetime
 import os
 
 import betfairlightweight
@@ -67,6 +66,7 @@ def test_order_submit_to_betfair(
     instrument_id,
     uuid,
     betting_instrument,
+    clock,
 ):
     command = SubmitOrder(
         instrument_id=instrument_id,
@@ -84,10 +84,10 @@ def test_order_submit_to_betfair(
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=uuid,
-            timestamp=datetime.datetime.now(),
+            timestamp_ns=clock.timestamp_ns(),
         ),
         command_id=uuid,
-        command_timestamp=datetime.datetime.now(),
+        timestamp_ns=clock.timestamp_ns(),
     )
     result = order_submit_to_betfair(command=command, instrument=betting_instrument)
     expected = {
@@ -122,6 +122,7 @@ def test_order_amend_to_betfair(
     instrument_id,
     uuid,
     betting_instrument,
+    clock,
 ):
     command = AmendOrder(
         instrument_id=instrument_id,
@@ -131,7 +132,7 @@ def test_order_amend_to_betfair(
         quantity=Quantity(50),
         price=Price(20),
         command_id=uuid,
-        command_timestamp=datetime.datetime.now(),
+        timestamp_ns=clock.timestamp_ns(),
     )
     result = order_amend_to_betfair(command=command, instrument=betting_instrument)
     expected = {
@@ -145,11 +146,7 @@ def test_order_amend_to_betfair(
 
 
 def test_order_cancel_to_betfair(
-    trader_id,
-    account_id,
-    instrument_id,
-    uuid,
-    betting_instrument,
+    trader_id, account_id, instrument_id, uuid, betting_instrument, clock
 ):
     cl_orr_id = ClientOrderId("1")
     order_id = OrderId("1")
@@ -160,7 +157,7 @@ def test_order_cancel_to_betfair(
         cl_orr_id,
         order_id,
         uuid,
-        datetime.datetime.now(),
+        clock.timestamp_ns(),
     )
     result = order_cancel_to_betfair(command=command, instrument=betting_instrument)
     expected = {
@@ -175,13 +172,14 @@ def test_order_cancel_to_betfair(
     assert result == expected
 
 
-def test_account_statement(betfair_client, uuid):
+def test_account_statement(betfair_client, uuid, clock):
     detail = betfair_client.account.get_account_details()
     funds = betfair_client.account.get_account_funds()
     result = betfair_account_to_account_state(
         account_detail=detail,
         account_funds=funds,
         event_id=uuid,
+        timestamp_ns=clock.timestamp_ns(),
     )
     expected = AccountState(
         AccountId(issuer="betfair", identifier="Testy-McTest"),
@@ -190,7 +188,7 @@ def test_account_statement(betfair_client, uuid):
         [Money(-0.00, Currency.from_str("AUD"))],
         {"funds": funds, "detail": detail},
         uuid,
-        result.timestamp,
+        result.timestamp_ns,
     )
     assert result == expected
 

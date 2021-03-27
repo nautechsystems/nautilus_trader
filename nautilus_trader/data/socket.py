@@ -15,7 +15,7 @@ class SocketClient:
         self,
         host,
         port,
-        logger: LoggerAdapter,
+        logger_adapter: LoggerAdapter,
         message_handler: callable,
         loop=None,
         crlf=None,
@@ -35,7 +35,7 @@ class SocketClient:
         super().__init__()
         self.host = host
         self.port = port
-        self.logger = logger
+        self.logger = logger_adapter
         self.message_handler = message_handler
         self.loop = loop or asyncio.get_event_loop()
         self.crlf = crlf or DEFAULT_CRLF

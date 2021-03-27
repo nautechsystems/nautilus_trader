@@ -22,6 +22,7 @@ import pandas as pd
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.time cimport unix_timestamp_ns
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.util import chunk
@@ -128,8 +129,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         return self._account_currency
 
 
-
-
 def _parse_date(s, tz):
     # pd.Timestamp is ~5x faster than datetime.datetime.isoformat here.
     return pd.Timestamp(s, tz=tz).to_pydatetime()
@@ -163,6 +162,8 @@ cpdef list make_instrument(dict market_definition, str currency):
             selection_name=runner.get("runnerName"),
             selection_handicap=str(runner.get("hc", runner.get("handicap", ""))),
             currency=currency,
+            # TODO - Add the provider, use clock
+            timestamp_ns=unix_timestamp_ns()
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
         instruments.append(instrument)

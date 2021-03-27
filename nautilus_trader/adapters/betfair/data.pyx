@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 
 import betfairlightweight
 from betfairlightweight import APIClient
@@ -197,7 +196,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
                 data=GenericData(
                     data_type=data_type,
                     data=InstrumentSearch(instruments=instruments),
-                    timestamp=self._clock.utc_now(),
+                    timestamp_ns=self._clock.timestamp_ns(),
                 ),
                 correlation_id=correlation_id
             )

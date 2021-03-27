@@ -1,3 +1,4 @@
+import bz2
 import pathlib
 from unittest import mock
 
@@ -126,6 +127,7 @@ class BetfairTestStubs(TestStubs):
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
 
     @staticmethod
@@ -269,3 +271,7 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def streaming_mcm_UPDATE_tv():
         return (TEST_PATH / "streaming_mcm_UPDATE_tv.json").read_bytes()
+
+    @staticmethod
+    def raw_orderbook_updates():
+        return bz2.open(TEST_PATH / "1.133262888.json.bz2").readlines()

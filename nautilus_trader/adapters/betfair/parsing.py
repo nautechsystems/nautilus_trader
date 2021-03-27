@@ -19,7 +19,7 @@ from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import hash_json
-from nautilus_trader.core.datetime import from_unix_time_ms
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.c_enums.order_side import OrderSide
@@ -108,6 +108,7 @@ def betfair_account_to_account_state(
     account_detail,
     account_funds,
     event_id,
+    timestamp_ns,
     account_id="001",
 ) -> AccountState:
     currency = Currency.from_str(account_detail["currencyCode"])
@@ -121,7 +122,7 @@ def betfair_account_to_account_state(
         [Money(value=balance_locked, currency=currency)],
         {"funds": account_funds, "detail": account_detail},
         event_id,
-        datetime.datetime.now(),
+        timestamp_ns,
     )
 
 
@@ -171,7 +172,7 @@ def build_market_snapshot_messages(
                             (price_to_probability(p, OrderSide.SELL), v)
                             for p, v in bids
                         ],
-                        timestamp=from_unix_time_ms(raw["pt"]),
+                        timestamp_ns=millis_to_nanos(raw["pt"]),
                     )
                     updates.append(snapshot)
     return updates
@@ -217,7 +218,7 @@ def build_market_update_messages(
                 level=OrderBookLevel.L2,
                 instrument_id=instrument.id,
                 ops=operations,
-                timestamp=datetime.datetime.utcfromtimestamp(raw["pt"] / 1e3),
+                timestamp_ns=millis_to_nanos(raw["pt"]),
             )
             updates.append(ob_update)
 
@@ -240,7 +241,7 @@ def build_market_update_messages(
                     size=Quantity(volume, precision=4),
                     side=OrderSide.BUY,
                     match_id=TradeMatchId(trade_id),
-                    timestamp=from_unix_time_ms(raw["pt"]),
+                    timestamp_ns=millis_to_nanos(raw["pt"]),
                 )
                 updates.append(trade_tick)
 
@@ -302,7 +303,7 @@ async def generate_order_status_report(self) -> Optional[OrderStatusReport]:
         #     order_id=OrderId(),
         #     order_stat=OrderState(),
         #     filled_qty=Quantity(),
-        #     timestamp=from_unix_time_ms(),
+        #     timestamp_ns=millis_to_nanos(),
         # )
         # for order in self.client().betting.list_current_orders()["currentOrders"]
     ]
