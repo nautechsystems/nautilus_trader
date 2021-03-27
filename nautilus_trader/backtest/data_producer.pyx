@@ -25,7 +25,7 @@ import pandas as pd
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -257,7 +257,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
-        cdef int64_t total_size = 0
+        cdef uint64_t total_size = 0
 
         cdef datetime start = nanos_to_unix_dt(start_ns)
         cdef datetime stop = nanos_to_unix_dt(stop_ns)
