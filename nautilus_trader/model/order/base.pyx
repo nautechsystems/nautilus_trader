@@ -477,7 +477,7 @@ cdef class Order:
                 Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
             else:
                 self.id = event.order_id
-            if self.filled_qty + event.fill_qty < self.quantity:
+            if self.filled_qty + event.last_qty < self.quantity:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
                 self._fsm.trigger(OrderState.FILLED)
@@ -519,12 +519,12 @@ cdef class Order:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
-    cdef object _calculate_avg_px(self, Price fill_price, Quantity fill_quantity):
+    cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
         if self.avg_px is None:
-            return fill_price
+            return last_px
 
-        total_quantity: Decimal = self.filled_qty + fill_quantity
-        return ((self.avg_px * self.filled_qty) + (fill_price * fill_quantity)) / total_quantity
+        total_quantity: Decimal = self.filled_qty + last_qty
+        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_quantity
 
 
 cdef class PassiveOrder(Order):
@@ -640,16 +640,16 @@ cdef class PassiveOrder(Order):
         self.quantity = event.quantity
         self.price = event.price
 
-    cdef void _filled(self, OrderFilled event) except *:
-        self.id = event.order_id
-        self.position_id = event.position_id
-        self.strategy_id = event.strategy_id
-        self._execution_ids.append(event.execution_id)
-        self.execution_id = event.execution_id
-        self.liquidity_side = event.liquidity_side
-        self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
-        self.execution_ns = event.execution_ns
-        self.avg_px = self._calculate_avg_px(event.fill_price, event.fill_qty)
+    cdef void _filled(self, OrderFilled fill) except *:
+        self.id = fill.order_id
+        self.position_id = fill.position_id
+        self.strategy_id = fill.strategy_id
+        self._execution_ids.append(fill.execution_id)
+        self.execution_id = fill.execution_id
+        self.liquidity_side = fill.liquidity_side
+        self.filled_qty = Quantity(self.filled_qty + fill.last_qty)
+        self.execution_ns = fill.execution_ns
+        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:

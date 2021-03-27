@@ -207,9 +207,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
-    async def generate_trades_list(self, OrderId order_id, Symbol symbol, datetime since=None):
+    async def generate_exec_reports(self, OrderId order_id, Symbol symbol, datetime since=None):
         """
-        Generate a list of trades for the given parameters.
+        Generate a list of execution reports.
 
         The returned list may be empty if no trades match the given parameters.
 
@@ -258,31 +258,28 @@ cdef class LiveExecutionClient(ExecutionClient):
             # Nothing to resolve
             return mass_status
 
-        cdef Instrument instrument
         cdef Order order
-        cdef str status
-        cdef dict response
-        cdef list trades
-        cdef list order_trades
+        cdef OrderStatusReport order_report
+        cdef list exec_reports
         for order in active_orders:
-            report = await self.generate_order_status_report(order)
-            if report:
-                mass_status.add_order_report(report)
+            order_report = await self.generate_order_status_report(order)
+            if order_report:
+                mass_status.add_order_report(order_report)
 
-            if report.order_state in (OrderState.PARTIALLY_FILLED, OrderState.FILLED):
-                trades = await self.generate_trades_list(
+            if order_report.order_state in (OrderState.PARTIALLY_FILLED, OrderState.FILLED):
+                exec_reports = await self.generate_exec_reports(
                     order_id=order.id,
                     symbol=order.symbol,
                     since=nanos_to_millis(nanos=order.timestamp_ns),
                 )
-                mass_status.add_trades(order.id, trades)
+                mass_status.add_exec_reports(order.id, exec_reports)
 
         return mass_status
 
     async def reconcile_state(
         self, OrderStatusReport report,
         Order order=None,
-        list trades=None,
+        list exec_reports=None,
     ) -> bool:
         """
         Reconcile the given orders state based on the given report.
@@ -296,8 +293,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         order : Order, optional
             The order for reconciliation. If not supplied then will try to be
             fetched from cache.
-        trades : list[ExecutionReport]
-            The list of trades relating to the order.
+        exec_reports : list[ExecutionReport]
+            The list of execution reports relating to the order.
 
         Raises
         ------
@@ -353,31 +350,31 @@ cdef class LiveExecutionClient(ExecutionClient):
             # TODO: Consider other scenarios
 
         # OrderState.PARTIALLY_FILLED or FILLED
-        if trades is None:
+        if exec_reports is None:
             self._log.error(
                 f"Cannot reconcile state for {repr(report.order_id)}, "
                 f"no trades given for {OrderStateParser.to_str(report.order_state)} order.")
             return False  # Cannot reconcile state
 
-        cdef ExecutionReport trade
-        for trade in trades:
-            if trade.id in order.execution_ids_c():
+        cdef ExecutionReport exec_report
+        for exec_report in exec_reports:
+            if exec_report.id in order.execution_ids_c():
                 continue  # Trade already applied
-            self._log.info(f"Generating OrderFilled event for {repr(trade.id)}...", LogColor.GREEN)
+            self._log.info(f"Generating OrderFilled event for {repr(exec_report.id)}...", LogColor.GREEN)
             self._generate_order_filled(
                 cl_ord_id=order.cl_ord_id,
                 order_id=order.id,
-                execution_id=trade.id,
+                execution_id=exec_report.id,
                 instrument_id=order.instrument_id,
                 order_side=order.side,
-                last_qty=trade.last_qty,
-                last_px=trade.last_px,
+                last_qty=exec_report.last_qty,
+                last_px=exec_report.last_px,
                 cum_qty=Decimal(),     # TODO: use hot cache?
                 leaves_qty=Decimal(),  # TODO: use hot cache?
-                commission_amount=trade.commission_amount,
-                commission_currency=trade.commission_currency,
-                liquidity_side=trade.liquidity_side,
-                timestamp_ns=trade.execution_ns,
+                commission_amount=exec_report.commission_amount,
+                commission_currency=exec_report.commission_currency,
+                liquidity_side=exec_report.liquidity_side,
+                timestamp_ns=exec_report.execution_ns,
             )
 
         return True
@@ -481,7 +478,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 commission = Money(commission_amount, currency)
 
         # Generate event
-        cdef OrderFilled filled = OrderFilled(
+        cdef OrderFilled fill = OrderFilled(
             self.account_id,
             cl_ord_id=cl_ord_id,
             order_id=order_id,
@@ -503,7 +500,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(filled)
+        self._handle_event(fill)
 
     cdef inline void _generate_order_cancelled(
         self,

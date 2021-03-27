@@ -183,8 +183,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         for name, mass_status in client_mass_status.items():
             for order_state_report in mass_status.order_reports().values():
                 order = active_orders.get(order_state_report.cl_ord_id)
-                trades = mass_status.trades().get(order.id, [])
-                await self._clients[name].reconcile_state(order_state_report, order, trades)
+                exec_reports = mass_status.exec_reports().get(order.id, [])
+                await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
 
         # Wait for state resolution until timeout...
         cdef int seconds = 10  # Hard coded for now

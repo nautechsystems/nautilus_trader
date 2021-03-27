@@ -68,9 +68,9 @@ cdef class ExecutionReport:
 
 
 cdef class ExecutionMassStatus:
-    cdef dict _order_states
-    cdef dict _trades
-    cdef dict _position_states
+    cdef dict _order_reports
+    cdef dict _exec_reports
+    cdef dict _position_reports
 
     cdef readonly str client
     """The client name for the report.\n\n:returns: `str`"""
@@ -80,9 +80,9 @@ cdef class ExecutionMassStatus:
     """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
 
     cpdef dict order_reports(self)
-    cpdef dict trades(self)
+    cpdef dict exec_reports(self)
     cpdef dict position_reports(self)
 
     cpdef void add_order_report(self, OrderStatusReport report) except *
-    cpdef void add_trades(self, OrderId order_id, list trades) except *
+    cpdef void add_exec_reports(self, OrderId order_id, list reports) except *
     cpdef void add_position_report(self, PositionStatusReport report) except *

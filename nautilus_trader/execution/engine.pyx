@@ -784,7 +784,7 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
-        if fill.order_side != position.entry and fill.fill_qty > position.quantity:
+        if fill.order_side != position.entry and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
             return  # Handled in flip
 
@@ -809,12 +809,12 @@ cdef class ExecutionEngine(Component):
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference
         if position.side == PositionSide.LONG:
-            difference = Quantity(fill.fill_qty - position.quantity)
+            difference = Quantity(fill.last_qty - position.quantity)
         else:  # position.side == PositionSide.SHORT:
-            difference = Quantity(abs(position.quantity - fill.fill_qty))
+            difference = Quantity(abs(position.quantity - fill.last_qty))
 
         # Split commission between two positions
-        fill_percent1 = position.quantity / fill.fill_qty
+        fill_percent1 = position.quantity / fill.last_qty
         fill_percent2 = 1 - fill_percent1  # Subtract from an integer to return a Decimal
 
         # Split fill to close original position
@@ -828,7 +828,7 @@ cdef class ExecutionEngine(Component):
             fill.instrument_id,
             fill.order_side,
             position.quantity,                       # Fill original position quantity remaining
-            fill.fill_price,
+            fill.last_px,
             Quantity(fill.cum_qty - difference),     # Adjust cumulative qty by difference
             Quantity(fill.leaves_qty + difference),  # Adjust leaves qty by difference
             fill.currency,
@@ -864,7 +864,7 @@ cdef class ExecutionEngine(Component):
             fill.instrument_id,
             fill.order_side,
             difference,  # Fill difference from original as above
-            fill.fill_price,
+            fill.last_px,
             fill.cum_qty,
             fill.leaves_qty,
             fill.currency,
@@ -880,28 +880,28 @@ cdef class ExecutionEngine(Component):
         self.cache.add_position(position_flip)
         self.process(self._pos_opened_event(position_flip, fill_split2))
 
-    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled event):
+    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
         return PositionOpened(
             position,
-            event,
+            fill,
             self._uuid_factory.generate(),
-            event.timestamp_ns,
+            fill.timestamp_ns,
         )
 
-    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled event):
+    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
         return PositionChanged(
             position,
-            event,
+            fill,
             self._uuid_factory.generate(),
-            event.timestamp_ns,
+            fill.timestamp_ns,
         )
 
-    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled event):
+    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
         return PositionClosed(
             position,
-            event,
+            fill,
             self._uuid_factory.generate(),
-            event.timestamp_ns,
+            fill.timestamp_ns,
         )
 
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
