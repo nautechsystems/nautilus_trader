@@ -25,13 +25,11 @@ from nautilus_trader.model.identifiers import StrategyId
 
 
 class OrderIdGeneratorTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.order_id_generator = ClientOrderIdGenerator(
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=TestClock())
+            id_tag_trader=IdTag("001"), id_tag_strategy=IdTag("001"), clock=TestClock()
+        )
 
     def test_generate_order_id(self):
         # Arrange
@@ -60,7 +58,6 @@ class OrderIdGeneratorTests(unittest.TestCase):
 
 
 class PositionIdGeneratorTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.position_id_generator = PositionIdGenerator(
@@ -84,8 +81,12 @@ class PositionIdGeneratorTests(unittest.TestCase):
         # Arrange
         # Act
         result1 = self.position_id_generator.generate(StrategyId("S", "001"))
-        result2 = self.position_id_generator.generate(StrategyId("S", "002"), flipped=True)
-        result3 = self.position_id_generator.generate(StrategyId("S", "001"), flipped=True)
+        result2 = self.position_id_generator.generate(
+            StrategyId("S", "002"), flipped=True
+        )
+        result3 = self.position_id_generator.generate(
+            StrategyId("S", "001"), flipped=True
+        )
 
         # Assert
         self.assertEqual(PositionId("P-19700101-000000-001-001-1"), result1)

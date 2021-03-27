@@ -29,10 +29,11 @@ from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.stop_market import StopMarketOrder
-from nautilus_trader.model.order_book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
+
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
@@ -95,8 +96,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
-        self.instrument = None       # Initialize in on_start
-        self.tick_size = None        # Initialize in on_start
+        self.instrument = None  # Initialize in on_start
+        self.tick_size = None  # Initialize in on_start
         self.price_precision = None  # Initialize in on_start
 
         # Create the indicators for the strategy
@@ -179,24 +180,24 @@ class EMACrossStopEntryTrail(TradingStrategy):
         """
         pass
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    def on_bar(self, bar: Bar):
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} {repr(bar)}")
+        self.log.info(f"Received {repr(bar)}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]..."
+            )
             return  # Wait for indicators to warm up...
 
         if self.portfolio.is_flat(self.instrument_id):
@@ -255,7 +256,9 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         """
         # Round price to nearest 0.5 (for XBT/USD)
-        price = round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
+        price = (
+            round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
+        )
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -272,7 +275,9 @@ class EMACrossStopEntryTrail(TradingStrategy):
         Users simple trailing stop SELL for (LONG positions).
         """
         # Round price to nearest 0.5 (for XBT/USD)
-        price = round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
+        price = (
+            round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
+        )
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
@@ -301,13 +306,19 @@ class EMACrossStopEntryTrail(TradingStrategy):
             return
 
         if self.trailing_stop.is_sell:
-            new_trailing_price = round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
+            new_trailing_price = (
+                round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2)
+                / 2
+            )
             if new_trailing_price > self.trailing_stop.price:
                 self.log.info(f"Moving SELL trailing stop to {new_trailing_price}.")
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_sell(last_bar)
         else:  # trailing_stop.is_buy
-            new_trailing_price = round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
+            new_trailing_price = (
+                round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2)
+                / 2
+            )
             if new_trailing_price < self.trailing_stop.price:
                 self.log.info(f"Moving BUY trailing stop to {new_trailing_price}.")
                 self.cancel_order(self.trailing_stop)

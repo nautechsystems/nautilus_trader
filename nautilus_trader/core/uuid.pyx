@@ -24,12 +24,14 @@
 UUID objects (universally unique identifiers) according to RFC 4122.
 This module provides immutable UUID objects (class UUID) and the function
 for generating version 4 random UUIDs as specified in RFC 4122.
+
 Typical usage:
     >>> import uuid
     # make a random UUID
     >>> x = uuid.uuid4()
     >>> str(x)
     '00010203-0405-0607-0809-0a0b0c0d0e0f'
+
 """
 
 import os
@@ -48,14 +50,17 @@ cdef class UUID:
     def __init__(self, bytes value not None):
         """
         Initialize a new instance of the `UUID` class.
+
         Parameters
         ----------
         value : bytes
             The 16 bytes value to generate the UUID with.
+
         Raises
         ------
         ValueError
-            If value length != 16
+            If value length != 16.
+
         """
         if len(value) != 16:
             raise ValueError("bytes is not a 16-char string")
@@ -116,17 +121,21 @@ cdef class UUID:
     def from_str(str value):
         """
         Create a UUID parsed from the given hexadecimal UUID string value.
+
         Parameters
         ----------
         value : str
             The string value.
+
         Returns
         -------
         UUID
+
         Raises
         ------
         ValueError
             If value is badly formed (length != 32).
+
         """
         return UUID.from_str_c(value)
 
@@ -134,10 +143,12 @@ cdef class UUID:
     def bytes(self):
         """
         The UUID as a 16-byte string (containing the six integer fields in
-        big-endian byte order)
+        big-endian byte order).
+
         Returns
         -------
         str
+
         """
         return self.int_val.to_bytes(16, byteorder='big')
 
@@ -146,9 +157,11 @@ cdef class UUID:
         """
         The UUID as a 16-byte string (with time_low, time_mid,
         and time_hi_version in little-endian byte order).
+
         Returns
         -------
         str
+
         """
         cdef bytes bytes_val = self.bytes
         return bytes_val[4 - 1:: - 1] \
@@ -161,9 +174,11 @@ cdef class UUID:
         """
         A tuple of the six integer fields of the UUID, which are also available
         as six individual attributes and two derived attributes.
+
         Returns
         -------
         tuple
+
         """
         return (
             self.time_low,
@@ -178,9 +193,11 @@ cdef class UUID:
     def time_low(self):
         """
         The first 32 bits of the UUID.
+
         Returns
         -------
         int
+
         """
         return self.int_val >> 96
 
@@ -188,9 +205,11 @@ cdef class UUID:
     def time_mid(self):
         """
         The next 16 bits of the UUID.
+
         Returns
         -------
         int
+
         """
         return (self.int_val >> 80) & 0xffff
 
@@ -198,9 +217,11 @@ cdef class UUID:
     def time_hi_version(self):
         """
         The next 16 bits of the UUID.
+
         Returns
         -------
         int
+
         """
         return (self.int_val >> 64) & 0xffff
 
@@ -208,9 +229,11 @@ cdef class UUID:
     def clock_seq_hi_variant(self):
         """
         The next 8 bits of the UUID.
+
         Returns
         -------
         int
+
         """
         return (self.int_val >> 56) & 0xff
 
@@ -218,9 +241,11 @@ cdef class UUID:
     def clock_seq_low(self):
         """
         The 60-bit timestamp.
+
         Returns
         -------
         int
+
         """
         return (self.int_val >> 48) & 0xff
 
@@ -228,9 +253,11 @@ cdef class UUID:
     def time(self):
         """
         The 60-bit timestamp.
+
         Returns
         -------
         int
+
         """
         return ((self.time_hi_version & 0x0fff) << 48) | (self.time_mid << 32) | self.time_low
 
@@ -238,9 +265,11 @@ cdef class UUID:
     def clock_seq(self):
         """
         The 14-bit sequence number.
+
         Returns
         -------
         int
+
         """
         return ((self.clock_seq_hi_variant & 0x3f) << 8) | self.clock_seq_low
 
@@ -248,9 +277,11 @@ cdef class UUID:
     def node(self):
         """
         The last 48 bits of the UUID.
+
         Returns
         -------
         int
+
         """
         return self.int_val & 0xffffffffffff
 
@@ -258,9 +289,11 @@ cdef class UUID:
     def hex(self):
         """
         The UUID as a 32-character hexadecimal string.
+
         Returns
         -------
         str
+
         """
         return '%032x' % self.int_val
 
@@ -268,9 +301,11 @@ cdef class UUID:
     def urn(self):
         """
         The UUID as a URN as specified in RFC 4122.
+
         Returns
         -------
         str
+
         """
         return 'urn:uuid:' + str(self)
 

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
@@ -60,7 +61,7 @@ cdef class StopLimitOrder(PassiveOrder):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
         bint post_only=True,
         bint reduce_only=False,
         bint hidden=False,
@@ -90,8 +91,8 @@ cdef class StopLimitOrder(PassiveOrder):
             The order expiry time.
         init_id : UUID
             The order initialization event identifier.
-        timestamp : datetime
-            The order initialization timestamp.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the order initialization.
         post_only : bool, optional
             If the order will only make a market (once triggered).
         reduce_only : bool, optional
@@ -127,7 +128,7 @@ cdef class StopLimitOrder(PassiveOrder):
             time_in_force,
             expire_time,
             init_id,
-            timestamp,
+            timestamp_ns,
             options={
                 TRIGGER: str(trigger),
                 POST_ONLY: post_only,
@@ -143,13 +144,13 @@ cdef class StopLimitOrder(PassiveOrder):
         self.is_hidden = hidden
 
     def __repr__(self) -> str:
-        cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
+        cdef str id_string = f", id={self.id.value})" if self.id.not_null() else ")"
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id.value}, "
-                f"{id_string}"
-                f"state={self._fsm.state_string_c()}, "
+                f"{self.status_string_c()}, "
                 f"trigger={self.trigger}, "
-                f"{self.status_string_c()})")
+                f"state={self._fsm.state_string_c()}, "
+                f"cl_ord_id={self.cl_ord_id.value}"
+                f"{id_string}")
 
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized event):
@@ -185,7 +186,7 @@ cdef class StopLimitOrder(PassiveOrder):
             time_in_force=event.time_in_force,
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
-            timestamp=event.timestamp,
+            timestamp_ns=event.timestamp_ns,
             post_only=event.options[POST_ONLY],
             reduce_only=event.options[REDUCE_ONLY],
             hidden=event.options[HIDDEN],

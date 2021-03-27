@@ -22,13 +22,11 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.order_book cimport OrderBook
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class DataClient:
@@ -39,7 +37,7 @@ cdef class DataClient:
     cdef dict _config
 
     cdef readonly str name
-    """The clients venue.\n\n:returns: `Venue`"""
+    """The clients name.\n\n:returns: `str`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
@@ -59,7 +57,7 @@ cdef class DataClient:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_data(self, GenericData data) except *
+    cdef void _handle_data(self, Data data) except *
     cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *
 
 
@@ -70,7 +68,7 @@ cdef class MarketDataClient(DataClient):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, int level, int depth=*, dict kwargs=*) except *
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
@@ -111,12 +109,6 @@ cdef class MarketDataClient(DataClient):
     ) except *
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
-
-    cdef void _handle_instrument(self, Instrument instrument) except *
-    cdef void _handle_order_book(self, OrderBook order_book) except *
-    cdef void _handle_quote_tick(self, QuoteTick tick) except *
-    cdef void _handle_trade_tick(self, TradeTick tick) except *
-    cdef void _handle_bar(self, BarType bar_type, Bar bar) except *
 
     cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *

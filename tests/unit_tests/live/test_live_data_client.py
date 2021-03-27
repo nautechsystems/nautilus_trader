@@ -20,11 +20,13 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.live.data_client import LiveDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
+
 
 BITMEX = Venue("BITMEX")
 BINANCE = Venue("BINANCE")
@@ -33,8 +35,44 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class LiveMarketDataClientTests(unittest.TestCase):
+class LiveDataClientTests(unittest.TestCase):
+    def setUp(self):
+        # Fixture Setup
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+        self.logger = TestLogger(self.clock, level_console=LogLevel.DEBUG)
 
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        self.engine = LiveDataEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.client = LiveDataClient(
+            name="BLOOMBERG",
+            engine=self.engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+    def test_dummy_test(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+
+class LiveMarketDataClientTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()

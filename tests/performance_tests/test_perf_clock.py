@@ -19,41 +19,43 @@ import unittest
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import UNIX_EPOCH
+
 
 live_clock = LiveClock()
 test_clock = TestClock()
 
 
 class LiveClockPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_utc_now():
-        PerformanceHarness.profile_function(live_clock.utc_now, 100000, 1)
-        # ~0.0ms / ~1.4μs / 1376ns minimum of 100,000 runs @ 1 iteration each run.
+        PerformanceHarness.profile_function(live_clock.timestamp_ns, 100000, 1)
+        # ~0.0ms / ~1.3μs / 1330ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
-    def test_unix_time():
-        PerformanceHarness.profile_function(live_clock.unix_time, 100000, 1)
+    def test_unix_timestamp():
+        PerformanceHarness.profile_function(live_clock.timestamp, 100000, 1)
+        # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
+
+    @staticmethod
+    def test_unix_timestamp_ns():
+        PerformanceHarness.profile_function(live_clock.timestamp_ns, 100000, 1)
         # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
 
 
 class TestClockHarness:
-
     @staticmethod
     def advance_time():
-        test_clock.advance_time(UNIX_EPOCH)
+        test_clock.advance_time(to_time_ns=0)
 
     @staticmethod
     def iteratively_advance_time():
-        test_time = UNIX_EPOCH
-        for _i in range(100000):
-            test_time += timedelta(seconds=1)
-        test_clock.advance_time(test_time)
+        test_time = 0
+        for i in range(100000):
+            test_time += 1
+        test_clock.advance_time(to_time_ns=test_time)
 
 
 class TestClockPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_advance_time():
         PerformanceHarness.profile_function(TestClockHarness.advance_time, 100000, 1)
@@ -65,5 +67,8 @@ class TestClockPerformanceTests(unittest.TestCase):
         test_clock.set_timer("test", timedelta(seconds=1), handler=store.append)
 
         iterations = 1
-        PerformanceHarness.profile_function(TestClockHarness.iteratively_advance_time, 1, iterations)
-        # ~320.1ms minimum of 1 runs @ 1 iteration each run. (100000 advances)
+        PerformanceHarness.profile_function(
+            TestClockHarness.iteratively_advance_time, 1, iterations
+        )
+        # ~320.1ms                       minimum of 1 runs @ 1 iteration each run. (100000 advances)
+        # ~3.7ms / ~3655.1μs / 3655108ns minimum of 1 runs @ 1 iteration each run.

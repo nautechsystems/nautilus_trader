@@ -41,6 +41,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 
+
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 OANDA = Venue("OANDA")
@@ -48,7 +49,6 @@ AUDUSD = InstrumentId(Symbol("AUD/USD"), OANDA)
 
 
 class OandaDataClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -107,7 +107,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
-    # TODO: WIP
+    # TODO: WIP - why is this failing??
     # def test_connect(self):
     #     async def run_test():
     #         # Arrange
@@ -291,15 +291,18 @@ class OandaDataClientTests(unittest.TestCase):
 
             request = DataRequest(
                 provider=OANDA.value,
-                data_type=DataType(Bar, metadata={
-                    "BarType": bar_type,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                }),
-                callback=handler.store_2,
+                data_type=DataType(
+                    Bar,
+                    metadata={
+                        "BarType": bar_type,
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 1000,
+                    },
+                ),
+                callback=handler.store,
                 request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -312,7 +315,7 @@ class OandaDataClientTests(unittest.TestCase):
             self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
             # Final bar incomplete so becomes partial
-            self.assertEqual(99, len(handler.get_store()[0][1]))
+            self.assertEqual(99, len(handler.get_store()[0]))
 
             # Tear Down
             self.data_engine.stop()

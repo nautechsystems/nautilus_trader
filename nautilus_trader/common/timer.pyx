@@ -13,14 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
 from threading import Timer as TimerThread
 
 from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport nanos_to_secs
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 
@@ -35,6 +38,8 @@ cdef class TimeEvent(Event):
         str name not None,
         UUID event_id not None,
         datetime event_timestamp not None,
+        int64_t event_timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `TimeEvent` class.
@@ -46,13 +51,19 @@ cdef class TimeEvent(Event):
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
-            The event timestamp.
+            The event timestamp (UTC).
+        event_timestamp_ns : int64
+            The Unix timestamp (nanos) of the event.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
 
         """
         Condition.valid_string(name, "name")
-        super().__init__(event_id, event_timestamp)
+        super().__init__(event_id, timestamp_ns)
 
         self.name = name
+        self.event_timestamp = event_timestamp
+        self.event_timestamp_ns = event_timestamp_ns
 
     def __eq__(self, TimeEvent other) -> bool:
         return self.name == other.name
@@ -64,7 +75,7 @@ cdef class TimeEvent(Event):
         return (f"{type(self).__name__}("
                 f"name={self.name}, "
                 f"id={self.id}, "
-                f"timestamp={format_iso8601(self.timestamp)})")
+                f"event_timestamp={format_iso8601(self.event_timestamp)})")
 
 
 cdef class TimeEventHandler:
@@ -86,22 +97,22 @@ cdef class TimeEventHandler:
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
-        return self.event.timestamp == other.event.timestamp
+        return self.event.event_timestamp_ns == other.event.event_timestamp_ns
 
     def __ne__(self, TimeEventHandler other) -> bool:
-        return self.event.timestamp != other.event.timestamp
+        return self.event.event_timestamp_ns != other.event.event_timestamp_ns
 
     def __lt__(self, TimeEventHandler other) -> bool:
-        return self.event.timestamp < other.event.timestamp
+        return self.event.event_timestamp_ns < other.event.event_timestamp_ns
 
     def __le__(self, TimeEventHandler other) -> bool:
-        return self.event.timestamp <= other.event.timestamp
+        return self.event.event_timestamp_ns <= other.event.event_timestamp_ns
 
     def __gt__(self, TimeEventHandler other) -> bool:
-        return self.event.timestamp > other.event.timestamp
+        return self.event.event_timestamp_ns > other.event.event_timestamp_ns
 
     def __ge__(self, TimeEventHandler other) -> bool:
-        return self.event.timestamp >= other.event.timestamp
+        return self.event.event_timestamp_ns >= other.event.event_timestamp_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -119,9 +130,9 @@ cdef class Timer:
         self,
         str name not None,
         callback not None: callable,
-        timedelta interval not None,
-        datetime start_time not None,
-        datetime stop_time=None,  # Can be None
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns=0,
     ):
         """
         Initialize a new instance of the `Timer` class.
@@ -132,27 +143,29 @@ cdef class Timer:
             The name for the timer.
         callback : callable
             The function to call at the next time.
-        interval : timedelta
+        interval_ns : int64
             The time interval for the timer (not negative).
-        start_time : datetime
-            The start datetime for the timer (UTC).
-        stop_time : datetime, optional
-            The stop datetime for the timer (UTC) (if None then timer repeats).
+        start_time_ns : int64
+            The Unix time (nanoseconds) for timer start.
+        stop_time_ns : int64, optional
+            The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
-        Condition.positive(interval.total_seconds(), "interval")
-        if stop_time:
-            Condition.true(start_time + interval <= stop_time, "start_time + interval was > stop_time")
+        Condition.positive_int64(interval_ns, "interval_ns")
 
         self.name = name
         self.callback = callback
-        self.interval = interval
-        self.start_time = start_time
-        self.next_time = start_time + interval
-        self.stop_time = stop_time
-        self.expired = False
+
+        # Note that for very large time intervals (greater than 270 years on
+        # most platforms) the below will lose microsecond accuracy.
+        self.interval_ns = interval_ns
+        self.start_time_ns = start_time_ns
+        self.next_time_ns = start_time_ns + interval_ns
+        self.stop_time_ns = stop_time_ns
+
+        self.is_expired = False
 
     def __eq__(self, Timer other) -> bool:
         return self.name == other.name
@@ -166,12 +179,13 @@ cdef class Timer:
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"name={self.name}, "
-                f"interval={self.interval}, "
-                f"start_time={self.start_time}, "
-                f"next_time={self.next_time}, "
-                f"stop_time={self.stop_time})")
+                f"interval_ns={self.interval_ns}, "
+                f"start_time_ns={self.start_time_ns}, "
+                f"next_time_ns={self.next_time_ns}, "
+                f"stop_time_ns={self.stop_time_ns}, "
+                f"is_expired={self.is_expired})")
 
-    cpdef TimeEvent pop_event(self, UUID event_id):
+    cpdef TimeEvent pop_event(self, UUID event_id, int64_t timestamp_ns):
         """
         Return a generated time event with the given identifier.
 
@@ -179,6 +193,8 @@ cdef class Timer:
         ----------
         event_id : UUID
             The identifier for the time event.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) for time event initialization.
 
         Returns
         -------
@@ -187,23 +203,27 @@ cdef class Timer:
         """
         Condition.not_none(event_id, "event_id")
 
-        return TimeEvent(self.name, event_id, self.next_time)
+        return TimeEvent(
+            name=self.name,
+            event_id=event_id,
+            event_timestamp=nanos_to_unix_dt(nanos=self.next_time_ns),
+            event_timestamp_ns=self.next_time_ns,
+            timestamp_ns=timestamp_ns,
+        )
 
-    cpdef void iterate_next_time(self, datetime now) except *:
+    cpdef void iterate_next_time(self, int64_t now_ns) except *:
         """
         Iterates the timers next time and checks if the timer is now expired.
 
         Parameters
         ----------
-        now : datetime
-            The datetime now (UTC).
+        now_ns : int64
+            The Unix time now (nanoseconds).
 
         """
-        Condition.not_none(now, "now")
-
-        self.next_time += self.interval
-        if self.stop_time and now >= self.stop_time:
-            self.expired = True
+        self.next_time_ns += self.interval_ns
+        if self.stop_time_ns and now_ns >= self.stop_time_ns:
+            self.is_expired = True
 
     cpdef void cancel(self) except *:
         """Abstract method (implement in subclass)."""
@@ -220,9 +240,9 @@ cdef class TestTimer(Timer):
         self,
         str name not None,
         callback not None: callable,
-        timedelta interval not None,
-        datetime start_time not None,
-        datetime stop_time=None
+        int64_t interval_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns=0,
     ):
         """
         Initialize a new instance of the `TestTimer` class.
@@ -233,20 +253,26 @@ cdef class TestTimer(Timer):
             The name for the timer.
         callback : callable
             The function to call at the next time.
-        interval : timedelta
+        interval_ns : int64
             The time interval for the timer (not negative).
-        start_time : datetime
-            The stop datetime for the timer (UTC).
-        stop_time : datetime, optional
-            The stop datetime for the timer (UTC) (if None then timer repeats).
+        start_time_ns : int64
+            The Unix time (nanoseconds) for timer start.
+        stop_time_ns : int64, optional
+            The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
         Condition.valid_string(name, "name")
-        super().__init__(name, callback, interval, start_time, stop_time)
+        super().__init__(
+            name=name,
+            callback=callback,
+            interval_ns=interval_ns,
+            start_time_ns=start_time_ns,
+            stop_time_ns=stop_time_ns,
+        )
 
         self._uuid_factory = UUIDFactory()
 
-    cpdef list advance(self, datetime to_time):
+    cpdef list advance(self, int64_t to_time_ns):
         """
         Advance the test timer forward to the given time, generating a sequence
         of events. A ``TimeEvent`` is appended for each time a next event is
@@ -254,8 +280,8 @@ cdef class TestTimer(Timer):
 
         Parameters
         ----------
-        to_time : datetime
-            The time to advance the test timer to.
+        to_time_ns : int64
+            The Unix time (nanoseconds) to advance the timer to.
 
         Returns
         -------
@@ -267,13 +293,16 @@ cdef class TestTimer(Timer):
             If to_time is < the timers next event time.
 
         """
-        Condition.not_none(to_time, "to_time")
-        Condition.true(to_time >= self.next_time, "to_time was < self.next_time")  # Ensure monotonic
+        # Ensure monotonic
+        Condition.true(to_time_ns >= self.next_time_ns, "to_time_ns was < self.next_time_ns")
 
         cdef list events = []  # type: list[TimeEvent]
-        while not self.expired and to_time >= self.next_time:
-            events.append(self.pop_event(self._uuid_factory.generate()))
-            self.iterate_next_time(self.next_time)
+        while not self.is_expired and to_time_ns >= self.next_time_ns:
+            events.append(self.pop_event(
+                event_id=self._uuid_factory.generate(),
+                timestamp_ns=self.next_time_ns,
+            ))
+            self.iterate_next_time(to_time_ns=self.next_time_ns)
 
         return events
 
@@ -291,8 +320,11 @@ cdef class TestTimer(Timer):
             If the next event timestamp is not equal to the at_time.
 
         """
-        cdef TimeEvent event = self.pop_event(self._uuid_factory.generate())
-        self.iterate_next_time(self.next_time)
+        cdef TimeEvent event = self.pop_event(
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self.next_time_ns,
+        )
+        self.iterate_next_time(to_time_ns=self.next_time_ns)
 
         return event
 
@@ -300,7 +332,7 @@ cdef class TestTimer(Timer):
         """
         Cancels the timer (the timer will not generate an event).
         """
-        self.expired = True
+        self.is_expired = True
 
 
 cdef class LiveTimer(Timer):
@@ -314,10 +346,10 @@ cdef class LiveTimer(Timer):
         self,
         str name not None,
         callback not None: callable,
-        timedelta interval not None,
-        datetime now not None,
-        datetime start_time not None,
-        datetime stop_time=None,
+        int64_t interval_ns,
+        int64_t now_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns=0,
     ):
         """
         Initialize a new instance of the `LiveTimer` class.
@@ -328,13 +360,13 @@ cdef class LiveTimer(Timer):
             The name for the timer.
         callback : callable
             The function to call at the next time.
-        interval : timedelta
+        interval_ns : int64
             The time interval for the timer.
-        now : datetime
+        now_ns : int64
             The datetime now (UTC).
-        start_time : datetime
+        start_time_ns : int64
             The start datetime for the timer (UTC).
-        stop_time : datetime, optional
+        stop_time_ns : int64, optional
             The stop datetime for the timer (UTC) (if None then timer repeats).
 
         Raises
@@ -344,23 +376,27 @@ cdef class LiveTimer(Timer):
 
         """
         Condition.valid_string(name, "name")
-        super().__init__(name, callback, interval, start_time, stop_time)
+        super().__init__(
+            name=name,
+            callback=callback,
+            interval_ns=interval_ns,
+            start_time_ns=start_time_ns,
+            stop_time_ns=stop_time_ns,
+        )
 
-        self._internal = self._start_timer(now)
+        self._internal = self._start_timer(now_ns)
 
-    cpdef void repeat(self, datetime now) except *:
+    cpdef void repeat(self, int64_t now_ns) except *:
         """
         Continue the timer.
 
         Parameters
         ----------
-        now : datetime
-            The current time to base the repeat from.
+        now_ns : int64
+            The current time to continue timing from.
 
         """
-        Condition.not_none(now, "now")
-
-        self._internal = self._start_timer(now)
+        self._internal = self._start_timer(now_ns)
 
     cpdef void cancel(self) except *:
         """
@@ -368,7 +404,7 @@ cdef class LiveTimer(Timer):
         """
         self._internal.cancel()
 
-    cdef object _start_timer(self, datetime now):
+    cdef object _start_timer(self, int64_t now_ns):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -382,10 +418,10 @@ cdef class ThreadTimer(LiveTimer):
         self,
         str name not None,
         callback not None: callable,
-        timedelta interval not None,
-        datetime now not None,
-        datetime start_time not None,
-        datetime stop_time=None,
+        int64_t interval_ns,
+        int64_t now_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns=0,
     ):
         """
         Initialize a new instance of the `LiveTimer` class.
@@ -396,13 +432,13 @@ cdef class ThreadTimer(LiveTimer):
             The name for the timer.
         callback : callable
             The function to call at the next time.
-        interval : timedelta
+        interval_ns : int64
             The time interval for the timer.
-        now : datetime
+        now_ns : int64
             The datetime now (UTC).
-        start_time : datetime
+        start_time_ns : int64
             The start datetime for the timer (UTC).
-        stop_time : datetime, optional
+        stop_time_ns : int64, optional
             The stop datetime for the timer (UTC) (if None then timer repeats).
 
         Raises
@@ -411,11 +447,18 @@ cdef class ThreadTimer(LiveTimer):
             If callback is not of type callable.
 
         """
-        super().__init__(name, callback, interval, now, start_time, stop_time)
+        super().__init__(
+            name=name,
+            callback=callback,
+            interval_ns=interval_ns,
+            now_ns=now_ns,
+            start_time_ns=start_time_ns,
+            stop_time_ns=stop_time_ns,
+        )
 
-    cdef object _start_timer(self, datetime now):
+    cdef object _start_timer(self, int64_t now_ns):
         timer = TimerThread(
-            interval=(self.next_time - now).total_seconds(),
+            interval=nanos_to_secs(self.next_time_ns - now_ns),
             function=self.callback,
             args=[self],
         )
@@ -435,10 +478,10 @@ cdef class LoopTimer(LiveTimer):
         loop not None,
         str name not None,
         callback not None: callable,
-        timedelta interval not None,
-        datetime now not None,
-        datetime start_time not None,
-        datetime stop_time=None,
+        int64_t interval_ns,
+        int64_t now_ns,
+        int64_t start_time_ns,
+        int64_t stop_time_ns=0,
     ):
         """
         Initialize a new instance of the `LoopTimer` class.
@@ -451,13 +494,13 @@ cdef class LoopTimer(LiveTimer):
             The name for the timer.
         callback : callable
             The function to call at the next time.
-        interval : timedelta
+        interval_ns : int64
             The time interval for the timer.
-        now : datetime
+        now_ns : int64
             The datetime now (UTC).
-        start_time : datetime
+        start_time_ns : int64
             The start datetime for the timer (UTC).
-        stop_time : datetime, optional
+        stop_time_ns : int64, optional
             The stop datetime for the timer (UTC) (if None then timer repeats).
 
         Raises
@@ -469,11 +512,18 @@ cdef class LoopTimer(LiveTimer):
         Condition.valid_string(name, "name")
 
         self._loop = loop  # Assign here as `super().__init__` will call it
-        super().__init__(name, callback, interval, now, start_time, stop_time)
+        super().__init__(
+            name=name,
+            callback=callback,
+            interval_ns=interval_ns,
+            now_ns=now_ns,
+            start_time_ns=start_time_ns,
+            stop_time_ns=stop_time_ns,
+        )
 
-    cdef object _start_timer(self, datetime now):
+    cdef object _start_timer(self, int64_t now_ns):
         return self._loop.call_later(
-            (self.next_time - now).total_seconds(),
+            nanos_to_secs(self.next_time_ns - now_ns),
             self.callback,
             self,
         )

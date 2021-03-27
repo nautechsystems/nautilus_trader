@@ -26,54 +26,301 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport datetime_tzinfo
 from cpython.datetime cimport timedelta
 from cpython.unicode cimport PyUnicode_Contains
+from libc.math cimport lround
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 
+
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+
+# Time unit conversion constants
+cdef int64_t MILLISECONDS_IN_SECOND = 1_000
+cdef int64_t MICROSECONDS_IN_SECOND = 1_000_000
+cdef int64_t NANOSECONDS_IN_SECOND = 1_000_000_000
+cdef int64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
+cdef int64_t NANOSECONDS_IN_MICROSECOND = 1_000
 
 
-cpdef long to_unix_time_ms(datetime timestamp) except *:
+cpdef int64_t secs_to_nanos(double secs) except *:
     """
-    Return the Unix millisecond timestamp from the given datetime.
+    Return round nanoseconds (ns) converted from the given seconds.
 
     Parameters
     ----------
-    timestamp : datetime
-        The datetime for the timestamp.
+    secs : double
+        The seconds to convert.
 
     Returns
     -------
-    long
+    int64
 
     """
-    return <long>((timestamp - UNIX_EPOCH).total_seconds() * 1000)
+    return lround(secs * NANOSECONDS_IN_SECOND)
 
 
-cpdef datetime from_unix_time_ms(long timestamp):
+cpdef int64_t millis_to_nanos(double millis) except *:
     """
-    Return the datetime in UTC from the given Unix millisecond timestamp.
+    Return round nanoseconds (ns) converted from the given milliseconds (ms).
 
     Parameters
     ----------
-    timestamp : long
-        The timestamp to convert.
+    millis : double
+        The milliseconds to convert.
+
+    Returns
+    -------
+    int64
+
+    """
+    return lround(millis * NANOSECONDS_IN_MILLISECOND)
+
+
+cpdef int64_t micros_to_nanos(double micros) except *:
+    """
+    Return round nanoseconds (ns) converted from the given microseconds (μs).
+
+    Parameters
+    ----------
+    micros : double
+        The microseconds to convert.
+
+    Returns
+    -------
+    int64
+
+    """
+    return lround(micros * NANOSECONDS_IN_MICROSECOND)
+
+
+cpdef double nanos_to_secs(double nanos) except *:
+    """
+    Return seconds converted from the given nanoseconds (ns).
+
+    Parameters
+    ----------
+    nanos : int64
+        The nanoseconds to convert.
+
+    Returns
+    -------
+    double
+
+    """
+    return nanos / NANOSECONDS_IN_SECOND
+
+
+cpdef int64_t nanos_to_millis(int64_t nanos) except *:
+    """
+    Return round milliseconds (ms) converted from the given nanoseconds (ns).
+
+    Parameters
+    ----------
+    nanos : int64
+        The nanoseconds to convert.
+
+    Returns
+    -------
+    int64
+
+    """
+    return nanos // NANOSECONDS_IN_MILLISECOND
+
+
+cpdef int64_t nanos_to_micros(int64_t nanos) except *:
+    """
+    Return round microseconds (μs) converted from the given nanoseconds (ns).
+
+    Parameters
+    ----------
+    nanos : int64
+        The nanoseconds to convert.
+
+    Returns
+    -------
+    int64
+
+    """
+    return nanos // NANOSECONDS_IN_MICROSECOND
+
+
+cpdef int64_t dt_to_unix_millis(datetime dt) except *:
+    """
+    Return the round Unix timestamp (milliseconds) from the given `datetime`.
+
+    Parameters
+    ----------
+    dt : datetime
+        The datetime to convert.
+
+    Returns
+    -------
+    int64
+
+    Raises
+    ------
+    TypeError
+        If timestamp is None.
+
+    """
+    # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
+    return lround((dt - UNIX_EPOCH).total_seconds() * MILLISECONDS_IN_SECOND)
+
+
+cpdef int64_t dt_to_unix_micros(datetime dt) except *:
+    """
+    Return the round Unix timestamp (microseconds) from the given `datetime`.
+
+    Parameters
+    ----------
+    dt : datetime
+        The datetime to convert.
+
+    Returns
+    -------
+    int64
+
+    Raises
+    ------
+    TypeError
+        If timestamp is None.
+
+    """
+    # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
+    return lround((dt - UNIX_EPOCH).total_seconds() * MICROSECONDS_IN_SECOND)
+
+
+cpdef int64_t dt_to_unix_nanos(datetime dt) except *:
+    """
+    Return the round Unix timestamp (nanoseconds) from the given `datetime`.
+
+    Parameters
+    ----------
+    dt : datetime
+        The datetime to convert.
+
+    Returns
+    -------
+    int64
+
+    Raises
+    ------
+    TypeError
+        If timestamp is None.
+
+    """
+    # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
+    return lround((dt - UNIX_EPOCH).total_seconds() * NANOSECONDS_IN_SECOND)
+
+
+cpdef int64_t timedelta_to_nanos(timedelta delta) except *:
+    """
+    Return round nanoseconds (ns) converted from the given `timedelta`.
+
+    Parameters
+    ----------
+    delta : timedelta
+        The timedelta to convert.
+
+    Returns
+    -------
+    int64
+
+    Warnings
+    --------
+    The maximum resolution of a Python `timedelta` is 1 microsecond (μs).
+
+    """
+    return NANOSECONDS_IN_SECOND * delta.total_seconds()
+
+
+cpdef timedelta nanos_to_timedelta(int64_t nanos):
+    """
+    Return a timedelta from the given nanoseconds (ns).
+
+    Parameters
+    ----------
+    nanos : int64
+        The nanoseconds to convert.
+
+    Returns
+    -------
+    timedelta
+
+    """
+    # Floor division as maximum precision of a timedelta is 1 microsecond
+    return timedelta(microseconds=nanos // NANOSECONDS_IN_MICROSECOND)
+
+
+cpdef datetime nanos_to_unix_dt(double nanos):
+    """
+    Return the tz-aware datetime in UTC from the given Unix time (nanoseconds).
+
+    Parameters
+    ----------
+    nanos : int64
+        The nanoseconds to convert.
 
     Returns
     -------
     datetime
 
     """
-    return UNIX_EPOCH + timedelta(milliseconds=timestamp)  # Round off thousands
+    return UNIX_EPOCH + timedelta(seconds=nanos / NANOSECONDS_IN_SECOND)
 
 
-cpdef bint is_datetime_utc(datetime timestamp) except *:
+cpdef maybe_dt_to_unix_nanos(datetime dt):
+    """
+    Return the Unix time (nanoseconds) from the given datetime, or None.
+
+    If dt is None, then will return None.
+
+    Parameters
+    ----------
+    dt : datetime or None
+        The datetime for the timestamp.
+
+    Returns
+    -------
+    int64 or None
+
+    """
+    if dt is None:
+        return None
+    else:
+        return dt_to_unix_nanos(dt)
+
+
+cpdef maybe_nanos_to_unix_dt(nanos):
+    """
+    Return the datetime in UTC from the given Unix time (nanos), or None.
+
+    If nanos is None, then will return None.
+
+    Parameters
+    ----------
+    nanos : int64 or None
+        The Unix time (nanos) to convert.
+
+    Returns
+    -------
+    int64 or None
+
+    """
+    if nanos is None:
+        return None
+    else:
+        return nanos_to_unix_dt(nanos)
+
+
+cpdef bint is_datetime_utc(datetime dt) except *:
     """
     Return a value indicating whether the given timestamp is timezone aware UTC.
 
     Parameters
     ----------
-    timestamp : datetime
+    dt : datetime
         The datetime to check.
 
     Returns
@@ -82,9 +329,9 @@ cpdef bint is_datetime_utc(datetime timestamp) except *:
         True if timezone aware UTC, else False.
 
     """
-    Condition.not_none(timestamp, "timestamp")
+    Condition.not_none(dt, "dt")
 
-    return datetime_tzinfo(timestamp) == pytz.utc
+    return datetime_tzinfo(dt) == pytz.utc
 
 
 cpdef bint is_tz_aware(time_object) except *:
@@ -130,13 +377,13 @@ cpdef bint is_tz_naive(time_object) except *:
     return not is_tz_aware(time_object)
 
 
-cpdef datetime as_utc_timestamp(datetime timestamp):
+cpdef datetime as_utc_timestamp(datetime dt):
     """
     Ensure the given timestamp is a tz-aware UTC pd.Timestamp.
 
     Parameters
     ----------
-    timestamp : datetime
+    dt : datetime
         The timestamp to ensure is UTC.
 
     Returns
@@ -146,15 +393,15 @@ cpdef datetime as_utc_timestamp(datetime timestamp):
     """
     Condition.not_none(datetime, "datetime")
 
-    if not isinstance(timestamp, pd.Timestamp):
-        timestamp = pd.Timestamp(timestamp)
+    if not isinstance(dt, pd.Timestamp):
+        dt = pd.Timestamp(dt)
 
-    if timestamp.tz is None:  # tz-naive
-        return timestamp.tz_localize(pytz.utc)
-    elif timestamp.tz != pytz.utc:
-        return timestamp.tz_convert(pytz.utc)
+    if dt.tz is None:  # tz-naive
+        return dt.tz_localize(pytz.utc)
+    elif dt.tz != pytz.utc:
+        return dt.tz_convert(pytz.utc)
     else:
-        return timestamp  # Already UTC
+        return dt  # Already UTC
 
 
 cpdef object as_utc_index(data: pd.DataFrame):

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from libc.stdint cimport int64_t
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
@@ -108,6 +109,19 @@ cdef class SimulatedExchange:
         logger : TestLogger
             The logger for the component.
 
+        Raises
+        ------
+        ValueError
+            If instruments is empty.
+        ValueError
+            If instruments contains a type other than Instrument.
+        ValueError
+            If starting_balances is empty.
+        ValueError
+            If starting_balances contains a type other than Money.
+        ValueError
+            If modules contains a type other than SimulationModule.
+
         """
         Condition.not_empty(instruments, "instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
@@ -128,7 +142,6 @@ cdef class SimulatedExchange:
 
         self.is_frozen_account = is_frozen_account
         self.starting_balances = starting_balances
-        # noinspection PyUnresolvedReferences
         self.default_currency = None if len(starting_balances) > 1 else starting_balances[0].currency
         self.account_balances = {b.currency: b for b in starting_balances}
         self.account_balances_free = {b.currency: b for b in starting_balances}
@@ -238,7 +251,7 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(tick, "tick")
 
-        self._clock.set_time(tick.timestamp)
+        self._clock.set_time(tick.timestamp_ns)
 
         cdef InstrumentId instrument_id = tick.instrument_id
 
@@ -277,29 +290,27 @@ cdef class SimulatedExchange:
             # Check for order match
             self._match_order(order, bid, ask)
 
-            # Check for order expiry
-            if order.expire_time and tick.timestamp >= order.expire_time:
+            # Check for order expiry (if expire time then compare nanoseconds)
+            if order.expire_time and tick.timestamp_ns >= order.expire_time_ns:
                 self._working_orders.pop(order.cl_ord_id, None)
                 self._expire_order(order)
 
-    cpdef void process_modules(self, datetime now) except *:
+    cpdef void process_modules(self, int64_t now_ns) except *:
         """
         Process the simulation modules by advancing their time.
 
         Parameters
         ----------
-        now : datetime
-            The time to advance to.
+        now_ns : int64
+            The Unix timestamp (nanos) now.
 
         """
-        Condition.not_none(now, "now")
-
-        self._clock.set_time(now)
+        self._clock.set_time(to_time_ns=now_ns)
 
         # Iterate through modules
         cdef SimulationModule module
         for module in self.modules:
-            module.process(now)
+            module.process(now_ns=now_ns)
 
     cpdef void check_residuals(self) except *:
         """
@@ -476,7 +487,7 @@ cdef class SimulatedExchange:
             balances_locked=list(self.account_balances_locked.values()),
             info=info,
             event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now_c(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
     cdef inline void _submit_order(self, Order order) except *:
@@ -484,9 +495,9 @@ cdef class SimulatedExchange:
         cdef OrderSubmitted submitted = OrderSubmitted(
             self.exec_client.account_id,
             order.cl_ord_id,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(submitted)
@@ -497,9 +508,9 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             order.cl_ord_id,
             self._generate_order_id(order.instrument_id),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(accepted)
@@ -509,10 +520,10 @@ cdef class SimulatedExchange:
         cdef OrderRejected rejected = OrderRejected(
             self.exec_client.account_id,
             order.cl_ord_id,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(rejected)
@@ -566,9 +577,9 @@ cdef class SimulatedExchange:
             order.account_id,
             order.cl_ord_id,
             order.id,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(cancelled)
@@ -591,26 +602,24 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             cl_ord_id,
             order_id,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             response,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(cancel_reject)
 
     cdef inline void _expire_order(self, PassiveOrder order) except *:
-        Condition.true(order.expire_time <= self._clock.utc_now_c(), "order expire time greater than time now")
-
         # Generate event
         cdef OrderExpired expired = OrderExpired(
             self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
-            order.expire_time,
+            order.expire_time_ns,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(expired)
@@ -634,9 +643,9 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(triggered)
@@ -686,9 +695,9 @@ cdef class SimulatedExchange:
 
         # Immediately fill marketable order
         self._fill_order(
-            order,
-            self._fill_price_taker(order.instrument_id, order.side, bid, ask),
-            LiquiditySide.TAKER,
+            order=order,
+            fill_px=self._fill_price_taker(order.instrument_id, order.side, bid, ask),
+            liquidity_side=LiquiditySide.TAKER,
         )
 
     cdef inline void _process_limit_order(self, LimitOrder order, Price bid, Price ask) except *:
@@ -706,10 +715,14 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
         # Check for immediate fill
-        cdef Price fill_price
+        cdef Price fill_px
         if not order.is_post_only and self._is_limit_marketable(order.side, order.price, bid, ask):
-            fill_price = self._fill_price_maker(order.side, bid, ask)
-            self._fill_order(order, fill_price, LiquiditySide.TAKER)
+            fill_px = self._fill_price_maker(order.side, bid, ask)
+            self._fill_order(
+                order=order,
+                fill_px=fill_px,
+                liquidity_side=LiquiditySide.TAKER,
+            )
 
     cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *:
         if self._is_stop_marketable(order.side, order.price, bid, ask):
@@ -745,7 +758,7 @@ cdef class SimulatedExchange:
         Price bid,
         Price ask,
     ) except *:
-        cdef Price fill_price
+        cdef Price fill_px
         if self._is_limit_marketable(order.side, price, bid, ask):
             if order.is_post_only:
                 self._cancel_reject(
@@ -759,8 +772,12 @@ cdef class SimulatedExchange:
                 # Immediate fill as TAKER
                 self._generate_order_amended(order, qty, price)
 
-                fill_price = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
-                self._fill_order(order, fill_price, LiquiditySide.TAKER)
+                fill_px = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
+                self._fill_order(
+                    order=order,
+                    fill_px=fill_px,
+                    liquidity_side=LiquiditySide.TAKER,
+                )
                 return  # Filled
 
         self._generate_order_amended(order, qty, price)
@@ -792,7 +809,7 @@ cdef class SimulatedExchange:
         Price bid,
         Price ask,
     ) except *:
-        cdef Price fill_price
+        cdef Price fill_px
         if not order.is_triggered:
             # Amending stop price
             if self._is_stop_marketable(order.side, price, bid, ask):
@@ -820,8 +837,12 @@ cdef class SimulatedExchange:
                     # Immediate fill as TAKER
                     self._generate_order_amended(order, qty, price)
 
-                    fill_price = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
-                    self._fill_order(order, fill_price, LiquiditySide.TAKER)
+                    fill_px = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
+                    self._fill_order(
+                        order=order,
+                        fill_px=fill_px,
+                        liquidity_side=LiquiditySide.TAKER,
+                    )
                     return  # Filled
 
             self._generate_order_amended(order, qty, price)
@@ -834,9 +855,9 @@ cdef class SimulatedExchange:
             order.id,
             qty,
             price,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(amended)
@@ -856,26 +877,26 @@ cdef class SimulatedExchange:
     cdef inline void _match_limit_order(self, LimitOrder order, Price bid, Price ask) except *:
         if self._is_limit_matched(order.side, order.price, bid, ask):
             self._fill_order(
-                order,
-                order.price,  # price 'guaranteed'
-                LiquiditySide.MAKER,
+                order=order,
+                fill_px=order.price,  # price 'guaranteed'
+                liquidity_side=LiquiditySide.MAKER,
             )
 
     cdef inline void _match_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *:
         if self._is_stop_triggered(order.side, order.price, bid, ask):
             self._fill_order(
-                order,
-                self._fill_price_stop(order.instrument_id, order.side, order.price),
-                LiquiditySide.TAKER,  # Triggered stop places market order
+                order=order,
+                fill_px=self._fill_price_stop(order.instrument_id, order.side, order.price),
+                liquidity_side=LiquiditySide.TAKER,  # Triggered stop places market order
             )
 
     cdef inline void _match_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *:
         if order.is_triggered:
             if self._is_limit_matched(order.side, order.price, bid, ask):
                 self._fill_order(
-                    order,
-                    order.price,          # Price is 'guaranteed' (negative slippage not currently modeled)
-                    LiquiditySide.MAKER,  # Providing liquidity
+                    order=order,
+                    fill_px=order.price,          # Price is 'guaranteed' (negative slippage not currently modeled)
+                    liquidity_side=LiquiditySide.MAKER,  # Providing liquidity
                 )
         else:  # Order not triggered
             if self._is_stop_triggered(order.side, order.trigger, bid, ask):
@@ -892,9 +913,9 @@ cdef class SimulatedExchange:
                         )
                     else:
                         self._fill_order(
-                            order,
-                            self._fill_price_taker(order.instrument_id, order.side, bid, ask),
-                            LiquiditySide.TAKER,  # Immediate fill takes liquidity
+                            order=order,
+                            fill_px=self._fill_price_taker(order.instrument_id, order.side, bid, ask),
+                            liquidity_side=LiquiditySide.TAKER,  # Immediate fill takes liquidity
                         )
 
     cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
@@ -947,7 +968,7 @@ cdef class SimulatedExchange:
     cdef inline void _fill_order(
         self,
         Order order,
-        Price fill_price,
+        Price fill_px,
         LiquiditySide liquidity_side,
     ) except *:
         self._working_orders.pop(order.cl_ord_id, None)  # Remove order from working orders if found
@@ -978,32 +999,32 @@ cdef class SimulatedExchange:
             raise RuntimeError(f"Cannot run backtest: no instrument data for {order.instrument_id}")
 
         cdef Money commission = instrument.calculate_commission(
-            order.quantity,
-            fill_price,
-            liquidity_side,
+            last_qty=order.quantity,
+            last_px=fill_px,
+            liquidity_side=liquidity_side,
         )
 
         # Generate event
-        cdef OrderFilled filled = OrderFilled(
-            self.exec_client.account_id,
-            order.cl_ord_id,
-            order.id if order.id is not None else self._generate_order_id(order.instrument_id),
-            self._generate_execution_id(),
-            position_id,
-            order.strategy_id,
-            order.instrument_id,
-            order.side,
-            order.quantity,
-            order.quantity,
-            Quantity(),  # Not modeling partial fills yet
-            fill_price,
-            instrument.quote_currency,
-            instrument.is_inverse,
-            commission,
-            liquidity_side,
-            self._clock.utc_now_c(),
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+        cdef OrderFilled fill = OrderFilled(
+            account_id=self.exec_client.account_id,
+            cl_ord_id=order.cl_ord_id,
+            order_id=order.id if order.id is not None else self._generate_order_id(order.instrument_id),
+            execution_id=self._generate_execution_id(),
+            position_id=position_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            order_side=order.side,
+            last_qty=order.quantity,
+            last_px=fill_px,
+            cum_qty=order.quantity,
+            leaves_qty=Quantity(),  # Not modeling partial fills yet
+            currency=instrument.quote_currency,
+            is_inverse=instrument.is_inverse,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            execution_ns=self._clock.timestamp_ns(),
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         # Calculate potential PnL
@@ -1011,8 +1032,8 @@ cdef class SimulatedExchange:
         if position is not None and position.entry != order.side:
             # Calculate PnL
             pnl = position.calculate_pnl(
-                avg_open=position.avg_open,
-                avg_close=fill_price,
+                avg_px_open=position.avg_px_open,
+                avg_px_close=fill_px,
                 quantity=order.quantity,
             )
 
@@ -1042,12 +1063,12 @@ cdef class SimulatedExchange:
         else:
             currency = instrument.settlement_currency
             if pnl is None:
-                pnl = Money(0, currency)
+                pnl = commission
 
             total_commissions = self.total_commissions.get(currency, Decimal()) + commission
             self.total_commissions[currency] = Money(total_commissions, currency)
 
-        self.exec_client.handle_event(filled)
+        self.exec_client.handle_event(fill)
         self._check_oco_order(order.cl_ord_id)
 
         # Work any bracket child orders
@@ -1109,10 +1130,10 @@ cdef class SimulatedExchange:
         cdef OrderRejected rejected = OrderRejected(
             self.exec_client.account_id,
             order.cl_ord_id,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             f"OCO order rejected from {other_oco}",
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(rejected)
@@ -1128,9 +1149,9 @@ cdef class SimulatedExchange:
             self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self.exec_client.handle_event(cancelled)

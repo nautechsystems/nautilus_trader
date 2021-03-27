@@ -19,7 +19,6 @@ from nautilus_trader.backtest.models import FillModel
 
 
 class FillModelTests(unittest.TestCase):
-
     def test_instantiate_with_no_random_seed(self):
         # Arrange
         fill_model = FillModel()

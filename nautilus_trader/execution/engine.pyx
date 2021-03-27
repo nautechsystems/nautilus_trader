@@ -30,6 +30,8 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
@@ -40,6 +42,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.time cimport unix_timestamp_us
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -61,7 +64,6 @@ from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
@@ -107,7 +109,7 @@ cdef class ExecutionEngine(Component):
             config = {}
         super().__init__(clock, logger, name="ExecEngine")
 
-        self._clients = {}     # type: dict[Venue, ExecutionClient]
+        self._clients = {}     # type: dict[str, ExecutionClient]
         self._strategies = {}  # type: dict[StrategyId, TradingStrategy]
         self._pos_id_generator = PositionIdGenerator(
             id_tag_trader=database.trader_id.tag,
@@ -130,7 +132,7 @@ cdef class ExecutionEngine(Component):
 
         Returns
         -------
-        list[Venue]
+        list[str]
 
         """
         return sorted(list(self._clients.keys()))
@@ -256,9 +258,9 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.venue, self._clients, "client.venue", "self._clients")
+        Condition.not_in(client.name, self._clients, "client.name", "self._clients")
 
-        self._clients[client.venue] = client
+        self._clients[client.name] = client
         self._log.info(f"Registered {client}.")
 
         if self._risk_engine is not None and client not in self._risk_engine.registered_clients:
@@ -304,7 +306,6 @@ cdef class ExecutionEngine(Component):
 
         cdef list risk_registered = self._risk_engine.registered_clients
 
-        cdef Venue venue
         cdef ExecutionClient client
         for venue, client in self._clients.items():
             if venue not in risk_registered:
@@ -326,9 +327,9 @@ cdef class ExecutionEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
+        Condition.is_in(client.name, self._clients, "client.name", "self._clients")
 
-        del self._clients[client.venue]
+        del self._clients[client.name]
         self._log.info(f"Deregistered {client}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
@@ -401,7 +402,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef double ts = self._clock.unix_time()
+        cdef int64_t ts = unix_timestamp_us()
 
         self.cache.cache_accounts()
         self.cache.cache_orders()
@@ -410,8 +411,7 @@ cdef class ExecutionEngine(Component):
         self.cache.check_integrity()
         self._set_position_id_counts()
 
-        cdef long total_us = round((self._clock.unix_time() - ts) * 1000000)
-        self._log.info(f"Loaded cache in {total_us}μs.")
+        self._log.info(f"Loaded cache in {(unix_timestamp_us() - ts)}μs.")
 
         # Update portfolio
         for account in self.cache.accounts():
@@ -487,10 +487,10 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._clients.get(command.venue)
+        cdef ExecutionClient client = self._clients.get(command.venue.first())
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.venue}, {command}.")
+                            f"No client registered for {command.venue.first()}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
@@ -584,7 +584,7 @@ cdef class ExecutionEngine(Component):
             cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
+            self._clock.timestamp_ns(),
         )
 
         self._handle_event(invalid)
@@ -640,8 +640,10 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderEvent):
             self._handle_order_event(event)
+            self._send_to_risk_engine(event)
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
+            self._send_to_risk_engine(event)
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
         else:
@@ -655,7 +657,7 @@ cdef class ExecutionEngine(Component):
             self.cache.add_account(account)
             self._portfolio.register_account(account)
         else:
-            account.apply_c(event)
+            account.apply(event=event)
             self.cache.update_account(account)
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
@@ -703,8 +705,9 @@ cdef class ExecutionEngine(Component):
             self._confirm_position_id(event)
 
         try:
-            order.apply_c(event)
-        except InvalidStateTrigger as ex:
+            # Protected against duplicate OrderFilled
+            order.apply(event=event)
+        except (KeyError, InvalidStateTrigger)  as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 
@@ -752,7 +755,7 @@ cdef class ExecutionEngine(Component):
 
         # Check for open positions
         positions_open = self.cache.positions_open(instrument_id=fill.instrument_id)
-        if len(positions_open) == 0:
+        if not positions_open:
             # Assign new identifier to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
         elif len(positions_open) == 1:
@@ -773,7 +776,7 @@ cdef class ExecutionEngine(Component):
             self._update_position(position, fill)
 
     cdef inline void _open_position(self, OrderFilled fill) except *:
-        cdef Position position = Position(fill)
+        cdef Position position = Position(fill=fill)
         self.cache.add_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
@@ -781,11 +784,17 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
-        if fill.order_side != position.entry and fill.fill_qty > position.quantity:
+        if fill.order_side != position.entry and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
             return  # Handled in flip
 
-        position.apply_c(fill)
+        try:
+            # Protected against duplicate OrderFilled
+            position.apply(fill=fill)
+        except KeyError as ex:
+            self._log.exception(ex)
+            return  # Not re-raising to avoid crashing engine
+
         self.cache.update_position(position)
 
         cdef PositionEvent position_event
@@ -800,12 +809,12 @@ cdef class ExecutionEngine(Component):
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference
         if position.side == PositionSide.LONG:
-            difference = Quantity(fill.fill_qty - position.quantity)
+            difference = Quantity(fill.last_qty - position.quantity)
         else:  # position.side == PositionSide.SHORT:
-            difference = Quantity(abs(position.quantity - fill.fill_qty))
+            difference = Quantity(abs(position.quantity - fill.last_qty))
 
         # Split commission between two positions
-        fill_percent1 = position.quantity / fill.fill_qty
+        fill_percent1 = position.quantity / fill.last_qty
         fill_percent2 = 1 - fill_percent1  # Subtract from an integer to return a Decimal
 
         # Split fill to close original position
@@ -819,20 +828,20 @@ cdef class ExecutionEngine(Component):
             fill.instrument_id,
             fill.order_side,
             position.quantity,                       # Fill original position quantity remaining
+            fill.last_px,
             Quantity(fill.cum_qty - difference),     # Adjust cumulative qty by difference
             Quantity(fill.leaves_qty + difference),  # Adjust leaves qty by difference
-            fill.fill_price,
             fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent1, fill.commission.currency),
             fill.liquidity_side,
-            fill.execution_time,
+            fill.execution_ns,
             fill.id,
-            fill.timestamp,
+            fill.timestamp_ns,
         )
 
         # Close original position
-        position.apply_c(fill_split1)
+        position.apply(fill=fill_split1)
         self.cache.update_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
@@ -855,44 +864,44 @@ cdef class ExecutionEngine(Component):
             fill.instrument_id,
             fill.order_side,
             difference,  # Fill difference from original as above
+            fill.last_px,
             fill.cum_qty,
             fill.leaves_qty,
-            fill.fill_price,
             fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent2, fill.commission.currency),
             fill.liquidity_side,
-            fill.execution_time,
+            fill.execution_ns,
             self._uuid_factory.generate(),  # New event identifier
-            fill.timestamp,
+            fill.timestamp_ns,
         )
 
-        cdef Position position_flip = Position(fill_split2)
+        cdef Position position_flip = Position(fill=fill_split2)
         self.cache.add_position(position_flip)
         self.process(self._pos_opened_event(position_flip, fill_split2))
 
-    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled event):
+    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
         return PositionOpened(
             position,
-            event,
+            fill,
             self._uuid_factory.generate(),
-            event.timestamp,
+            fill.timestamp_ns,
         )
 
-    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled event):
+    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
         return PositionChanged(
             position,
-            event,
+            fill,
             self._uuid_factory.generate(),
-            event.timestamp,
+            fill.timestamp_ns,
         )
 
-    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled event):
+    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
         return PositionClosed(
             position,
-            event,
+            fill,
             self._uuid_factory.generate(),
-            event.timestamp,
+            fill.timestamp_ns,
         )
 
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
@@ -908,3 +917,8 @@ cdef class ExecutionEngine(Component):
             return  # Cannot send to strategy
 
         strategy.handle_event_c(event)
+
+    cdef inline void _send_to_risk_engine(self, Event event) except *:
+        # If a `RiskEngine` is registered then send the event there
+        if self._risk_engine is not None:
+            self._risk_engine.process(event)

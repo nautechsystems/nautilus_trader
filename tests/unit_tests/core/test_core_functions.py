@@ -17,15 +17,121 @@ import numpy as np
 import pytest
 
 from nautilus_trader.core.functions import basis_points_as_percentage
+from nautilus_trader.core.functions import bisect_double_left
+from nautilus_trader.core.functions import bisect_double_right
 from nautilus_trader.core.functions import fast_mean
 from nautilus_trader.core.functions import fast_mean_iterated
 from nautilus_trader.core.functions import fast_std
 from nautilus_trader.core.functions import fast_std_with_mean
 from nautilus_trader.core.functions import format_bytes
+from nautilus_trader.core.functions import get_size_of
 from nautilus_trader.core.functions import pad_string
 
 
 class TestFunctions:
+    @pytest.mark.parametrize(
+        "a, value, expected",
+        [
+            [[], 1, 0],
+            [[1], 0, 0],
+            [[1], 1, 0],
+            [[1], 2, 1],
+            [[1, 1], 0, 0],
+            [[1, 1], 1, 0],
+            [[1, 1], 2, 2],
+            [[1, 1, 1], 0, 0],
+            [[1, 1, 1], 1, 0],
+            [[1, 1, 1], 2, 3],
+            [[1, 1, 1, 1], 0, 0],
+            [[1, 1, 1, 1], 1, 0],
+            [[1, 1, 1, 1], 2, 4],
+            [[1, 2], 0, 0],
+            [[1, 2], 1, 0],
+            [[1, 2], 1.5, 1],
+            [[1, 2], 2, 1],
+            [[1, 2], 3, 2],
+            [[1, 1, 2, 2], 0, 0],
+            [[1, 1, 2, 2], 1, 0],
+            [[1, 1, 2, 2], 1.5, 2],
+            [[1, 1, 2, 2], 2, 2],
+            [[1, 1, 2, 2], 3, 4],
+            [[1, 2, 3], 0, 0],
+            [[1, 2, 3], 1, 0],
+            [[1, 2, 3], 1.5, 1],
+            [[1, 2, 3], 2, 1],
+            [[1, 2, 3], 2.5, 2],
+            [[1, 2, 3], 3, 2],
+            [[1, 2, 3], 4, 3],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 0, 0],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 1, 0],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 1.5, 1],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 2, 1],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 2.5, 3],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 3, 3],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 3.5, 6],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 4, 6],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 5, 10],
+        ],
+    )
+    def test_bisect_left(self, a, value, expected):
+        # Arrange
+        # Act
+        result = bisect_double_left(a, value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "a, value, expected",
+        [
+            [[], 1, 0],
+            [[1], 0, 0],
+            [[1], 1, 1],
+            [[1], 2, 1],
+            [[1, 1], 0, 0],
+            [[1, 1], 1, 2],
+            [[1, 1], 2, 2],
+            [[1, 1, 1], 0, 0],
+            [[1, 1, 1], 1, 3],
+            [[1, 1, 1], 2, 3],
+            [[1, 1, 1, 1], 0, 0],
+            [[1, 1, 1, 1], 1, 4],
+            [[1, 1, 1, 1], 2, 4],
+            [[1, 2], 0, 0],
+            [[1, 2], 1, 1],
+            [[1, 2], 1.5, 1],
+            [[1, 2], 2, 2],
+            [[1, 2], 3, 2],
+            [[1, 1, 2, 2], 0, 0],
+            [[1, 1, 2, 2], 1, 2],
+            [[1, 1, 2, 2], 1.5, 2],
+            [[1, 1, 2, 2], 2, 4],
+            [[1, 1, 2, 2], 3, 4],
+            [[1, 2, 3], 0, 0],
+            [[1, 2, 3], 1, 1],
+            [[1, 2, 3], 1.5, 1],
+            [[1, 2, 3], 2, 2],
+            [[1, 2, 3], 2.5, 2],
+            [[1, 2, 3], 3, 3],
+            [[1, 2, 3], 4, 3],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 0, 0],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 1, 1],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 1.5, 1],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 2, 3],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 2.5, 3],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 3, 6],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 3.5, 6],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 4, 10],
+            [[1, 2, 2, 3, 3, 3, 4, 4, 4, 4], 5, 10],
+        ],
+    )
+    def test_bisect_right(self, a, value, expected):
+        # Arrange
+        # Act
+        result = bisect_double_right(a, value)
+
+        # Assert
+        assert result == expected
 
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange
@@ -35,7 +141,7 @@ class TestFunctions:
         result = fast_mean(values)
 
         # Assert
-        assert 0 == result
+        assert result == 0
 
     def test_fast_mean_with_values(self):
         # Arrange
@@ -45,8 +151,8 @@ class TestFunctions:
         result = fast_mean(values)
 
         # Assert
-        assert 2.75 == result
-        assert 2.75 == np.mean(values)
+        assert result == 2.75
+        assert np.mean(values) == 2.75
 
     def test_fast_mean_iterated_with_empty_list_returns_zero(self):
         # Arrange
@@ -56,7 +162,7 @@ class TestFunctions:
         result = fast_mean_iterated(values, 0.0, 0.0, 6)
 
         # Assert
-        assert 0 == result
+        assert result == 0
 
     def test_fast_mean_iterated_with_values(self):
         # Arrange
@@ -68,8 +174,8 @@ class TestFunctions:
         result2 = fast_mean_iterated(values2, 5.5, np.mean(values2), 5)
 
         # Assert
-        assert np.mean([0.0, 1.1, 2.2]) == result1
-        assert 3.3000000000000003 == result2
+        assert result1 == np.mean([0.0, 1.1, 2.2])
+        assert result2 == 3.3000000000000003
 
     def test_std_dev_with_mean(self):
         # Arrange
@@ -81,10 +187,10 @@ class TestFunctions:
         result2 = fast_std_with_mean(values, mean)
 
         # Assert
-        assert np.std(values) == result1
-        assert np.std(values) == result2
-        assert 3.943665807342199 == result1
-        assert 3.943665807342199 == result2
+        assert result1 == np.std(values)
+        assert result2 == np.std(values)
+        assert result1 == 3.943665807342199
+        assert result2 == 3.943665807342199
 
     def test_basis_points_as_percentage(self):
         # Arrange
@@ -93,15 +199,29 @@ class TestFunctions:
         result2 = basis_points_as_percentage(0.020)
 
         # Assert
-        assert 0.0 == result1
-        assert 2.0000000000000003e-06 == result2
+        assert result1 == 0.0
+        assert result2 == 2.0000000000000003e-06
+
+    def test_get_size_of(self):
+        # Arrange
+        # Act
+        result1 = get_size_of(0)
+        result2 = get_size_of(1.1)
+        result3 = get_size_of("abc")
+
+        # Assert
+        assert result1 == 24
+        assert result2 == 24
+        assert result3 == 52
 
     @pytest.mark.parametrize(
         "original, final_length, expected",
-        [["1234", 4, "1234"],
-         ["1234", 5, " 1234"],
-         ["1234", 6, "  1234"],
-         ["1234", 3, "1234"]],
+        [
+            ["1234", 4, "1234"],
+            ["1234", 5, " 1234"],
+            ["1234", 6, "  1234"],
+            ["1234", 3, "1234"],
+        ],
     )
     def test_pad_string(self, original, final_length, expected):
         # Arrange
@@ -109,7 +229,7 @@ class TestFunctions:
         result = pad_string(original, final_length=final_length)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     def test_format_bytes(self):
         # Arrange
@@ -122,9 +242,9 @@ class TestFunctions:
         result5 = format_bytes(100000000000000)
 
         # Assert
-        assert "1,000.0 bytes" == result0
-        assert "97.66 KB" == result1
-        assert "9.54 MB" == result2
-        assert "953.67 MB" == result3
-        assert "9.31 GB" == result4
-        assert "90.95 TB" == result5
+        assert result0 == "1,000.0 bytes"
+        assert result1 == "97.66 KB"
+        assert result2 == "9.54 MB"
+        assert result3 == "953.67 MB"
+        assert result4 == "9.31 GB"
+        assert result5 == "90.95 TB"

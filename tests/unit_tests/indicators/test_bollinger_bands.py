@@ -19,11 +19,11 @@ from nautilus_trader.indicators.bollinger_bands import BollingerBands
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class BollingerBandsTests(unittest.TestCase):
-
     def test_name_returns_expected_name(self):
         # Arrange
         indicator = BollingerBands(20, 2.0)

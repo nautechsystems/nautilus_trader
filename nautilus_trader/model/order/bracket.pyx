@@ -56,7 +56,7 @@ cdef class BracketOrder:
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit
-        self.timestamp = entry.timestamp
+        self.timestamp_ns = entry.timestamp_ns
 
     def __eq__(self, BracketOrder other) -> bool:
         return self.id.value == other.id.value

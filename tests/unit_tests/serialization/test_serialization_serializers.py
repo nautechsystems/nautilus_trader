@@ -62,11 +62,11 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class SerializerBaseTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.serializer = Serializer()
@@ -105,7 +105,6 @@ class SerializerBaseTests(unittest.TestCase):
 
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
@@ -163,7 +162,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -187,7 +186,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -212,7 +211,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -237,7 +236,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -251,7 +250,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
 
 class MsgPackCommandSerializerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
@@ -267,19 +265,18 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000))
+            AUDUSD_SIM.id, OrderSide.BUY, Quantity(100000)
+        )
 
         command = SubmitOrder(
-            self.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
             PositionId("P-123456"),
             order,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -294,12 +291,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(serialized)
         print(b64encode(serialized))
 
-    def test_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(self):
+    def test_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(
+        self,
+    ):
         # Arrange
         entry_order = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000))
+            AUDUSD_SIM.id, OrderSide.BUY, Quantity(100000)
+        )
 
         bracket_order = self.order_factory.bracket(
             entry_order,
@@ -308,13 +306,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            self.venue,
+            entry_order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
             bracket_order,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -327,7 +325,9 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
-    def test_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(self):
+    def test_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(
+        self,
+    ):
         # Arrange
         entry_order = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -343,13 +343,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            self.venue,
+            entry_order.instrument_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
             bracket_order,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -365,14 +365,14 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_amend_order_commands(self):
         # Arrange
         command = AmendOrder(
-            self.venue,
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),
             Quantity(100000),
             Price("1.00001"),
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -387,13 +387,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
         command = CancelOrder(
-            self.venue,
+            AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("001"),
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -407,7 +407,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
 
 class MsgPackEventSerializerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
@@ -422,7 +421,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             balances_locked=[Money(0, USD)],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
         # Act
@@ -443,7 +442,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.FOK,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options={},
         )
 
@@ -457,10 +456,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_limit_order_initialized_events(self):
         # Arrange
         options = {
-            'Price': '1.0010',
-            'PostOnly': True,
-            'ReduceOnly': True,
-            'Hidden': False,
+            "Price": "1.0010",
+            "PostOnly": True,
+            "ReduceOnly": True,
+            "Hidden": False,
         }
 
         event = OrderInitialized(
@@ -472,7 +471,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options=options,
         )
 
@@ -486,7 +485,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_stop_market_order_initialized_events(self):
         # Arrange
-        options = {'Price': '1.0005', 'ReduceOnly': False}
+        options = {"Price": "1.0005", "ReduceOnly": False}
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
@@ -497,7 +496,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options=options,
         )
 
@@ -512,11 +511,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
-            'Price': '1.0005',
-            'Trigger': '1.0010',
-            'PostOnly': True,
-            'ReduceOnly': False,
-            'Hidden': False,
+            "Price": "1.0005",
+            "Trigger": "1.0010",
+            "PostOnly": True,
+            "ReduceOnly": False,
+            "Hidden": False,
         }
 
         event = OrderInitialized(
@@ -528,7 +527,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
-            UNIX_EPOCH,
+            0,
             options=options,
         )
 
@@ -545,9 +544,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderSubmitted(
             self.account_id,
             ClientOrderId("O-123456"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -563,7 +562,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             "OrderId already exists",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -579,7 +578,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             "Exceeds risk for FX",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -595,9 +594,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("B-123456"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -612,10 +611,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderRejected(
             self.account_id,
             ClientOrderId("O-123456"),
-            UNIX_EPOCH,
+            0,
             "ORDER_ID_INVALID",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -631,9 +630,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -649,11 +648,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),
-            UNIX_EPOCH,
+            0,
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -671,9 +670,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("1"),
             Quantity(100000),
             Price("0.80010"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -689,9 +688,9 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -713,16 +712,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(50000),
-            Quantity(50000),
-            Quantity(50000),
             Price("1.00000"),
+            Quantity(50000),
+            Quantity(50000),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act
@@ -744,16 +743,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000),
+            Price("1.00000"),
             Quantity(100000),
             Quantity(),
-            Price("1.00000"),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.TAKER,
-            UNIX_EPOCH,
+            0,
             uuid4(),
-            UNIX_EPOCH,
+            0,
         )
 
         # Act

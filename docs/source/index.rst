@@ -127,14 +127,14 @@ Index
 .. toctree::
     :glob:
     :maxdepth: 2
-    :caption: Adapter Reference
+    :caption: Integrations
     :hidden:
 
-    adapter_reference/ib
-    adapter_reference/oanda
-    adapter_reference/ccxtpro
-    adapter_reference/binance
-    adapter_reference/bitmex
+    integrations/ib
+    integrations/oanda
+    integrations/ccxtpro
+    integrations/binance
+    integrations/bitmex
 
 .. toctree::
     :glob:

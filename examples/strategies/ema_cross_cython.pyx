@@ -26,10 +26,11 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.market cimport MarketOrder
-from nautilus_trader.model.order_book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
@@ -160,19 +161,17 @@ cdef class EMACross(TradingStrategy):
         # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
-    cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
+    cpdef void on_bar(self, Bar bar) except *:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")
+        self.log.info(f"Received Bar({bar})")
 
         # Check if indicators ready
         if not self.indicators_initialized():

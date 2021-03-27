@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-
+from libc.stdint cimport int64_t
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
@@ -28,7 +28,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Instrument:
+cdef class Instrument(Data):
     """
     Represents a tradeable financial market instrument.
     """
@@ -46,7 +46,6 @@ cdef class Instrument:
         int size_precision,
         tick_size not None: Decimal,
         multiplier not None: Decimal,
-        leverage not None: Decimal,
         Quantity lot_size not None,
         Quantity max_quantity,  # Can be None
         Quantity min_quantity,  # Can be None
@@ -59,7 +58,7 @@ cdef class Instrument:
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
         dict financing not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
         dict info=None,
     ):
         """
@@ -89,8 +88,6 @@ cdef class Instrument:
             The tick size.
         multiplier : Decimal
             The contract value multiplier.
-        leverage : Decimal
-            The current leverage for the instrument.
         lot_size : Quantity
             The rounded lot unit size.
         max_quantity : Quantity
@@ -115,8 +112,8 @@ cdef class Instrument:
             The fee rate for liquidity takers as a percentage of order value.
         financing : dict[str, object]
             The financing information for the instrument.
-        timestamp : datetime
-            The timestamp the instrument was created/updated at.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) the instrument was created/updated at.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -134,8 +131,6 @@ cdef class Instrument:
             If tick_size is not positive (> 0).
         ValueError
             If multiplier is not positive (> 0).
-        ValueError
-            If leverage is not positive (> 0).
         ValueError
             If lot size is not positive (> 0).
         ValueError
@@ -160,20 +155,18 @@ cdef class Instrument:
         Condition.positive(tick_size, "tick_size")
         Condition.type(multiplier, Decimal, "multiplier")
         Condition.positive(multiplier, "multiplier")
-        Condition.type(leverage, Decimal, "leverage")
-        Condition.positive(leverage, "leverage")
         Condition.positive(lot_size, "lot_size")
-        if max_quantity:
+        if max_quantity is not None:
             Condition.positive(max_quantity, "max_quantity")
-        if min_quantity:
+        if min_quantity is not None:
             Condition.not_negative(min_quantity, "min_quantity")
-        if max_notional:
+        if max_notional is not None:
             Condition.positive(max_notional, "max_notional")
-        if min_notional:
+        if min_notional is not None:
             Condition.not_negative(min_notional, "min_notional")
-        if max_price:
+        if max_price is not None:
             Condition.positive(max_price, "max_price")
-        if min_price:
+        if min_price is not None:
             Condition.not_negative(min_price, "min_price")
         Condition.type(margin_init, Decimal, "margin_init")
         Condition.not_negative(margin_init, "margin_init")
@@ -181,9 +174,7 @@ cdef class Instrument:
         Condition.not_negative(margin_maint, "margin_maint")
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
-        if info is None:
-            info = {}
-        super().__init__(timestamp)
+        super().__init__(timestamp_ns)
 
         self.id = instrument_id
         self.symbol = instrument_id.symbol
@@ -200,7 +191,6 @@ cdef class Instrument:
         self.size_precision = size_precision
         self.tick_size = tick_size
         self.multiplier = multiplier
-        self.leverage = leverage
         self.lot_size = lot_size
         self.max_quantity = max_quantity
         self.min_quantity = min_quantity
@@ -212,8 +202,6 @@ cdef class Instrument:
         self.margin_maint = margin_maint
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
-        self.financing = financing
-        self.info = info
 
     cdef bint _is_quanto(
         self,
@@ -238,7 +226,12 @@ cdef class Instrument:
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.id.value}')"
 
-    cpdef Money market_value(self, Quantity quantity, close_price: Decimal):
+    cpdef Money market_value(
+        self,
+        Quantity quantity,
+        close_price: Decimal,
+        leverage: Decimal=None,
+    ):
         """
         Calculate the market value from the given parameters.
 
@@ -248,6 +241,8 @@ cdef class Instrument:
             The total quantity.
         close_price : Decimal or Price
             The closing price.
+        leverage : Decimal, optional
+            The leverage for the position.
 
         Returns
         -------
@@ -255,14 +250,17 @@ cdef class Instrument:
             In the settlement currency.
 
         """
+        if leverage is None:
+            leverage = Decimal(1)
         Condition.not_none(quantity, "quantity")
         Condition.type(close_price, (Decimal, Price), "close_price")
         Condition.not_none(close_price, "close_price")
+        Condition.not_none(leverage, "leverage")
 
         if self.is_inverse:
             close_price = 1 / close_price
 
-        market_value: Decimal = (quantity * close_price * self.multiplier) / self.leverage
+        market_value: Decimal = (quantity * close_price * self.multiplier) / leverage
         return Money(market_value, self.settlement_currency)
 
     cpdef Money notional_value(self, Quantity quantity, close_price: Decimal):
@@ -292,7 +290,12 @@ cdef class Instrument:
         notional_value: Decimal = quantity * close_price * self.multiplier
         return Money(notional_value, self.settlement_currency)
 
-    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price):
+    cpdef Money calculate_initial_margin(
+        self,
+        Quantity quantity,
+        Price price,
+        leverage: Decimal=None,
+    ):
         """
         Calculate the initial margin from the given parameters.
 
@@ -302,6 +305,8 @@ cdef class Instrument:
             The order quantity.
         price : Price
             The order price.
+        leverage : Decimal, optional
+            The leverage for the position.
 
         Returns
         -------
@@ -309,23 +314,27 @@ cdef class Instrument:
             In the settlement currency.
 
         """
+        if leverage is None:
+            leverage = Decimal(1)
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
+        Condition.not_none(leverage, "leverage")
 
-        if self.leverage == 1:
+        if leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
         notional = self.notional_value(quantity, price)
-        margin = notional / self.leverage * self.margin_init
+        margin = notional / leverage * self.margin_init
         margin += notional * self.taker_fee * 2
 
         return Money(margin, self.settlement_currency)
 
     cpdef Money calculate_maint_margin(
-            self,
-            PositionSide side,
-            Quantity quantity,
-            Price last,
+        self,
+        PositionSide side,
+        Quantity quantity,
+        Price last,
+        leverage: Decimal=None,
     ):
         """
         Calculate the maintenance margin from the given parameters.
@@ -338,6 +347,8 @@ cdef class Instrument:
             The currency position quantity.
         last : Price
             The position instruments last price.
+        leverage : Decimal, optional
+            The leverage for the position.
 
         Returns
         -------
@@ -345,23 +356,26 @@ cdef class Instrument:
             In the settlement currency.
 
         """
+        if leverage is None:
+            leverage = Decimal(1)
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
+        Condition.not_none(leverage, "leverage")
 
-        if self.leverage == 1:
+        if leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
         notional = self.notional_value(quantity, last)
-        margin = (notional / self.leverage) * self.margin_maint
+        margin = (notional / leverage) * self.margin_maint
         margin += notional * self.taker_fee
 
         return Money(margin, self.settlement_currency)
 
     cpdef Money calculate_commission(
         self,
-        Quantity quantity,
-        avg_price: Decimal,
+        Quantity last_qty,
+        last_px: Decimal,
         LiquiditySide liquidity_side,
     ):
         """
@@ -370,10 +384,10 @@ cdef class Instrument:
 
         Parameters
         ----------
-        quantity : Quantity
-            The quantity for the transaction.
-        avg_price : Decimal or Price
-            The average transaction price.
+        last_qty : Quantity
+            The transaction quantity.
+        last_px : Decimal or Price
+            The transaction price.
         liquidity_side : LiquiditySide (Enum)
             The liquidity side for the transaction.
 
@@ -388,11 +402,11 @@ cdef class Instrument:
             If liquidity_side is NONE.
 
         """
-        Condition.not_none(quantity, "quantity")
-        Condition.type(avg_price, (Decimal, Price), "avg_price")
+        Condition.not_none(last_qty, "last_qty")
+        Condition.type(last_px, (Decimal, Price), "last_px")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
 
-        notional: Decimal = self.notional_value(quantity, avg_price)
+        notional: Decimal = self.notional_value(quantity=last_qty, close_price=last_px)
 
         if liquidity_side == LiquiditySide.MAKER:
             commission: Decimal = notional * self.maker_fee
@@ -431,7 +445,7 @@ cdef class Future(Instrument):
         int price_precision,
         tick_size not None: Decimal,
         Quantity lot_size not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `Future` class.
@@ -448,7 +462,7 @@ cdef class Future(Instrument):
             The price decimal precision.
         tick_size : Decimal
             The tick size.
-        timestamp : datetime
+        timestamp_ns : int64
             The timestamp the instrument was created/updated at.
 
         Raises
@@ -478,7 +492,6 @@ cdef class Future(Instrument):
             size_precision=0,  # No fractional contracts
             tick_size=tick_size,
             multiplier=Decimal(multiplier),
-            leverage=Decimal(1),
             lot_size=lot_size,
             max_quantity=None,
             min_quantity=Quantity(1),
@@ -491,7 +504,7 @@ cdef class Future(Instrument):
             maker_fee=Decimal(),
             taker_fee=Decimal(),
             financing={},
-            timestamp=timestamp,
+            timestamp_ns=timestamp_ns,
             info={},
         )
 
@@ -506,3 +519,67 @@ cdef class Future(Instrument):
         self.trading_hours = trading_hours
         self.liquid_hours = liquid_hours
         self.last_trade_time = last_trade_time
+
+
+cdef class BettingInstrument:
+    def __init__(
+        self,
+        str venue_name not None,
+        str event_type_id not None,
+        str event_type_name not None,
+        str competition_id not None,
+        str competition_name not None,
+        str event_id not None,
+        str event_name not None,
+        str event_country_code not None,
+        datetime event_open_date not None,
+        str betting_type not None,
+        str market_id not None,
+        str market_name not None,
+        datetime market_start_time not None,
+        str market_type not None,
+        str selection_id not None,
+        str selection_name not None,
+        str selection_handicap not None,
+    ):
+        # Event type (Sport) info e.g. Basketball
+        self.event_type_id = event_type_id
+        self.event_type_name = event_type_name
+
+        # Competition e.g. NBA
+        self.competition_id = competition_id
+        self.competition_name = competition_name
+
+        # Event info e.g. Utah Jazz @ Boston Celtics Wed 17 Mar, 10:40
+        self.event_id = event_id
+        self.event_name = event_name
+        self.event_country_code = event_country_code
+        self.event_open_date = event_open_date
+
+        # Market Info e.g. Match odds / Handicap
+        self.betting_type = betting_type
+        self.market_id = market_id
+        self.market_type = market_type
+        self.market_name = market_name
+        self.market_start_time = market_start_time
+
+        # Selection/Runner (individual selection/runner) e.g. (LA Lakers)
+        self.selection_id = selection_id
+        self.selection_name = selection_name
+        self.selection_handicap = selection_handicap
+        self.id = InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name))
+
+    def make_symbol(self):
+        cdef tuple keys = (
+            "event_type_name",
+            "competition_name",
+            "event_name",
+            "event_open_date",
+            "betting_type",
+            "market_type",
+            "market_name",
+            "selection_name",
+            "selection_handicap",
+        )
+        cdef str k
+        return Symbol(value="|".join([str(getattr(self, k)) for k in keys]))

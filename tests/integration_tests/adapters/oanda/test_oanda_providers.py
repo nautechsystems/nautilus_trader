@@ -28,11 +28,11 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from tests import TESTS_PACKAGE_ROOT
 
+
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 
 class OandaInstrumentProviderTests(unittest.TestCase):
-
     def test_load_all(self):
         # Arrange
         mock_client = MagicMock()
@@ -60,7 +60,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertTrue(len(instruments) == 0)
+        self.assertEqual({}, instruments)
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
@@ -110,7 +110,9 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
         mock_client.request.return_value = instruments
 
-        provider = OandaInstrumentProvider(client=mock_client, account_id="001", load_all=True)
+        provider = OandaInstrumentProvider(
+            client=mock_client, account_id="001", load_all=True
+        )
 
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("OANDA"))
 

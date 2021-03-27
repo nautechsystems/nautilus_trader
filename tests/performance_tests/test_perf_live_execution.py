@@ -31,7 +31,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -40,11 +39,11 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class LiveExecutionPerformanceTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -76,7 +75,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         exec_client = MockExecutionClient(
-            venue=Venue("BINANCE"),
+            name="BINANCE",
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -112,21 +111,21 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            order.venue,
+            order.instrument_id,
             self.trader_id,
             self.account_id,
             self.strategy.id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self.clock.timestamp_ns(),
         )
 
         def execute_command():
             self.exec_engine.execute(command)
 
         PerformanceHarness.profile_function(execute_command, 10000, 1)
-        # ~0.0ms / ~0.3μs / 253ns minimum of 10,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.3μs / 252ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_submit_order(self):
         self.exec_engine.start()
@@ -143,8 +142,9 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
                 self.strategy.submit_order(order)
 
             PerformanceHarness.profile_function(submit_order, 10000, 1)
+
         self.loop.run_until_complete(run_test())
-        # ~0.0ms / ~24.5μs / 24455ns minimum of 10,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~30.5μs / 30539ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_submit_order_end_to_end(self):
         self.exec_engine.start()
@@ -161,6 +161,8 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
                 self.strategy.submit_order(order)
 
         stats_file = "perf_live_execution.prof"
-        cProfile.runctx("self.loop.run_until_complete(run_test())", globals(), locals(), stats_file)
+        cProfile.runctx(
+            "self.loop.run_until_complete(run_test())", globals(), locals(), stats_file
+        )
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()

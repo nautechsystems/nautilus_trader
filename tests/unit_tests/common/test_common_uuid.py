@@ -20,7 +20,6 @@ from nautilus_trader.core.uuid import UUID
 
 
 class UUIDFactoryTests(unittest.TestCase):
-
     def test_factory_returns_unique_uuids(self):
         # Arrange
         factory = UUIDFactory()

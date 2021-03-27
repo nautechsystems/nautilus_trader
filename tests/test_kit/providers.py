@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from decimal import Decimal
+import json
+from typing import List
 
 from pandas import DataFrame
 
@@ -30,6 +31,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -37,12 +39,11 @@ from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestDataProvider:
-
     @staticmethod
     def ethusdt_trades() -> DataFrame:
         return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/binance-ethusdt-trades.csv")
@@ -81,11 +82,110 @@ class TestDataProvider:
 
     @staticmethod
     def parquet_btcusdt_trades() -> DataFrame:
-        return ParquetTickDataLoader.load(PACKAGE_ROOT + "/data/binance-btcusdt-trades.parquet")
+        return ParquetTickDataLoader.load(
+            PACKAGE_ROOT + "/data/binance-btcusdt-trades.parquet"
+        )
 
     @staticmethod
     def parquet_btcusdt_quotes() -> DataFrame:
-        return ParquetTickDataLoader.load(PACKAGE_ROOT + "/data/binance-btcusdt-quotes.parquet")
+        return ParquetTickDataLoader.load(
+            PACKAGE_ROOT + "/data/binance-btcusdt-quotes.parquet"
+        )
+
+    @staticmethod
+    def l1_feed():
+        updates = []
+        for _, row in TestDataProvider.usdjpy_ticks().iterrows():
+            for side, order_side in zip(
+                ("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)
+            ):
+                updates.append(
+                    {
+                        "op": "update",
+                        "order": Order(price=row[side], volume=1e9, side=order_side),
+                    }
+                )
+        return updates
+
+    @staticmethod
+    def l2_feed() -> List:
+        def parse_line(d):
+            if "status" in d:
+                return {}
+            elif "close_price" in d:
+                # return {'timestamp': d['remote_timestamp'], "close_price": d['close_price']}
+                return {}
+            if "trade" in d:
+                return {}
+                # data = TradeTick()
+            elif "level" in d and d["level"]["orders"][0]["volume"] == 0:
+                op = "delete"
+            else:
+                op = "update"
+            order_like = d["level"]["orders"][0] if op != "trade" else d["trade"]
+            return {
+                "timestamp": d["remote_timestamp"],
+                "op": op,
+                "order": Order(
+                    price=order_like["price"],
+                    volume=abs(order_like["volume"]),
+                    # Betting sides are reversed
+                    side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
+                    id=str(order_like["order_id"]),
+                ),
+            }
+
+        return [
+            parse_line(line)
+            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+        ]
+
+    @staticmethod
+    def l3_feed():
+        def parser(data):
+            parsed = data
+            if not isinstance(parsed, list):
+                # print(parsed)
+                return
+            elif isinstance(parsed, list):
+                channel, updates = parsed
+                if not isinstance(updates[0], list):
+                    updates = [updates]
+            else:
+                raise KeyError()
+            if isinstance(updates, int):
+                print("Err", updates)
+                return
+            for values in updates:
+                keys = ("order_id", "price", "volume")
+                data = dict(zip(keys, values))
+                side = OrderSide.BUY if data["volume"] >= 0 else OrderSide.SELL
+                if data["price"] == 0:
+                    yield dict(
+                        op="delete",
+                        order=Order(
+                            price=data["price"],
+                            volume=abs(data["volume"]),
+                            side=side,
+                            id=str(data["order_id"]),
+                        ),
+                    )
+                else:
+                    yield dict(
+                        op="update",
+                        order=Order(
+                            price=data["price"],
+                            volume=abs(data["volume"]),
+                            side=side,
+                            id=str(data["order_id"]),
+                        ),
+                    )
+
+        return [
+            msg
+            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for msg in parser(data)
+        ]
 
 
 class TestInstrumentProvider:
@@ -120,7 +220,6 @@ class TestInstrumentProvider:
             size_precision=6,
             tick_size=Decimal("0.01"),
             multiplier=Decimal("1"),
-            leverage=Decimal("1"),
             lot_size=Quantity("1"),
             max_quantity=Quantity("9000.0"),
             min_quantity=Quantity("1e-06"),
@@ -133,7 +232,7 @@ class TestInstrumentProvider:
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -163,7 +262,6 @@ class TestInstrumentProvider:
             size_precision=5,
             tick_size=Decimal("0.01"),
             multiplier=Decimal("1"),
-            leverage=Decimal("1"),
             lot_size=Quantity("1"),
             max_quantity=Quantity("9000"),
             min_quantity=Quantity("1e-05"),
@@ -176,18 +274,13 @@ class TestInstrumentProvider:
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
-    def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+    def xbtusd_bitmex() -> Instrument:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
-
-        Parameters
-        ----------
-        leverage : Decimal
-            The margined leverage for the instrument.
 
         Returns
         -------
@@ -211,7 +304,6 @@ class TestInstrumentProvider:
             size_precision=0,
             tick_size=Decimal("0.5"),
             multiplier=Decimal("1"),
-            leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=None,
             min_quantity=None,
@@ -224,18 +316,13 @@ class TestInstrumentProvider:
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
-    def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+    def ethusd_bitmex() -> Instrument:
         """
         Return the BitMEX ETH/USD perpetual contract for backtesting.
-
-        Parameters
-        ----------
-        leverage : Decimal
-            The margined leverage for the instrument.
 
         Returns
         -------
@@ -259,7 +346,6 @@ class TestInstrumentProvider:
             size_precision=0,
             tick_size=Decimal("0.05"),
             multiplier=Decimal("1"),
-            leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=Quantity("10000000.0"),
             min_quantity=Quantity("1.0"),
@@ -272,11 +358,11 @@ class TestInstrumentProvider:
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue=None, leverage: Decimal=Decimal("50")) -> Instrument:
+    def default_fx_ccy(symbol: str, venue: Venue = None) -> Instrument:
         """
         Return a default FX currency pair instrument from the given instrument_id.
 
@@ -286,8 +372,6 @@ class TestInstrumentProvider:
             The currency pair symbol.
         venue : Venue
             The currency pair venue.
-        leverage : Decimal
-            The leverage for the instrument.
 
         Returns
         -------
@@ -313,7 +397,7 @@ class TestInstrumentProvider:
         quote_currency = symbol[-3:]
 
         # Check tick precision of quote currency
-        if quote_currency == 'JPY':
+        if quote_currency == "JPY":
             price_precision = 3
         else:
             price_precision = 5
@@ -330,7 +414,6 @@ class TestInstrumentProvider:
             size_precision=0,
             tick_size=Decimal(f"{1 / 10 ** price_precision:.{price_precision}f}"),
             multiplier=Decimal("1"),
-            leverage=leverage,
             lot_size=Quantity("1000"),
             max_quantity=Quantity("1e7"),
             min_quantity=Quantity("1000"),
@@ -343,5 +426,5 @@ class TestInstrumentProvider:
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
             financing={},
-            timestamp=UNIX_EPOCH,
+            timestamp_ns=0,
         )

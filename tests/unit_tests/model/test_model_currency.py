@@ -23,12 +23,12 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestStubs.audusd_id()
 GBPUSD_SIM = TestStubs.gbpusd_id()
 
 
 class TestCurrency:
-
     def test_currency_equality(self):
         # Arrange
         currency1 = Currency(
@@ -88,8 +88,11 @@ class TestCurrency:
 
         # Act
         # Assert
-        assert "AUD" == str(currency)
-        assert "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)" == repr(currency)
+        assert str(currency) == "AUD"
+        assert (
+            repr(currency)
+            == "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)"
+        )
 
     def test_from_str_given_unknown_code_returns_none(self):
         # Arrange
@@ -101,10 +104,7 @@ class TestCurrency:
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["AUD", AUD],
-         ["GBP", GBP],
-         ["BTC", BTC],
-         ["ETH", ETH]],
+        [["AUD", AUD], ["GBP", GBP], ["BTC", BTC], ["ETH", ETH]],
     )
     def test_from_str(self, string, expected):
         # Arrange
@@ -112,12 +112,11 @@ class TestCurrency:
         result = Currency.from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
-        [["AUD", True],
-         ["ZZZ", False]],
+        [["AUD", True], ["ZZZ", False]],
     )
     def test_is_fiat(self, string, expected):
         # Arrange
@@ -125,4 +124,16 @@ class TestCurrency:
         result = Currency.is_fiat(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [["BTC", True], ["ZZZ", False]],
+    )
+    def test_is_crypto(self, string, expected):
+        # Arrange
+        # Act
+        result = Currency.is_crypto(string)
+
+        # Assert
+        assert result == expected

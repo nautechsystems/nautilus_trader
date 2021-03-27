@@ -24,11 +24,11 @@ from nautilus_trader.risk.sizing import FixedRiskSizer
 from nautilus_trader.risk.sizing import PositionSizer
 from tests.test_kit.providers import TestInstrumentProvider
 
+
 USDJPY = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class PositionSizerTests(unittest.TestCase):
-
     def test_update_instrument(self):
         # Arrange
         sizer = PositionSizer(USDJPY)
@@ -57,7 +57,6 @@ class PositionSizerTests(unittest.TestCase):
 
 
 class FixedRiskSizerTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.sizer = FixedRiskSizer(USDJPY)
@@ -171,7 +170,6 @@ class FixedRiskSizerTests(unittest.TestCase):
             hard_limit=Decimal(500000),
             unit_batch_size=Decimal(1000),
             units=1,
-
         )
 
         # Assert

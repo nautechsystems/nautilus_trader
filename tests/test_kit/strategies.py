@@ -24,7 +24,7 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order_book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -60,11 +60,11 @@ class TickTock(TradingStrategy):
         self.subscribe_quote_ticks(self.bar_type.instrument_id)
 
     def on_quote_tick(self, tick):
-        self.log.info(f"Received Tick({tick})")
+        self.log.info(f"Received {repr(tick)}")
         self.store.append(tick)
 
-    def on_bar(self, bar_type, bar):
-        self.log.info(f"Received {bar_type} Bar({bar})")
+    def on_bar(self, bar):
+        self.log.info(f"Received {repr(bar)}")
         self.store.append(bar)
         if not self.timer_running:
             timer_name = "Test-Timer"
@@ -97,9 +97,9 @@ class EMACross(TradingStrategy):
         instrument_id: InstrumentId,
         bar_spec: BarSpecification,
         trade_size: Decimal,
-        fast_ema: int=10,
-        slow_ema: int=20,
-        extra_id_tag: str="",
+        fast_ema: int = 10,
+        slow_ema: int = 20,
+        extra_id_tag: str = "",
     ):
         """
         Initialize a new instance of the `EMACross` class.
@@ -122,7 +122,9 @@ class EMACross(TradingStrategy):
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace('/', "") + extra_id_tag)
+        super().__init__(
+            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag
+        )
 
         # Custom strategy variables
         self.instrument_id = instrument_id
@@ -181,24 +183,24 @@ class EMACross(TradingStrategy):
         """
         pass
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    def on_bar(self, bar: Bar):
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")
+        self.log.info(f"Received {repr(bar)}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]..."
+            )
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC
@@ -294,7 +296,7 @@ class EMACross(TradingStrategy):
             The strategy state dictionary.
 
         """
-        return {'example': b'123456'}
+        return {"example": b"123456"}
 
     def on_load(self, state: {}):
         """

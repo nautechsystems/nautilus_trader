@@ -28,17 +28,18 @@ from nautilus_trader.common.logging import TestLogger
 
 
 class LogLevelParserTests(unittest.TestCase):
-
-    @parameterized.expand([
-        [LogLevel.UNDEFINED, "UNDEFINED"],
-        [LogLevel.VERBOSE, "VRB"],
-        [LogLevel.DEBUG, "DBG"],
-        [LogLevel.INFO, "INF"],
-        [LogLevel.WARNING, "WRN"],
-        [LogLevel.ERROR, "ERR"],
-        [LogLevel.CRITICAL, "CRT"],
-        [LogLevel.FATAL, "FTL"],
-    ])
+    @parameterized.expand(
+        [
+            [LogLevel.UNDEFINED, "UNDEFINED"],
+            [LogLevel.VERBOSE, "VRB"],
+            [LogLevel.DEBUG, "DBG"],
+            [LogLevel.INFO, "INF"],
+            [LogLevel.WARNING, "WRN"],
+            [LogLevel.ERROR, "ERR"],
+            [LogLevel.CRITICAL, "CRT"],
+            [LogLevel.FATAL, "FTL"],
+        ]
+    )
     def test_log_level_to_str(self, enum, expected):
         # Arrange
         # Act
@@ -47,16 +48,18 @@ class LogLevelParserTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, result)
 
-    @parameterized.expand([
-        ["", LogLevel.UNDEFINED],
-        ["UNDEFINED", LogLevel.UNDEFINED],
-        ["VRB", LogLevel.VERBOSE],
-        ["DBG", LogLevel.DEBUG],
-        ["INF", LogLevel.INFO],
-        ["ERR", LogLevel.ERROR],
-        ["CRT", LogLevel.CRITICAL],
-        ["FTL", LogLevel.FATAL],
-    ])
+    @parameterized.expand(
+        [
+            ["", LogLevel.UNDEFINED],
+            ["UNDEFINED", LogLevel.UNDEFINED],
+            ["VRB", LogLevel.VERBOSE],
+            ["DBG", LogLevel.DEBUG],
+            ["INF", LogLevel.INFO],
+            ["ERR", LogLevel.ERROR],
+            ["CRT", LogLevel.CRITICAL],
+            ["FTL", LogLevel.FATAL],
+        ]
+    )
     def test_log_level_from_str(self, string, expected):
         # Arrange
         # Act
@@ -67,7 +70,6 @@ class LogLevelParserTests(unittest.TestCase):
 
 
 class TestLoggerTests(unittest.TestCase):
-
     def test_log_verbose_messages_to_console(self):
         # Arrange
         logger = TestLogger(clock=TestClock(), level_console=LogLevel.VERBOSE)
@@ -169,7 +171,6 @@ class TestLoggerTests(unittest.TestCase):
 
 
 class TestLiveLogger(unittest.TestCase):
-
     def test_stop_when_running_in_thread(self):
         # Arrange
         logger = LiveLogger(clock=LiveClock())

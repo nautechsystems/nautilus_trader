@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.bar cimport Bar
@@ -35,6 +37,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef object _update_instruments_task
 
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *
+    cdef inline int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *
     cdef inline void _on_quote_tick(
         self,
         InstrumentId instrument_id,
@@ -42,7 +45,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *
@@ -54,7 +57,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         str order_side,
         str liquidity_side,
         str trade_match_id,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *
@@ -66,7 +69,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        long timestamp,
+        int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *
@@ -79,6 +82,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     )
     cdef inline Bar _parse_bar(
         self,
+        BarType bar_type,
         list values,
         int price_precision,
         int size_precision,

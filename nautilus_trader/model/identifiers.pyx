@@ -106,7 +106,7 @@ cdef class Venue(Identifier):
     The identifier value must be unique at the fund level.
     """
 
-    def __init__(self, str name):
+    def __init__(self, str name, str broker=None):
         """
         Initialize a new instance of the `Venue` class.
 
@@ -114,14 +114,37 @@ cdef class Venue(Identifier):
         ----------
         name : str
             The venue name identifier value.
+        broker : str, optional
+            The broker name identifier value.
 
         Raises
         ------
         ValueError
             If name is not a valid string.
+        ValueError
+            If broker is not None and not a valid string.
 
         """
+        if broker is not None:
+            Condition.valid_string(broker, "broker")
+            name = f"{broker}-{name}"
         super().__init__(name)
+
+        self.broker = broker
+
+    cpdef str first(self):
+        """
+        Return the first routing point.
+
+        Returns
+        -------
+        str
+
+        """
+        if self.broker is not None:
+            return self.broker
+        else:
+            return self.value
 
 
 cdef class InstrumentId(Identifier):
@@ -131,7 +154,11 @@ cdef class InstrumentId(Identifier):
     The symbol and venue combination should uniquely identify the instrument.
     """
 
-    def __init__(self not None, Symbol symbol, Venue venue not None):
+    def __init__(
+        self,
+        Symbol symbol not None,
+        Venue venue not None,
+    ):
         """
         Initialize a new instance of the `InstrumentId` class.
 
@@ -157,15 +184,25 @@ cdef class InstrumentId(Identifier):
         if len(pieces) != 3:
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[2]))
+        cdef tuple venue_pieces = value[2].partition('-')
+        if venue_pieces[2] != '':  # Venue contains a dash therefore a broker
+            return InstrumentId(
+                symbol=Symbol(pieces[0]),
+                venue=Venue(venue_pieces[0], broker=venue_pieces[2]),
+            )
+        else:
+            return InstrumentId(
+                symbol=Symbol(pieces[0]),
+                venue=Venue(pieces[2]),
+            )
 
     @staticmethod
     def from_str(value: str) -> InstrumentId:
         """
         Return an instrument identifier parsed from the given string value.
-        Must be correctly formatted including a single period.
+        Must be correctly formatted including a single period and optional dash.
 
-        Example: "AUD/USD.IDEALPRO".
+        Examples: "AUD/USD.IB-IDEALPRO", "BTC/USDT.BINANCE"
 
         Parameters
         ----------

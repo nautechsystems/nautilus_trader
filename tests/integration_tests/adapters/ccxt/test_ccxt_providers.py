@@ -30,6 +30,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from tests import TESTS_PACKAGE_ROOT
 
+
 # import ccxt  # uncomment to test against real API
 
 
@@ -147,7 +148,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertTrue(len(instruments) == 0)
+        self.assertEqual({}, instruments)
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
@@ -268,7 +269,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         self.assertEqual("BTC", currency.code)
         self.assertEqual(8, currency.precision)
 
-    def test_get_btc_currency_when_not_loaded_returns_none(self):
+    def test_get_random_currency_when_not_loaded_returns_none(self):
         # Arrange
         mock_client = MagicMock()
         mock_client.name = "Binance"
@@ -278,7 +279,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         provider.load_all()
 
         # Act
-        currency = provider.currency("BTC")
+        currency = provider.currency("ZZZ")
 
         # Assert
         self.assertIsNone(currency)

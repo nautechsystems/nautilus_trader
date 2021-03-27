@@ -20,6 +20,7 @@ import oandapyV20
 from oandapyV20.endpoints.accounts import AccountInstruments
 from oandapyV20.endpoints.instruments import InstrumentsCandles
 
+
 # Requirements:
 # - An internet connection
 # - Environment variable OANDA_API_TOKEN with a valid practice account api token
@@ -35,7 +36,7 @@ def request_instruments():
     req = AccountInstruments(accountID=account_id)
     res = client.request(req)
 
-    with open("instruments.json", 'w') as json_file:
+    with open("instruments.json", "w") as json_file:
         json.dump(res, json_file)
 
 
@@ -54,7 +55,7 @@ def request_bars():
     req = InstrumentsCandles(instrument="AUD_USD", params=params)
     res = client.request(req)
 
-    with open("bars.json", 'w') as json_file:
+    with open("bars.json", "w") as json_file:
         json.dump(res, json_file)
 
 

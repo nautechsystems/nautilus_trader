@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.uuid cimport UUID
 
@@ -37,8 +37,8 @@ cdef class Message:
     """The generic message type.\n\n:returns: `MessageType`"""
     cdef readonly UUID id
     """The message identifier.\n\n:returns: `UUID`"""
-    cdef readonly datetime timestamp
-    """The message initialization timestamp.\n\n:returns: `datetime`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of message initialization.\n\n:returns: `int64`"""
 
 
 cdef class Command(Message):

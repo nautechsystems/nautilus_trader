@@ -30,17 +30,19 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestInstrumentProvider
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class InstrumentTests(unittest.TestCase):
-
-    @parameterized.expand([
-        [AUDUSD_SIM, AUDUSD_SIM, True, False],
-        [AUDUSD_SIM, USDJPY_SIM, False, True],
-    ])
+    @parameterized.expand(
+        [
+            [AUDUSD_SIM, AUDUSD_SIM, True, False],
+            [AUDUSD_SIM, USDJPY_SIM, False, True],
+        ]
+    )
     def test_equality(self, instrument1, instrument2, expected1, expected2):
         # Arrange
         # Act
@@ -78,19 +80,6 @@ class InstrumentTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money("0.00000000", BTC), margin)
 
-    def test_calculate_order_margin_with_100x_leverage_returns_expected(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal(100))
-
-        # Act
-        margin = instrument.calculate_initial_margin(
-            Quantity(100000),
-            Price("11493.60"),
-        )
-
-        # Assert
-        self.assertEqual(Money("0.01392079", BTC), margin)
-
     def test_calculate_position_margin_with_no_leverage_returns_zero(self):
         # Arrange
         instrument = TestInstrumentProvider.xbtusd_bitmex()
@@ -104,20 +93,6 @@ class InstrumentTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money("0.00000000", BTC), margin)
-
-    def test_calculate_position_margin_with_100x_leverage_returns_expected(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal(100))
-
-        # Act
-        margin = instrument.calculate_maint_margin(
-            PositionSide.LONG,
-            Quantity(100000),
-            Price("11493.60"),
-        )
-
-        # Assert
-        self.assertEqual(Money("0.00682989", BTC), margin)
 
     def test_calculate_notional_value(self):
         # Arrange

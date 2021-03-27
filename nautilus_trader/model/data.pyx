@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -23,32 +25,17 @@ cdef class Data:
     This class should not be used directly, but through its concrete subclasses.
     """
 
-    def __init__(
-        self,
-        datetime timestamp not None,
-        double unix_timestamp=0,
-    ):
+    def __init__(self, int64_t timestamp_ns):
         """
         Initialize a new instance of the `Data` class.
 
         Parameters
         ----------
-        timestamp : datetime
-            The data timestamp (UTC).
-        unix_timestamp : double, optional
-            The data object to wrap.
-
-        Raises
-        ------
-        ValueError
-            If type(data) is not of type data_type.type.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the data.
 
         """
-        if unix_timestamp == 0:
-            unix_timestamp = timestamp.timestamp()
-
-        self.timestamp = timestamp
-        self.unix_timestamp = unix_timestamp
+        self.timestamp_ns = timestamp_ns
 
 
 cdef class DataType:
@@ -111,8 +98,7 @@ cdef class GenericData(Data):
         self,
         DataType data_type not None,
         data not None,
-        datetime timestamp not None,
-        double unix_timestamp=0,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `GenericData` class.
@@ -123,10 +109,8 @@ cdef class GenericData(Data):
             The data type.
         data : object
             The data object to wrap.
-        timestamp : datetime
-            The data timestamp (UTC).
-        unix_timestamp : double, optional
-            The data Unix timestamp (seconds).
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the data.
 
         Raises
         ------
@@ -135,7 +119,7 @@ cdef class GenericData(Data):
 
         """
         Condition.type(data, data_type.type, "data")
-        super().__init__(timestamp, unix_timestamp)
+        super().__init__(timestamp_ns)
 
         self.data_type = data_type
         self.data = data

@@ -25,11 +25,11 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class BacktestDataClientTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -212,9 +212,13 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_request_bars(self):
         # Arrange
         # Act
-        self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
+        self.client.request_bars(
+            TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4()
+        )
         self.client.connect()
-        self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
+        self.client.request_bars(
+            TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4()
+        )
 
         # Assert
         self.assertTrue(True)

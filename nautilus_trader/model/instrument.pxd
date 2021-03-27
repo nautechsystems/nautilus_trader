@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from decimal import Decimal
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -60,8 +62,6 @@ cdef class Instrument(Data):
     """The tick size of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object multiplier
     """The multiplier of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly object leverage
-    """The leverage of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly Quantity lot_size
     """The lot size of the instrument.\n\n:returns: `Quantity`"""
     cdef readonly Quantity max_quantity
@@ -84,10 +84,6 @@ cdef class Instrument(Data):
     """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
     """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly dict financing
-    """The financing information for the instrument.\n\n:returns: `dict[str, object]`"""
-    cdef readonly dict info
-    """The additional instrument information.\n\n:returns: `dict[str, object]`"""
 
     cdef bint _is_quanto(
         self,
@@ -96,20 +92,21 @@ cdef class Instrument(Data):
         Currency settlement_currency,
     ) except *
 
-    cpdef Money market_value(self, Quantity quantity, close_price: Decimal)
+    cpdef Money market_value(self, Quantity quantity, close_price: Decimal, leverage: Decimal=*)
     cpdef Money notional_value(self, Quantity quantity, close_price: Decimal)
-    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price)
+    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price, leverage: Decimal=*)
     cpdef Money calculate_maint_margin(
         self,
         PositionSide side,
         Quantity quantity,
         Price last,
+        leverage: Decimal=*,
     )
 
     cpdef Money calculate_commission(
         self,
-        Quantity quantity,
-        avg_price: Decimal,
+        Quantity last_qty,
+        last_px: Decimal,
         LiquiditySide liquidity_side,
     )
 
@@ -127,3 +124,22 @@ cdef class Future(Instrument):
     cdef readonly str trading_hours
     cdef readonly str liquid_hours
     cdef readonly str last_trade_time
+
+
+cdef class BettingInstrument(Instrument):
+    cdef readonly str event_type_id
+    cdef readonly str event_type_name
+    cdef readonly str competition_id
+    cdef readonly str competition_name
+    cdef readonly str event_id
+    cdef readonly str event_name
+    cdef readonly str event_country_code
+    cdef readonly datetime event_open_date
+    cdef readonly str betting_type
+    cdef readonly str market_id
+    cdef readonly str market_name
+    cdef readonly datetime market_start_time
+    cdef readonly str market_type
+    cdef readonly str selection_id
+    cdef readonly str selection_name
+    cdef readonly str selection_handicap

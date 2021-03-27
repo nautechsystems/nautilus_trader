@@ -15,6 +15,8 @@
 
 """
 Cython implementation of (parts of) the standard library time module.
+
+
 """
 
 from libc.stdint cimport int64_t
@@ -22,21 +24,29 @@ from libc.stdint cimport int64_t
 
 cdef extern from "pytime.h":
     ctypedef int64_t _PyTime_t
+    ctypedef int _PyTime_round_t
     _PyTime_t _PyTime_GetSystemClock() nogil
     double _PyTime_AsSecondsDouble(_PyTime_t t) nogil
+    _PyTime_t _PyTime_AsMilliseconds(_PyTime_t t, _PyTime_round_t round) nogil
+    _PyTime_t _PyTime_AsMicroseconds(_PyTime_t t, _PyTime_round_t round) nogil
 
 
-cdef inline double unix_time() nogil:
-    cdef:
-        _PyTime_t tic
-
-    tic = _PyTime_GetSystemClock()
+cdef inline double unix_timestamp() nogil:
+    cdef _PyTime_t tic = _PyTime_GetSystemClock()
     return _PyTime_AsSecondsDouble(tic)
 
 
-cdef inline double unix_time_ms() nogil:
-    cdef:
-        _PyTime_t tic
+cdef inline int64_t unix_timestamp_ms() nogil:
+    cdef _PyTime_t tic = _PyTime_GetSystemClock()
+    # _PyTime_ROUND_UP=3 should be used for timeouts
+    return _PyTime_AsMilliseconds(tic, 3)
 
-    tic = _PyTime_GetSystemClock()
-    return _PyTime_AsSecondsDouble(tic) * 1000
+
+cdef inline int64_t unix_timestamp_us() nogil:
+    cdef _PyTime_t tic = _PyTime_GetSystemClock()
+    # _PyTime_ROUND_UP=3 should be used for timeouts
+    return _PyTime_AsMicroseconds(tic, 3)
+
+
+cdef inline int64_t unix_timestamp_ns() nogil:
+    return _PyTime_GetSystemClock()

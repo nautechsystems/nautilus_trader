@@ -59,7 +59,6 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -68,7 +67,9 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.order_book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -122,7 +123,7 @@ cdef class DataEngine(Component):
         # Aggregators
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
-        # Snapshot providers
+        # OrderBook indexes
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
 
         # Public components
@@ -344,6 +345,7 @@ cdef class DataEngine(Component):
             client.reset()
 
         self.cache.reset()
+
         self._correlation_index.clear()
         self._instrument_handlers.clear()
         self._order_book_handlers.clear()
@@ -352,6 +354,7 @@ cdef class DataEngine(Component):
         self._bar_handlers.clear()
         self._data_handlers.clear()
         self._bar_aggregators.clear()
+
         self._clock.cancel_timers()
         self.command_count = 0
         self.data_count = 0
@@ -381,13 +384,13 @@ cdef class DataEngine(Component):
 
         self._execute_command(command)
 
-    cpdef void process(self, data) except *:
+    cpdef void process(self, Data data) except *:
         """
         Process the given data.
 
         Parameters
         ----------
-        data : object
+        data : Data
             The data to process.
 
         """
@@ -554,16 +557,9 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
-        # Always re-subscribe to override previous settings
-        client.subscribe_order_book(
-            instrument_id=instrument_id,
-            level=metadata.get(LEVEL),
-            depth=metadata.get(DEPTH),
-            kwargs=metadata.get(KWARGS),
-        )
-
         cdef int interval = metadata[INTERVAL]
         if interval > 0:
+            # Subscribe to interval snapshots
             key = (instrument_id, interval)
             if key not in self._order_book_intervals:
                 self._order_book_intervals[key] = []
@@ -579,22 +575,39 @@ cdef class DataEngine(Component):
                 )
                 self._log.debug(f"Set timer {timer_name}.")
 
+            # Add handler for subscriber
             self._order_book_intervals[key].append(handler)
             self._log.info(f"Subscribed to {instrument_id} <OrderBook> "
                            f"{interval} second intervals data.")
-            return
-
-        if instrument_id not in self._order_book_handlers:
-            # Setup handlers
-            self._order_book_handlers[instrument_id] = []  # type: list[callable]
-            self._log.info(f"Subscribed to {instrument_id} <OrderBook> data.")
-
-        # Add handler for subscriber
-        if handler not in self._order_book_handlers[instrument_id]:
-            self._order_book_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <OrderBook> data.")
         else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
+            # Subscribe to stream
+            if instrument_id not in self._order_book_handlers:
+                # Setup handlers
+                self._order_book_handlers[instrument_id] = []  # type: list[callable]
+                self._log.info(f"Subscribed to {instrument_id} <OrderBook> data.")
+
+            # Add handler for subscriber
+            if handler not in self._order_book_handlers[instrument_id]:
+                self._order_book_handlers[instrument_id].append(handler)
+                self._log.debug(f"Added {handler} for {instrument_id} <OrderBook> data.")
+            else:
+                self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
+
+        # Create order book
+        if not self.cache.has_order_book(instrument_id):
+            order_book = OrderBook.create(
+                instrument_id=instrument_id,
+                level=metadata[LEVEL],
+            )
+            self.cache.add_order_book(order_book)
+
+        # Always re-subscribe to override previous settings
+        client.subscribe_order_book(
+            instrument_id=instrument_id,
+            level=metadata.get(LEVEL),
+            depth=metadata.get(DEPTH),
+            kwargs=metadata.get(KWARGS),
+        )
 
     cdef inline void _handle_subscribe_quote_ticks(
         self,
@@ -753,7 +766,7 @@ cdef class DataEngine(Component):
                 return
 
             handlers.remove(handler)
-            if len(handlers) == 0:
+            if not handlers:
                 timer_name = f"OrderBookSnapshot-{instrument_id}-{interval}"
                 self._clock.cancel_timer(timer_name)
                 self._log.debug(f"Cancelled timer {timer_name}.")
@@ -951,17 +964,19 @@ cdef class DataEngine(Component):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef inline void _handle_data(self, data) except *:
+    cdef inline void _handle_data(self, Data data) except *:
         self.data_count += 1
 
-        if isinstance(data, OrderBook):
-            self._handle_order_book(data)
-        elif isinstance(data, QuoteTick):
+        if isinstance(data, QuoteTick):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
-        elif isinstance(data, BarData):
-            self._handle_bar(data.bar_type, data.bar)
+        elif isinstance(data, OrderBookOperations):
+            self._handle_order_book_operations(data)
+        elif isinstance(data, OrderBookSnapshot):
+            self._handle_order_book_snapshot(data)
+        elif isinstance(data, Bar):
+            self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         elif isinstance(data, GenericData):
@@ -995,21 +1010,43 @@ cdef class DataEngine(Component):
         for handler in tick_handlers:
             handler(tick)
 
-    cdef inline void _handle_order_book(self, OrderBook order_book) except *:
-        self.cache.add_order_book(order_book)
+    cdef inline void _handle_order_book_operations(self, OrderBookOperations operations) except *:
+        cdef InstrumentId instrument_id = operations.instrument_id
+        cdef OrderBook order_book = self.cache.order_book(instrument_id)
+        if order_book is None:
+            self._log.error(f"Cannot apply `OrderBookOperations`: "
+                            f"no book found for {operations.instrument_id}.")
+            return
+
+        order_book.apply_operations(operations)
 
         # Send to all registered order book handlers for that instrument_id
-        cdef list order_book_handlers = self._order_book_handlers.get(order_book.instrument_id, [])
+        cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])
         for handler in order_book_handlers:
             handler(order_book)
 
-    cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *:
-        self.cache.add_bar(bar_type, bar)
+    cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
+        cdef InstrumentId instrument_id = snapshot.instrument_id
+        cdef OrderBook order_book = self.cache.order_book(instrument_id)
+        if order_book is None:
+            self._log.error(f"Cannot apply `OrderBookSnapshot`: "
+                            f"no book found for {snapshot.instrument_id}.")
+            return
+
+        order_book.apply_snapshot(snapshot)
+
+        # Send to all registered order book handlers for that instrument_id
+        cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])
+        for handler in order_book_handlers:
+            handler(order_book)
+
+    cdef inline void _handle_bar(self, Bar bar) except *:
+        self.cache.add_bar(bar)
 
         # Send to all registered bar handlers for that bar type
-        cdef list bar_handlers = self._bar_handlers.get(bar_type, [])
+        cdef list bar_handlers = self._bar_handlers.get(bar.type, [])
         for handler in bar_handlers:
-            handler(bar_type, bar)
+            handler(bar)
 
     cdef inline void _handle_custom_data(self, GenericData data) except *:
         # Send to all registered data handlers for that data type
@@ -1031,7 +1068,6 @@ cdef class DataEngine(Component):
             self._handle_trade_ticks(response.data, response.correlation_id)
         elif response.data_type.type == Bar:
             self._handle_bars(
-                response.data_type.metadata.get(BAR_TYPE),
                 response.data,
                 response.data_type.metadata.get("Partial"),
                 response.correlation_id,
@@ -1079,8 +1115,8 @@ cdef class DataEngine(Component):
 
         callback(ticks)
 
-    cdef inline void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
-        self.cache.add_bars(bar_type, bars)
+    cdef inline void _handle_bars(self, list bars, Bar partial, UUID correlation_id) except *:
+        self.cache.add_bars(bars)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
         if callback is None:
@@ -1090,9 +1126,9 @@ cdef class DataEngine(Component):
         cdef TimeBarAggregator
         if partial is not None:
             # Update partial time bar
-            aggregator = self._bar_aggregators.get(bar_type)
+            aggregator = self._bar_aggregators.get(partial.type)
             if aggregator:
-                self._log.debug(f"Applying partial bar {partial} for {bar_type}.")
+                self._log.debug(f"Applying partial bar {partial} for {partial.type}.")
                 aggregator.set_partial(partial)
             else:
                 if self._fsm.state == ComponentState.RUNNING:
@@ -1101,7 +1137,7 @@ cdef class DataEngine(Component):
                     # partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update.")
 
-        callback(bar_type, bars)
+        callback(bars)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -1200,7 +1236,7 @@ cdef class DataEngine(Component):
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now_c(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         # Send request directly to handler as we're already inside engine

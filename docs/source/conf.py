@@ -27,6 +27,7 @@ version = ""
 if "READTHEDOCS" not in os.environ:
     # if developing locally
     from nautilus_trader import __version__  # noqaE402
+
     version = __version__
 
 # release version
@@ -56,14 +57,14 @@ source_suffix = ".rst"
 master_doc = "index"
 
 # The name of the Pygments (syntax highlighting) style to use.
-pygments_style = 'sphinx'
+pygments_style = "sphinx"
 
 # do not prepend module name to functions
 add_module_names = False
 todo_include_todos = False
 
 autosummary_generate = True
-autodoc_member_order = 'bysource'
+autodoc_member_order = "bysource"
 numpydoc_show_class_members = True
 
 napoleon_google_docstring = False

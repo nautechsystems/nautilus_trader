@@ -21,7 +21,7 @@ from nautilus_trader.serialization.base cimport OrderSerializer
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
-    cdef ObjectCache symbol_cache
+    cdef ObjectCache instrument_id_cache
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):

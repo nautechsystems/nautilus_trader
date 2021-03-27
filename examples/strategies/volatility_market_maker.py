@@ -30,10 +30,11 @@ from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
-from nautilus_trader.model.order_book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
+
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
@@ -83,7 +84,7 @@ class VolatilityMarketMaker(TradingStrategy):
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple
-        self.instrument = None       # Request on start instead
+        self.instrument = None  # Request on start instead
         self.price_precision = None  # Initialized on start
 
         # Create the indicators for the strategy
@@ -107,7 +108,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
-        # self.subscribe_order_book(self.instrument_id, level=2, depth=5, interval=5)  # For debugging
+        # self.subscribe_order_book(self.instrument_id, level=2, depth=25, interval=1)  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
@@ -134,8 +135,8 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # self.log.info(f"Received {repr(order_book)}")  # For debugging (must add a subscription)
-        # self.log.info(str(order_book.asks()))
-        # self.log.info(str(order_book.bids()))
+        # self.log.info(str(order_book.asks))
+        # self.log.info(str(order_book.bids))
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
@@ -164,24 +165,24 @@ class VolatilityMarketMaker(TradingStrategy):
         # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    def on_bar(self, bar: Bar):
         """
         Actions to be performed when the strategy is running and receives a bar.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type received.
         bar : Bar
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} {repr(bar)}")
+        self.log.info(f"Received {repr(bar)}")
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]..."
+            )
             return  # Wait for indicators to warm up...
 
         last: QuoteTick = self.data.quote_tick(self.instrument_id)
@@ -211,7 +212,7 @@ class VolatilityMarketMaker(TradingStrategy):
             price=Price(price, self.price_precision),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # Default value is True
-            hidden=False,    # Default value is False
+            hidden=False,  # Default value is False
         )
 
         self.buy_order = order
@@ -228,8 +229,8 @@ class VolatilityMarketMaker(TradingStrategy):
             quantity=Quantity(self.trade_size),
             price=Price(price, self.price_precision),
             time_in_force=TimeInForce.GTC,
-            post_only=True,   # Default value is True
-            hidden=False,     # Default value is False
+            post_only=True,  # Default value is True
+            hidden=False,  # Default value is False
         )
 
         self.sell_order = order

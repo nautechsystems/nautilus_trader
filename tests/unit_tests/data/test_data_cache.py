@@ -25,18 +25,20 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order_book import OrderBook
+from nautilus_trader.model.orderbook.book import L2OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
+
 
 SIM = Venue("SIM")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
@@ -45,7 +47,6 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class DataCacheTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.cache = DataCache(logger=TestLogger(TestClock()))
@@ -189,7 +190,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_ticks([tick])
@@ -208,7 +209,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -228,7 +229,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_trade_ticks([tick])
@@ -247,7 +248,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_trade_tick(tick)
@@ -263,15 +264,16 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
+            TestStubs.bartype_audusd_1min_bid(),
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
-        self.cache.add_bars(bar_type, [bar])
+        self.cache.add_bars([bar])
 
         # Act
         result = self.cache.bars(bar_type)
@@ -283,18 +285,19 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
+            TestStubs.bartype_audusd_1min_bid(),
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
-        self.cache.add_bar(bar_type, bar)
+        self.cache.add_bar(bar)
 
         # Act
-        self.cache.add_bars(bar_type, [bar])
+        self.cache.add_bars([bar])
         result = self.cache.bars(bar_type)
 
         # Assert
@@ -320,17 +323,16 @@ class DataCacheTests(unittest.TestCase):
 
     def test_order_book_when_order_book_exists_returns_expected(self):
         # Arrange
-        order_book = OrderBook(
+        snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=2,
-            depth=25,
-            price_precision=2,
-            size_precision=2,
+            level=OrderBookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            update_id=1,
-            timestamp=0,
+            timestamp_ns=0,
         )
+
+        order_book = L2OrderBook(instrument_id=ETHUSDT_BINANCE.id)
+        order_book.apply_snapshot(snapshot)
 
         self.cache.add_order_book(order_book)
 
@@ -355,7 +357,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -373,7 +375,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_trade_tick(tick)
@@ -392,7 +394,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_trade_tick(tick)
@@ -403,12 +405,16 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual(Price("1.00000"), result)
 
-    @parameterized.expand([
-        [PriceType.BID, Price("1.00000")],
-        [PriceType.ASK, Price("1.00001")],
-        [PriceType.MID, Price("1.000005")],
-    ])
-    def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(self, price_type, expected):
+    @parameterized.expand(
+        [
+            [PriceType.BID, Price("1.00000")],
+            [PriceType.ASK, Price("1.00001")],
+            [PriceType.MID, Price("1.000005")],
+        ]
+    )
+    def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
+        self, price_type, expected
+    ):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
@@ -416,7 +422,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -435,7 +441,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -455,7 +461,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         tick2 = QuoteTick(
@@ -464,7 +470,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00003"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_tick(tick1)
@@ -485,7 +491,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_trade_tick(tick)
@@ -505,7 +511,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             OrderSide.BUY,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         tick2 = TradeTick(
@@ -514,7 +520,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(20000),
             OrderSide.SELL,
             TradeMatchId("123456789"),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_trade_tick(tick1)
@@ -531,15 +537,16 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
+            bar_type,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
-        self.cache.add_bar(bar_type, bar)
+        self.cache.add_bar(bar)
 
         # Act
         result = self.cache.bar(bar_type, index=1)
@@ -552,25 +559,27 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar1 = Bar(
+            bar_type,
             Price("1.00001"),
             Price("1.00004"),
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            UNIX_EPOCH,
+            0,
         )
 
         bar2 = Bar(
+            bar_type,
             Price("1.00002"),
             Price("1.00003"),
             Price("1.00004"),
             Price("1.00005"),
             Quantity(200000),
-            UNIX_EPOCH,
+            0,
         )
 
-        self.cache.add_bar(bar_type, bar1)
-        self.cache.add_bar(bar_type, bar2)
+        self.cache.add_bar(bar1)
+        self.cache.add_bar(bar2)
 
         # Act
         result = self.cache.bar(bar_type, index=0)
@@ -589,7 +598,7 @@ class DataCacheTests(unittest.TestCase):
             Price("110.80010"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -618,7 +627,7 @@ class DataCacheTests(unittest.TestCase):
             Price("0.80010"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH,
+            0,
         )
 
         self.cache.add_quote_tick(tick)

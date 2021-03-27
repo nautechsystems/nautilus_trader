@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
@@ -58,6 +56,8 @@ cdef class BarType:
 
 
 cdef class Bar(Data):
+    cdef readonly BarType type
+    """The type of the bar.\n\n:returns: `BarType`"""
     cdef readonly Price open
     """The open price of the bar.\n\n:returns: `Price`"""
     cdef readonly Price high
@@ -72,12 +72,5 @@ cdef class Bar(Data):
     """If the input values were integrity checked.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef Bar from_serializable_str_c(str value)
+    cdef Bar from_serializable_str_c(BarType bar_type, str values)
     cpdef str to_serializable_str(self)
-
-
-cdef class BarData:
-    cdef readonly BarType bar_type
-    """The type of the bar.\n\n:returns: `BarType`"""
-    cdef readonly Bar bar
-    """The bar data.\n\n:returns: `Bar`"""

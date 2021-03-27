@@ -20,11 +20,11 @@ from nautilus_trader.model.enums import PriceType
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class AdaptiveMovingAverageTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.ama = AdaptiveMovingAverage(10, 2, 30)

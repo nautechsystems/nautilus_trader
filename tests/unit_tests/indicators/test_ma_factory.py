@@ -23,11 +23,11 @@ from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 from tests.test_kit.providers import TestInstrumentProvider
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
-
     def test_simple_returns_expected_indicator(self):
         # Arrange
         # Act

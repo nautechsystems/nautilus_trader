@@ -25,6 +25,7 @@ from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -34,6 +35,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 BITMEX = Venue("BITMEX")
 BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
@@ -42,7 +44,6 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class LiveDataEngineTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -86,7 +87,7 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         subscribe = Subscribe(
@@ -94,7 +95,7 @@ class LiveDataEngineTests(unittest.TestCase):
             data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -112,21 +113,24 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         handler = []
         request = DataRequest(
             provider="RANDOM",
-            data_type=DataType(QuoteTick, metadata={
-                "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            }),
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+            ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -144,7 +148,7 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
         response = DataResponse(
@@ -153,7 +157,7 @@ class LiveDataEngineTests(unittest.TestCase):
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            response_timestamp=self.clock.utc_now(),
+            timestamp_ns=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -171,12 +175,14 @@ class LiveDataEngineTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1}
+            config={"qsize": 1},
         )
 
+        data = Data(1_000_000_000)
+
         # Act
-        self.engine.process("some_data")
-        self.engine.process("some_data")  # Add over max size
+        self.engine.process(data)
+        self.engine.process(data)  # Add over max size
 
         # Assert
         self.assertEqual(1, self.engine.data_qsize())
@@ -239,7 +245,7 @@ class LiveDataEngineTests(unittest.TestCase):
                 data_type=DataType(QuoteTick),
                 handler=[].append,
                 command_id=self.uuid_factory.generate(),
-                command_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -263,15 +269,20 @@ class LiveDataEngineTests(unittest.TestCase):
             handler = []
             request = DataRequest(
                 provider="RANDOM",
-                data_type=DataType(QuoteTick, metadata={
-                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                }),
+                data_type=DataType(
+                    QuoteTick,
+                    metadata={
+                        "InstrumentId": InstrumentId(
+                            Symbol("SOMETHING"), Venue("RANDOM")
+                        ),
+                        "FromDateTime": None,
+                        "ToDateTime": None,
+                        "Limit": 1000,
+                    },
+                ),
                 callback=handler.append,
                 request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act
@@ -298,7 +309,7 @@ class LiveDataEngineTests(unittest.TestCase):
                 data=[],
                 correlation_id=self.uuid_factory.generate(),
                 response_id=self.uuid_factory.generate(),
-                response_timestamp=self.clock.utc_now(),
+                timestamp_ns=self.clock.timestamp_ns(),
             )
 
             # Act

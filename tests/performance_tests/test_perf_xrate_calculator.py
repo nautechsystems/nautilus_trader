@@ -24,19 +24,18 @@ from tests.test_kit.performance import PerformanceHarness
 
 
 class ExchangeRateOperations:
-
     @staticmethod
     def get_xrate():
         bid_quotes = {
-            'BTC/USD': Decimal("11291.38"),
-            'ETH/USDT': Decimal("371.90"),
-            'XBT/USD': Decimal("11285.50"),
+            "BTC/USD": Decimal("11291.38"),
+            "ETH/USDT": Decimal("371.90"),
+            "XBT/USD": Decimal("11285.50"),
         }
 
         ask_quotes = {
-            'BTC/USD': Decimal("11292.58"),
-            'ETH/USDT': Decimal("372.11"),
-            'XBT/USD': Decimal("11286.0"),
+            "BTC/USD": Decimal("11292.58"),
+            "ETH/USDT": Decimal("372.11"),
+            "XBT/USD": Decimal("11286.0"),
         }
 
         ExchangeRateCalculator().get_rate(
@@ -49,7 +48,6 @@ class ExchangeRateOperations:
 
 
 class ExchangeRateCalculatorPerformanceTests(unittest.TestCase):
-
     @staticmethod
     def test_get_xrate():
         PerformanceHarness.profile_function(ExchangeRateOperations.get_xrate, 100000, 1)

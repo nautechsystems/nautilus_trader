@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
@@ -30,6 +31,7 @@ cdef class InstrumentProvider:
 
         """
         self._instruments = {}  # type: dict[InstrumentId, Instrument]
+        self._currencies = {}   # type: dict[str, Currency]
 
     @property
     def count(self) -> int:
@@ -55,6 +57,18 @@ cdef class InstrumentProvider:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void add(self, Instrument instrument) except *:
+        """
+        Add the given instrument to the provider.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        """
+        self._instruments[instrument.id] = instrument
+
     cpdef dict get_all(self):
         """
         Return all loaded instruments.
@@ -67,6 +81,25 @@ cdef class InstrumentProvider:
 
         """
         return self._instruments.copy()
+
+    cpdef Currency currency(self, str code):
+        """
+        Return the currency with the given code (if found).
+
+        Parameters
+        ----------
+        code : str
+            The currency code.
+
+        Returns
+        -------
+        Currency or None
+
+        """
+        cdef Currency currency = self._currencies.get(code)
+        if currency is None:
+            currency = Currency.from_str_c(code)
+        return currency
 
     cpdef Instrument find(self, InstrumentId instrument_id):
         """
@@ -82,8 +115,4 @@ cdef class InstrumentProvider:
         Instrument or None
 
         """
-        return self.find_c(instrument_id)
-
-    cdef Instrument find_c(self, InstrumentId instrument_id):
-        # Provides faster C level access
         return self._instruments.get(instrument_id)

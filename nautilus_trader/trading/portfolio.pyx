@@ -770,7 +770,7 @@ cdef class Portfolio(PortfolioFacade):
         net_position = Decimal()
         for position in positions_open:
             if position.instrument_id == instrument_id:
-                net_position += position.relative_quantity
+                net_position += position.relative_qty
 
         self._net_positions[instrument_id] = net_position
         self._update_maint_margin(instrument_id.venue)
@@ -798,9 +798,6 @@ cdef class Portfolio(PortfolioFacade):
                 self._log.error(f"Cannot calculate initial margin "
                                 f"(no instrument for {order.instrument_id}).")
                 continue  # Cannot calculate
-
-            if instrument.leverage == 1:
-                continue  # No margin necessary
 
             # Calculate margin
             margin = instrument.calculate_initial_margin(
@@ -860,9 +857,6 @@ cdef class Portfolio(PortfolioFacade):
                 self._log.error(f"Cannot calculate position maintenance margin "
                                 f"(no instrument for {position.instrument_id}).")
                 continue  # Cannot calculate
-
-            if instrument.leverage == 1:
-                continue  # No margin necessary
 
             last = self._get_last_price(position)
             if last is None:

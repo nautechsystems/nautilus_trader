@@ -20,9 +20,11 @@ Defines various order types used for trading.
 from decimal import Decimal
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -128,11 +130,11 @@ cdef class Order:
         self.side = event.order_side
         self.type = event.order_type
         self.quantity = event.quantity
-        self.timestamp = event.timestamp
+        self.timestamp_ns = event.timestamp_ns
         self.time_in_force = event.time_in_force
         self.filled_qty = Quantity()
-        self.filled_timestamp = None  # Can be None
-        self.avg_price = None         # Can be None
+        self.execution_ns = 0
+        self.avg_px = None  # Can be None
         self.slippage = Decimal()
         self.init_id = event.id
 
@@ -146,12 +148,12 @@ cdef class Order:
         return hash(self.cl_ord_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
+        cdef str id_string = f", id={self.id.value})" if self.id.not_null() else ")"
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id.value}, "
-                f"{id_string}"
+                f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
-                f"{self.status_string_c()})")
+                f"cl_ord_id={self.cl_ord_id.value}"
+                f"{id_string}")
 
     cdef OrderState state_c(self) except *:
         return <OrderState>self._fsm.state
@@ -426,16 +428,12 @@ cdef class Order:
             If event.order_id not equal to self.id (if assigned and not being amended).
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
+        KeyError
+            If event is OrderFilled and event.execution_id already applied to the order.
 
         """
-        self.apply_c(event)
-
-    cdef void apply_c(self, OrderEvent event) except *:
         Condition.not_none(event, "event")
         Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
-
-        # Update events
-        self._events.append(event)
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInvalid):
@@ -473,13 +471,17 @@ cdef class Order:
         elif isinstance(event, OrderFilled):
             if self.id.not_null():
                 Condition.equal(self.id, event.order_id, "id", "event.order_id")
+                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
             else:
                 self.id = event.order_id
-            if self.quantity - self.filled_qty - event.fill_qty > 0:
+            if self.filled_qty + event.last_qty < self.quantity:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
                 self._fsm.trigger(OrderState.FILLED)
             self._filled(event)
+
+        # Update events last as FSM may raise InvalidStateTrigger
+        self._events.append(event)
 
     cdef void _invalid(self, OrderInvalid event) except *:
         pass  # Do nothing else
@@ -514,12 +516,12 @@ cdef class Order:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
-    cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity):
-        if self.avg_price is None:
-            return fill_price
+    cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
+        if self.avg_px is None:
+            return last_px
 
-        total_quantity: Decimal = self.filled_qty + fill_quantity
-        return ((self.avg_price * self.filled_qty) + (fill_price * fill_quantity)) / total_quantity
+        total_quantity: Decimal = self.filled_qty + last_qty
+        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_quantity
 
 
 cdef class PassiveOrder(Order):
@@ -534,13 +536,13 @@ cdef class PassiveOrder(Order):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
-        OrderType order_type,  # 'type' hides keyword
+        OrderType order_type,
         Quantity quantity not None,
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        datetime timestamp not None,
+        int64_t timestamp_ns,
         dict options not None,
     ):
         """
@@ -565,10 +567,10 @@ cdef class PassiveOrder(Order):
         time_in_force : TimeInForce (Enum)
             The order time-in-force.
         expire_time : datetime, optional
-            The order expiry time - for GTD orders only.
+            The order expiry time - applicable to GTD orders only.
         init_id : UUID
             The order initialization event identifier.
-        timestamp : datetime
+        timestamp_ns : int64
             The order initialization timestamp.
         options : dict
             The order options.
@@ -612,7 +614,7 @@ cdef class PassiveOrder(Order):
             quantity=quantity,
             time_in_force=time_in_force,
             event_id=init_id,
-            event_timestamp=timestamp,
+            timestamp_ns=timestamp_ns,
             options=options,
         )
 
@@ -621,6 +623,7 @@ cdef class PassiveOrder(Order):
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
+        self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
         self.slippage = Decimal()
 
     cdef str status_string_c(self):
@@ -634,20 +637,20 @@ cdef class PassiveOrder(Order):
         self.quantity = event.quantity
         self.price = event.price
 
-    cdef void _filled(self, OrderFilled event) except *:
-        self.id = event.order_id
-        self.position_id = event.position_id
-        self.strategy_id = event.strategy_id
-        self._execution_ids.append(event.execution_id)
-        self.execution_id = event.execution_id
-        self.liquidity_side = event.liquidity_side
-        self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
-        self.filled_timestamp = event.timestamp
-        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
+    cdef void _filled(self, OrderFilled fill) except *:
+        self.id = fill.order_id
+        self.position_id = fill.position_id
+        self.strategy_id = fill.strategy_id
+        self._execution_ids.append(fill.execution_id)
+        self.execution_id = fill.execution_id
+        self.liquidity_side = fill.liquidity_side
+        self.filled_qty = Quantity(self.filled_qty + fill.last_qty)
+        self.execution_ns = fill.execution_ns
+        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
         if self.side == OrderSide.BUY:
-            self.slippage = self.avg_price - self.price
+            self.slippage = self.avg_px - self.price
         else:  # self.side == OrderSide.SELL:
-            self.slippage = self.price - self.avg_price
+            self.slippage = self.price - self.avg_px

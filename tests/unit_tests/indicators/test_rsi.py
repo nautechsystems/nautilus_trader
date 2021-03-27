@@ -19,11 +19,11 @@ from nautilus_trader.indicators.rsi import RelativeStrengthIndex
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class RelativeStrengthIndexTests(unittest.TestCase):
-
     def setUp(self):
         # Fixture Setup
         self.rsi = RelativeStrengthIndex(10)
