@@ -31,6 +31,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
@@ -293,6 +294,15 @@ async def test_generate_order_status_report(mocker, execution_client):
     result = await execution_client.generate_order_status_report()
     assert result
     raise NotImplementedError()
+
+
+@pytest.mark.asyncio
+async def test_post_order_submit(execution_client, exec_engine):
+    f = asyncio.Future()
+    f.set_result(BetfairTestStubs.place_order_resp())
+    execution_client._post_submit_order(f, ClientOrderId("O-20210327-091154-001-001-2"))
+    await asyncio.sleep(0)
+    assert isinstance(exec_engine.events[0], OrderAccepted)
 
 
 # TODO

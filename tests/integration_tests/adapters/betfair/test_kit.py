@@ -273,5 +273,9 @@ class BetfairTestStubs(TestStubs):
         return (TEST_PATH / "streaming_mcm_UPDATE_tv.json").read_bytes()
 
     @staticmethod
+    def place_order_resp():
+        return orjson.loads((TEST_PATH / "place_order_resp.json").read_bytes())
+
+    @staticmethod
     def raw_orderbook_updates():
         return bz2.open(TEST_PATH / "1.133262888.json.bz2").readlines()

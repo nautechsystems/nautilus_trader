@@ -189,12 +189,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.error(str(e))
             return
-        assert len(resp['result']['instructionReports']) == 1, "Should only be a single order"
-        bet_id = resp['result']['instructionReports'][0]['betId']
+        assert len(resp['instructionReports']) == 1, "Should only be a single order"
+        bet_id = resp['instructionReports'][0]['betId']
         self.order_id_to_cl_ord_id[bet_id] = client_order_id
         self._generate_order_accepted(
             cl_ord_id=client_order_id,
-            order_id=bet_id,
+            order_id=OrderId(bet_id),
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
