@@ -107,21 +107,21 @@ cdef class Position:
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
-    cpdef void apply(self, OrderFilled event) except *
-    cdef void apply_c(self, OrderFilled event) except *
+    cpdef void apply(self, OrderFilled fill) except *
+    cdef void apply_c(self, OrderFilled fill) except *
 
     cpdef Money notional_value(self, Price last)
-    cpdef Money calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, qty: Decimal)
+    cpdef Money calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)
     cpdef Money unrealized_pnl(self, Price last)
     cpdef Money total_pnl(self, Price last)
     cpdef list commissions(self)
 
-    cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
-    cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline object _calculate_avg_px(self, avg_px: Decimal, qty: Decimal, OrderFilled event)
-    cdef inline object _calculate_avg_px_open_px(self, OrderFilled event)
-    cdef inline object _calculate_avg_px_close_px(self, OrderFilled event)
+    cdef inline void _handle_buy_order_fill(self, OrderFilled fill) except *
+    cdef inline void _handle_sell_order_fill(self, OrderFilled fill) except *
+    cdef inline object _calculate_avg_px(self, avg_px: Decimal, qty: Decimal, OrderFilled fill)
+    cdef inline object _calculate_avg_px_open_px(self, OrderFilled fill)
+    cdef inline object _calculate_avg_px_close_px(self, OrderFilled fill)
     cdef inline object _calculate_points(self, avg_px_open: Decimal, avg_px_close: Decimal)
     cdef inline object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal)
     cdef inline object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal)
-    cdef inline object _calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, qty: Decimal)
+    cdef inline object _calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)

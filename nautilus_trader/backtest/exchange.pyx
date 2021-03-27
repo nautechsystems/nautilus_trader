@@ -695,9 +695,9 @@ cdef class SimulatedExchange:
 
         # Immediately fill marketable order
         self._fill_order(
-            order,
-            self._fill_price_taker(order.instrument_id, order.side, bid, ask),
-            LiquiditySide.TAKER,
+            order=order,
+            fill_px=self._fill_price_taker(order.instrument_id, order.side, bid, ask),
+            liquidity_side=LiquiditySide.TAKER,
         )
 
     cdef inline void _process_limit_order(self, LimitOrder order, Price bid, Price ask) except *:
@@ -715,10 +715,14 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
         # Check for immediate fill
-        cdef Price fill_price
+        cdef Price fill_px
         if not order.is_post_only and self._is_limit_marketable(order.side, order.price, bid, ask):
-            fill_price = self._fill_price_maker(order.side, bid, ask)
-            self._fill_order(order, fill_price, LiquiditySide.TAKER)
+            fill_px = self._fill_price_maker(order.side, bid, ask)
+            self._fill_order(
+                order=order,
+                fill_px=fill_px,
+                liquidity_side=LiquiditySide.TAKER,
+            )
 
     cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *:
         if self._is_stop_marketable(order.side, order.price, bid, ask):
@@ -754,7 +758,7 @@ cdef class SimulatedExchange:
         Price bid,
         Price ask,
     ) except *:
-        cdef Price fill_price
+        cdef Price fill_px
         if self._is_limit_marketable(order.side, price, bid, ask):
             if order.is_post_only:
                 self._cancel_reject(
@@ -768,8 +772,12 @@ cdef class SimulatedExchange:
                 # Immediate fill as TAKER
                 self._generate_order_amended(order, qty, price)
 
-                fill_price = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
-                self._fill_order(order, fill_price, LiquiditySide.TAKER)
+                fill_px = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
+                self._fill_order(
+                    order=order,
+                    fill_px=fill_px,
+                    liquidity_side=LiquiditySide.TAKER,
+                )
                 return  # Filled
 
         self._generate_order_amended(order, qty, price)
@@ -801,7 +809,7 @@ cdef class SimulatedExchange:
         Price bid,
         Price ask,
     ) except *:
-        cdef Price fill_price
+        cdef Price fill_px
         if not order.is_triggered:
             # Amending stop price
             if self._is_stop_marketable(order.side, price, bid, ask):
@@ -829,8 +837,12 @@ cdef class SimulatedExchange:
                     # Immediate fill as TAKER
                     self._generate_order_amended(order, qty, price)
 
-                    fill_price = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
-                    self._fill_order(order, fill_price, LiquiditySide.TAKER)
+                    fill_px = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
+                    self._fill_order(
+                        order=order,
+                        fill_px=fill_px,
+                        liquidity_side=LiquiditySide.TAKER,
+                    )
                     return  # Filled
 
             self._generate_order_amended(order, qty, price)
@@ -865,26 +877,26 @@ cdef class SimulatedExchange:
     cdef inline void _match_limit_order(self, LimitOrder order, Price bid, Price ask) except *:
         if self._is_limit_matched(order.side, order.price, bid, ask):
             self._fill_order(
-                order,
-                order.price,  # price 'guaranteed'
-                LiquiditySide.MAKER,
+                order=order,
+                fill_px=order.price,  # price 'guaranteed'
+                liquidity_side=LiquiditySide.MAKER,
             )
 
     cdef inline void _match_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *:
         if self._is_stop_triggered(order.side, order.price, bid, ask):
             self._fill_order(
-                order,
-                self._fill_price_stop(order.instrument_id, order.side, order.price),
-                LiquiditySide.TAKER,  # Triggered stop places market order
+                order=order,
+                fill_px=self._fill_price_stop(order.instrument_id, order.side, order.price),
+                liquidity_side=LiquiditySide.TAKER,  # Triggered stop places market order
             )
 
     cdef inline void _match_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *:
         if order.is_triggered:
             if self._is_limit_matched(order.side, order.price, bid, ask):
                 self._fill_order(
-                    order,
-                    order.price,          # Price is 'guaranteed' (negative slippage not currently modeled)
-                    LiquiditySide.MAKER,  # Providing liquidity
+                    order=order,
+                    fill_px=order.price,          # Price is 'guaranteed' (negative slippage not currently modeled)
+                    liquidity_side=LiquiditySide.MAKER,  # Providing liquidity
                 )
         else:  # Order not triggered
             if self._is_stop_triggered(order.side, order.trigger, bid, ask):
@@ -901,9 +913,9 @@ cdef class SimulatedExchange:
                         )
                     else:
                         self._fill_order(
-                            order,
-                            self._fill_price_taker(order.instrument_id, order.side, bid, ask),
-                            LiquiditySide.TAKER,  # Immediate fill takes liquidity
+                            order=order,
+                            fill_px=self._fill_price_taker(order.instrument_id, order.side, bid, ask),
+                            liquidity_side=LiquiditySide.TAKER,  # Immediate fill takes liquidity
                         )
 
     cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
@@ -956,7 +968,7 @@ cdef class SimulatedExchange:
     cdef inline void _fill_order(
         self,
         Order order,
-        Price fill_price,
+        Price fill_px,
         LiquiditySide liquidity_side,
     ) except *:
         self._working_orders.pop(order.cl_ord_id, None)  # Remove order from working orders if found
@@ -987,32 +999,32 @@ cdef class SimulatedExchange:
             raise RuntimeError(f"Cannot run backtest: no instrument data for {order.instrument_id}")
 
         cdef Money commission = instrument.calculate_commission(
-            order.quantity,
-            fill_price,
-            liquidity_side,
+            last_qty=order.quantity,
+            last_px=fill_px,
+            liquidity_side=liquidity_side,
         )
 
         # Generate event
-        cdef OrderFilled filled = OrderFilled(
-            self.exec_client.account_id,
-            order.cl_ord_id,
-            order.id if order.id is not None else self._generate_order_id(order.instrument_id),
-            self._generate_execution_id(),
-            position_id,
-            order.strategy_id,
-            order.instrument_id,
-            order.side,
-            order.quantity,
-            fill_price,
-            order.quantity,
-            Quantity(),  # Not modeling partial fills yet
-            instrument.quote_currency,
-            instrument.is_inverse,
-            commission,
-            liquidity_side,
-            self._clock.timestamp_ns(),
-            self._uuid_factory.generate(),
-            self._clock.timestamp_ns(),
+        cdef OrderFilled fill = OrderFilled(
+            account_id=self.exec_client.account_id,
+            cl_ord_id=order.cl_ord_id,
+            order_id=order.id if order.id is not None else self._generate_order_id(order.instrument_id),
+            execution_id=self._generate_execution_id(),
+            position_id=position_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            order_side=order.side,
+            last_qty=order.quantity,
+            last_px=fill_px,
+            cum_qty=order.quantity,
+            leaves_qty=Quantity(),  # Not modeling partial fills yet
+            currency=instrument.quote_currency,
+            is_inverse=instrument.is_inverse,
+            commission=commission,
+            liquidity_side=liquidity_side,
+            execution_ns=self._clock.timestamp_ns(),
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
 
         # Calculate potential PnL
@@ -1021,8 +1033,8 @@ cdef class SimulatedExchange:
             # Calculate PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
-                avg_px_close=fill_price,
-                qty=order.quantity,
+                avg_px_close=fill_px,
+                quantity=order.quantity,
             )
 
         cdef Currency currency  # Settlement currency
@@ -1056,7 +1068,7 @@ cdef class SimulatedExchange:
             total_commissions = self.total_commissions.get(currency, Decimal()) + commission
             self.total_commissions[currency] = Money(total_commissions, currency)
 
-        self.exec_client.handle_event(filled)
+        self.exec_client.handle_event(fill)
         self._check_oco_order(order.cl_ord_id)
 
         # Work any bracket child orders

@@ -1891,7 +1891,7 @@ class ExecutionEngineTests(unittest.TestCase):
         position_flipped = self.cache.position(position_id_flipped)
 
         self.assertEqual(-50000, position_flipped.relative_qty)
-        self.assertEqual(50000, position_flipped.last_event.fill_qty)
+        self.assertEqual(50000, position_flipped.last_event.last_qty)
         self.assertEqual(150000, position_flipped.last_event.cum_qty)
         self.assertEqual(0, position_flipped.last_event.leaves_qty)
         self.assertEqual(
@@ -1981,7 +1981,7 @@ class ExecutionEngineTests(unittest.TestCase):
         position_flipped = self.cache.position(position_id_flipped)
 
         self.assertEqual(50000, position_flipped.relative_qty)
-        self.assertEqual(50000, position_flipped.last_event.fill_qty)
+        self.assertEqual(50000, position_flipped.last_event.last_qty)
         self.assertEqual(150000, position_flipped.last_event.cum_qty)
         self.assertEqual(0, position_flipped.last_event.leaves_qty)
         self.assertEqual(

@@ -245,9 +245,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             timestamp_ns=millis_to_nanos(millis=response["timestamp"]),
         )
 
-    async def generate_trades_list(self, OrderId order_id, Symbol symbol, datetime since=None):
+    async def generate_exec_reports(self, OrderId order_id, Symbol symbol, datetime since=None):
         """
-        Generate a list of trades for the given parameters.
+        Generate a list of execution reports.
 
         The returned list may be empty if no trades match the given parameters.
 
@@ -270,7 +270,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._log.info(f"Generating list[ExecutionReport] for {repr(order_id)}...")
 
-        cdef list trades = []  # Output
+        cdef list reports = []  # Output
         cdef list response
         try:
             response = await self._client.fetch_my_trades(
@@ -279,27 +279,27 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             )
         except CCXTError as ex:
             self._log_ccxt_error(ex, self.generate_trades.__name__)
-            return trades
+            return reports
 
         if response is None:
-            return trades  # TODO: Is this necessary??
+            return reports  # TODO: Is this necessary??
 
         cdef list fills = [fill for fill in response if fill["order"] == order_id.value]
         self._log.info(str(fills), LogColor.GREEN)  # TODO: Development
 
         if not fills:
-            return trades
+            return reports
 
         cdef ClientOrderId cl_ord_id = self._engine.cache.cl_ord_id(order_id)
         if cl_ord_id is None:
             self._log.error(f"Cannot generate trades list: "
                             f"no ClientOrderId found for {repr(order_id)}.")
-            return trades
+            return reports
 
         cdef dict fill
-        cdef ExecutionReport exec_report
+        cdef ExecutionReport report
         for fill in fills:
-            exec_report = ExecutionReport(
+            report = ExecutionReport(
                 execution_id=ExecutionId(str(fill["id"])),
                 cl_ord_id=cl_ord_id,
                 order_id=order_id,
@@ -311,9 +311,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 execution_is=millis_to_nanos(millis=fill["timestamp"]),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
-            trades.append(exec_report)
+            reports.append(report)
 
-        return trades
+        return reports
 
     cpdef void disconnect(self) except *:
         """

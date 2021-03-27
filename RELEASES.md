@@ -15,8 +15,8 @@ financial market terminology with reference to the FIX5.0 SP2 spec.
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
 - Change serialization of timestamps to ints.
 - Rename `COMMISSION` constant to `COMMISSION_AMOUNT`.
-- Rename `filled_qty` to `last_qty`.
-- Rename `filled_price` to `last_px`.
+- Rename `OrderFilled.filled_qty` to `OrderFilled.last_qty`.
+- Rename `OrderFilled.filled_price` to `OrderFilled.last_px`.
 - Rename `avg_price` to `avg_px` in methods and properties.
 - Rename `avg_open` to `avg_px_open` in methods and properties.
 - Rename `avg_close` to `avg_px_close` in methods and properties.
