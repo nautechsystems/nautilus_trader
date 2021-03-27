@@ -290,7 +290,7 @@ class OandaDataClientTests(unittest.TestCase):
             bar_type = BarType(instrument_id=AUDUSD, bar_spec=bar_spec)
 
             request = DataRequest(
-                provider=OANDA.value,
+                client_name=OANDA.value,
                 data_type=DataType(
                     Bar,
                     metadata={
