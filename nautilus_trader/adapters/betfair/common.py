@@ -1,7 +1,7 @@
 import numpy as np
 
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 
