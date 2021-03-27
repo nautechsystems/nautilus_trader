@@ -50,7 +50,9 @@ from nautilus_trader.model.tick import TradeTick
 sha256 = hashlib.sha256()
 
 
-def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
+def order_submit_to_betfair(
+    command: SubmitOrder, instrument: BettingInstrument, customer_ref="1"
+):
     """ Convert a SubmitOrder command into the data required by betfairlightweight """
 
     order = command.order  # type: LimitOrder
@@ -58,7 +60,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
         "customer_ref": order.cl_ord_id.value,
-        "customer_strategy_ref": f"{command.account_id}-{command.strategy_id}",
+        "customer_strategy_ref": customer_ref,
         "instructions": [
             place_instruction(
                 order_type="LIMIT",
