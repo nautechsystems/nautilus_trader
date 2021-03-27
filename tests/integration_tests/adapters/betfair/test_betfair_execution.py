@@ -96,7 +96,7 @@ def test_order_submit_to_betfair(
         "instructions": [
             {
                 "customerOrderRef": "1",
-                "handicap": "0.0",
+                "handicap": "0",
                 "limitOrder": {
                     "minFillSize": 0,
                     "persistenceType": "PERSIST",
@@ -104,8 +104,8 @@ def test_order_submit_to_betfair(
                     "size": 10.0,
                 },
                 "orderType": "LIMIT",
-                "selectionId": 50214,
-                "side": "Back",
+                "selectionId": "50214",
+                "side": "BACK",
             }
         ],
         "market_id": "1.179082386",

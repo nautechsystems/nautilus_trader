@@ -212,11 +212,11 @@ cdef class OrderBook:
         self.clear_asks()
 
     cdef inline void _apply_operation(self, OrderBookOperation op) except *:
-        if op.op_type == OrderBookOperationType.ADD:
+        if op.type == OrderBookOperationType.ADD:
             self.add(order=op.order)
-        elif op.op_type == OrderBookOperationType.UPDATE:
+        elif op.type == OrderBookOperationType.UPDATE:
             self.update(order=op.order)
-        elif op.op_type == OrderBookOperationType.DELETE:
+        elif op.type == OrderBookOperationType.DELETE:
             self.delete(order=op.order)
 
     cdef inline void _add(self, Order order) except *:

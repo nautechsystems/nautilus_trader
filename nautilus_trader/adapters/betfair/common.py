@@ -16,12 +16,12 @@ Prefixes:
     N2B = {NAUTILUS: BETFAIR}
     B2N = {BETFAIR: NAUTILUS}
 
+In nautilus, we map BUYS in probability space to a BACK (Back @ 3.0 is equivalent to BID/BUY @ 0.33
 """
 
 N2B_SIDE = {
-    # In nautilus, we map BUYS in probability space to a BACK (Back @ 3.0 is equivalent to BID/BUY @ 0.33
-    OrderSide.BUY: "Back",
-    OrderSide.SELL: "Lay",
+    OrderSide.BUY: "BACK",
+    OrderSide.SELL: "LAY",
 }
 
 N2B_TIME_IN_FORCE = {

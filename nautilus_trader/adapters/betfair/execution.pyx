@@ -179,6 +179,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider.find(command.instrument_id)
         kw = order_submit_to_betfair(command=command, instrument=instrument)
+        self._log.debug(f"{kw}")
         return self._client.betting.place_orders(**kw)
 
     def _post_submit_order(self, f: asyncio.Future, client_order_id):

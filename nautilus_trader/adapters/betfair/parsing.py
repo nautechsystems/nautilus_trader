@@ -62,9 +62,11 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
         "instructions": [
             place_instruction(
                 order_type="LIMIT",
-                selection_id=int(instrument.selection_id),
+                selection_id=instrument.selection_id,
                 side=N2B_SIDE[order.side],
-                handicap=instrument.selection_handicap or None,
+                handicap={"0.0": "0"}.get(
+                    instrument.selection_handicap, instrument.selection_handicap
+                ),
                 limit_order=limit_order(
                     size=float(order.quantity),
                     price=float(

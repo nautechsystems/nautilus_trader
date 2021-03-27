@@ -12,8 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import datetime
-
+import pandas as pd
 import pytest
 
 from nautilus_trader.model.enums import OrderBookLevel
@@ -144,12 +143,13 @@ def test_orderbook_operations(empty_book):
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
+        timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     ops = OrderBookOperations(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
         ops=[op],
-        timestamp=datetime.datetime.now(),
+        timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     empty_book.apply_operations(ops)
     assert empty_book.best_ask_price() == 0.5814
