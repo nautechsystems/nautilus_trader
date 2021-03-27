@@ -277,8 +277,8 @@ class TestStubs:
             last_qty = order.quantity
 
         commission = instrument.calculate_commission(
-            quantity=order.quantity,
-            avg_px=last_px,
+            last_qty=order.quantity,
+            last_px=last_px,
             liquidity_side=liquidity_side,
         )
 

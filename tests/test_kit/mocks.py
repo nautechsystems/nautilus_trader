@@ -569,7 +569,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         return self._order_status_reports[order.id]
 
-    async def generate_trades_list(
+    async def generate_exec_reports(
         self,
         order_id: OrderId,
         symbol: Symbol,

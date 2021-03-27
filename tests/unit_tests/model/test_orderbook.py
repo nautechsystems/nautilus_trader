@@ -47,7 +47,7 @@ class TestOrderBookSnapshot:
         # Assert
         assert (
             repr(snapshot)
-            == "OrderBookSnapshot('AUD/USD.SIM', bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]])"
+            == "OrderBookSnapshot('AUD/USD.SIM', bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], timestamp_ns=0)"
         )
 
 
@@ -58,13 +58,14 @@ class TestOrderBookOperation:
         op = OrderBookOperation(
             op_type=OrderBookOperationType.ADD,
             order=order,
+            timestamp_ns=0,
         )
 
         # Act
         # Assert
         assert (
             repr(op)
-            == f"OrderBookOperation(ADD, order=Order(10.0, 5.0, BUY, {order.id}))"
+            == f"OrderBookOperation(ADD, Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
         )
 
 

@@ -651,7 +651,8 @@ cdef class OrderBookSnapshot(Data):
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
                 f"bids={self.bids}, "
-                f"asks={self.asks})")
+                f"asks={self.asks}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
 
 cdef class OrderBookOperations(Data):
@@ -687,7 +688,10 @@ cdef class OrderBookOperations(Data):
         self.ops = ops
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.instrument_id}', {self.ops})"
+        return (f"{type(self).__name__}("
+               f"'{self.instrument_id}', "
+               f"{self.ops}, "
+               f"timestamp_ns={self.timestamp_ns})")
 
 
 cdef class OrderBookOperation:
@@ -699,6 +703,7 @@ cdef class OrderBookOperation:
         self,
         OrderBookOperationType op_type,
         Order order not None,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the `OrderBookOperation` class.
@@ -709,12 +714,16 @@ cdef class OrderBookOperation:
             The type of operation (ADD, UPDATED, DELETE).
         order : Order
             The order to apply.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the operations.
 
         """
-        self.op_type = op_type
+        self.type = op_type
         self.order = order
+        self.timestamp_ns = timestamp_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"{OrderBookOperationTypeParser.to_str(self.op_type)}, "
-                f"order={self.order})")
+                f"{OrderBookOperationTypeParser.to_str(self.type)}, "
+                f"{self.order}, "
+                f"timestamp_ns={self.timestamp_ns})")

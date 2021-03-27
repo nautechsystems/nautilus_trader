@@ -160,9 +160,9 @@ cdef class OrderFilled(OrderEvent):
     """The order instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide` (Enum)"""
-    cdef readonly Quantity fill_qty
+    cdef readonly Quantity last_qty
     """The fill quantity.\n\n:returns: `Quantity`"""
-    cdef readonly Price fill_price
+    cdef readonly Price last_px
     """The fill price for this execution.\n\n:returns: `Price`"""
     cdef readonly Quantity cum_qty
     """The order cumulative filled quantity.\n\n:returns: `Quantity`"""

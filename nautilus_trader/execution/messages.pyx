@@ -205,9 +205,9 @@ cdef class ExecutionMassStatus:
         self.account_id = account_id
         self.timestamp_ns = timestamp_ns
 
-        self._order_states = {}     # type: dict[OrderId, OrderStatusReport]
-        self._trades = {}           # type: dict[OrderId, list[ExecutionReport]]
-        self._position_states = {}  # type: dict[InstrumentId, PositionStatusReport]
+        self._order_reports = {}    # type: dict[OrderId, OrderStatusReport]
+        self._exec_reports = {}     # type: dict[OrderId, list[ExecutionReport]]
+        self._position_reports = {}  # type: dict[InstrumentId, PositionStatusReport]
 
     cpdef dict order_reports(self):
         """
@@ -218,18 +218,18 @@ cdef class ExecutionMassStatus:
         dict[OrderId, OrderStatusReport]
 
         """
-        return self._order_states.copy()
+        return self._order_reports.copy()
 
-    cpdef dict trades(self):
+    cpdef dict exec_reports(self):
         """
-        Return the trades.
+        Return the execution reports.
 
         Returns
         -------
         dict[OrderId, list[ExecutionReport]
 
         """
-        return self._trades.copy()
+        return self._exec_reports.copy()
 
     cpdef dict position_reports(self):
         """
@@ -240,7 +240,7 @@ cdef class ExecutionMassStatus:
         dict[InstrumentId, PositionStatusReport]
 
         """
-        return self._position_states.copy()
+        return self._position_reports.copy()
 
     cpdef void add_order_report(self, OrderStatusReport report) except *:
         """
@@ -254,18 +254,18 @@ cdef class ExecutionMassStatus:
         """
         Condition.not_none(report, "report")
 
-        self._order_states[report.order_id] = report
+        self._order_reports[report.order_id] = report
 
-    cpdef void add_trades(self, OrderId order_id, list trades) except *:
+    cpdef void add_exec_reports(self, OrderId order_id, list reports) except *:
         """
         Add the list of trades for the given order identifier.
 
         Parameters
         ----------
         order_id : OrderId
-            The order identifier for the trades.
-        trades : list[ExecutionReport]
-            The list of trades.
+            The order identifier for the reports.
+        reports : list[ExecutionReport]
+            The list of execution reports to add.
 
         Raises
         -------
@@ -274,9 +274,9 @@ cdef class ExecutionMassStatus:
 
         """
         Condition.not_none(order_id, "order_id")
-        Condition.list_type(trades, ExecutionReport, "trades")
+        Condition.list_type(reports, ExecutionReport, "reports")
 
-        self._trades[order_id] = trades
+        self._exec_reports[order_id] = reports
 
     cpdef void add_position_report(self, PositionStatusReport report) except *:
         """
@@ -290,4 +290,4 @@ cdef class ExecutionMassStatus:
         """
         Condition.not_none(report, "report")
 
-        self._position_states[report.instrument_id] = report
+        self._position_reports[report.instrument_id] = report

@@ -819,7 +819,7 @@ class PositionTests(unittest.TestCase):
         pnl = position.calculate_pnl(
             avg_px_open=Price("10500.00"),
             avg_px_close=Price("10510.00"),
-            qty=Quantity(12),
+            quantity=Quantity(12),
         )
 
         # Assert
@@ -856,7 +856,7 @@ class PositionTests(unittest.TestCase):
         pnl = position.calculate_pnl(
             avg_px_open=Price("10500.00"),
             avg_px_close=Price("10480.50"),
-            qty=Quantity(10),
+            quantity=Quantity(10),
         )
 
         # Assert

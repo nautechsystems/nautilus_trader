@@ -374,8 +374,8 @@ cdef class Instrument(Data):
 
     cpdef Money calculate_commission(
         self,
-        Quantity quantity,
-        avg_px: Decimal,
+        Quantity last_qty,
+        last_px: Decimal,
         LiquiditySide liquidity_side,
     ):
         """
@@ -384,10 +384,10 @@ cdef class Instrument(Data):
 
         Parameters
         ----------
-        quantity : Quantity
-            The quantity for the transaction.
-        avg_px : Decimal or Price
-            The average transaction price.
+        last_qty : Quantity
+            The transaction quantity.
+        last_px : Decimal or Price
+            The transaction price.
         liquidity_side : LiquiditySide (Enum)
             The liquidity side for the transaction.
 
@@ -402,11 +402,11 @@ cdef class Instrument(Data):
             If liquidity_side is NONE.
 
         """
-        Condition.not_none(quantity, "quantity")
-        Condition.type(avg_px, (Decimal, Price), "avg_px")
+        Condition.not_none(last_qty, "last_qty")
+        Condition.type(last_px, (Decimal, Price), "last_px")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
 
-        notional: Decimal = self.notional_value(quantity, avg_px)
+        notional: Decimal = self.notional_value(quantity=last_qty, close_price=last_px)
 
         if liquidity_side == LiquiditySide.MAKER:
             commission: Decimal = notional * self.maker_fee
@@ -599,6 +599,16 @@ cdef class BettingInstrument(Instrument):
         )
 
     def make_symbol(self):
-        keys = ("event_type_name", "competition_name", "event_name", "event_open_date", "betting_type", "market_type",
-                "market_name", "selection_name", "selection_handicap")
+        cdef tuple keys = (
+            "event_type_name",
+            "competition_name",
+            "event_name",
+            "event_open_date",
+            "betting_type",
+            "market_type",
+            "market_name",
+            "selection_name",
+            "selection_handicap",
+        )
+        cdef str k
         return Symbol(value="|".join([str(getattr(self, k)) for k in keys]))

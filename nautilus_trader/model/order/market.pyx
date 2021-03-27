@@ -155,12 +155,12 @@ cdef class MarketOrder(Order):
     cdef void _amended(self, OrderAmended event) except *:
         raise NotImplemented("Cannot amend a market order")
 
-    cdef void _filled(self, OrderFilled event) except *:
-        self.id = event.order_id
-        self.position_id = event.position_id
-        self.strategy_id = event.strategy_id
-        self._execution_ids.append(event.execution_id)
-        self.execution_id = event.execution_id
-        self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
-        self.execution_ns = event.execution_ns
-        self.avg_px = self._calculate_avg_px(event.fill_price, event.fill_qty)
+    cdef void _filled(self, OrderFilled fill) except *:
+        self.id = fill.order_id
+        self.position_id = fill.position_id
+        self.strategy_id = fill.strategy_id
+        self._execution_ids.append(fill.execution_id)
+        self.execution_id = fill.execution_id
+        self.filled_qty = Quantity(self.filled_qty + fill.last_qty)
+        self.execution_ns = fill.execution_ns
+        self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)

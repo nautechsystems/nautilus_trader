@@ -1,17 +1,22 @@
 # NautilusTrader 1.112.0 Beta - Release Notes
 
-[WIP] Update dependencies before release...
+**This release includes substantial breaking changes.**
 
-Standardize data timestamps to nanoseconds.
+The platforms internal timestamping has been standardized to nanoseconds. This
+decision was made to increase the accuracy of backtests to nanosecond precision,
+improve data handling including custom data for backtesting and to future proof
+the platform to a professional standard.
 
-This update includes some renaming to align more closely with established financial
-market terminology with reference to the FIX5.0 SP2 spec.
+There has also been some renaming to align more closely with established
+financial market terminology with reference to the FIX5.0 SP2 spec.
 
 ## Breaking Changes
 - Remove `Instrument.leverage` (incorrect place for concept).
 - Change `ExecutionClient.venue` as a `Venue` to `ExecutionClient.name` as a `str`.
 - Change serialization of timestamps to ints.
 - Rename `COMMISSION` constant to `COMMISSION_AMOUNT`.
+- Rename `OrderFilled.filled_qty` to `OrderFilled.last_qty`.
+- Rename `OrderFilled.filled_price` to `OrderFilled.last_px`.
 - Rename `avg_price` to `avg_px` in methods and properties.
 - Rename `avg_open` to `avg_px_open` in methods and properties.
 - Rename `avg_close` to `avg_px_close` in methods and properties.

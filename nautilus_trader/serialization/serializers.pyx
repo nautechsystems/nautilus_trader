@@ -560,10 +560,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[STRATEGY_ID] = event.strategy_id.value
             package[INSTRUMENT_ID] = event.instrument_id.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
-            package[LAST_QTY] = str(event.fill_qty)
+            package[LAST_QTY] = str(event.last_qty)
+            package[LAST_PX] = str(event.last_px)
             package[CUM_QTY] = str(event.cum_qty)
             package[LEAVES_QTY] = str(event.leaves_qty)
-            package[LAST_PX] = str(event.fill_price)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
             package[COMMISSION_AMOUNT] = str(event.commission)

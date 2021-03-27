@@ -858,10 +858,10 @@ cdef class OrderFilled(OrderEvent):
         self.strategy_id = strategy_id
         self.instrument_id = instrument_id
         self.order_side = order_side
-        self.fill_qty = last_qty
+        self.last_qty = last_qty
+        self.last_px = last_px
         self.cum_qty = cum_qty
         self.leaves_qty = leaves_qty
-        self.fill_price = last_px
         self.currency = currency
         self.is_inverse = is_inverse
         self.commission = commission
@@ -879,8 +879,8 @@ cdef class OrderFilled(OrderEvent):
                 f"instrument_id={self.instrument_id}, "
                 f"side={OrderSideParser.to_str(self.order_side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
-                f"last_qty={self.fill_qty.to_str()}, "
-                f"last_px={self.fill_price} {self.currency.code}, "
+                f"last_qty={self.last_qty.to_str()}, "
+                f"last_px={self.last_px} {self.currency.code}, "
                 f"cum_qty={self.cum_qty.to_str()}, "
                 f"leaves_qty={self.leaves_qty.to_str()}, "
                 f"commission={self.commission.to_str()}, "

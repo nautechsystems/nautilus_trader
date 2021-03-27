@@ -25,7 +25,6 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.core.uuid cimport UUID
 
 
@@ -144,11 +143,11 @@ cdef class Timer:
             The name for the timer.
         callback : callable
             The function to call at the next time.
-        interval_ns : int64_t
+        interval_ns : int64
             The time interval for the timer (not negative).
-        start_time_ns : int64_t
+        start_time_ns : int64
             The Unix time (nanoseconds) for timer start.
-        stop_time_ns : int64_t, optional
+        stop_time_ns : int64, optional
             The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
@@ -195,7 +194,7 @@ cdef class Timer:
         event_id : UUID
             The identifier for the time event.
         timestamp_ns : int64
-            The Unix timestamp (nanoseconds) for time event initialization.
+            The Unix timestamp (nanos) for time event initialization.
 
         Returns
         -------
@@ -254,11 +253,11 @@ cdef class TestTimer(Timer):
             The name for the timer.
         callback : callable
             The function to call at the next time.
-        interval_ns : int64_t
+        interval_ns : int64
             The time interval for the timer (not negative).
-        start_time_ns : int64_t
+        start_time_ns : int64
             The Unix time (nanoseconds) for timer start.
-        stop_time_ns : int64_t, optional
+        stop_time_ns : int64, optional
             The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
@@ -393,7 +392,7 @@ cdef class LiveTimer(Timer):
 
         Parameters
         ----------
-        now_ns : int64_t
+        now_ns : int64
             The current time to continue timing from.
 
         """
