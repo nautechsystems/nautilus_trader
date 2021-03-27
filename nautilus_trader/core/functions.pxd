@@ -15,6 +15,8 @@
 
 import pandas as pd
 
+from libc.stdint cimport int64_t
+
 
 cpdef int bisect_double_left(list a, double x, int lo=*, hi=*) except *
 cpdef int bisect_double_right(list a, double x, int lo=*, hi=*) except *
@@ -29,7 +31,7 @@ cpdef double fast_mean_iterated(
 cpdef double fast_std(list values) except *
 cpdef double fast_std_with_mean(list values, double mean) except *
 cpdef double basis_points_as_percentage(double basis_points) except *
-cdef long get_size_of(obj) except *
+cdef int64_t get_size_of(obj) except *
 cpdef str format_bytes(double size)
 cpdef str pad_string(str string, int final_length, str pad=*)
 

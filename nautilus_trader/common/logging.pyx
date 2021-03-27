@@ -31,6 +31,7 @@ import scipy
 from nautilus_trader import __version__
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
@@ -117,7 +118,7 @@ cdef class LogMessage:
         LogLevel level,
         LogColor color,
         str text not None,
-        long thread_id=0,
+        int64_t thread_id=0,
     ):
         """
         Initialize a new instance of the `LogMessage` class.
@@ -132,7 +133,7 @@ cdef class LogMessage:
             The log message color.
         text : str
             The log message text.
-        thread_id : long, optional
+        thread_id : int64, optional
             The thread the log message was created on.
 
         """
