@@ -33,7 +33,7 @@ from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.core.functions cimport format_bytes
-from nautilus_trader.core.functions cimport get_size_of
+from nautilus_trader.core.functions import get_size_of  # Not cimport
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.engine cimport DataEngine
@@ -53,10 +53,6 @@ cdef class DataProducerFacade:
     """
     Provides a read-only facade for data producers.
     """
-
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
         """Abstract method (implement in subclass)."""
@@ -242,7 +238,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         return self._log
 
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
+    def setup(self, int64_t start_ns, int64_t stop_ns):
         """
         Setup tick data for a backtest run.
 
@@ -473,7 +469,7 @@ cdef class CachedProducer(DataProducerFacade):
 
         self._create_data_cache()
 
-    cpdef void setup(self, int64_t start_ns, int64_t stop_ns) except *:
+    def setup(self, int64_t start_ns, int64_t stop_ns):
         """
         Setup tick data for a backtest run.
 

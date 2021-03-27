@@ -26,7 +26,7 @@ from pandas import DatetimeIndex
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport get_size_of
+from nautilus_trader.core.functions import get_size_of  # Not cimport
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
