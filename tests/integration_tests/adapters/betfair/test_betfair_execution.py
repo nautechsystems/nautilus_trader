@@ -93,7 +93,7 @@ def test_order_submit_to_betfair(
     result = order_submit_to_betfair(command=command, instrument=betting_instrument)
     expected = {
         "customer_ref": "1",
-        "customer_strategy_ref": "BETFAIR-001-Test-1",
+        "customer_strategy_ref": "1",
         "instructions": [
             {
                 "customerOrderRef": "1",
