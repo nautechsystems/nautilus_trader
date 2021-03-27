@@ -20,7 +20,7 @@ import cython
 
 from libc.math cimport pow
 from libc.math cimport sqrt
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -255,7 +255,7 @@ cpdef inline double basis_points_as_percentage(double basis_points) except *:
 
 
 # Closures in cpdef functions not yet supported (10/02/20)
-cdef int64_t get_size_of(obj) except *:
+def get_size_of(obj):
     """
     Return the bytes size in memory of the given object.
 
@@ -266,14 +266,14 @@ cdef int64_t get_size_of(obj) except *:
 
     Returns
     -------
-    int64
+    uint64
 
     """
     Condition.not_none(obj, "obj")
 
     cdef set marked = {id(obj)}
     obj_q = [obj]
-    cdef int64_t size = 0
+    cdef uint64_t size = 0
 
     while obj_q:
         size += sum(map(sys.getsizeof, obj_q))
