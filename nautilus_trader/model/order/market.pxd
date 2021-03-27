@@ -20,4 +20,4 @@ from nautilus_trader.model.order.base cimport Order
 
 cdef class MarketOrder(Order):
     @staticmethod
-    cdef MarketOrder create(OrderInitialized event)
+    cdef MarketOrder create(OrderInitialized init)

@@ -98,7 +98,7 @@ cdef class MarketOrder(Order):
         Condition.positive(quantity, "quantity")
         Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force was != GTC, IOC or FOK")
 
-        cdef OrderInitialized init_event = OrderInitialized(
+        cdef OrderInitialized init = OrderInitialized(
             cl_ord_id=cl_ord_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -111,16 +111,16 @@ cdef class MarketOrder(Order):
             options={},
         )
 
-        super().__init__(init_event)
+        super().__init__(init=init)
 
     @staticmethod
-    cdef MarketOrder create(OrderInitialized event):
+    cdef MarketOrder create(OrderInitialized init):
         """
         Return an order from the given initialized event.
 
         Parameters
         ----------
-        event : OrderInitialized
+        init : OrderInitialized
             The event to initialize with.
 
         Returns
@@ -133,18 +133,18 @@ cdef class MarketOrder(Order):
             If event.order_type is not equal to MARKET.
 
         """
-        Condition.not_none(event, "event")
-        Condition.equal(event.order_type, OrderType.MARKET, "event.order_type", "OrderType")
+        Condition.not_none(init, "init")
+        Condition.equal(init.order_type, OrderType.MARKET, "init.order_type", "OrderType")
 
         return MarketOrder(
-            cl_ord_id=event.cl_ord_id,
-            strategy_id=event.strategy_id,
-            instrument_id=event.instrument_id,
-            order_side=event.order_side,
-            quantity=event.quantity,
-            time_in_force=event.time_in_force,
-            init_id=event.id,
-            timestamp_ns=event.timestamp_ns,
+            cl_ord_id=init.cl_ord_id,
+            strategy_id=init.strategy_id,
+            instrument_id=init.instrument_id,
+            order_side=init.order_side,
+            quantity=init.quantity,
+            time_in_force=init.time_in_force,
+            init_id=init.id,
+            timestamp_ns=init.timestamp_ns,
         )
 
     cdef str status_string_c(self):

@@ -31,4 +31,4 @@ cdef class StopLimitOrder(PassiveOrder):
     """If the order is hidden from the public book.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized event)
+    cdef StopLimitOrder create(OrderInitialized init)
