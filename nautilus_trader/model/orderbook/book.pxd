@@ -97,7 +97,7 @@ cdef class OrderBookOperations(Data):
 
 
 cdef class OrderBookOperation:
-    cdef readonly OrderBookOperationType op_type
+    cdef readonly OrderBookOperationType type
     """The type of operation (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookOperationType (Enum)`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""
