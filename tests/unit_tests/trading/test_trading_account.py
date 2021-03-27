@@ -194,7 +194,7 @@ class AccountTests(unittest.TestCase):
         )
 
         # Act
-        account.apply(event2)
+        account.apply(event=event2)
 
         # Assert
         self.assertEqual(event2, account.last_event)

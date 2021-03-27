@@ -96,7 +96,7 @@ cdef class Position:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value}, {self.status_string_c()})"
+        return f"{type(self).__name__}({self.status_string_c()}, id={self.id.value})"
 
     cdef list cl_ord_ids_c(self):
         cdef OrderFilled fill
@@ -330,10 +330,6 @@ cdef class Position:
             If fill.execution_id already applied to the position.
 
         """
-        # Fast C method to avoid overhead of subclassing
-        self.apply_c(fill)
-
-    cdef void apply_c(self, OrderFilled fill) except *:
         Condition.not_none(fill, "fill")
         Condition.not_in(fill.execution_id, self._execution_ids, "fill.execution_id", "self._execution_ids")
 

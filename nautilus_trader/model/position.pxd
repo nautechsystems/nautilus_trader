@@ -108,7 +108,6 @@ cdef class Position:
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
     cpdef void apply(self, OrderFilled fill) except *
-    cdef void apply_c(self, OrderFilled fill) except *
 
     cpdef Money notional_value(self, Price last)
     cpdef Money calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)

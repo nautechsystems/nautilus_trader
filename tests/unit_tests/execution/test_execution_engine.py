@@ -251,7 +251,7 @@ class ExecutionEngineTests(unittest.TestCase):
             Quantity("1.00000000"),
         )
 
-        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(event=TestStubs.event_order_submitted(order))
 
         fill1 = TestStubs.event_order_filled(
             order,
@@ -261,8 +261,8 @@ class ExecutionEngineTests(unittest.TestCase):
             last_px=Price("50000.00000000"),
         )
 
-        order.apply(fill1)
-        position = Position(fill1)
+        order.apply(event=fill1)
+        position = Position(fill=fill1)
 
         self.database.add_order(order)
         self.database.update_order(order)
