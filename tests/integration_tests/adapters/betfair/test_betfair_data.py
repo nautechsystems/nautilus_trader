@@ -111,7 +111,7 @@ def test_market_update(betfair_data_client, data_engine):
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["OrderBookOperations"] * 1
     assert result == expected
-    result = [op.op_type for op in data_engine.events[0].ops]
+    result = [op.type for op in data_engine.events[0].ops]
     expected = [OrderBookOperationType.UPDATE, OrderBookOperationType.DELETE]
     assert result == expected
     # Ensure order prices are coming through as probability
