@@ -114,7 +114,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
-        self.assertEqual([OrderId.null()], position.order_ids)
+        self.assertEqual([OrderId("1")], position.order_ids)
         self.assertEqual(
             [ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids
         )
@@ -260,7 +260,7 @@ class PositionTests(unittest.TestCase):
             last_qty=Quantity(50000),
         )
 
-        position = Position(fill1)
+        position = Position(fill=fill1)
 
         last = Price("1.00050")
 
@@ -546,7 +546,7 @@ class PositionTests(unittest.TestCase):
         last = Price("1.00050")
 
         # Act
-        position = Position(fill1)
+        position = Position(fill=fill1)
         position.apply(fill2)
         position.apply(fill3)
 
@@ -1033,7 +1033,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price("10500.00"),
         )
 
-        position = Position(fill1)
+        position = Position(fill=fill1)
         position.apply(fill2)
 
         # Act

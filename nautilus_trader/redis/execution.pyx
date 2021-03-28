@@ -285,8 +285,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if not events:
             return None
 
-        cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
-        cdef Position position = Position(fill=initial)
+        cdef OrderFilled initial_fill = self._event_serializer.deserialize(events.pop(0))
+        cdef Position position = Position(fill=initial_fill)
 
         cdef bytes event_bytes
         for event_bytes in events:

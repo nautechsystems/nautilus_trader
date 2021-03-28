@@ -361,7 +361,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("25000.00"),
         )
 
-        position1 = Position(fill1)
+        position1 = Position(fill=fill1)
         position1.apply(fill2)
 
         order3 = self.order_factory.market(
