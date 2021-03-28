@@ -123,7 +123,7 @@ cdef class BacktestDataContainer:
             key=lambda x: x.timestamp_ns,
         )
 
-    def add_order_operations_snapshots(self, list operations) -> None:
+    def add_order_book_operations(self, list operations) -> None:
         """
         Add the order book operations to the container.
 
