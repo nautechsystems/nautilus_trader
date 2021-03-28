@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# cython: always_allow_keywords=False
+
 import pytz
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
+from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
@@ -240,22 +243,30 @@ cdef class BacktestEngine:
         if use_data_cache:
             self._data_producer = CachedProducer(self._data_producer)
 
-        # Create data client per venue
-        for venue in data.venues:
-            instruments = []
-            for instrument in data.instruments.values():
-                if instrument.venue == venue:
-                    instruments.append(instrument)
+        # Create data clients
+        for name, client_type in data.clients.items():
+            if client_type == BacktestDataClient:
+                data_client = BacktestDataClient(
+                    name=name,
+                    engine=self._data_engine,
+                    clock=self._test_clock,
+                    logger=self._test_logger,
+                )
+            elif client_type == BacktestMarketDataClient:
+                instruments = []
+                for instrument in data.instruments.values():
+                    if instrument.venue.first() == name:
+                        instruments.append(instrument)
 
-            data_client = BacktestMarketDataClient(
-                instruments=instruments,
-                name=venue.value,
-                engine=self._data_engine,
-                clock=self._test_clock,
-                logger=self._test_logger,
-            )
+                data_client = BacktestMarketDataClient(
+                    instruments=instruments,
+                    name=name,
+                    engine=self._data_engine,
+                    clock=self._test_clock,
+                    logger=self._test_logger,
+                )
 
-            self._data_engine.register_client(data_client)
+                self._data_engine.register_client(data_client)
 
         self._exec_engine = ExecutionEngine(
             database=exec_db,
@@ -550,7 +561,7 @@ cdef class BacktestEngine:
         cdef int64_t stop_ns = dt_to_unix_nanos(stop)
 
         # Setup clocks
-        self._test_clock.set_time(to_time_ns=start_ns)
+        self._test_clock.set_time(start_ns)
 
         # Setup data
         self._data_producer.setup(start_ns=start_ns, stop_ns=stop_ns)
@@ -563,7 +574,7 @@ cdef class BacktestEngine:
         self._log.info(f"Running backtest...")
 
         for strategy in self.trader.strategies_c():
-            strategy.clock.set_time(to_time_ns=start_ns)
+            strategy.clock.set_time(start_ns)
 
         for exchange in self._exchanges.values():
             exchange.initialize_account()
@@ -577,11 +588,11 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            self._advance_time(now_ns=data.timestamp_ns)
+            self._advance_time(data.timestamp_ns)
             if isinstance(data, Tick):
                 self._exchanges[data.venue].process_tick(data)
             self._data_engine.process(data)
-            self._process_modules(now_ns=data.timestamp_ns)
+            self._process_modules(data.timestamp_ns)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -596,11 +607,11 @@ cdef class BacktestEngine:
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
         for strategy in self.trader.strategies_c():
-            time_events += strategy.clock.advance_time(to_time_ns=now_ns)
+            time_events += strategy.clock.advance_time(now_ns)
         for event_handler in sorted(time_events):
-            self._test_clock.set_time(to_time_ns=event_handler.event.event_timestamp_ns)
+            self._test_clock.set_time(event_handler.event.event_timestamp_ns)
             event_handler.handle()
-        self._test_clock.set_time(to_time_ns=now_ns)
+        self._test_clock.set_time(now_ns)
 
     cdef inline void _process_modules(self, int64_t now_ns) except *:
         cdef SimulatedExchange exchange

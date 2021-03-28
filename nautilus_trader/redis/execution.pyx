@@ -259,7 +259,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef bytes event_bytes
         for event_bytes in events:
-            order.apply(event=self._event_serializer.deserialize(event_bytes))
+            order.apply(self._event_serializer.deserialize(event_bytes))
 
         return order
 
@@ -290,7 +290,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef bytes event_bytes
         for event_bytes in events:
-            position.apply(fill=self._event_serializer.deserialize(event_bytes))
+            position.apply(self._event_serializer.deserialize(event_bytes))
 
         return position
 
