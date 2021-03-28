@@ -129,6 +129,7 @@ class TradingNode:
 
         # Setup logging
         self._logger = LiveLogger(
+            loop=self._loop,
             clock=self._clock,
             name=self.trader_id.value,
             level_console=LogLevelParser.from_str_py(
@@ -409,6 +410,7 @@ class TradingNode:
 
             self._log.info("Stopping event loop...")
             self._cancel_all_tasks()
+            self._logger.stop()
             self._loop.stop()
         except RuntimeError as ex:
             self._log.exception(ex)
@@ -432,8 +434,6 @@ class TradingNode:
                 self._log.info(f"loop.is_closed={self._loop.is_closed()}")
 
             self._log.info("state=DISPOSED.")
-            self._logger.stop()  # Ensure process is stopped
-            time.sleep(0.1)  # Ensure final log messages
 
     def _log_header(self) -> None:
         nautilus_header(self._log)

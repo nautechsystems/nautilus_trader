@@ -13,12 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import logging
-import multiprocessing
 import os
 import platform
 from platform import python_version
-import queue
 import sys
 import threading
 import traceback
@@ -38,6 +37,7 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601_us
 
@@ -108,7 +108,7 @@ cdef class LogMessage:
     """
     Represents a log message including timestamp and log level.
     """
-    def __init__(
+    def __cinit__(
         self,
         datetime timestamp not None,
         LogLevel level,
@@ -139,18 +139,7 @@ cdef class LogMessage:
         self.text = text
         self.thread_id = thread_id
 
-    cdef str level_string(self):
-        """
-        Return the string representation of the log level.
-
-        Returns
-        -------
-        str
-
-        """
-        return LogLevelParser.to_str(self.level)
-
-    cdef str as_string(self):
+    cdef inline str as_string(self):
         """
         Return the string representation of the log message.
 
@@ -489,7 +478,8 @@ cdef class LoggerAdapter:
         str message,
     ) except *:
         if not self.is_bypassed:
-            self._logger.log(LogMessage(
+            self._logger.log(LogMessage.__new__(
+                LogMessage,
                 self._logger.clock.utc_now(),
                 level,
                 color,
@@ -648,12 +638,12 @@ cdef class TestLogger(Logger):
 
 cdef class LiveLogger(Logger):
     """
-    Provides a high-performance logger which runs in a separate process for live
-    operations.
+    Provides a high-performance logger which runs on the event loop.
     """
 
     def __init__(
         self,
+        loop not None,
         LiveClock clock not None,
         str name=None,
         bint bypass_logging=False,
@@ -671,6 +661,8 @@ cdef class LiveLogger(Logger):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop to run the logger on.
         clock : LiveClock
             The clock for the logger.
         name : str
@@ -713,14 +705,11 @@ cdef class LiveLogger(Logger):
             log_file_path,
         )
 
-        if run_in_process:
-            self._queue = multiprocessing.Queue(maxsize=10000)
-            self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
-            self._process.start()
-        else:
-            self._queue = queue.Queue(maxsize=10000)
-            self._thread = threading.Thread(target=self._consume_messages, daemon=True)
-            self._thread.start()
+        self._loop = loop
+        self._queue = Queue(maxsize=10000)
+
+        self._run_task = self._loop.create_task(self._consume_messages())
+        self.is_running = True
 
     cpdef void log(self, LogMessage message) except *:
         """
@@ -729,6 +718,9 @@ cdef class LiveLogger(Logger):
         If the internal queue is already full then will log a warning and block
         until queue size reduces.
 
+        If the event loop is not running then messages will be passed directly
+        to the `Logger` base class for logging.
+
         Parameters
         ----------
         message : LogMessage
@@ -736,39 +728,46 @@ cdef class LiveLogger(Logger):
 
         """
         Condition.not_none(message, "message")
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
-        try:
-            self._queue.put_nowait(message)
-        except queue.Full:
-            queue_full_msg = LogMessage(
-                timestamp=self.clock.utc_now(),
-                level=LogLevel.WARNING,
-                text=f"LiveLogger: Blocking on `put` as queue full at {self._queue.qsize()} items.",
-                thread_id=threading.current_thread().ident,
-            )
-            self._queue.put(queue_full_msg)
-            self._queue.put(message)  # Block until qsize reduces below maxsize
+        if self.is_running:
+            try:
+                self._queue.put_nowait(message)
+            except asyncio.QueueFull:
+                queue_full_msg = LogMessage(
+                    timestamp=self.clock.utc_now(),
+                    level=LogLevel.WARNING,
+                    text=f"LiveLogger: Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
+                    thread_id=threading.current_thread().ident,
+                )
+                self._loop.create_task(self._queue.put(queue_full_msg))  # Blocking until qsize reduces
+        else:
+            # If event loop is not longer running then pass message directly
+            # to base class to log.
+            self._log(message)
 
     cpdef void stop(self) except *:
-        self._queue.put_nowait(None)  # Sentinel message pattern
+        """
+        Stop the logger by cancelling the internal event loop task.
 
-    cpdef void _consume_messages(self) except *:
-        cdef LogMessage message
+        Future messages sent to the logger will be passed directly to the
+        `Logger` base class for logging.
+
+        Warnings
+        --------
+        This method is idempotent and irreversible.
+
+        """
+        self._run_task.cancel()
+        self.is_running = False
+
+    async def _consume_messages(self):
         try:
             while True:
-                message = self._queue.get()
-                if message is None:  # Sentinel message (fast c-level check)
-                    break
-                self._log(message)
-        except KeyboardInterrupt:
-            if self._process:
-                # Logger is running in a separate process.
-                # Here we have caught a single SIGTERM / keyboard interrupt from
-                # the main thead, this is to allow final log messages to be
-                # processed. Because daemon=True is set, when the main
-                # thread exits this will then terminate the process.
-                while True:
-                    message = self._queue.get()
-                    if message is None:
-                        break
-                    self._log(message)
+                self._log(await self._queue.get())
+        except asyncio.CancelledError:
+            pass
+        finally:
+            # Pass remaining messages directly to base class
+            while not self._queue.empty():
+                self._log(self._queue.get_nowait())

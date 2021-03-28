@@ -14,9 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import AbstractEventLoop
-from asyncio import CancelledError
-from asyncio import QueueFull
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -40,7 +37,7 @@ cdef class LiveDataEngine(DataEngine):
 
     def __init__(
         self,
-        loop not None: AbstractEventLoop,
+        loop not None: asyncio.AbstractEventLoop,
         Portfolio portfolio not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -158,10 +155,10 @@ cdef class LiveDataEngine(DataEngine):
 
         try:
             self._message_queue.put_nowait(command)
-        except QueueFull:
+        except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
-            self._loop.create_task(self._message_queue.put(command))
+            self._loop.create_task(self._message_queue.put(command))  # Blocking until qsize reduces
 
     cpdef void process(self, Data data) except *:
         """
@@ -189,7 +186,7 @@ cdef class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_data_queue.put` as data_queue full at "
                               f"{self._data_queue.qsize()} items.")
-            self._loop.create_task(self._data_queue.put(data))
+            self._loop.create_task(self._data_queue.put(data))  # Blocking until qsize reduces
 
     cpdef void send(self, DataRequest request) except *:
         """
@@ -217,7 +214,7 @@ cdef class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
-            self._loop.create_task(self._message_queue.put(request))
+            self._loop.create_task(self._message_queue.put(request))  # Blocking until qsize reduces
 
     cpdef void receive(self, DataResponse response) except *:
         """
@@ -242,10 +239,10 @@ cdef class LiveDataEngine(DataEngine):
 
         try:
             self._message_queue.put_nowait(response)
-        except QueueFull:
+        except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
-            self._message_queue.put(response)  # Block until qsize reduces below maxsize
+            self._loop.create_task(self._message_queue.put(response))  # Blocking until qsize reduces
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
@@ -278,8 +275,8 @@ cdef class LiveDataEngine(DataEngine):
                 if data is None:  # Sentinel message (fast C-level check)
                     continue      # Returns to the top to check `self.is_running`
                 self._handle_data(data)
-        except CancelledError:
-            if self.data_qsize() > 0:
+        except asyncio.CancelledError:
+            if not self._data_queue.empty():
                 self._log.warning(f"Running cancelled "
                                   f"with {self.data_qsize()} data item(s) on queue.")
             else:
@@ -301,8 +298,8 @@ cdef class LiveDataEngine(DataEngine):
                     self._handle_response(message)
                 else:
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
-        except CancelledError:
-            if self.message_qsize() > 0:
+        except asyncio.CancelledError:
+            if not self._message_queue.empty():
                 self._log.warning(f"Running cancelled "
                                   f"with {self.message_qsize()} message(s) on queue.")
             else:
