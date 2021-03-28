@@ -393,6 +393,11 @@ cdef class Order:
         -------
         OrderSide
 
+        Raises
+        ------
+        ValueError
+            If side is invalid.
+
         """
         return Order.opposite_side_c(side)
 
@@ -408,11 +413,12 @@ cdef class Order:
 
         Returns
         -------
-        OrderSide or None
+        OrderSide
 
-        Warnings
-        --------
-        Will return None if given PositionSide.FLAT.
+        Raises
+        ------
+        ValueError
+            If side is FLAT or invalid.
 
         """
         return Order.flatten_side_c(side)
@@ -429,7 +435,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If event.order_id not equal to self.id (if assigned and not being amended).
+            If self.id and event.order_id are both not 'NULL', and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
         KeyError
@@ -438,6 +444,8 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
+        if self.id.not_null() and event.order_id.not_null():
+            Condition.equal(event.order_id, self.id, "event.order_id", "self.id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInvalid):
@@ -459,13 +467,9 @@ cdef class Order:
             Condition.true(self._fsm.state in _AMENDING_STATES, "state was invalid for amending")
             self._amended(event)
         elif isinstance(event, OrderCancelled):
-            # OrderId should have been assigned
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.CANCELLED)
             self._cancelled(event)
         elif isinstance(event, OrderExpired):
-            # OrderId should have been assigned
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
         elif isinstance(event, OrderTriggered):
@@ -474,7 +478,6 @@ cdef class Order:
             self._triggered(event)
         elif isinstance(event, OrderFilled):
             if self.id.not_null():
-                Condition.equal(self.id, event.order_id, "id", "event.order_id")
                 Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
             else:
                 self.id = event.order_id

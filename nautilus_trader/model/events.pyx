@@ -449,7 +449,13 @@ cdef class OrderAccepted(OrderEvent):
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
+        Raises
+        ------
+        ValueError
+            If order_id has a 'NULL' value.
+
         """
+        Condition.true(order_id.not_null(), "order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
             order_id,
@@ -509,6 +515,8 @@ cdef class OrderCancelReject(OrderEvent):
 
         Raises
         ------
+        ValueError
+            If order_id has a 'NULL' value.
         ValueError
             If rejected_response_to is not a valid string.
         ValueError
@@ -571,7 +579,13 @@ cdef class OrderCancelled(OrderEvent):
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
+        Raises
+        ------
+        ValueError
+            If order_id has a 'NULL' value.
+
         """
+        Condition.true(order_id.not_null(), "order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
             order_id,
@@ -629,7 +643,13 @@ cdef class OrderAmended(OrderEvent):
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
+        Raises
+        ------
+        ValueError
+            If order_id has a 'NULL' value.
+
         """
+        Condition.true(order_id.not_null(), "order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
             order_id,
@@ -684,7 +704,13 @@ cdef class OrderExpired(OrderEvent):
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
+        Raises
+        ------
+        ValueError
+            If order_id has a 'NULL' value.
+
         """
+        Condition.true(order_id.not_null(), "order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
             order_id,
@@ -735,7 +761,13 @@ cdef class OrderTriggered(OrderEvent):
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
+        Raises
+        ------
+        ValueError
+            If order_id has a 'NULL' value.
+
         """
+        Condition.true(order_id.not_null(), "order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
             order_id,
@@ -828,7 +860,13 @@ cdef class OrderFilled(OrderEvent):
         info : dict[str, object], optional
             The additional fill information.
 
+        Raises
+        ------
+        ValueError
+            If order_id has a 'NULL' value.
+
         """
+        Condition.true(order_id.not_null(), "order_id was 'NULL'")
         if info is None:
             info = {}
         super().__init__(
@@ -980,11 +1018,6 @@ cdef class PositionChanged(PositionEvent):
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
-        Raises
-        ------
-        ValueError
-            If position is not open.
-
         """
         assert position.is_open_c()  # Design-time check
         super().__init__(
@@ -1033,11 +1066,6 @@ cdef class PositionClosed(PositionEvent):
             The event identifier.
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
-
-        Raises
-        ------
-        ValueError
-            If position is not closed.
 
         """
         assert position.is_closed_c()  # Design-time check
