@@ -721,7 +721,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             logger,
         )
 
-    # -- COMMANDS ----------------------------------------------------------------------------------
+# -- COMMANDS ----------------------------------------------------------------------------------
 
     async def _submit_order(self, Order order):
         # Common arguments
@@ -820,7 +820,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             logger,
         )
 
-    # -- COMMANDS ----------------------------------------------------------------------------------
+# -- COMMANDS ----------------------------------------------------------------------------------
 
     async def _submit_order(self, Order order):
         if order.time_in_force == TimeInForce.GTD:
