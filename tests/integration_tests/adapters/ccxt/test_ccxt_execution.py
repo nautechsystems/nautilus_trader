@@ -21,7 +21,6 @@ from unittest.mock import MagicMock
 from nautilus_trader.adapters.ccxt.execution import CCXTExecutionClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -64,16 +63,10 @@ class CCXTExecutionClientTests(unittest.TestCase):
         asyncio.set_event_loop(self.loop)
 
         # Setup logging
-        logger = LiveLogger(
+        self.logger = LiveLogger(
+            loop=self.loop,
             clock=self.clock,
-            name=self.trader_id.value,
-            level_console=LogLevel.INFO,
-            level_file=LogLevel.DEBUG,
-            level_store=LogLevel.WARNING,
-            run_in_process=False,
         )
-
-        self.logger = LiveLogger(self.clock)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -119,7 +112,7 @@ class CCXTExecutionClientTests(unittest.TestCase):
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
-            logger=logger,
+            logger=self.logger,
         )
 
         self.exec_engine.register_client(self.client)

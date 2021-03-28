@@ -37,12 +37,12 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
-from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
+from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
@@ -121,7 +121,7 @@ cdef class TradingStrategy(Component):
         cdef Clock clock = LiveClock()
         super().__init__(
             clock=clock,
-            logger=LiveLogger(clock, strategy_id.value),
+            logger=TestLogger(clock, strategy_id.value),
             name=strategy_id.value,
             log_initialized=False,
         )

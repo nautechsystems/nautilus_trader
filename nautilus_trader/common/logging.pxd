@@ -19,6 +19,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.queue cimport Queue
 
 
 cdef str RECV
@@ -68,8 +69,7 @@ cdef class LogMessage:
     cdef readonly int64_t thread_id
     """The thread identifier.\n\n:returns: `int64`"""
 
-    cdef str level_string(self)
-    cdef str as_string(self)
+    cdef inline str as_string(self)
 
 
 cdef class Logger:
@@ -131,9 +131,11 @@ cdef class TestLogger(Logger):
 
 
 cdef class LiveLogger(Logger):
-    cdef object _queue
-    cdef object _process
-    cdef object _thread
+    cdef object _loop
+    cdef object _run_task
+    cdef Queue _queue
+
+    cdef readonly bint is_running
+    """If the logger is running an event loop task.\n\n:returns: `bool`"""
 
     cpdef void stop(self) except *
-    cpdef void _consume_messages(self) except *

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import unittest
 
 from parameterized import parameterized
@@ -168,28 +169,27 @@ class TestLoggerTests(unittest.TestCase):
 
 
 class TestLiveLogger(unittest.TestCase):
+    def setUp(self):
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
     def test_stop_when_running_in_thread(self):
-        # Arrange
-        logger = LiveLogger(clock=LiveClock())
-        logger_adapter = LoggerAdapter("LIVE_LOGGER", logger)
+        async def run_test():
+            # Arrange
+            logger = LiveLogger(
+                loop=self.loop,
+                clock=LiveClock(),
+            )
 
-        logger_adapter.info("A log message.")
+            logger_adapter = LoggerAdapter("LIVE_LOGGER", logger)
 
-        # Act
-        logger.stop()
+            logger_adapter.info("A log message.")
 
-        # Assert
-        self.assertTrue(True)  # No exception raised
+            # Act
+            logger.stop()
 
-    def test_stop_when_running_in_process(self):
-        # Arrange
-        logger = LiveLogger(clock=LiveClock(), run_in_process=True)
-        logger_adapter = LoggerAdapter("LIVE_LOGGER", logger)
+            # Assert
+            self.assertTrue(True)  # No exception raised
 
-        logger_adapter.info("A log message.")
-
-        # Act
-        logger.stop()
-
-        # Assert
-        self.assertTrue(True)  # No exception raised
+        self.loop.run_until_complete(run_test())

@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.execution.engine cimport ExecutionEngine
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
-    cdef object _queue
     cdef object _run_queue_task
+    cdef Queue _queue
 
     cdef readonly bint is_running
 
