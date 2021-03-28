@@ -305,12 +305,12 @@ cdef class SimulatedExchange:
             The Unix timestamp (nanos) now.
 
         """
-        self._clock.set_time(to_time_ns=now_ns)
+        self._clock.set_time(now_ns)
 
         # Iterate through modules
         cdef SimulationModule module
         for module in self.modules:
-            module.process(now_ns=now_ns)
+            module.process(now_ns)
 
     cpdef void check_residuals(self) except *:
         """

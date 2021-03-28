@@ -706,7 +706,7 @@ cdef class ExecutionEngine(Component):
 
         try:
             # Protected against duplicate OrderFilled
-            order.apply(event=event)
+            order.apply(event)
         except (KeyError, InvalidStateTrigger)  as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
@@ -790,7 +790,7 @@ cdef class ExecutionEngine(Component):
 
         try:
             # Protected against duplicate OrderFilled
-            position.apply(fill=fill)
+            position.apply(fill)
         except KeyError as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
@@ -841,7 +841,7 @@ cdef class ExecutionEngine(Component):
         )
 
         # Close original position
-        position.apply(fill=fill_split1)
+        position.apply(fill_split1)
         self.cache.update_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)

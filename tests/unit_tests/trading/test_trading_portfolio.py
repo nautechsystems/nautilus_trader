@@ -361,8 +361,8 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("25000.00"),
         )
 
-        position1 = Position(fill=fill1)
-        position1.apply(fill=fill2)
+        position1 = Position(fill1)
+        position1.apply(fill2)
 
         order3 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -837,7 +837,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00000"),
         )
 
-        position.apply(fill=order2_filled)
+        position.apply(order2_filled)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_changed(position))
@@ -912,7 +912,7 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price("1.00010"),
         )
 
-        position.apply(fill=order2_filled)
+        position.apply(order2_filled)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_closed(position))
@@ -1033,7 +1033,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_opened(position2))
         self.portfolio.update_position(TestStubs.event_position_opened(position3))
 
-        position3.apply(fill=fill4)
+        position3.apply(fill4)
         self.portfolio.update_position(TestStubs.event_position_closed(position3))
 
         # Assert

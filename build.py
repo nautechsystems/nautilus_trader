@@ -41,16 +41,15 @@ if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
 Options.fast_fail = True  # Abort compilation on first error
 Options.warning_errors = True  # Treat compiler warnings as errors
+# **Options.extra_warnings,  TODO: Extra warnings will require manual linting.
 
 CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
     "cdivision": True,  # If division is as per C with no check for zero (35% speed up)
     "embedsignature": True,  # If docstrings should be embedded into C signatures
-    # If we're profiling, turn on line tracing
-    "profile": PROFILING_MODE,
+    "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
-    # TODO: Enable extra warnings. Will require manual linting.
-    # **Options.extra_warnings,
+    # "always_allow_keywords": False,  TODO: Performance profiling needed (faster calling)
 }
 
 
