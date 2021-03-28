@@ -60,24 +60,24 @@ class ExperimentsPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_builtin_arithmetic():
         PerformanceHarness.profile_function(Experiments.built_in_arithmetic, 100000, 1)
-        # ~0ms / ~1μs / 110ns minimum of 100000 runs @ 1 iterations each run.
+        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_class_name():
         PerformanceHarness.profile_function(Experiments.class_name, 100000, 1)
-        # ~0ms / ~1μs / 185ns minimum of 100000 runs @ 1 iterations each run.
+        # ~0.0ms / ~0.2μs / 161ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_str_assignment():
         PerformanceHarness.profile_function(Experiments.str_assignment, 100000, 1)
-        # ~0ms / ~1μs / 110ns minimum of 100000 runs @ 1 iterations each run.
+        # ~0.0ms / ~0.1μs / 103ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_is_instance():
         PerformanceHarness.profile_function(Experiments.is_instance, 100000, 1)
-        # ~0ms / ~1μs / 186ns minimum of 100000 runs @ 1 iterations each run.
+        # ~0.0ms / ~0.2μs / 153ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_is_message_type():
         PerformanceHarness.profile_function(Experiments.is_message_type, 100000, 1)
-        # ~0ms / ~1μs / 147ns minimum of 100000 runs @ 1 iterations each run.
+        # ~0.0ms / ~0.2μs / 150ns minimum of 100,000 runs @ 1 iteration each run.

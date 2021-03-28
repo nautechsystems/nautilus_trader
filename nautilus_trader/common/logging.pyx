@@ -169,7 +169,7 @@ cdef class Logger:
         bint console_prints=True,
         bint log_thread=False,
         bint log_to_file=False,
-        str log_file_path not None="",
+        str log_file_dir not None="",
     ):
         """
         Initialize a new instance of the `Logger` class.
@@ -194,15 +194,15 @@ cdef class Logger:
             If log messages should include the thread.
         log_to_file : bool
             If log messages should be written to the log file.
-        log_file_path : str
-            The name of the log file (cannot be None if log_to_file is True).
+        log_file_dir : str
+            The log file directory.
 
         Raises
         ------
         ValueError
             If name is not a valid string.
         ValueError
-            If log_file_path is not a valid string.
+            If log_file_dir is not a valid string.
 
         """
         if name is not None:
@@ -210,9 +210,9 @@ cdef class Logger:
         else:
             name = "tmp"
         if log_to_file:
-            if log_file_path == "":
-                log_file_path = "log/"
-            Condition.valid_string(log_file_path, "log_file_path")
+            if log_file_dir == "":
+                log_file_dir = "log/"
+            Condition.valid_string(log_file_dir, "log_file_dir")
 
         self.name = name
         self.bypass_logging = bypass_logging
@@ -223,19 +223,52 @@ cdef class Logger:
         self._console_prints = console_prints
         self._log_thread = log_thread
         self._log_to_file = log_to_file
-        self._log_file_path = log_file_path
-        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.utc_now().date().isoformat()}.log"
+        self._log_file_dir = log_file_dir
+        self._log_file_path = f"{self._log_file_dir}{self.name}-{self.clock.utc_now().date().isoformat()}.log"
         self._log_store = []
         self._logger = logging.getLogger(name)
         self._logger.setLevel(logging.DEBUG)
 
         # Setup log file handling
         if log_to_file:
-            if not os.path.exists(log_file_path):
+            if not os.path.exists(self._log_file_dir):
                 # Create directory if it does not exist
-                os.makedirs(log_file_path)
-            self._log_file_handler = logging.FileHandler(self._log_file)
+                os.makedirs(self._log_file_dir)
+            self._log_file_handler = logging.FileHandler(self._log_file_path)
             self._logger.addHandler(self._log_file_handler)
+
+    cpdef str get_log_file_dir(self):
+        """
+        Return the current log file directory.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._log_file_dir
+
+    cpdef str get_log_file_path(self):
+        """
+        Return the current log file path.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._log_file_path
+
+    cpdef list get_log_store(self):
+        """
+        Return the log store of message strings.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return self._log_store
 
     cpdef void change_log_file_name(self, str name) except *:
         """
@@ -249,25 +282,14 @@ cdef class Logger:
         """
         Condition.valid_string(name, "name")
 
-        self._log_file = f"{self._log_file_path}{name}.log"
+        self._log_file_path = f"{self._log_file_dir}{name}.log"
         self._logger.removeHandler(self._log_file_handler)
-        self._log_file_handler = logging.FileHandler(self._log_file)
+        self._log_file_handler = logging.FileHandler(self._log_file_path)
         self._logger.addHandler(self._log_file_handler)
 
     cpdef void log(self, LogMessage message) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef list get_log_store(self):
-        """
-        Return the log store of message strings.
-
-        Returns
-        -------
-        list[str]
-
-        """
-        return self._log_store
 
     cpdef void clear_log_store(self) except *:
         """
@@ -570,7 +592,7 @@ cdef class TestLogger(Logger):
         bint console_prints=True,
         bint log_thread=False,
         bint log_to_file=False,
-        str log_file_path not None="log/",
+        str log_file_dir not None="log/",
     ):
         """
         Initialize a new instance of the `TestLogger` class.
@@ -595,19 +617,19 @@ cdef class TestLogger(Logger):
             If log messages should include the thread.
         log_to_file : bool
             If log messages should write to the log file.
-        log_file_path : str
-            The name of the log file (cannot be None if log_to_file is True).
+        log_file_dir : str
+            The log file directory (cannot be empty if log_to_file is True).
 
         Raises
         ------
         ValueError
             If name is not a valid string.
         ValueError
-            If log_file_path is not a valid string.
+            If log_file_dir is not a valid string.
 
         """
-        if log_file_path is "":
-            log_file_path = "log/"
+        if log_file_dir is "":
+            log_file_dir = "log/"
         super().__init__(
             clock,
             name,
@@ -618,7 +640,7 @@ cdef class TestLogger(Logger):
             console_prints,
             log_thread,
             log_to_file,
-            log_file_path,
+            log_file_dir,
         )
 
     cpdef void log(self, LogMessage message) except *:
@@ -654,7 +676,8 @@ cdef class LiveLogger(Logger):
         bint console_prints=True,
         bint log_thread=False,
         bint log_to_file=False,
-        str log_file_path not None="logs/",
+        str log_file_dir not None="logs/",
+        int maxsize=10000,
     ):
         """
         Initialize a new instance of the `LiveLogger` class.
@@ -681,15 +704,17 @@ cdef class LiveLogger(Logger):
             If log messages should include the thread.
         log_to_file : bool
             If log messages should write to the log file.
-        log_file_path : str
-            The name of the log file (cannot be None if log_to_file is True).
+        log_file_dir : str
+            The log file directory (cannot be empty if log_to_file is True).
+        maxsize : int, optional
+            The maximum capacity for the log queue.
 
         Raises
         ------
         ValueError
             If the name is not a valid string.
         ValueError
-            If the log_file_path is not a valid string.
+            If the log_file_dir is not a valid string.
 
         """
         super().__init__(
@@ -702,14 +727,14 @@ cdef class LiveLogger(Logger):
             console_prints,
             log_thread,
             log_to_file,
-            log_file_path,
+            log_file_dir,
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=10000)
+        self._queue = Queue(maxsize=maxsize)
 
-        self._run_task = self._loop.create_task(self._consume_messages())
-        self.is_running = True
+        self._run_task = None
+        self.is_running = False
 
     cpdef void log(self, LogMessage message) except *:
         """
@@ -737,14 +762,24 @@ cdef class LiveLogger(Logger):
                 queue_full_msg = LogMessage(
                     timestamp=self.clock.utc_now(),
                     level=LogLevel.WARNING,
+                    color=LogColor.YELLOW,
                     text=f"LiveLogger: Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
                     thread_id=threading.current_thread().ident,
                 )
-                self._loop.create_task(self._queue.put(queue_full_msg))  # Blocking until qsize reduces
+                self._log(queue_full_msg)
+                self._loop.create_task(self._queue.put(message))  # Blocking until qsize reduces
         else:
-            # If event loop is not longer running then pass message directly
-            # to base class to log.
+            # If event loop is not running then pass message directly to the
+            # base class to log.
             self._log(message)
+
+    cpdef void start(self) except *:
+        """
+        Start the logger on a running event loop.
+        """
+        if not self.is_running:
+            self._run_task = self._loop.create_task(self._consume_messages())
+        self.is_running = True
 
     cpdef void stop(self) except *:
         """
@@ -753,12 +788,9 @@ cdef class LiveLogger(Logger):
         Future messages sent to the logger will be passed directly to the
         `Logger` base class for logging.
 
-        Warnings
-        --------
-        This method is idempotent and irreversible.
-
         """
-        self._run_task.cancel()
+        if self._run_task:
+            self._run_task.cancel()
         self.is_running = False
 
     async def _consume_messages(self):
@@ -768,6 +800,6 @@ cdef class LiveLogger(Logger):
         except asyncio.CancelledError:
             pass
         finally:
-            # Pass remaining messages directly to base class
+            # Pass remaining messages directly to the base class
             while not self._queue.empty():
                 self._log(self._queue.get_nowait())

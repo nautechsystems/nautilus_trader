@@ -142,12 +142,14 @@ class TradingNode:
             ),  # Run logger in a separate process
             log_thread=config_log.get("log_thread_id", False),
             log_to_file=config_log.get("log_to_file", False),
-            log_file_path=config_log.get("log_file_path", ""),
+            log_file_dir=config_log.get("log_file_dir", ""),
         )
 
         self._log = LoggerAdapter(
-            component_name=self.__class__.__name__, logger=self._logger
+            component_name=self.__class__.__name__,
+            logger=self._logger,
         )
+
         self._log_header()
         self._log.info("Building...")
 
@@ -470,6 +472,7 @@ class TradingNode:
             self._log.info("state=STARTING...")
             self._is_running = True
 
+            self._logger.start()
             self._data_engine.start()
             self._exec_engine.start()
             self._risk_engine.start()
