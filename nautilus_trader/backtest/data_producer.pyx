@@ -17,6 +17,7 @@
 This module provides a data producer for backtesting.
 """
 
+from bisect import bisect_left
 import gc
 import time
 
@@ -27,13 +28,16 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.functions cimport bisect_double_left
 from nautilus_trader.core.functions cimport format_bytes
+
 from nautilus_trader.core.functions import get_size_of  # Not cimport
+
+from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.engine cimport DataEngine
@@ -44,6 +48,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport TradeMatchId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -96,16 +101,27 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         # Check data integrity
         data.check_integrity()
-        self._data = data
 
+        # Save instruments
+        self._instruments = data.instruments
         cdef int instrument_counter = 0
         self._instrument_index = {}
 
         # Prepare instruments
-        for instrument in self._data.instruments.values():
+        cdef Instrument instrument
+        for instrument in data.instruments.values():
             self._data_engine.process(instrument)
 
-        # Prepare data
+        # Merge data stream
+        cdef Data x
+        self._stream = sorted(
+            data.generic_data +
+            data.order_book_snapshots +
+            data.order_book_operations,
+            key=lambda x: x.timestamp_ns,
+            )
+
+        # Prepare tick data
         self._quote_tick_data = pd.DataFrame()
         self._trade_tick_data = pd.DataFrame()
         cdef list quote_tick_frames = []
@@ -127,9 +143,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 ts = unix_timestamp()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
-                    data_quotes=self._data.quote_ticks.get(instrument_id),
-                    data_bars_bid=self._data.bars_bid.get(instrument_id),
-                    data_bars_ask=self._data.bars_ask.get(instrument_id),
+                    data_quotes=data.quote_ticks.get(instrument_id),
+                    data_bars_bid=data.bars_bid.get(instrument_id),
+                    data_bars_ask=data.bars_ask.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
@@ -147,7 +163,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 ts = unix_timestamp()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
-                    data=self._data.trade_ticks.get(instrument_id),
+                    data=data.trade_ticks.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
@@ -177,29 +193,40 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_tick_data = pd.concat(trade_tick_frames)
             self._trade_tick_data.sort_index(axis=0, kind="mergesort", inplace=True)
 
-        # Set min and max timestamps
-        self.min_timestamp = None
-        self.max_timestamp = None
+        # Set timestamps
+        cdef datetime min_timestamp = None
+        cdef datetime max_timestamp = None
 
         if not self._quote_tick_data.empty:
-            self.min_timestamp = self._quote_tick_data.index.min()
-            self.max_timestamp = self._quote_tick_data.index.max()
+            min_timestamp = self._quote_tick_data.index.min()
+            max_timestamp = self._quote_tick_data.index.max()
 
         if not self._trade_tick_data.empty:
-            if self.min_timestamp is None:
-                self.min_timestamp = self._trade_tick_data.index.min()
+            if min_timestamp is None:
+                min_timestamp = self._trade_tick_data.index.min()
             else:
-                self.min_timestamp = min(self._quote_tick_data.index.min(), self._trade_tick_data.index.min())
+                min_timestamp = min(self._quote_tick_data.index.min(), self._trade_tick_data.index.min())
 
-            if self.max_timestamp is None:
-                self.max_timestamp = self._trade_tick_data.index.max()
+            if max_timestamp is None:
+                max_timestamp = self._trade_tick_data.index.max()
             else:
-                self.max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
+                max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
-        self.min_timestamp_ns = dt_to_unix_nanos(self.min_timestamp)
-        self.max_timestamp_ns = dt_to_unix_nanos(self.max_timestamp)
+        self.min_timestamp_ns = dt_to_unix_nanos(min_timestamp)
+        self.max_timestamp_ns = dt_to_unix_nanos(max_timestamp)
+
+        if self._stream:
+            self.min_timestamp_ns = min(self.min_timestamp_ns, self._stream[0])
+            self.max_timestamp_ns = max(self.max_timestamp_ns, self._stream[-1])
+
+        self.min_timestamp = as_utc_timestamp(nanos_to_unix_dt(self.min_timestamp_ns))
+        self.max_timestamp = as_utc_timestamp(nanos_to_unix_dt(self.max_timestamp_ns))
 
         # Initialize backing fields
+        self._stream_index = 0
+        self._stream_index_last = 0
+        self._next_data = None
+
         self._quote_instruments = None
         self._quote_bids = None
         self._quote_asks = None
@@ -251,13 +278,22 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         """
         # Prepare instruments
-        for instrument in self._data.instruments.values():
+        for instrument in self._instruments.values():
             self._data_engine.process(instrument)
 
         self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
         cdef uint64_t total_size = 0
+
+        # Setup data stream index
+        cdef Data x
+        if self._stream:
+            self._stream_index = bisect_left(self._stream, start_ns, key=lambda x: x.timestamp_ns)
+            self._stream_index_last = bisect_left(self._stream, stop_ns, key=lambda x: x.timestamp_ns)
+
+            # Prepare initial data
+            self._iterate_stream()
 
         cdef datetime start = nanos_to_unix_dt(start_ns)
         cdef datetime stop = nanos_to_unix_dt(stop_ns)
@@ -329,6 +365,11 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         self._log.info(f"Resetting...")
 
+        self._stream_index = 0
+        self._stream_index_last = len(self._stream) - 1
+        self._next_data = None
+
+        # Clear pre-processed quote tick data
         self._quote_instruments = None
         self._quote_bids = None
         self._quote_asks = None
@@ -337,7 +378,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._quote_timestamps = None
         self._quote_index = 0
         self._quote_index_last = len(self._quote_tick_data) - 1
+        self._next_quote_tick = None
 
+        # Clear pre-processed trade tick data
         self._trade_instruments = None
         self._trade_prices = None
         self._trade_sizes = None
@@ -346,6 +389,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._trade_timestamps = None
         self._trade_index = 0
         self._trade_index_last = len(self._quote_tick_data) - 1
+        self._next_trade_tick = None
 
         self.has_data = False
 
@@ -373,49 +417,45 @@ cdef class BacktestDataProducer(DataProducerFacade):
         Data or None
 
         """
-        # TODO: Refactor below logic
+        # Determine lowest timestamp
+        cdef int64_t next_timestamp_ns = 0
+        cdef int choice = 0
 
-        cdef Data next_data
-        # Quote ticks only
-        if self._next_trade_tick is None:
+        if self._next_data is not None:
+            next_timestamp_ns = self._next_data.timestamp_ns
+            choice = 1
+
+        if self._next_quote_tick is not None:
+            if choice == 0 or self._next_quote_tick.timestamp_ns < next_timestamp_ns:
+                next_timestamp_ns = self._next_quote_tick.timestamp_ns
+                choice = 2
+
+        if self._next_trade_tick is not None:
+            if choice == 0 or self._next_trade_tick.timestamp_ns < next_timestamp_ns:
+                choice = 3
+
+        # Select lowest timestamp data
+        cdef Data next_data = None
+        if choice == 1:
+            next_data = self._next_data
+            self._iterate_stream()
+        elif choice == 2:
             next_data = self._next_quote_tick
             self._iterate_quote_ticks()
-            return next_data
-        # Trade ticks only
-        if self._next_quote_tick is None:
+        elif choice == 3:
             next_data = self._next_trade_tick
             self._iterate_trade_ticks()
-            return next_data
 
-        # Mixture of quote and trade ticks
-        if self._next_quote_tick.timestamp_ns <= self._next_trade_tick.timestamp_ns:
-            next_data = self._next_quote_tick
-            self._iterate_quote_ticks()
-            return next_data
+        return next_data
+
+    cdef inline void _iterate_stream(self) except *:
+        if self._stream_index <= self._stream_index_last:
+            self._next_data = self._stream[self._stream_index]
+            self._stream_index += 1
         else:
-            next_data = self._next_trade_tick
-            self._iterate_trade_ticks()
-            return next_data
-
-    cdef inline QuoteTick _generate_quote_tick(self, int index):
-        return QuoteTick(
-            self._instrument_index[self._quote_instruments[index]],
-            Price(self._quote_bids[index]),
-            Price(self._quote_asks[index]),
-            Quantity(self._quote_bid_sizes[index]),
-            Quantity(self._quote_ask_sizes[index]),
-            self._quote_timestamps[index],
-        )
-
-    cdef inline TradeTick _generate_trade_tick(self, int index):
-        return TradeTick(
-            self._instrument_index[self._trade_instruments[index]],
-            Price(self._trade_prices[index]),
-            Quantity(self._trade_sizes[index]),
-            OrderSideParser.from_str(self._trade_sides[index]),
-            TradeMatchId(self._trade_match_ids[index]),
-            self._trade_timestamps[index],
-        )
+            self._next_data = None
+            if self._next_quote_tick is None and self._next_trade_tick is None:
+                self.has_data = False
 
     cdef inline void _iterate_quote_ticks(self) except *:
         if self._quote_index <= self._quote_index_last:
@@ -423,7 +463,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_index += 1
         else:
             self._next_quote_tick = None
-            if self._next_trade_tick is None:
+            if self._next_data is None and self._next_trade_tick is None:
                 self.has_data = False
 
     cdef inline void _iterate_trade_ticks(self) except *:
@@ -432,8 +472,28 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_index += 1
         else:
             self._next_trade_tick = None
-            if self._next_quote_tick is None:
+            if self._next_data is None and self._next_quote_tick is None:
                 self.has_data = False
+
+    cdef inline QuoteTick _generate_quote_tick(self, int index):
+        return QuoteTick(
+            instrument_id=self._instrument_index[self._quote_instruments[index]],
+            bid=Price(self._quote_bids[index]),
+            ask=Price(self._quote_asks[index]),
+            bid_size=Quantity(self._quote_bid_sizes[index]),
+            ask_size=Quantity(self._quote_ask_sizes[index]),
+            timestamp_ns=self._quote_timestamps[index],
+        )
+
+    cdef inline TradeTick _generate_trade_tick(self, int index):
+        return TradeTick(
+            instrument_id=self._instrument_index[self._trade_instruments[index]],
+            price=Price(self._trade_prices[index]),
+            size=Quantity(self._trade_sizes[index]),
+            side=OrderSideParser.from_str(self._trade_sides[index]),
+            match_id=TradeMatchId(self._trade_match_ids[index]),
+            timestamp_ns=self._trade_timestamps[index],
+        )
 
 
 cdef class CachedProducer(DataProducerFacade):
@@ -453,12 +513,12 @@ cdef class CachedProducer(DataProducerFacade):
         """
         self._producer = producer
         self._log = producer.get_logger()
+        self._timestamp_cache = []
         self._data_cache = []
-        self._ts_cache = []
-        self._tick_index = 0
-        self._tick_index_last = 0
-        self._init_start_tick_index = 0
-        self._init_stop_tick_index = 0
+        self._data_index = 0
+        self._data_index_last = 0
+        self._init_start_data_index = 0
+        self._init_stop_data_index = 0
 
         self.execution_resolutions = self._producer.execution_resolutions
         self.min_timestamp = self._producer.min_timestamp
@@ -484,10 +544,10 @@ cdef class CachedProducer(DataProducerFacade):
         self._producer.setup(start_ns, stop_ns)
 
         # Set indexing
-        self._tick_index = bisect_double_left(self._ts_cache, start_ns)
-        self._tick_index_last = bisect_double_left(self._ts_cache, stop_ns)
-        self._init_start_tick_index = self._tick_index
-        self._init_stop_tick_index = self._tick_index_last
+        self._data_index = bisect_left(self._timestamp_cache, start_ns)
+        self._data_index_last = bisect_left(self._timestamp_cache, stop_ns)
+        self._init_start_data_index = self._data_index
+        self._init_stop_data_index = self._data_index_last
         self.has_data = True
 
     cpdef void reset(self) except *:
@@ -496,8 +556,8 @@ cdef class CachedProducer(DataProducerFacade):
 
         All stateful fields are reset to their initial value.
         """
-        self._tick_index = self._init_start_tick_index
-        self._tick_index_last = self._init_stop_tick_index
+        self._data_index = self._init_start_data_index
+        self._data_index_last = self._init_stop_data_index
         self.has_data = True
 
     cpdef Data next(self):
@@ -511,15 +571,15 @@ cdef class CachedProducer(DataProducerFacade):
         Data or None
 
         """
-        # TODO: Refactor for generic data
-
+        # Cython does not produce efficient generator code, and so we will
+        # manually track the index for efficiency.
         cdef Data data
-        if self._tick_index <= self._tick_index_last:
-            data = self._data_cache[self._tick_index]
-            self._tick_index += 1
+        if self.has_data:
+            data = self._data_cache[self._data_index]
+            self._data_index += 1
 
-        # Check if last tick
-        if self._tick_index > self._tick_index_last:
+        # Check if last data item
+        if self._data_index > self._data_index_last:
             self.has_data = False
 
         return data
@@ -534,7 +594,7 @@ cdef class CachedProducer(DataProducerFacade):
         while self._producer.has_data:
             data = self._producer.next()
             self._data_cache.append(data)
-            self._ts_cache.append(data.timestamp_ns)
+            self._timestamp_cache.append(data.timestamp_ns)
 
         self._log.info(f"Pre-cached {len(self._data_cache):,} "
                        f"total data items in {time.time() - ts:.3f}s.")

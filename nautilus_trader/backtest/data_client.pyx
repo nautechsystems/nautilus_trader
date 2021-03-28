@@ -23,17 +23,163 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class BacktestMarketDataClient(MarketDataClient):
+cdef class BacktestDataClient(DataClient):
     """
     Provides an implementation of `DataClient` for backtesting.
+    """
+
+    def __init__(
+        self,
+        str name not None,
+        DataEngine engine not None,
+        Clock clock not None,
+        Logger logger not None,
+        dict config=None,
+    ):
+        """
+        Initialize a new instance of the `BacktestDataClient` class.
+
+        Parameters
+        ----------
+        name : str
+            The data client name.
+        engine : DataEngine
+            The data engine to connect to the client.
+        clock : Clock
+            The clock for the component.
+        logger : Logger
+            The logger for the component.
+        config : dict[str, object], optional
+            The configuration options.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
+        """
+        super().__init__(
+            name,
+            engine,
+            clock,
+            logger,
+        )
+
+        self.is_connected = False
+
+    cpdef void connect(self) except *:
+        """
+        Connect the client.
+        """
+        self._log.info(f"Connecting...")
+
+        self.is_connected = True
+        self._log.info(f"Connected.")
+
+    cpdef void disconnect(self) except *:
+        """
+        Disconnect the client.
+        """
+        self._log.info(f"Disconnecting...")
+
+        self.is_connected = False
+        self._log.info(f"Disconnected.")
+
+    cpdef void reset(self) except *:
+        """
+        Reset the data client.
+
+        All stateful fields are reset to their initial value.
+        """
+        self._log.debug(f"Resetting...")
+
+        # Nothing to reset
+        self._log.info("Reset.")
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the data client.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
+        """
+        # Nothing to dispose
+        self._log.info(f"Disposed.")
+
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe(self, DataType data_type) except *:
+        """
+        Subscribe to the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type to subscribe to.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to {data_type} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe(self, DataType data_type) except *:
+        """
+        Unsubscribe from the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data_type to unsubscribe from.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from {data_type} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
+# -- REQUESTS --------------------------------------------------------------------------------------
+
+    cpdef void request(self, DataType data_type, UUID correlation_id) except *:
+        """
+        Request the given data type.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type to request.
+        correlation_id : UUID
+            The correlation identifier for the response.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot request {data_type} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
+
+cdef class BacktestMarketDataClient(MarketDataClient):
+    """
+    Provides an implementation of `MarketDataClient` for backtesting.
     """
 
     def __init__(
