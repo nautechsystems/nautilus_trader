@@ -25,13 +25,19 @@ from pandas import DatetimeIndex
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.backtest.data_client cimport BacktestDataClient
+from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
+
 from nautilus_trader.core.functions import get_size_of  # Not cimport
+
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 
 
 cdef class BacktestDataContainer:
@@ -43,15 +49,112 @@ cdef class BacktestDataContainer:
         """
         Initialize a new instance of the `BacktestDataContainer` class.
         """
-        self.venues = set()    # type: set[Venue]
-        self.instrument_ids = set()   # type: set[InstrumentId]
-        self.instruments = {}  # type: dict[InstrumentId, Instrument]
-        self.quote_ticks = {}  # type: dict[InstrumentId, pd.DataFrame]
-        self.trade_ticks = {}  # type: dict[InstrumentId, pd.DataFrame]
-        self.bars_bid = {}     # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
-        self.bars_ask = {}     # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self.clients = {}                 # type: dict[str, type]
+        self.generic_data = []            # type: list[GenericData]
+        self.order_book_snapshots = []    # type: list[OrderBookSnapshot]
+        self.order_book_operations = []   # type: list[OrderBookOperations]
+        self.instruments = {}             # type: dict[InstrumentId, Instrument]
+        self.quote_ticks = {}             # type: dict[InstrumentId, pd.DataFrame]
+        self.trade_ticks = {}             # type: dict[InstrumentId, pd.DataFrame]
+        self.bars_bid = {}                # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self.bars_ask = {}                # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
 
-    cpdef void add_instrument(self, Instrument instrument) except *:
+    def add_generic_data(self, str client_name, list data) -> None:
+        """
+        Add the generic data to the container.
+
+        Parameters
+        ----------
+        client_name : str
+            The data client name to associate with the generic data.
+        data : list[GenericData]
+            The data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+
+        """
+        Condition.not_none(client_name, "client_name")
+        Condition.not_none(data, "data")
+        Condition.not_empty(data, "data")
+        Condition.list_type(data, GenericData, "data")
+
+        # Add to clients to be constructed in backtest engine
+        if client_name not in self.clients:
+            self.clients[client_name] = BacktestDataClient
+
+        # Add data
+        cdef GenericData x
+        self.generic_data = sorted(
+            self.generic_data + data,
+            key=lambda x: x.timestamp_ns,
+        )
+
+    def add_order_book_snapshots(self, list snapshots) -> None:
+        """
+        Add the order book snapshots to the container.
+
+        Parameters
+        ----------
+        snapshots : list[OrderBookSnapshot]
+            The snapshots to add.
+
+        Raises
+        ------
+        ValueError
+            If snapshots is empty.
+
+        """
+        Condition.not_none(snapshots, "snapshots")
+        Condition.not_empty(snapshots, "snapshots")
+        Condition.list_type(snapshots, OrderBookSnapshot, "snapshots")
+
+        cdef str client_name = snapshots[0].instrument_id.venue.first()
+        # Add to clients to be constructed in backtest engine
+        if client_name not in self.clients:
+            self.clients[client_name] = BacktestMarketDataClient
+
+        # Add data
+        cdef OrderBookSnapshot x
+        self.order_book_snapshots = sorted(
+            self.order_book_snapshots + snapshots,
+            key=lambda x: x.timestamp_ns,
+        )
+
+    def add_order_operations_snapshots(self, list operations) -> None:
+        """
+        Add the order book operations to the container.
+
+        Parameters
+        ----------
+        operations : list[OrderBookOperations]
+            The operations to add.
+
+        Raises
+        ------
+        ValueError
+            If operations is empty.
+
+        """
+        Condition.not_none(operations, "operations")
+        Condition.not_empty(operations, "operations")
+        Condition.list_type(operations, OrderBookOperations, "operations")
+
+        cdef str client_name = operations[0].instrument_id.venue.first()
+        # Add to clients to be constructed in backtest engine
+        if client_name not in self.clients:
+            self.clients[client_name] = BacktestMarketDataClient
+
+        # Add data
+        cdef OrderBookOperations x
+        self.order_book_operations = sorted(
+            self.order_book_operations + operations,
+            key=lambda x: x.timestamp_ns,
+        )
+
+    def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the container.
 
@@ -63,11 +166,16 @@ cdef class BacktestDataContainer:
         """
         Condition.not_none(instrument, "instrument")
 
-        self.venues.add(instrument.venue)
+        # Add to clients to be constructed in backtest engine
+        cdef str client_name = instrument.venue.first()
+        if client_name not in self.clients:
+            self.clients[client_name] = BacktestMarketDataClient
+
+        # Add data
         self.instruments[instrument.id] = instrument
         self.instruments = dict(sorted(self.instruments.items()))
 
-    cpdef void add_quote_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) except *:
+    def add_quote_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
         """
         Add the quote tick data to the container.
 
@@ -83,16 +191,27 @@ cdef class BacktestDataContainer:
         data : pd.DataFrame
             The quote tick data to add.
 
+        Raises
+        ------
+        ValueError
+            If data is empty.
+
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
+        Condition.false(data.empty, "data was empty")
 
-        self.instrument_ids.add(instrument_id)
+        # Add to clients to be constructed in backtest engine
+        cdef str client_name = instrument_id.venue.first()
+        if client_name not in self.clients:
+            self.clients[client_name] = BacktestMarketDataClient
+
+        # Add data
         self.quote_ticks[instrument_id] = data
         self.quote_ticks = dict(sorted(self.quote_ticks.items()))
 
-    cpdef void add_trade_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) except *:
+    def add_trade_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
         """
         Add the trade tick data to the container.
 
@@ -109,25 +228,33 @@ cdef class BacktestDataContainer:
         data : pd.DataFrame
             The trade tick data to add.
 
-        Returns
-        -------
+        Raises
+        ------
+        ValueError
+            If data is empty.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
+        Condition.false(data.empty, "data was empty")
 
-        self.instrument_ids.add(instrument_id)
+        # Add to clients to be constructed in backtest engine
+        cdef str client_name = instrument_id.venue.first()
+        if client_name not in self.clients:
+            self.clients[client_name] = BacktestMarketDataClient
+
+        # Add data
         self.trade_ticks[instrument_id] = data
         self.trade_ticks = dict(sorted(self.trade_ticks.items()))
 
-    cpdef void add_bars(
+    def add_bars(
         self,
         InstrumentId instrument_id,
         BarAggregation aggregation,
         PriceType price_type,
         data: pd.DataFrame
-    ) except *:
+    ) -> None:
         """
         Add the bar data to the container.
 
@@ -142,28 +269,39 @@ cdef class BacktestDataContainer:
         data : pd.DataFrame
             The bar data to add.
 
+        Raises
+        ------
+        ValueError
+            If price_type is LAST.
+        ValueError
+            If data is empty.
+
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
         Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
+        Condition.false(data.empty, "data was empty")
 
-        self.instrument_ids.add(instrument_id)
+        # Add to clients to be constructed in backtest engine
+        cdef str client_name = instrument_id.venue.first()
+        if client_name not in self.clients:
+            self.clients[client_name] = BacktestMarketDataClient
 
+        # Add data
         if price_type == PriceType.BID:
             if instrument_id not in self.bars_bid:
                 self.bars_bid[instrument_id] = {}
                 self.bars_bid = dict(sorted(self.bars_bid.items()))
             self.bars_bid[instrument_id][aggregation] = data
             self.bars_bid[instrument_id] = dict(sorted(self.bars_bid[instrument_id].items()))
-
-        if price_type == PriceType.ASK:
+        elif price_type == PriceType.ASK:
             if instrument_id not in self.bars_ask:
                 self.bars_ask[instrument_id] = {}
                 self.bars_ask = dict(sorted(self.bars_ask.items()))
             self.bars_ask[instrument_id][aggregation] = data
             self.bars_ask[instrument_id] = dict(sorted(self.bars_ask[instrument_id].items()))
 
-    cpdef void check_integrity(self) except *:
+    def check_integrity(self) -> None:
         """
         Check the integrity of the data inside the container.
 
@@ -174,8 +312,7 @@ cdef class BacktestDataContainer:
 
         """
         # Check there is the needed instrument for each data instrument_id
-        for instrument_id in self.instrument_ids:
-            Condition.true(instrument_id in self.instruments, f"instrument_id not in self.instruments")
+        # TODO: Check added data have clients and instruments
 
         # Check that all bar DataFrames for each instrument_id are of the same shape and index
         cdef dict shapes = {}  # type: dict[BarAggregation, tuple]
@@ -197,7 +334,7 @@ cdef class BacktestDataContainer:
                 if not all(dataframe.index == indexs[aggregation]):
                     raise RuntimeError(f"{dataframe} bid ask index is not equal")
 
-    cpdef bint has_quote_data(self, InstrumentId instrument_id) except *:
+    def has_quote_data(self, InstrumentId instrument_id) -> bool:
         """
         Return a value indicating whether the container has quote data for the
         given instrument_id.
@@ -215,7 +352,7 @@ cdef class BacktestDataContainer:
         Condition.not_none(instrument_id, "instrument_id")
         return instrument_id in self.quote_ticks or instrument_id in self.bars_bid
 
-    cpdef bint has_trade_data(self, InstrumentId instrument_id) except *:
+    def has_trade_data(self, InstrumentId instrument_id) -> bool:
         """
         Return a value indicating whether the container has trade data for the
         given instrument identifier.
@@ -233,7 +370,7 @@ cdef class BacktestDataContainer:
         Condition.not_none(instrument_id, "instrument_id")
         return instrument_id in self.trade_ticks
 
-    cpdef int64_t total_data_size(self):
+    def total_data_size(self) -> int:
         """
         Return the total memory size of the data in the container.
 
@@ -244,6 +381,9 @@ cdef class BacktestDataContainer:
 
         """
         cdef int64_t size = 0
+        size += get_size_of(self.generic_data)
+        size += get_size_of(self.order_book_snapshots)
+        size += get_size_of(self.order_book_operations)
         size += get_size_of(self.quote_ticks)
         size += get_size_of(self.trade_ticks)
         size += get_size_of(self.bars_bid)

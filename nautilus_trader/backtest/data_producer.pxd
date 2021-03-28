@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.data.engine cimport DataEngine
@@ -41,11 +40,17 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef Clock _clock
     cdef LoggerAdapter _log
     cdef DataEngine _data_engine
-    cdef BacktestDataContainer _data
+
+    cdef dict _instruments
     cdef object _quote_tick_data
     cdef object _trade_tick_data
     cdef dict _instrument_index
     cdef bint _is_connected
+
+    cdef list _stream
+    cdef int _stream_index
+    cdef int _stream_index_last
+    cdef Data _next_data
 
     cdef unsigned short[:] _quote_instruments
     cdef str[:] _quote_bids
@@ -72,21 +77,22 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cpdef void clear(self) except *
     cpdef Data next(self)
 
-    cdef inline QuoteTick _generate_quote_tick(self, int index)
-    cdef inline TradeTick _generate_trade_tick(self, int index)
+    cdef inline void _iterate_stream(self) except *
     cdef inline void _iterate_quote_ticks(self) except *
     cdef inline void _iterate_trade_ticks(self) except *
+    cdef inline QuoteTick _generate_quote_tick(self, int index)
+    cdef inline TradeTick _generate_trade_tick(self, int index)
 
 
 cdef class CachedProducer(DataProducerFacade):
     cdef BacktestDataProducer _producer
     cdef LoggerAdapter _log
+    cdef list _timestamp_cache
     cdef list _data_cache
-    cdef list _ts_cache
-    cdef int _tick_index
-    cdef int _tick_index_last
-    cdef int _init_start_tick_index
-    cdef int _init_stop_tick_index
+    cdef int _data_index
+    cdef int _data_index_last
+    cdef int _init_start_data_index
+    cdef int _init_stop_data_index
 
     cpdef void reset(self) except *
     cpdef Data next(self)
