@@ -87,7 +87,7 @@ cdef class BacktestEngine:
         bint console_prints=True,
         bint log_thread=False,
         bint log_to_file=False,
-        str log_file_path not None="backtests/",
+        str log_file_dir not None="backtests/",
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -126,7 +126,7 @@ cdef class BacktestEngine:
             If log messages should log the thread.
         log_to_file : bool, optional
             If log messages should log to a file.
-        log_file_path : str, optional
+        log_file_dir : str, optional
             The name of the log file (cannot be None if log_to_file is True).
 
         Raises
@@ -138,7 +138,7 @@ cdef class BacktestEngine:
         TypeError
             If strategies contains a type other than TradingStrategy.
         ValueError
-            If log_to_file is True and log_file_path is None.
+            If log_to_file is True and log_file_dir is None.
 
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
@@ -171,7 +171,7 @@ cdef class BacktestEngine:
             console_prints=True,
             log_thread=log_thread,
             log_to_file=log_to_file,
-            log_file_path=log_file_path,
+            log_file_dir=log_file_dir,
         )
 
         self._log_to_file = log_to_file
@@ -187,7 +187,7 @@ cdef class BacktestEngine:
             console_prints=console_prints,
             log_thread=log_thread,
             log_to_file=log_to_file,
-            log_file_path=log_file_path,
+            log_file_dir=log_file_dir,
         )
 
         nautilus_header(self._log)
