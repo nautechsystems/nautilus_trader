@@ -295,6 +295,7 @@ cdef class BacktestEngine:
             risk_engine=self._risk_engine,
             clock=self._test_clock,
             logger=self._test_logger,
+            warn_no_strategies=False,
         )
 
         self._exchanges = {}
@@ -507,9 +508,11 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : datetime, optional
-            The start (UTC) for the backtest run. If None engine will run from the start of the data.
+            The start datetime (UTC) for the backtest run. If None engine will
+            run from the start of the data.
         stop : datetime, optional
-            The stop (UTC) for the backtest run. If None engine will run to the end of the data.
+            The stop datetime (UTC) for the backtest run. If None engine will
+            run to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).
         print_log_store : bool
@@ -568,7 +571,7 @@ cdef class BacktestEngine:
 
         # Setup new strategies
         if strategies is not None:
-            self.trader.initialize_strategies(strategies)
+            self.trader.initialize_strategies(strategies, warn_no_strategies=False)
 
         # Run the backtest
         self._log.info(f"Running backtest...")
