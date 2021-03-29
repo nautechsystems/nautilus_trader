@@ -50,6 +50,7 @@ cdef class Trader(Component):
         RiskEngine risk_engine not None,
         Clock clock not None,
         Logger logger not None,
+        bint warn_no_strategies=True,
     ):
         """
         Initialize a new instance of the `Trader` class.
@@ -72,6 +73,8 @@ cdef class Trader(Component):
             The clock for the trader.
         logger : Logger
             The logger for the trader.
+        warn_no_strategies : bool, optional
+            If the trader should warn if there are no strategies to initialize.
 
         Raises
         ------
@@ -101,7 +104,10 @@ cdef class Trader(Component):
         self.id = trader_id
         self.analyzer = PerformanceAnalyzer()
 
-        self.initialize_strategies(strategies)
+        self.initialize_strategies(
+            strategies=strategies,
+            warn_no_strategies=warn_no_strategies,
+        )
 
     cdef list strategies_c(self):
         return self._strategies
@@ -165,14 +171,20 @@ cdef class Trader(Component):
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void initialize_strategies(self, list strategies: [TradingStrategy]) except *:
+    cpdef void initialize_strategies(
+        self,
+        list strategies: [TradingStrategy],
+        bint warn_no_strategies,
+    ) except *:
         """
-        Change strategies with the given list of trading strategies.
+        Initialize the given strategies.
 
         Parameters
         ----------
         strategies : list[TradingStrategies]
             The strategies to load into the trader.
+        warn_no_strategies : bool
+            If the trader should warn if there are no strategies to initialize.
 
         Raises
         ------
@@ -188,11 +200,10 @@ cdef class Trader(Component):
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
-        if not strategies:
+        if warn_no_strategies and not strategies:
             self._log.warning(f"No strategies to initialize.")
-            return
-
-        self._log.info(f"Initializing strategies...")
+        else:
+            self._log.info(f"Initializing strategies...")
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:

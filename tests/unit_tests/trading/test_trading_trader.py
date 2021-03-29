@@ -168,7 +168,7 @@ class TraderTests(unittest.TestCase):
         ]
 
         # Act
-        self.trader.initialize_strategies(strategies)
+        self.trader.initialize_strategies(strategies, warn_no_strategies=True)
 
         # Assert
         self.assertTrue(strategies[0].id in self.trader.strategy_states())
@@ -183,7 +183,12 @@ class TraderTests(unittest.TestCase):
         ]
 
         # Act
-        self.assertRaises(ValueError, self.trader.initialize_strategies, strategies)
+        self.assertRaises(
+            ValueError,
+            self.trader.initialize_strategies,
+            strategies,
+            True,
+        )
 
     def test_start_a_trader(self):
         # Arrange
