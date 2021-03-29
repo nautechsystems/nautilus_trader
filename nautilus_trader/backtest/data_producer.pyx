@@ -417,32 +417,29 @@ cdef class BacktestDataProducer(DataProducerFacade):
         Data or None
 
         """
-        # Determine lowest timestamp
+        # Determine next data element
         cdef int64_t next_timestamp_ns = 0
         cdef int choice = 0
 
-        if self._next_data is not None:
-            next_timestamp_ns = self._next_data.timestamp_ns
-            choice = 1
-
         if self._next_quote_tick is not None:
-            if choice == 0 or self._next_quote_tick.timestamp_ns < next_timestamp_ns:
-                next_timestamp_ns = self._next_quote_tick.timestamp_ns
-                choice = 2
+            next_timestamp_ns = self._next_quote_tick.timestamp_ns
+            choice = 1
 
         if self._next_trade_tick is not None:
             if choice == 0 or self._next_trade_tick.timestamp_ns < next_timestamp_ns:
-                choice = 3
+                choice = 2
 
-        # Select lowest timestamp data
         cdef Data next_data = None
+        if self._next_data is not None:
+            if choice == 0 or self._next_data.timestamp_ns < next_timestamp_ns:
+                next_data = self._next_data
+                self._iterate_stream()
+                return next_data
+
         if choice == 1:
-            next_data = self._next_data
-            self._iterate_stream()
-        elif choice == 2:
             next_data = self._next_quote_tick
             self._iterate_quote_ticks()
-        elif choice == 3:
+        elif choice == 2:
             next_data = self._next_trade_tick
             self._iterate_trade_ticks()
 
