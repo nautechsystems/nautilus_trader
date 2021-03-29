@@ -108,7 +108,7 @@ cdef class LogMessage:
     """
     Represents a log message including timestamp and log level.
     """
-    def __cinit__(
+    def __init__(
         self,
         datetime timestamp not None,
         LogLevel level,
@@ -499,15 +499,17 @@ cdef class LoggerAdapter:
         LogColor color,
         str message,
     ) except *:
+        cdef:
+            LogMessage msg
         if not self.is_bypassed:
-            self._logger.log(LogMessage.__new__(
-                LogMessage,
+            msg = LogMessage(
                 self._logger.clock.utc_now(),
                 level,
                 color,
                 self._format_message(message),
-                threading.current_thread().ident),
+                threading.current_thread().ident,
             )
+            self._logger.log(msg)
 
     cdef inline str _format_message(self, str message):
         # Add the components name to the front of the log message
@@ -753,7 +755,6 @@ cdef class LiveLogger(Logger):
 
         """
         Condition.not_none(message, "message")
-        # Do not allow None through (None is a sentinel value which stops the queue)
 
         if self.is_running:
             try:
