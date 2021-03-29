@@ -6,10 +6,13 @@
 - None
 
 ## Enhancements
-- None
+- Refined LiveLogger: Now runs on event loop with high-performance `Queue`.
+- Improved flexibility of when strategies are added to a `BacktestEngine`.
+- Improved checks for `OrderId` equality when applying order events.
 
 ## Fixes
-- Removed `UNDEFINED` enum values.
+- Removed `UNDEFINED` enum values. Do not allow invalid values to be represented
+in the system (prefer throwing exceptions).
 
 ---
 
