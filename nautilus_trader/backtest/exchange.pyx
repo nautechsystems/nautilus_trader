@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -59,6 +60,9 @@ from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orderbook.book cimport L2OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport Tick
@@ -172,6 +176,7 @@ cdef class SimulatedExchange:
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
         self._slippages = self._get_tick_sizes()
+        self._books = {}                # type: dict[InstrumentId, L2OrderBook]
         self._market_bids = {}          # type: dict[InstrumentId, Price]
         self._market_asks = {}          # type: dict[InstrumentId, Price]
 
@@ -237,6 +242,73 @@ cdef class SimulatedExchange:
         """
         self.exec_client.handle_event(self._generate_account_event())
 
+    cpdef void process_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
+        """
+        Process the exchanges market for the given snapshot.
+
+        Parameters
+        ----------
+        snapshot : OrderBookSnapshot
+            The order book snapshot to process.
+
+        """
+        Condition.not_none(snapshot, "snapshot")
+
+        self._clock.set_time(snapshot.timestamp_ns)
+
+        cdef InstrumentId instrument_id = snapshot.instrument_id
+        cdef Instrument instrument = self.instruments[instrument_id]
+
+        # TODO: Confirm sorting order in snapshot?
+        cdef Price bid = Price(snapshot.bids[0], instrument.price_precision)
+        cdef Price ask = Price(snapshot.asks[0], instrument.price_precision)
+        self._market_bids[instrument_id] = bid
+        self._market_asks[instrument_id] = ask
+        # TODO: Assumption that neither bid or ask are None...
+
+        self._iterate_matching_engine(
+            instrument_id,
+            bid,
+            ask,
+            snapshot.timestamp_ns,
+        )
+
+    cpdef void process_order_book_operations(self, OrderBookOperations operations) except *:
+        """
+        Process the exchanges market for the given operations.
+
+        Parameters
+        ----------
+        operations : OrderBookOperations
+            The order book operations to process.
+
+        """
+        Condition.not_none(operations, "operations")
+
+        self._clock.set_time(operations.timestamp_ns)
+
+        cdef InstrumentId instrument_id = operations.instrument_id
+        cdef Instrument instrument = self.instruments[instrument_id]
+
+        cdef L2OrderBook order_book = self._books.get(instrument_id)
+        if order_book is None:
+            order_book = L2OrderBook(instrument_id=instrument_id)
+            self._books[instrument_id] = order_book
+
+        order_book.apply_operations(operations)
+
+        cdef Price bid = Price(order_book.best_bid_price(), instrument.price_precision)
+        cdef Price ask = Price(order_book.best_ask_price(), instrument.price_precision)
+        self._market_bids[instrument_id] = bid
+        self._market_asks[instrument_id] = ask
+
+        self._iterate_matching_engine(
+            instrument_id,
+            bid,
+            ask,
+            order_book.timestamp_ns,
+        )
+
     cpdef void process_tick(self, Tick tick) except *:
         """
         Process the exchanges market for the given tick.
@@ -280,20 +352,12 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError("not market data")  # Design-time error
 
-        cdef PassiveOrder order
-        for order in self._working_orders.copy().values():  # Copy dict for safe loop
-            if order.instrument_id != tick.instrument_id:
-                continue  # Order is for a different instrument_id
-            if not order.is_working_c():
-                continue  # Orders state has changed since the loop started
-
-            # Check for order match
-            self._match_order(order, bid, ask)
-
-            # Check for order expiry (if expire time then compare nanoseconds)
-            if order.expire_time and tick.timestamp_ns >= order.expire_time_ns:
-                self._working_orders.pop(order.cl_ord_id, None)
-                self._expire_order(order)
+        self._iterate_matching_engine(
+            tick.instrument_id,
+            bid,
+            ask,
+            tick.timestamp_ns,
+        )
 
     cpdef void process_modules(self, int64_t now_ns) except *:
         """
@@ -343,6 +407,7 @@ cdef class SimulatedExchange:
 
         self._generate_account_event()
 
+        self._books.clear()
         self._market_bids.clear()
         self._market_asks.clear()
         self._working_orders.clear()
@@ -862,6 +927,27 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(amended)
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
+
+    cdef inline void _iterate_matching_engine(
+        self, InstrumentId instrument_id,
+        Price bid,
+        Price ask,
+        int64_t timestamp_ns,
+    ) except *:
+        cdef PassiveOrder order
+        for order in self._working_orders.copy().values():  # Copy dict for safe loop
+            if order.instrument_id != instrument_id:
+                continue  # Order is for a different instrument_id
+            if not order.is_working_c():
+                continue  # Orders state has changed since the loop started
+
+            # Check for order match
+            self._match_order(order, bid, ask)
+
+            # Check for order expiry (if expire time then compare nanoseconds)
+            if order.expire_time and timestamp_ns >= order.expire_time_ns:
+                self._working_orders.pop(order.cl_ord_id, None)
+                self._expire_order(order)
 
     cdef inline void _match_order(self, PassiveOrder order, Price bid, Price ask) except *:
         if order.type == OrderType.LIMIT:
