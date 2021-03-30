@@ -128,7 +128,7 @@ cdef class StopMarketOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to STOP_MARKET.
+            If init.order_type is not equal to STOP_MARKET.
 
         """
         Condition.not_none(init, "init")

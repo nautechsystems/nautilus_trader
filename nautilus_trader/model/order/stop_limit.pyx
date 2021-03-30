@@ -165,7 +165,7 @@ cdef class StopLimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to STOP_LIMIT.
+            If init.order_type is not equal to STOP_LIMIT.
 
         """
         Condition.not_none(init, "init")
