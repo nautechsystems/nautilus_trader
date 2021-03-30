@@ -89,9 +89,9 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
 ## Documentation
 
-The documentation for the latest version of the package is available at _readthedocs_.
+The documentation for the latest version of the package can be found at:
 
-> https://nautilus-trader.readthedocs.io
+> https://docs.nautilus-trader.io
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
 
