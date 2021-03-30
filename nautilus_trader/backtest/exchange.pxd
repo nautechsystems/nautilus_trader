@@ -46,6 +46,8 @@ from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
@@ -77,6 +79,7 @@ cdef class SimulatedExchange:
     cdef readonly dict instruments
     cdef readonly dict data_ticks
 
+    cdef dict _books
     cdef dict _market_bids
     cdef dict _market_asks
     cdef dict _slippages
@@ -95,6 +98,8 @@ cdef class SimulatedExchange:
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
+    cpdef void process_order_book_operations(self, OrderBookOperations operations) except *
+    cpdef void process_order_book_snapshot(self, OrderBookSnapshot snapshot) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_modules(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
@@ -144,6 +149,7 @@ cdef class SimulatedExchange:
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
+    cdef inline void _iterate_matching_engine(self, InstrumentId instrument_id, Price bid, Price ask, int64_t timestamp_ns) except *
     cdef inline void _match_order(self, PassiveOrder order, Price bid, Price ask) except *
     cdef inline void _match_limit_order(self, LimitOrder order, Price bid, Price ask) except *
     cdef inline void _match_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *

@@ -54,6 +54,8 @@ from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.risk.engine cimport RiskEngine
@@ -592,7 +594,11 @@ cdef class BacktestEngine:
         while self._data_producer.has_data:
             data = self._data_producer.next()
             self._advance_time(data.timestamp_ns)
-            if isinstance(data, Tick):
+            if isinstance(data, OrderBookOperations):
+                self._exchanges[data.instrument_id.venue].process_order_book_operations(data)
+            elif isinstance(data, OrderBookSnapshot):
+                self._exchanges[data.instrument_id.venue].process_order_book_snapshot(data)
+            elif isinstance(data, Tick):
                 self._exchanges[data.venue].process_tick(data)
             self._data_engine.process(data)
             self._process_modules(data.timestamp_ns)
