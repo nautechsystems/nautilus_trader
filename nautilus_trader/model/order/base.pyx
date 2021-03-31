@@ -82,7 +82,7 @@ cdef dict _ORDER_STATE_TABLE = {
 }
 
 # Valid states to amend an order in
-cdef tuple _AMENDING_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
+cdef (int, int) _AMENDING_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
 
 
 cdef class Order:
