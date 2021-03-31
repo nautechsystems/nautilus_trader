@@ -114,8 +114,6 @@ cdef class BulkTickBarBuilder:
     cdef object callback
     cdef list bars
 
-    cpdef void _add_bar(self, Bar bar) except *
-
 
 cdef class BulkTimeBarUpdater:
     cdef TimeBarAggregator aggregator
