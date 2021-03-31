@@ -17,9 +17,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -27,10 +25,6 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Tick(Data):
     cdef readonly InstrumentId instrument_id
     """The tick instrument identifier.\n\n:returns: `InstrumentId`"""
-    cdef readonly Symbol symbol
-    """The tick symbol.\n\n:returns: `Symbol`"""
-    cdef readonly Venue venue
-    """The tick venue.\n\n:returns: `Venue`"""
 
 
 cdef class QuoteTick(Tick):

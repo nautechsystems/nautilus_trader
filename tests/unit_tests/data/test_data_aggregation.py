@@ -55,8 +55,6 @@ class BarBuilderTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(bar_type, builder.bar_type)
-        self.assertEqual(bar_type.spec, builder.bar_spec)
         self.assertFalse(builder.use_previous_close)
         self.assertFalse(builder.initialized)
         self.assertEqual(0, builder.last_timestamp_ns)
@@ -1124,7 +1122,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         self.wrangler.pre_process(0)
 
         bar_store = ObjectStorer()
-        handler = bar_store.store_2
+        handler = bar_store.store
         instrument_id = TestStubs.usdjpy_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
@@ -1139,4 +1137,4 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         builder.receive(ticks)
 
         # Assert
-        self.assertEqual(333, len(bar_store.get_store()[0][1]))
+        self.assertEqual(333, len(bar_store.get_store()[0]))

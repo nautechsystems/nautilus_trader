@@ -21,7 +21,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -30,10 +29,8 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class BarBuilder:
-    cdef readonly BarType bar_type
-    """The builders bar type.\n\n:returns: `BarType`"""
-    cdef readonly BarSpecification bar_spec
-    """The builders bar specification.\n\n:returns: `BarSpecification`"""
+    cdef BarType _bar_type
+
     cdef readonly bint use_previous_close
     """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
     cdef readonly bint initialized

@@ -54,8 +54,8 @@ cdef class BarBuilder:
             If the previous close price should set the open price of a new bar.
 
         """
-        self.bar_type = bar_type
-        self.bar_spec = bar_type.spec
+        self._bar_type = bar_type
+
         self.use_previous_close = use_previous_close
         self.initialized = False
         self.last_timestamp_ns = 0
@@ -71,7 +71,7 @@ cdef class BarBuilder:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"{self.bar_type},"
+                f"{self._bar_type},"
                 f"{self._open},"
                 f"{self._high},"
                 f"{self._low},"
@@ -200,7 +200,7 @@ cdef class BarBuilder:
             self._close = self._last_close
 
         cdef Bar bar = Bar(
-            bar_type=self.bar_type,
+            bar_type=self._bar_type,
             open_price=self._open,
             high_price=self._high,
             low_price=self._low,
@@ -262,8 +262,8 @@ cdef class BarAggregator:
         Condition.not_none(tick, "tick")
 
         self._apply_update(
-            price=tick.extract_price(self._builder.bar_spec.price_type),
-            size=tick.extract_volume(self._builder.bar_spec.price_type),
+            price=tick.extract_price(self.bar_type.spec.price_type),
+            size=tick.extract_volume(self.bar_type.spec.price_type),
             timestamp_ns=tick.timestamp_ns,
         )
 
@@ -730,7 +730,7 @@ cdef class BulkTickBarBuilder:
             for i in range(len(ticks)):
                 self.aggregator.handle_quote_tick(ticks[i])
 
-        self.callback(self.aggregator.bar_type, self.bars)
+        self.callback(self.bars)
 
     cpdef void _add_bar(self, Bar bar) except *:
         self.bars.append(bar)

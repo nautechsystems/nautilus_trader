@@ -599,7 +599,7 @@ cdef class BacktestEngine:
             elif isinstance(data, OrderBookSnapshot):
                 self._exchanges[data.instrument_id.venue].process_order_book_snapshot(data)
             elif isinstance(data, Tick):
-                self._exchanges[data.venue].process_tick(data)
+                self._exchanges[data.instrument_id.venue].process_tick(data)
             self._data_engine.process(data)
             self._process_modules(data.timestamp_ns)
             self.iteration += 1
