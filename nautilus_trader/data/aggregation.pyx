@@ -706,7 +706,7 @@ cdef class BulkTickBarBuilder:
         Condition.callable(callback, "callback")
 
         self.bars = []
-        self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
+        self.aggregator = TickBarAggregator(bar_type, self.bars.append, logger)
         self.callback = callback
 
     def receive(self, list ticks):
@@ -731,9 +731,6 @@ cdef class BulkTickBarBuilder:
                 self.aggregator.handle_quote_tick(ticks[i])
 
         self.callback(self.bars)
-
-    cpdef void _add_bar(self, Bar bar) except *:
-        self.bars.append(bar)
 
 
 cdef class BulkTimeBarUpdater:
