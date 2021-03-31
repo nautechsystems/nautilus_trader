@@ -890,7 +890,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
-            client_name=bar_type.venue.value,
+            client_name=bar_type.instrument_id.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
@@ -1038,7 +1038,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            client_name=bar_type.venue.value,
+            client_name=bar_type.instrument_id.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
@@ -1198,7 +1198,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            client_name=bar_type.venue.value,
+            client_name=bar_type.instrument_id.venue.value,
             data_type=DataType(Bar, metadata={
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: from_datetime,
