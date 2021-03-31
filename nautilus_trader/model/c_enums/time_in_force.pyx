@@ -26,6 +26,8 @@ cdef class TimeInForceParser:
         elif value == 4:
             return "FOK"
         elif value == 5:
+            return "FAK"
+        elif value == 6:
             return "GTD"
         else:
             raise ValueError(f"value was invalid, was {value}")
@@ -40,6 +42,8 @@ cdef class TimeInForceParser:
             return TimeInForce.IOC
         elif value == "FOK":
             return TimeInForce.FOK
+        elif value == "FAK":
+            return TimeInForce.FAK
         elif value == "GTD":
             return TimeInForce.GTD
         else:
