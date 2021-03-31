@@ -16,10 +16,11 @@
 
 cpdef enum TimeInForce:
     DAY = 1,
-    GTC = 2,
-    IOC = 3,
-    FOK = 4,
-    GTD = 5,
+    GTC = 2,  # Good till Canceled
+    IOC = 3,  # Immediate or Cancel
+    FOK = 4,  # Fill or Kill
+    FAK = 5,  # Fill and Kill
+    GTD = 6,  # Good till Date
 
 
 cdef class TimeInForceParser:
