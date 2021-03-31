@@ -18,7 +18,6 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -32,6 +31,7 @@ cdef class DataProducerFacade:
     cdef readonly int64_t max_timestamp_ns
     cdef readonly bint has_data
 
+    cpdef list instruments(self)
     cpdef void reset(self) except *
     cpdef Data next(self)
 
@@ -39,9 +39,8 @@ cdef class DataProducerFacade:
 cdef class BacktestDataProducer(DataProducerFacade):
     cdef Clock _clock
     cdef LoggerAdapter _log
-    cdef DataEngine _data_engine
 
-    cdef dict _instruments
+    cdef list _instruments
     cdef object _quote_tick_data
     cdef object _trade_tick_data
     cdef dict _instrument_index
