@@ -15,7 +15,6 @@
 
 
 cpdef enum BarAggregation:
-    UNDEFINED = 0,  # Invalid value
     TICK = 1,
     TICK_IMBALANCE = 2,
     TICK_RUNS = 3,
@@ -37,4 +36,4 @@ cdef class BarAggregationParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef BarAggregation from_str(str value)
+    cdef BarAggregation from_str(str value) except *

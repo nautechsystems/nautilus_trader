@@ -26,10 +26,10 @@ cdef class OrderTypeParser:
         elif value == 4:
             return "STOP_LIMIT"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderType from_str(str value):
+    cdef OrderType from_str(str value) except *:
         if value == "MARKET":
             return OrderType.MARKET
         elif value == "LIMIT":
@@ -39,7 +39,7 @@ cdef class OrderTypeParser:
         elif value == "STOP_LIMIT":
             return OrderType.STOP_LIMIT
         else:
-            return OrderType.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

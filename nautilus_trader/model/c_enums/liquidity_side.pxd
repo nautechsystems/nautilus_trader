@@ -26,4 +26,4 @@ cdef class LiquiditySideParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef LiquiditySide from_str(str value)
+    cdef LiquiditySide from_str(str value) except *

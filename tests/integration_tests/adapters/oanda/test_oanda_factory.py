@@ -36,7 +36,10 @@ class TestOandaDataClientFactory:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        self.logger = LiveLogger(self.clock)
+        self.logger = LiveLogger(
+            loop=self.loop,
+            clock=self.clock,
+        )
 
         self.portfolio = Portfolio(
             clock=self.clock,

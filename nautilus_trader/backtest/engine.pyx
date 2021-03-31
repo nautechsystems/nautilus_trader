@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# cython: always_allow_keywords=False
+
 import pytz
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
+from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
@@ -51,6 +54,8 @@ from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.risk.engine cimport RiskEngine
@@ -84,7 +89,7 @@ cdef class BacktestEngine:
         bint console_prints=True,
         bint log_thread=False,
         bint log_to_file=False,
-        str log_file_path not None="backtests/",
+        str log_file_dir not None="backtests/",
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -123,7 +128,7 @@ cdef class BacktestEngine:
             If log messages should log the thread.
         log_to_file : bool, optional
             If log messages should log to a file.
-        log_file_path : str, optional
+        log_file_dir : str, optional
             The name of the log file (cannot be None if log_to_file is True).
 
         Raises
@@ -135,7 +140,7 @@ cdef class BacktestEngine:
         TypeError
             If strategies contains a type other than TradingStrategy.
         ValueError
-            If log_to_file is True and log_file_path is None.
+            If log_to_file is True and log_file_dir is None.
 
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
@@ -168,7 +173,7 @@ cdef class BacktestEngine:
             console_prints=True,
             log_thread=log_thread,
             log_to_file=log_to_file,
-            log_file_path=log_file_path,
+            log_file_dir=log_file_dir,
         )
 
         self._log_to_file = log_to_file
@@ -184,7 +189,7 @@ cdef class BacktestEngine:
             console_prints=console_prints,
             log_thread=log_thread,
             log_to_file=log_to_file,
-            log_file_path=log_file_path,
+            log_file_dir=log_file_dir,
         )
 
         nautilus_header(self._log)
@@ -240,22 +245,30 @@ cdef class BacktestEngine:
         if use_data_cache:
             self._data_producer = CachedProducer(self._data_producer)
 
-        # Create data client per venue
-        for venue in data.venues:
-            instruments = []
-            for instrument in data.instruments.values():
-                if instrument.venue == venue:
-                    instruments.append(instrument)
+        # Create data clients
+        for name, client_type in data.clients.items():
+            if client_type == BacktestDataClient:
+                data_client = BacktestDataClient(
+                    name=name,
+                    engine=self._data_engine,
+                    clock=self._test_clock,
+                    logger=self._test_logger,
+                )
+            elif client_type == BacktestMarketDataClient:
+                instruments = []
+                for instrument in data.instruments.values():
+                    if instrument.venue.first() == name:
+                        instruments.append(instrument)
 
-            data_client = BacktestMarketDataClient(
-                instruments=instruments,
-                name=venue.value,
-                engine=self._data_engine,
-                clock=self._test_clock,
-                logger=self._test_logger,
-            )
+                data_client = BacktestMarketDataClient(
+                    instruments=instruments,
+                    name=name,
+                    engine=self._data_engine,
+                    clock=self._test_clock,
+                    logger=self._test_logger,
+                )
 
-            self._data_engine.register_client(data_client)
+                self._data_engine.register_client(data_client)
 
         self._exec_engine = ExecutionEngine(
             database=exec_db,
@@ -284,6 +297,7 @@ cdef class BacktestEngine:
             risk_engine=self._risk_engine,
             clock=self._test_clock,
             logger=self._test_logger,
+            warn_no_strategies=False,
         )
 
         self._exchanges = {}
@@ -343,8 +357,6 @@ cdef class BacktestEngine:
         ------
         ValueError
             If an exchange of venue is already registered with the engine.
-        ValueError
-            If oms_type is UNDEFINED.
 
         """
         if modules is None:
@@ -353,7 +365,6 @@ cdef class BacktestEngine:
             fill_model = FillModel()
         Condition.not_none(venue, "venue")
         Condition.not_in(venue, self._exchanges, "venue", "self._exchanges")
-        Condition.not_equal(oms_type, OMSType.UNDEFINED, "oms_type", "UNDEFINED")
         Condition.not_none(starting_balances, "starting_balances")
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules")
@@ -499,9 +510,11 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : datetime, optional
-            The start (UTC) for the backtest run. If None engine will run from the start of the data.
+            The start datetime (UTC) for the backtest run. If None engine will
+            run from the start of the data.
         stop : datetime, optional
-            The stop (UTC) for the backtest run. If None engine will run to the end of the data.
+            The stop datetime (UTC) for the backtest run. If None engine will
+            run to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).
         print_log_store : bool
@@ -553,20 +566,20 @@ cdef class BacktestEngine:
         cdef int64_t stop_ns = dt_to_unix_nanos(stop)
 
         # Setup clocks
-        self._test_clock.set_time(to_time_ns=start_ns)
+        self._test_clock.set_time(start_ns)
 
         # Setup data
         self._data_producer.setup(start_ns=start_ns, stop_ns=stop_ns)
 
         # Setup new strategies
         if strategies is not None:
-            self.trader.initialize_strategies(strategies)
+            self.trader.initialize_strategies(strategies, warn_no_strategies=False)
 
         # Run the backtest
         self._log.info(f"Running backtest...")
 
         for strategy in self.trader.strategies_c():
-            strategy.clock.set_time(to_time_ns=start_ns)
+            strategy.clock.set_time(start_ns)
 
         for exchange in self._exchanges.values():
             exchange.initialize_account()
@@ -580,11 +593,15 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            self._advance_time(now_ns=data.timestamp_ns)
-            if isinstance(data, Tick):
+            self._advance_time(data.timestamp_ns)
+            if isinstance(data, OrderBookOperations):
+                self._exchanges[data.instrument_id.venue].process_order_book_operations(data)
+            elif isinstance(data, OrderBookSnapshot):
+                self._exchanges[data.instrument_id.venue].process_order_book_snapshot(data)
+            elif isinstance(data, Tick):
                 self._exchanges[data.venue].process_tick(data)
             self._data_engine.process(data)
-            self._process_modules(now_ns=data.timestamp_ns)
+            self._process_modules(data.timestamp_ns)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -599,11 +616,11 @@ cdef class BacktestEngine:
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
         for strategy in self.trader.strategies_c():
-            time_events += strategy.clock.advance_time(to_time_ns=now_ns)
+            time_events += strategy.clock.advance_time(now_ns)
         for event_handler in sorted(time_events):
-            self._test_clock.set_time(to_time_ns=event_handler.event.event_timestamp_ns)
+            self._test_clock.set_time(event_handler.event.event_timestamp_ns)
             event_handler.handle()
-        self._test_clock.set_time(to_time_ns=now_ns)
+        self._test_clock.set_time(now_ns)
 
     cdef inline void _process_modules(self, int64_t now_ns) except *:
         cdef SimulatedExchange exchange

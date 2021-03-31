@@ -156,10 +156,10 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order)
 
-        order.apply(event=TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_submitted(order))
         self.database.update_order(order)
 
-        order.apply(event=TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_accepted(order))
 
         # Act
         self.database.update_order(order)
@@ -177,10 +177,10 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.database.add_order(order)
 
-        order.apply(event=TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_submitted(order))
         self.database.update_order(order)
 
-        order.apply(event=TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_accepted(order))
         self.database.update_order(order)
 
         fill = TestStubs.event_order_filled(
@@ -189,7 +189,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             last_px=Price("1.00001"),
         )
 
-        order.apply(event=fill)
+        order.apply(fill)
 
         # Act
         self.database.update_order(order)
@@ -252,7 +252,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order2.apply(filled)
         self.database.update_order(order2)
 
-        position.apply(fill=filled)
+        position.apply(filled)
 
         # Act
         self.database.update_position(position)

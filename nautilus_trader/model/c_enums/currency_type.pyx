@@ -22,16 +22,16 @@ cdef class CurrencyTypeParser:
         elif value == 2:
             return "FIAT"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef CurrencyType from_str(str value):
+    cdef CurrencyType from_str(str value) except *:
         if value == "CRYPTO":
             return CurrencyType.CRYPTO
         elif value == "FIAT":
             return CurrencyType.FIAT
         else:
-            return CurrencyType.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

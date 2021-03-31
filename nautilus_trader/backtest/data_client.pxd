@@ -13,7 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
+
+
+cdef class BacktestDataClient(DataClient):
+    cdef bint _is_connected
 
 
 cdef class BacktestMarketDataClient(MarketDataClient):

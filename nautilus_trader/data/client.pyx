@@ -143,7 +143,7 @@ cdef class DataClient:
 
     cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            provider=self.name,
+            client_name=self.name,
             data_type=data.data_type,
             data=data,
             correlation_id=correlation_id,
@@ -338,7 +338,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            provider=self.name,
+            client_name=self.name,
             data_type=DataType(Instrument),
             data=instruments,
             correlation_id=correlation_id,
@@ -350,7 +350,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            provider=self.name,
+            client_name=self.name,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -362,7 +362,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            provider=self.name,
+            client_name=self.name,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -374,7 +374,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            provider=self.name,
+            client_name=self.name,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,

@@ -1,3 +1,21 @@
+# NautilusTrader 1.113.0 Beta - Release Notes
+
+
+
+## Breaking Changes
+- None
+
+## Enhancements
+- Refined LiveLogger: Now runs on event loop with high-performance `Queue`.
+- Improved flexibility of when strategies are added to a `BacktestEngine`.
+- Improved checks for `OrderId` equality when applying order events.
+
+## Fixes
+- Removed `UNDEFINED` enum values. Do not allow invalid values to be represented
+in the system (prefer throwing exceptions).
+
+---
+
 # NautilusTrader 1.112.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**

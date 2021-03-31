@@ -35,7 +35,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         int fast_period,
         int slow_period,
         ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-        PriceType price_type=PriceType.UNDEFINED,
+        PriceType price_type=PriceType.LAST,
     ):
         """
         Initialize a new instance of the `MovingAverageConvergenceDivergence` class.

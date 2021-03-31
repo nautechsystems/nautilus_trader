@@ -87,6 +87,8 @@ cdef class OrderBook:
             return L2OrderBook(instrument_id)
         elif level == OrderBookLevel.L2:
             return L3OrderBook(instrument_id)
+        else:
+            raise RuntimeError(f"level was invalid, was {level} (must be in range [1, 3])")
 
     cpdef void add(self, Order order) except *:
         """

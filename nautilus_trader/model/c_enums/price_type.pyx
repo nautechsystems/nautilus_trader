@@ -26,10 +26,10 @@ cdef class PriceTypeParser:
         elif value == 4:
             return "LAST"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef PriceType from_str(str value):
+    cdef PriceType from_str(str value) except *:
         if value == "BID":
             return PriceType.BID
         elif value == "ASK":
@@ -39,7 +39,7 @@ cdef class PriceTypeParser:
         elif value == "LAST":
             return PriceType.LAST
         else:
-            return PriceType.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

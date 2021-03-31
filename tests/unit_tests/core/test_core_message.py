@@ -108,7 +108,6 @@ class TestMessage:
     @pytest.mark.parametrize(
         "msg_type, expected",
         [
-            [MessageType.UNDEFINED, "UNDEFINED"],
             [MessageType.STRING, "STRING"],
             [MessageType.COMMAND, "COMMAND"],
             [MessageType.DOCUMENT, "DOCUMENT"],
@@ -128,7 +127,6 @@ class TestMessage:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["UNDEFINED", MessageType.UNDEFINED],
             ["STRING", MessageType.STRING],
             ["COMMAND", MessageType.COMMAND],
             ["DOCUMENT", MessageType.DOCUMENT],

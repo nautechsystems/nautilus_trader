@@ -247,14 +247,7 @@ cdef class TradeTick(Tick):
         timestamp_ns : int64
             The Unix timestamp (nanos) of the tick.
 
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED.
-
         """
-        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
-
         super().__init__(instrument_id, timestamp_ns)
 
         self.price = price

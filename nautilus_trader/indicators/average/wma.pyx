@@ -34,7 +34,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         self,
         int period,
         weights=None,
-        PriceType price_type=PriceType.UNDEFINED,
+        PriceType price_type=PriceType.LAST,
     ):
         """
         Initialize a new instance of the `SimpleMovingAverage` class.

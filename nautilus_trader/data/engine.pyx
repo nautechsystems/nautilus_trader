@@ -18,8 +18,8 @@ The `DataEngine` is the central component of the entire data stack.
 
 The data engines primary responsibility is to orchestrate interactions between
 the `DataClient` instances, and the rest of the platform. This includes sending
-requests to, and receiving responses from, the particular data provider endpoints
-via its registered data clients.
+requests to, and receiving responses from, data endpoints via its registered
+data clients.
 
 Beneath it sits a `DataCache` which presents a read-only facade for consumers.
 The engine employs a simple fan-in fan-out messaging pattern to execute
@@ -432,10 +432,10 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef DataClient client = self._clients.get(command.provider)
+        cdef DataClient client = self._clients.get(command.client_name)
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"(no client registered for '{command.provider}') {command}.")
+                            f"(no client registered for '{command.client_name}') {command}.")
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
@@ -599,6 +599,7 @@ cdef class DataEngine(Component):
                 instrument_id=instrument_id,
                 level=metadata[LEVEL],
             )
+
             self.cache.add_order_book(order_book)
 
         # Always re-subscribe to override previous settings
@@ -909,10 +910,10 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{REQ} {request}.")
         self.request_count += 1
 
-        cdef DataClient client = self._clients.get(request.provider)
+        cdef DataClient client = self._clients.get(request.client_name)
         if client is None:
             self._log.error(f"Cannot handle request: "
-                            f"no client registered for '{request.provider}', {request}.")
+                            f"no client registered for '{request.client_name}', {request}.")
             return  # No client to handle request
 
         if request.id in self._correlation_index:
@@ -1232,7 +1233,7 @@ cdef class DataEngine(Component):
         # noinspection bulk_updater.receive
         # noinspection PyUnresolvedReferences
         request = DataRequest(
-            provider=bar_type.venue.value,
+            client_name=bar_type.venue.value,
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),

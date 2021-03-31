@@ -289,9 +289,12 @@ cdef class Position:
 
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *:
-        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
-
-        return PositionSide.LONG if side == OrderSide.BUY else PositionSide.SHORT
+        if side == OrderSide.BUY:
+            return PositionSide.LONG
+        elif side == OrderSide.SELL:
+            return PositionSide.SHORT
+        else:
+            raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
     def side_from_order_side(OrderSide side):
@@ -306,11 +309,6 @@ cdef class Position:
         Returns
         -------
         PositionSide (Enum)
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED.
 
         """
         return Position.side_from_order_side_c(side)

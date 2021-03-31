@@ -58,13 +58,10 @@ class PositionTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-    def test_side_from_order_side_given_undefined_raises_value_error(self):
+    def test_side_from_order_side_given_invalid_value_returns_none(self):
         # Arrange
         # Act
-        # Assert
-        self.assertRaises(
-            ValueError, Position.side_from_order_side, OrderSide.UNDEFINED
-        )
+        self.assertRaises(ValueError, Position.side_from_order_side, 0)
 
     @parameterized.expand(
         [
@@ -117,7 +114,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
-        self.assertEqual([OrderId.null()], position.order_ids)
+        self.assertEqual([OrderId("1")], position.order_ids)
         self.assertEqual(
             [ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids
         )
@@ -268,7 +265,7 @@ class PositionTests(unittest.TestCase):
         last = Price("1.00050")
 
         # Act
-        position.apply(fill=fill2)
+        position.apply(fill2)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
@@ -337,7 +334,7 @@ class PositionTests(unittest.TestCase):
         last = Price("1.00050")
 
         # Act
-        position.apply(fill=fill2)
+        position.apply(fill2)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -410,8 +407,8 @@ class PositionTests(unittest.TestCase):
         last = Price("1.00050")
 
         # Act
-        position.apply(fill=fill2)
-        position.apply(fill=fill3)
+        position.apply(fill2)
+        position.apply(fill3)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -468,7 +465,7 @@ class PositionTests(unittest.TestCase):
         last = Price("1.00050")
 
         # Act
-        position.apply(fill=fill2)
+        position.apply(fill2)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -550,8 +547,8 @@ class PositionTests(unittest.TestCase):
 
         # Act
         position = Position(fill=fill1)
-        position.apply(fill=fill2)
-        position.apply(fill=fill3)
+        position.apply(fill2)
+        position.apply(fill3)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -626,7 +623,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price(99),
         )
 
-        position.apply(fill=fill2)
+        position.apply(fill2)
         self.assertEqual(Quantity(29), position.quantity)
         self.assertEqual(Money("-2.88300000", USDT), position.realized_pnl)
         self.assertEqual(Decimal("99.41379310344827586206896552"), position.avg_px_open)
@@ -639,7 +636,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price(101),
         )
 
-        position.apply(fill=fill3)
+        position.apply(fill3)
         self.assertEqual(Quantity(20), position.quantity)
         self.assertEqual(Money("10.48386207", USDT), position.realized_pnl)
         self.assertEqual(Decimal("99.41379310344827586206896552"), position.avg_px_open)
@@ -652,7 +649,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price(105),
         )
 
-        position.apply(fill=fill4)
+        position.apply(fill4)
         self.assertEqual(Quantity(16), position.quantity)
         self.assertEqual(Money("32.40868966", USDT), position.realized_pnl)
         self.assertEqual(Decimal("99.41379310344827586206896552"), position.avg_px_open)
@@ -665,7 +662,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price(103),
         )
 
-        position.apply(fill=fill5)
+        position.apply(fill5)
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money("32.09968966", USDT), position.realized_pnl)
         self.assertEqual(Decimal("99.98003629764065335753176042"), position.avg_px_open)
@@ -723,7 +720,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price("9999.00"),
         )
 
-        position.apply(fill=fill2)
+        position.apply(fill2)
         self.assertEqual(Quantity("29.000000"), position.quantity)
         self.assertEqual(Money("-289.98300000", USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.413793103448275862068966"), position.avg_px_open)
@@ -736,7 +733,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price("10001.00"),
         )
 
-        position.apply(fill=fill3)
+        position.apply(fill3)
         self.assertEqual(Quantity(20), position.quantity)
         self.assertEqual(Money("-365.71613793", USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.413793103448275862068966"), position.avg_px_open)
@@ -749,7 +746,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price("10003.00"),
         )
 
-        position.apply(fill=fill4)
+        position.apply(fill4)
         self.assertEqual(Quantity(23), position.quantity)
         self.assertEqual(Money("-395.72513793", USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_px_open)
@@ -762,7 +759,7 @@ class PositionTests(unittest.TestCase):
             last_px=Price("10005"),
         )
 
-        position.apply(fill=fill5)
+        position.apply(fill5)
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money("-415.27137481", USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_px_open)
@@ -1037,7 +1034,7 @@ class PositionTests(unittest.TestCase):
         )
 
         position = Position(fill=fill1)
-        position.apply(fill=fill2)
+        position.apply(fill2)
 
         # Act
         pnl = position.unrealized_pnl(Price("11505.60"))

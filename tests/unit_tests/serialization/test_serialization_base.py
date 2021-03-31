@@ -70,7 +70,7 @@ class SerializationBaseTests(unittest.TestCase):
     def test_command_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         command = Subscribe(
-            provider="SIM",
+            client_name="SIM",
             data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=uuid4(),

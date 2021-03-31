@@ -15,7 +15,6 @@
 
 
 cpdef enum AggressorSide:
-    UNDEFINED = 0,  # Invalid value
     BUY = 1,
     SELL = 2,
 
@@ -26,4 +25,4 @@ cdef class AggressorSideParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef AggressorSide from_str(str value)
+    cdef AggressorSide from_str(str value) except *

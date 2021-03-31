@@ -40,7 +40,7 @@ cdef class Trader(Component):
     cdef list strategies_c(self)
 
     cpdef list strategy_ids(self)
-    cpdef void initialize_strategies(self, list strategies) except *
+    cpdef void initialize_strategies(self, list strategies, bint warn_no_strategies) except *
     cpdef void start(self) except *
     cpdef void stop(self) except *
     cpdef void check_residuals(self) except *

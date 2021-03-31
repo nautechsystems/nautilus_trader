@@ -57,14 +57,11 @@ cdef class Currency:
             If precision is negative (< 0).
         ValueError
             If name is not a valid string.
-        ValueError
-            If currency_type is UNDEFINED.
 
         """
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
         Condition.not_negative_int(precision, "precision")
-        Condition.not_equal(currency_type, CurrencyType.UNDEFINED, "currency_type", "UNDEFINED")
 
         self.code = code
         self.name = name

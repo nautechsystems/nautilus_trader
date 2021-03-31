@@ -26,4 +26,4 @@ cdef class LimitOrder(PassiveOrder):
     """If the order is hidden from the public book.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef LimitOrder create(OrderInitialized event)
+    cdef LimitOrder create(OrderInitialized init)

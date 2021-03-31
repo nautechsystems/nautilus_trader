@@ -101,7 +101,7 @@ class QuoteTickTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, tick.extract_price, PriceType.UNDEFINED)
+        self.assertRaises(ValueError, tick.extract_price, 0)
 
     def test_extract_price_with_various_price_types_returns_expected_values(self):
         # Arrange
@@ -137,7 +137,7 @@ class QuoteTickTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, tick.extract_volume, PriceType.UNDEFINED)
+        self.assertRaises(ValueError, tick.extract_volume, 0)
 
     def test_extract_volume_with_various_price_types_returns_expected_values(self):
         # Arrange

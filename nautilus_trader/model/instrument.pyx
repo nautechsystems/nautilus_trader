@@ -120,10 +120,6 @@ cdef class Instrument(Data):
         Raises
         ------
         ValueError
-            If asset_class is UNDEFINED.
-        ValueError
-            If asset_type is UNDEFINED.
-        ValueError
             If price_precision is negative (< 0).
         ValueError
             If size_precision is negative (< 0).
@@ -147,8 +143,6 @@ cdef class Instrument(Data):
             If min_price is negative (< 0).
 
         """
-        Condition.not_equal(asset_class, AssetClass.UNDEFINED, "asset_class", "UNDEFINED")
-        Condition.not_equal(asset_type, AssetType.UNDEFINED, "asset_type", "UNDEFINED")
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
         Condition.type(tick_size, Decimal, "tick_size")
@@ -467,8 +461,6 @@ cdef class Future(Instrument):
 
         Raises
         ------
-        ValueError
-            If asset_class is UNDEFINED.
         ValueError
             If multiplier is not positive (> 0).
         ValueError
