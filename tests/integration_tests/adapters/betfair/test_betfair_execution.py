@@ -32,6 +32,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
@@ -209,7 +210,7 @@ def _prefill_order_id_to_cl_ord_id(raw):
         update["id"]
         for market in raw["oc"]
         for order in market["orc"]
-        for update in order["uo"]
+        for update in order.get("uo", [])
     ]
     return {oid: ClientOrderId(str(i)) for i, oid in enumerate(order_ids)}
 
@@ -249,9 +250,7 @@ async def test_order_stream_new_full_image(mocker, execution_client, exec_engine
     assert len(exec_engine.events) == 3
 
 
-# TODO - This test is breaking because we receive a fill update without any information about the order
 @pytest.mark.asyncio
-@pytest.mark.skip
 async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_SUB_IMAGE()
     mocker.patch.object(
@@ -261,7 +260,9 @@ async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
-    assert len(exec_engine.events) == 1
+    assert (
+        len(exec_engine.events) == 0
+    )  # We don't do anything with matched bets at this stage
 
 
 @pytest.mark.asyncio
@@ -276,6 +277,24 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
     assert len(exec_engine.events) == 2
+
+
+@pytest.mark.asyncio
+async def test_post_order_submit_success(execution_client, exec_engine):
+    f = asyncio.Future()
+    f.set_result(BetfairTestStubs.place_order_resp_success())
+    execution_client._post_submit_order(f, ClientOrderId("O-20210327-091154-001-001-2"))
+    await asyncio.sleep(0)
+    assert isinstance(exec_engine.events[0], OrderAccepted)
+
+
+@pytest.mark.asyncio
+async def test_post_order_submit_error(execution_client, exec_engine):
+    f = asyncio.Future()
+    f.set_result(BetfairTestStubs.place_order_resp_error())
+    execution_client._post_submit_order(f, ClientOrderId("O-20210327-091154-001-001-2"))
+    await asyncio.sleep(0)
+    assert isinstance(exec_engine.events[0], OrderRejected)
 
 
 # TODO
@@ -296,15 +315,6 @@ async def test_generate_order_status_report(mocker, execution_client):
     raise NotImplementedError()
 
 
-@pytest.mark.asyncio
-async def test_post_order_submit(execution_client, exec_engine):
-    f = asyncio.Future()
-    f.set_result(BetfairTestStubs.place_order_resp())
-    execution_client._post_submit_order(f, ClientOrderId("O-20210327-091154-001-001-2"))
-    await asyncio.sleep(0)
-    assert isinstance(exec_engine.events[0], OrderAccepted)
-
-
 # TODO
 @pytest.mark.asyncio
 @pytest.mark.skip
@@ -313,12 +323,6 @@ async def test_generate_trades_list(mocker, execution_client):
     result = await execution_client.generate_trades_list()
     assert result
     raise NotImplementedError()
-
-
-# TODO - test that we can concurrently insert orders into an IN-PLAY game
-@pytest.mark.skip()
-def test_live_order_insert_concurrent():
-    pass
 
 
 # def test_connect(self):

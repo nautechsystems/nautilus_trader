@@ -48,6 +48,8 @@ from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.identifiers import ExecutionId
@@ -190,6 +192,15 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self._log.error(str(e))
             return
         assert len(resp['instructionReports']) == 1, "Should only be a single order"
+        if resp["status"] == "FAILURE":
+            reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
+            self._log.error(f"Submit failed - {reason}")
+            self._generate_order_rejected(
+                cl_ord_id=client_order_id,
+                reason=reason,
+                timestamp_ns=self._clock.timestamp_ns(),
+            )
+            return
         bet_id = resp['instructionReports'][0]['betId']
         self.order_id_to_cl_ord_id[bet_id] = client_order_id
         self._generate_order_accepted(
@@ -202,7 +213,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef void amend_order(self, AmendOrder command) except *:
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_amend_to_betfair(command=command)
-        self._client.betting.replace_orders(**kw)
+        resp = self._client.betting.replace_orders(**kw)
+        self._log.debug(str(resp))
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         instrument = self._instrument_provider._instruments[command.instrument_id]
@@ -237,8 +249,11 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # -- Order stream API ---------------------------------------------------------
 
     cpdef void handle_order_stream_update(self, bytes raw) except *:
-        cdef dict update = orjson.loads(raw)  # type: dict
         """ Handle an update from the order stream socket """
+        cdef dict update = orjson.loads(raw) # type: dict
+        self._loop.create_task(self._handle_order_stream_update(update=update))
+
+    async def _handle_order_stream_update(self, update):
         for market in update.get("oc", []):
             market_id = market["id"]
             for selection in market.get("orc", []):
@@ -248,6 +263,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     handicap=str(selection.get("hc", "0.0")),
                 )
                 for order in selection.get("uo", []):
+                    await self._wait_for_order(order['id'], timeout_seconds=5.0)
                     cl_ord_id = self.order_id_to_cl_ord_id[order['id']]
                     order_id = OrderId(order["id"])
                     execution_id = ExecutionId(str(order["id"]))
@@ -321,6 +337,17 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
                 if selection.get("fullImage", False):
                     pass
+
+    async def _wait_for_order(self, order_id, timeout_seconds=1.0):
+        start = self._clock.timestamp_ns()
+        now = start
+        while (now - start) < secs_to_nanos(timeout_seconds):
+            if order_id in self.order_id_to_cl_ord_id:
+                self._log.debug(f"Found order in {nanos_to_secs(now - start)} sec")
+                return
+            now = self._clock.timestamp_ns()
+            await asyncio.sleep(0)
+        raise TimeoutError(f"Failed to find order_id: {order_id} in {timeout_seconds}")
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 

@@ -1,3 +1,4 @@
+import asyncio
 import bz2
 import pathlib
 from unittest import mock
@@ -61,7 +62,7 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def live_logger(clock):
-        return LiveLogger(clock)
+        return LiveLogger(loop=asyncio.get_event_loop(), clock=clock)
 
     @staticmethod
     def portfolio(clock, live_logger):
@@ -273,8 +274,12 @@ class BetfairTestStubs(TestStubs):
         return (TEST_PATH / "streaming_mcm_UPDATE_tv.json").read_bytes()
 
     @staticmethod
-    def place_order_resp():
-        return orjson.loads((TEST_PATH / "place_order_resp.json").read_bytes())
+    def place_order_resp_success():
+        return orjson.loads((TEST_PATH / "place_order_resp_success.json").read_bytes())
+
+    @staticmethod
+    def place_order_resp_error():
+        return orjson.loads((TEST_PATH / "place_order_resp_error.json").read_bytes())
 
     @staticmethod
     def raw_orderbook_updates():
