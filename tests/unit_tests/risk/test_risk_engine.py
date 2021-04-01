@@ -19,11 +19,11 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
@@ -269,7 +269,7 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        amend = AmendOrder(
+        update = UpdateOrder(
             order.instrument_id,
             self.trader_id,
             self.account_id,
@@ -283,10 +283,10 @@ class TestRiskEngine:
         self.risk_engine.execute(submit)
 
         # Act
-        self.risk_engine.execute(amend)
+        self.risk_engine.execute(update)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order", "amend_order"]
+        assert self.exec_client.calls == ["connect", "submit_order", "update_order"]
 
     def test_cancel_order_with_default_settings_sends_to_client(self):
         # Arrange

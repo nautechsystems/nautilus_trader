@@ -27,8 +27,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
@@ -612,7 +612,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
     def test_amend_stop_order_when_order_does_not_exist(self):
         # Arrange
-        command = AmendOrder(
+        command = UpdateOrder(
             instrument_id=USDJPY_SIM.id,
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -650,14 +650,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
-        self.strategy.amend_order(order, Quantity(), Price("90.001"))
+        self.strategy.update_order(order, Quantity(), Price("90.001"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(
             1, len(self.exchange.get_working_orders())
         )  # Order still working
-        self.assertEqual(Price("90.001"), order.price)  # Did not amend
+        self.assertEqual(Price("90.001"), order.price)  # Did not update
 
     def test_amend_post_only_limit_order_when_marketable_then_rejects_amendment(self):
         # Arrange: Prepare market
@@ -680,14 +680,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(
             1, len(self.exchange.get_working_orders())
         )  # Order still working
-        self.assertEqual(Price("90.001"), order.price)  # Did not amend
+        self.assertEqual(Price("90.001"), order.price)  # Did not update
 
     def test_amend_limit_order_when_marketable_then_fills_order(self):
         # Arrange: Prepare market
@@ -710,7 +710,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
@@ -739,7 +739,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -766,7 +766,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.011"))
+        self.strategy.update_order(order, order.quantity, Price("90.011"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -796,7 +796,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -824,7 +824,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.011"))
+        self.strategy.update_order(order, order.quantity, Price("90.011"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -863,7 +863,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.010"))
+        self.strategy.update_order(order, order.quantity, Price("90.010"))
 
         # Assert
         self.assertEqual(OrderState.TRIGGERED, order.state)
@@ -902,7 +902,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.010"))
+        self.strategy.update_order(order, order.quantity, Price("90.010"))
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
@@ -940,7 +940,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.TRIGGERED, order.state)
@@ -973,7 +973,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Act
-        self.strategy.amend_order(
+        self.strategy.update_order(
             bracket_order.stop_loss, bracket_order.entry.quantity, Price("85.100")
         )
 

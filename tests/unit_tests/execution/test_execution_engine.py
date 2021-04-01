@@ -24,11 +24,11 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -918,7 +918,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
-        amend_order = AmendOrder(
+        update_order = UpdateOrder(
             order.instrument_id,
             self.trader_id,
             self.account_id,
@@ -930,7 +930,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(amend_order)
+        self.exec_engine.execute(update_order)
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)

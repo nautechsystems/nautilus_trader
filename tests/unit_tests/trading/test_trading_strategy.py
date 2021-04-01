@@ -1856,7 +1856,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order)
 
         # Act
-        strategy.amend_order(order, Quantity(100000), Price("90.001"))
+        strategy.update_order(order, Quantity(100000), Price("90.001"))
 
         # Assert
         self.assertEqual(1, self.exec_engine.command_count)
@@ -1882,7 +1882,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order)
 
         # Act
-        strategy.amend_order(order, Quantity(110000), Price("90.001"))
+        strategy.update_order(order, Quantity(110000), Price("90.001"))
 
         # Assert
         self.assertEqual(order, strategy.execution.orders()[0])

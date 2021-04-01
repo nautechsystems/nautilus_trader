@@ -47,10 +47,10 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -497,7 +497,7 @@ cdef class ExecutionEngine(Component):
             self._handle_submit_order(client, command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
-        elif isinstance(command, AmendOrder):
+        elif isinstance(command, UpdateOrder):
             self._handle_amend_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
@@ -552,10 +552,10 @@ cdef class ExecutionEngine(Component):
         else:
             client.submit_bracket_order(command)
 
-    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
+    cdef inline void _handle_amend_order(self, ExecutionClient client, UpdateOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot amend order: "
+            self._log.warning(f"Cannot update order: "
                               f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
@@ -563,7 +563,7 @@ cdef class ExecutionEngine(Component):
         if self._risk_engine is not None:
             self._risk_engine.execute(command)
         else:
-            client.amend_order(command)
+            client.update_order(command)
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command

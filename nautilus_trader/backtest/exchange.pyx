@@ -31,13 +31,12 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderExpired
@@ -45,6 +44,7 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -460,7 +460,7 @@ cdef class SimulatedExchange:
 
         self._cancel_order(command.cl_ord_id)
 
-    cpdef void handle_amend_order(self, AmendOrder command) except *:
+    cpdef void handle_amend_order(self, UpdateOrder command) except *:
         Condition.not_none(command, "command")
 
         self._amend_order(command.cl_ord_id, command.quantity, command.price)
@@ -599,20 +599,20 @@ cdef class SimulatedExchange:
         if order is None:
             self._cancel_reject(
                 cl_ord_id,
-                "amend order",
+                "update order",
                 f"repr{cl_ord_id} not found",
             )
-            return  # Cannot amend order
+            return  # Cannot update order
 
         cdef Instrument instrument = self.instruments[order.instrument_id]
 
         if qty <= 0:
             self._cancel_reject(
                 order.cl_ord_id,
-                "amend order",
-                f"amended quantity {qty} invalid",
+                "update order",
+                f"new quantity {qty} invalid",
             )
-            return  # Cannot amend order
+            return  # Cannot update order
 
         cdef Price bid = self._market_bids[order.instrument_id]  # Market must exist
         cdef Price ask = self._market_asks[order.instrument_id]  # Market must exist
@@ -827,11 +827,11 @@ cdef class SimulatedExchange:
             if order.is_post_only:
                 self._cancel_reject(
                     order.cl_ord_id,
-                    "amend order",
+                    "update order",
                     f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
-                    f"amended limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
+                    f"new limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
                 )
-                return  # Cannot amend order
+                return  # Cannot update order
             else:
                 # Immediate fill as TAKER
                 self._generate_order_amended(order, qty, price)
@@ -857,11 +857,11 @@ cdef class SimulatedExchange:
         if self._is_stop_marketable(order.side, price, bid, ask):
             self._cancel_reject(
                 order.cl_ord_id,
-                "amend order",
+                "update order",
                 f"STOP {OrderSideParser.to_str(order.side)} order "
-                f"amended stop px of {price} was in the market: bid={bid}, ask={ask}",
+                f"new stop px of {price} was in the market: bid={bid}, ask={ask}",
             )
-            return  # Cannot amend order
+            return  # Cannot update order
 
         self._generate_order_amended(order, qty, price)
 
@@ -879,11 +879,11 @@ cdef class SimulatedExchange:
             if self._is_stop_marketable(order.side, price, bid, ask):
                 self._cancel_reject(
                     order.cl_ord_id,
-                    "amend order",
+                    "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
-                    f"amended stop px trigger of {price} was in the market: bid={bid}, ask={ask}",
+                    f"new stop px trigger of {price} was in the market: bid={bid}, ask={ask}",
                 )
-                return  # Cannot amend order
+                return  # Cannot update order
 
             self._generate_order_amended(order, qty, price)
         else:
@@ -892,11 +892,11 @@ cdef class SimulatedExchange:
                 if order.is_post_only:
                     self._cancel_reject(
                         order.cl_ord_id,
-                        "amend order",
+                        "update order",
                         f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order  "
-                        f"amended limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
+                        f"new limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
                     )
-                    return  # Cannot amend order
+                    return  # Cannot update order
                 else:
                     # Immediate fill as TAKER
                     self._generate_order_amended(order, qty, price)
@@ -913,7 +913,7 @@ cdef class SimulatedExchange:
 
     cdef inline void _generate_order_amended(self, PassiveOrder order, Quantity qty, Price price) except *:
         # Generate event
-        cdef OrderAmended amended = OrderAmended(
+        cdef OrderUpdated updated = OrderUpdated(
             order.account_id,
             order.cl_ord_id,
             order.id,
@@ -924,7 +924,7 @@ cdef class SimulatedExchange:
             self._clock.timestamp_ns(),
         )
 
-        self.exec_client.handle_event(amended)
+        self.exec_client.handle_event(updated)
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 

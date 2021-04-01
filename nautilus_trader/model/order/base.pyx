@@ -37,7 +37,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
@@ -48,6 +47,7 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -81,8 +81,8 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
 
-# Valid states to amend an order in
-cdef (int, int) _AMENDING_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
+# Valid states to update an order in
+cdef (int, int) _UPDATABLE_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
 
 
 cdef class Order:
@@ -463,9 +463,9 @@ cdef class Order:
         elif isinstance(event, OrderAccepted):
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
-        elif isinstance(event, OrderAmended):
-            Condition.true(self._fsm.state in _AMENDING_STATES, "state was invalid for amending")
-            self._amended(event)
+        elif isinstance(event, OrderUpdated):
+            Condition.true(self._fsm.state in _UPDATABLE_STATES, "state was invalid for updating")
+            self._updated(event)
         elif isinstance(event, OrderCancelled):
             self._fsm.trigger(OrderState.CANCELLED)
             self._cancelled(event)
@@ -505,7 +505,7 @@ cdef class Order:
     cdef void _accepted(self, OrderAccepted event) except *:
         self.id = event.order_id
 
-    cdef void _amended(self, OrderAmended event) except *:
+    cdef void _updated(self, OrderUpdated event) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
@@ -629,7 +629,7 @@ cdef class PassiveOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
-    cdef void _amended(self, OrderAmended event) except *:
+    cdef void _updated(self, OrderUpdated event) except *:
         self.id = event.order_id
         self.quantity = event.quantity
         self.price = event.price

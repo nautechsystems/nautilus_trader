@@ -23,10 +23,10 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
@@ -150,7 +150,7 @@ class ExecutionClientTests(unittest.TestCase):
     def test_amend_order_raises_not_implemented_error(self):
         # Arrange
         # Act
-        command = AmendOrder(
+        command = UpdateOrder(
             AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
@@ -162,7 +162,7 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertRaises(NotImplementedError, self.client.amend_order, command)
+        self.assertRaises(NotImplementedError, self.client.update_order, command)
 
     def test_cancel_order_raises_not_implemented_error(self):
         # Arrange

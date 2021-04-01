@@ -19,10 +19,10 @@ from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport AccountId
 
 
@@ -142,13 +142,13 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._exchange.handle_submit_bracket_order(command)
 
-    cpdef void amend_order(self, AmendOrder command) except *:
+    cpdef void update_order(self, UpdateOrder command) except *:
         """
         Amend the order with parameters contained in the command.
 
         Parameters
         ----------
-        command : AmendOrder
+        command : UpdateOrder
             The command to execute.
 
         """
