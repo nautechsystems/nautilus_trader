@@ -800,7 +800,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(bar_store.get_store()))
-        self.assertEqual(Decimal("3000.03000"), aggregator.cum_value)
+        self.assertEqual(Decimal("3000.03000"), aggregator.get_cumulative_value())
 
     def test_handle_trade_tick_when_value_below_threshold_updates(self):
         # Arrange
@@ -825,7 +825,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(bar_store.get_store()))
-        self.assertEqual(Decimal("52500.000"), aggregator.cum_value)
+        self.assertEqual(Decimal("52500.000"), aggregator.get_cumulative_value())
 
     def test_handle_quote_tick_when_value_beyond_threshold_sends_bar_to_handler(self):
         # Arrange
@@ -875,7 +875,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].low)
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].close)
         self.assertEqual(Quantity("99999"), bar_store.get_store()[0].volume)
-        self.assertEqual(Decimal("10501.400"), aggregator.cum_value)
+        self.assertEqual(Decimal("10501.400"), aggregator.get_cumulative_value())
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
@@ -931,7 +931,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("20.00000"), bar_store.get_store()[1].close)
         # self.assertEqual(Quantity("5000.00"), bar_store.get_store()[1].volume)  # TODO: WIP - intermittent?
         self.assertEqual(
-            Decimal("40000.11000"), aggregator.cum_value
+            Decimal("40000.11000"), aggregator.get_cumulative_value()
         )  # TODO: WIP - Should be 40000
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
