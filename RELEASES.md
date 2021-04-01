@@ -2,6 +2,9 @@
 
 **This release includes substantial breaking changes.**
 
+Further standardization of naming conventions along with internal refinements
+and fixes.
+
 ## Breaking Changes
 - Rename `AmendOrder` to `UpdateOrder`.
 - Rename `OrderAmended` to `OrderUpdated`.
