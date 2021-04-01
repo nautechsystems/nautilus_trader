@@ -192,6 +192,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self._log.error(str(e))
             return
         assert len(resp['instructionReports']) == 1, "Should only be a single order"
+        self._log.debug("Got a single order")
         if resp["status"] == "FAILURE":
             reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
             self._log.error(f"Submit failed - {reason}")
@@ -211,15 +212,18 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     # TODO - Does this also take 5s ??
     cpdef void amend_order(self, AmendOrder command) except *:
+        self._log.debug("Received cancel order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
-        kw = order_amend_to_betfair(command=command)
+        kw = order_amend_to_betfair(command=command, instrument=instrument)
         resp = self._client.betting.replace_orders(**kw)
-        self._log.debug(str(resp))
+        self._log.debug(f"amend: {resp}")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
+        self._log.debug("Received cancel order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
-        kw = order_cancel_to_betfair(command=command)
-        self._client.betting.cancel_orders(**kw)
+        kw = order_cancel_to_betfair(command=command, instrument=instrument)
+        resp = self._client.betting.cancel_orders(**kw)
+        self._log.debug(f"cancel: {resp}")
 
     # cpdef void bulk_submit_order(self, list commands):
     # betfair allows up to 200 inserts per request
@@ -339,6 +343,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     pass
 
     async def _wait_for_order(self, order_id, timeout_seconds=1.0):
+        """
+        We may get an order update from the socket before our submit_order response has come back (with our betId).
+        As a precaution, wait up to `timeout_seconds` for the betId to be added to `self.order_id_to_cl_ord_id`
+        """
         start = self._clock.timestamp_ns()
         now = start
         while (now - start) < secs_to_nanos(timeout_seconds):

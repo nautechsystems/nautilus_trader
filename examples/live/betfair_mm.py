@@ -23,7 +23,7 @@ sys.path.insert(
     0, str(pathlib.Path(__file__).parents[2])
 )  # Allows relative imports from examples
 
-from examples.strategies.dumb_quoter import DumbQuoter
+from examples.strategies.betfair_test_strategy import BetfairTestStrategy
 from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
@@ -87,7 +87,7 @@ config = {
 # custom options into the configuration file or even use another configuration
 # file.
 
-strategy = DumbQuoter(
+strategy = BetfairTestStrategy(
     instrument_filter={"market_id": market_id},
     trade_size=Decimal(10.0),
     order_id_tag="001",

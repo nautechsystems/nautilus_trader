@@ -17,11 +17,15 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.message import Event
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
@@ -33,7 +37,7 @@ from nautilus_trader.trading.strategy import TradingStrategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class DumbQuoter(TradingStrategy):
+class BetfairTestStrategy(TradingStrategy):
     """
     A simple quoting strategy
 
@@ -68,10 +72,10 @@ class DumbQuoter(TradingStrategy):
         self.theo_change_threshold = theo_change_threshold
         self.instrument_id = None
         self.midpoint = None
-
-        # Custom strategy variables
         self.trade_size = trade_size
         self.market_width = market_width
+        self.active_orders = set()
+        self._amend_orders = False
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -79,6 +83,19 @@ class DumbQuoter(TradingStrategy):
         self.request_data(
             "BETFAIR", DataType(InstrumentSearch, metadata=self.instrument_filter)
         )
+
+    def on_event(self, event: Event):
+        self.log.debug(f"{event}")
+        if isinstance(event, OrderAccepted):
+            order = self.execution.order(event.cl_ord_id)
+            new_price = (
+                order.price * 0.90
+                if order.side == OrderSide.BUY
+                else order.price * 1.10
+            )
+            self.amend(order=order, new_price=new_price)
+        if isinstance(event, (OrderCancelled, OrderFilled)):
+            self.active_orders.remove(event.cl_ord_id)
 
     def on_data(self, data: GenericData):
         self.log.info(str(data))
@@ -108,8 +125,7 @@ class DumbQuoter(TradingStrategy):
             > self.theo_change_threshold
         ):
             self.log.info("Theo updating", LogColor.BLUE)
-            self.buy(price=midpoint)
-            self.sell(price=midpoint)
+            self.send_orders(midpoint=midpoint)
             self.midpoint = midpoint
 
     def on_order_book(self, order_book: OrderBook):
@@ -128,13 +144,43 @@ class DumbQuoter(TradingStrategy):
         if order_book.spread():
             self.update_midpoint(order_book=order_book)
 
+    def send_orders(self, midpoint):
+        sell_price = midpoint + (self.market_width / Decimal(2.0))
+        buy_price = midpoint - (self.market_width / Decimal(2.0))
+        if self.active_orders:
+            self.log.info("Strategy has active orders")
+            if self._amend_orders:
+                for cl_ord_id in self.active_orders:
+                    self.log.info(f"Sending amend for {cl_ord_id}")
+                    order = self.execution.order(cl_ord_id)
+                    new_price = (
+                        buy_price * 0.99
+                        if order.side == OrderSide.BUY
+                        else sell_price * 1.01
+                    )
+                    self.amend(order=order, new_price=new_price)
+                self._amend_orders = False
+                return
+            else:
+                for cl_ord_id in self.active_orders:
+                    self.log.info(f"Sending delete for {cl_ord_id}")
+                    self.delete(cl_ord_id=cl_ord_id)
+        self.buy(price=buy_price)
+        self.sell(price=sell_price)
+
+    def amend(self, order, new_price):
+        self.amend_order(order=order, price=new_price)
+
+    def delete(self, order):
+        self.cancel_order(order=order)
+
     def buy(self, price):
         """
         Users simple buy method (example).
         """
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
-            price=Price(price - (self.market_width / Decimal(2.0)), precision=5),
+            price=Price(price, precision=5),
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
             time_in_force=TimeInForce.GTC,

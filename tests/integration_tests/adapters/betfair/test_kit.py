@@ -15,14 +15,22 @@ from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.commands import AmendOrder
+from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import BettingInstrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -77,11 +85,13 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def instrument_id():
-        return InstrumentId(symbol=Symbol("Test"), venue=BETFAIR_VENUE)
+        return BetfairTestStubs.betting_instrument().id
 
     @staticmethod
     def uuid():
-        return UUIDFactory().generate()
+        return UUID(
+            value=b"\x03\x89\x90\xc6\x19\xd2\xb5\xc87\xa6\xfe\x91\xf9\xb7\xb9\xed"
+        )
 
     @staticmethod
     def account_id() -> AccountId:
@@ -192,6 +202,25 @@ class BetfairTestStubs(TestStubs):
         return orjson.loads((TEST_PATH / "market_catalogue.json").read_bytes())
 
     @staticmethod
+    def navigation_short():
+        nav = BetfairTestStubs.navigation()
+        nav["children"] = [
+            c
+            for c in nav["children"]
+            if c["name"] in ("Horse Racing", "American Football")
+        ]
+        return nav
+
+    @staticmethod
+    def market_catalogue_short():
+        catalogue = BetfairTestStubs.market_catalogue()
+        return [
+            m
+            for m in catalogue
+            if m["eventType"]["name"] in ("Horse Racing", "American Football")
+        ]
+
+    @staticmethod
     def account_detail():
         return orjson.loads((TEST_PATH / "account_detail.json").read_bytes())
 
@@ -274,13 +303,74 @@ class BetfairTestStubs(TestStubs):
         return (TEST_PATH / "streaming_mcm_UPDATE_tv.json").read_bytes()
 
     @staticmethod
-    def place_order_resp_success():
-        return orjson.loads((TEST_PATH / "place_order_resp_success.json").read_bytes())
+    def place_orders_success():
+        return orjson.loads(
+            (TEST_PATH / "betting_place_order_success.json").read_bytes()
+        )
 
     @staticmethod
-    def place_order_resp_error():
-        return orjson.loads((TEST_PATH / "place_order_resp_error.json").read_bytes())
+    def place_orders_error():
+        return orjson.loads((TEST_PATH / "betting_place_order_error.json").read_bytes())
+
+    @staticmethod
+    def amend_orders_success():
+        return orjson.loads((TEST_PATH / "betting_amend_orders.json").read_bytes())
+
+    @staticmethod
+    def cancel_orders_success():
+        return orjson.loads(
+            (TEST_PATH / "betting_cancel_orders_success.json").read_bytes()
+        )
 
     @staticmethod
     def raw_orderbook_updates():
         return bz2.open(TEST_PATH / "1.133262888.json.bz2").readlines()
+
+    @staticmethod
+    def submit_order_command():
+        return SubmitOrder(
+            instrument_id=BetfairTestStubs.instrument_id(),
+            trader_id=BetfairTestStubs.trader_id(),
+            account_id=BetfairTestStubs.account_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            position_id=BetfairTestStubs.position_id(),
+            order=LimitOrder(
+                cl_ord_id=ClientOrderId("1"),
+                strategy_id=BetfairTestStubs.strategy_id(),
+                instrument_id=BetfairTestStubs.instrument_id(),
+                order_side=OrderSide.BUY,
+                quantity=Quantity(10),
+                price=Price(0.33, 5),
+                time_in_force=TimeInForce.GTC,
+                expire_time=None,
+                init_id=BetfairTestStubs.uuid(),
+                timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+            ),
+            command_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def amend_order_command():
+        return AmendOrder(
+            instrument_id=BetfairTestStubs.instrument_id(),
+            trader_id=BetfairTestStubs.trader_id(),
+            account_id=BetfairTestStubs.account_id(),
+            cl_ord_id=ClientOrderId("1"),
+            quantity=Quantity(50),
+            price=Price(20),
+            command_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def cancel_order_command():
+        return CancelOrder(
+            instrument_id=BetfairTestStubs.instrument_id(),
+            trader_id=BetfairTestStubs.trader_id(),
+            account_id=BetfairTestStubs.account_id(),
+            cl_ord_id=ClientOrderId("1"),
+            order_id=OrderId("1"),
+            command_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )

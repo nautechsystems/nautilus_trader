@@ -41,6 +41,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
@@ -203,6 +204,10 @@ class TestStubs:
     @staticmethod
     def account_id() -> AccountId:
         return AccountId("SIM", "000")
+
+    @staticmethod
+    def strategy_id() -> StrategyId:
+        return StrategyId(name="Test", tag="1")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:

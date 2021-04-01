@@ -76,7 +76,13 @@ def empty_book():
 @pytest.fixture(scope="function")
 def sample_book():
     ob = L3OrderBook(TestStubs.audusd_id())
-    orders = [Order()]
+    orders = [
+        Order(price=0.900, volume=20, side=OrderSide.SELL),
+        Order(price=0.887, volume=10, side=OrderSide.SELL),
+        Order(price=0.886, volume=5, side=OrderSide.SELL),
+        Order(price=0.830, volume=4, side=OrderSide.BUY),
+        Order(price=0.820, volume=1, side=OrderSide.BUY),
+    ]
     for order in orders:
         ob.add(order)
     return ob
@@ -93,6 +99,18 @@ def test_pprint_when_no_orders():
     result = ob.pprint()
 
     assert "" == result
+
+
+def test_pprint_full_book(sample_book):
+    result = sample_book.pprint()
+    expected = """bids     price   asks
+------  -------  ------
+         0.90    [20.0]
+         0.89    [10.0]
+         0.89    [5.0]
+[4.0]    0.83
+[1.0]    0.82"""
+    assert expected == result
 
 
 def test_add(empty_book):

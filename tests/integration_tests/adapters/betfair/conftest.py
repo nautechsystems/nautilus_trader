@@ -7,15 +7,13 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.mocks import MockLiveDataEngine
@@ -29,29 +27,35 @@ def betfairlightweight_mocks(mocker):
     # Betfair client login
     mocker.patch("betfairlightweight.endpoints.login.Login.__call__")
 
-    # Navigation.list_navigation
-    mock_list_nav = mocker.patch(
-        "betfairlightweight.endpoints.navigation.Navigation.list_navigation"
+    # Mock Navigation / market catalogue endpoints
+    mocker.patch(
+        "betfairlightweight.endpoints.navigation.Navigation.list_navigation",
+        return_value=BetfairTestStubs.navigation_short(),
     )
-    mock_list_nav.return_value = BetfairTestStubs.navigation()
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
+        return_value=BetfairTestStubs.market_catalogue_short(),
+    )
 
-    # Betting.list_market_catalogue
-    mock_market_catalogue = mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.list_market_catalogue"
+    # Mock Account endpoints
+    mocker.patch(
+        "betfairlightweight.endpoints.account.Account.get_account_details",
+        return_value=BetfairTestStubs.account_detail(),
     )
-    mock_market_catalogue.return_value = BetfairTestStubs.market_catalogue()
+    mocker.patch(
+        "betfairlightweight.endpoints.account.Account.get_account_funds",
+        return_value=BetfairTestStubs.account_funds_no_exposure(),
+    )
 
-    # Account.get_account_details
-    mock_account_detail = mocker.patch(
-        "betfairlightweight.endpoints.account.Account.get_account_details"
+    # Mock Betting endpoints
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.place_orders",
+        return_value=BetfairTestStubs.place_orders_success(),
     )
-    mock_account_detail.return_value = BetfairTestStubs.account_detail()
-
-    # Account.get_account_funds
-    mock_account_funds = mocker.patch(
-        "betfairlightweight.endpoints.account.Account.get_account_funds"
-    )
-    mock_account_funds.return_value = BetfairTestStubs.account_funds_no_exposure()
+    # mocker.patch(
+    #     "betfairlightweight.endpoints.betting.Betting.replace_orders",
+    #     return_value=BetfairTestStubs.amend_orders_success()
+    # )
 
     # Streaming endpoint
     mocker.patch(
@@ -77,7 +81,7 @@ def clock():
 
 @pytest.fixture()
 def live_logger(event_loop, clock):
-    return LiveLogger(loop=event_loop, clock=clock)
+    return LiveLogger(loop=event_loop, clock=clock, level_console=LogLevel.DEBUG)
 
 
 @pytest.fixture()
@@ -90,17 +94,17 @@ def portfolio(clock, live_logger):
 
 @pytest.fixture()
 def trader_id():
-    return TraderId("TESTER", "001")
+    return BetfairTestStubs.trader_id()
 
 
 @pytest.fixture()
 def account_id():
-    return AccountId(BETFAIR_VENUE.value, "001")
+    return BetfairTestStubs.account_id()
 
 
 @pytest.fixture()
 def strategy_id():
-    return StrategyId(name="Test", tag="1")
+    return BetfairTestStubs.strategy_id()
 
 
 @pytest.fixture()

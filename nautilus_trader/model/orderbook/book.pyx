@@ -411,7 +411,7 @@ cdef class OrderBook:
             for _, level in levels
         ]
         return tabulate(
-            data, headers="keys", numalign="center", floatfmt=".2f", tablefmt="fancy"
+            data, headers="keys", numalign="center", floatfmt=".4f", tablefmt="fancy"
         )
 
 
