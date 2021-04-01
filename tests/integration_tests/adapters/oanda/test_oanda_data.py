@@ -64,6 +64,7 @@ class OandaDataClientTests(unittest.TestCase):
 
         # Setup logging
         logger = LiveLogger(
+            loop=self.loop,
             clock=self.clock,
             name=self.trader_id.value,
             level_console=LogLevel.DEBUG,
@@ -71,7 +72,10 @@ class OandaDataClientTests(unittest.TestCase):
             level_store=LogLevel.WARNING,
         )
 
-        self.logger = LiveLogger(self.clock)
+        self.logger = LiveLogger(
+            loop=self.loop,
+            clock=self.clock,
+        )
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -290,7 +294,7 @@ class OandaDataClientTests(unittest.TestCase):
             bar_type = BarType(instrument_id=AUDUSD, bar_spec=bar_spec)
 
             request = DataRequest(
-                provider=OANDA.value,
+                client_name=OANDA.value,
                 data_type=DataType(
                     Bar,
                     metadata={

@@ -15,7 +15,6 @@
 
 
 cpdef enum OrderSide:
-    UNDEFINED = 0,  # Invalid value
     BUY = 1,
     SELL = 2,
 
@@ -26,4 +25,4 @@ cdef class OrderSideParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderSide from_str(str value)
+    cdef OrderSide from_str(str value) except *

@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import AbstractEventLoop
-from asyncio import CancelledError
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
@@ -46,7 +44,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     def __init__(
         self,
-        loop not None: AbstractEventLoop,
+        loop not None: asyncio.AbstractEventLoop,
         ExecutionDatabase database not None,
         Portfolio portfolio not None,
         LiveClock clock not None,
@@ -251,7 +249,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._queue.put_nowait(command)
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._loop.create_task(self._queue.put(command))
+            self._loop.create_task(self._queue.put(command))  # Blocking until qsize reduces
 
     cpdef void process(self, Event event) except *:
         """
@@ -278,7 +276,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
             self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
-            self._loop.create_task(self._queue.put(event))
+            self._loop.create_task(self._queue.put(event))  # Blocking until qsize reduces
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
@@ -309,8 +307,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                     self._execute_command(message)
                 else:
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
-        except CancelledError:
-            if self.qsize() > 0:
+        except asyncio.CancelledError:
+            if not self._queue.empty():
                 self._log.warning(f"Running cancelled "
                                   f"with {self.qsize()} message(s) on queue.")
             else:

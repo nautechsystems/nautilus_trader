@@ -24,16 +24,18 @@ cdef class OrderBookOperationTypeParser:
         elif value == 3:
             return "DELETE"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderBookOperationType from_str(str value):
+    cdef OrderBookOperationType from_str(str value) except *:
         if value == "ADD":
             return OrderBookOperationType.ADD
         elif value == "UPDATE":
             return OrderBookOperationType.UPDATE
         elif value == "DELETE":
             return OrderBookOperationType.DELETE
+        else:
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

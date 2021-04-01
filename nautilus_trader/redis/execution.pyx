@@ -243,23 +243,23 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if not events:
             return None
 
-        cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
+        cdef OrderInitialized init = self._event_serializer.deserialize(events.pop(0))
 
         cdef Order order
-        if initial.order_type == OrderType.MARKET:
-            order = MarketOrder.create(event=initial)
-        elif initial.order_type == OrderType.LIMIT:
-            order = LimitOrder.create(event=initial)
-        elif initial.order_type == OrderType.STOP_MARKET:
-            order = StopMarketOrder.create(event=initial)
-        elif initial.order_type == OrderType.STOP_LIMIT:
-            order = StopLimitOrder.create(event=initial)
+        if init.order_type == OrderType.MARKET:
+            order = MarketOrder.create(init=init)
+        elif init.order_type == OrderType.LIMIT:
+            order = LimitOrder.create(init=init)
+        elif init.order_type == OrderType.STOP_MARKET:
+            order = StopMarketOrder.create(init=init)
+        elif init.order_type == OrderType.STOP_LIMIT:
+            order = StopLimitOrder.create(init=init)
         else:
             raise RuntimeError("Invalid order type")
 
         cdef bytes event_bytes
         for event_bytes in events:
-            order.apply(event=self._event_serializer.deserialize(event_bytes))
+            order.apply(self._event_serializer.deserialize(event_bytes))
 
         return order
 
@@ -285,12 +285,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         if not events:
             return None
 
-        cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))
-        cdef Position position = Position(fill=initial)
+        cdef OrderFilled initial_fill = self._event_serializer.deserialize(events.pop(0))
+        cdef Position position = Position(fill=initial_fill)
 
         cdef bytes event_bytes
         for event_bytes in events:
-            position.apply(fill=self._event_serializer.deserialize(event_bytes))
+            position.apply(self._event_serializer.deserialize(event_bytes))
 
         return position
 

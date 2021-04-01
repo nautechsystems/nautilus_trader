@@ -27,8 +27,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
@@ -610,9 +610,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, self.exec_engine.event_count)
 
-    def test_amend_stop_order_when_order_does_not_exist(self):
+    def test_update_stop_order_when_order_does_not_exist(self):
         # Arrange
-        command = AmendOrder(
+        command = UpdateOrder(
             instrument_id=USDJPY_SIM.id,
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -624,12 +624,12 @@ class SimulatedExchangeTests(unittest.TestCase):
         )
 
         # Act
-        self.exchange.handle_amend_order(command)
+        self.exchange.handle_update_order(command)
 
         # Assert
         self.assertEqual(2, self.exec_engine.event_count)
 
-    def test_amend_order_with_zero_quantity_rejects_amendment(self):
+    def test_update_order_with_zero_quantity_rejects_amendment(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -650,16 +650,16 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
-        self.strategy.amend_order(order, Quantity(), Price("90.001"))
+        self.strategy.update_order(order, Quantity(), Price("90.001"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(
             1, len(self.exchange.get_working_orders())
         )  # Order still working
-        self.assertEqual(Price("90.001"), order.price)  # Did not amend
+        self.assertEqual(Price("90.001"), order.price)  # Did not update
 
-    def test_amend_post_only_limit_order_when_marketable_then_rejects_amendment(self):
+    def test_update_post_only_limit_order_when_marketable_then_rejects_amendment(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -680,16 +680,16 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(
             1, len(self.exchange.get_working_orders())
         )  # Order still working
-        self.assertEqual(Price("90.001"), order.price)  # Did not amend
+        self.assertEqual(Price("90.001"), order.price)  # Did not update
 
-    def test_amend_limit_order_when_marketable_then_fills_order(self):
+    def test_update_limit_order_when_marketable_then_fills_order(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -710,14 +710,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act: Amending BUY LIMIT order limit price to ask will become marketable
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.005"), order.avg_px)
 
-    def test_amend_stop_market_order_when_price_inside_market_then_rejects_amendment(
+    def test_update_stop_market_order_when_price_inside_market_then_rejects_amendment(
         self,
     ):
         # Arrange: Prepare market
@@ -739,14 +739,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.010"), order.price)
 
-    def test_amend_stop_market_order_when_price_valid_then_amends(self):
+    def test_update_stop_market_order_when_price_valid_then_amends(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -766,14 +766,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.011"))
+        self.strategy.update_order(order, order.quantity, Price("90.011"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.011"), order.price)
 
-    def test_amend_untriggered_stop_limit_order_when_price_inside_market_then_rejects_amendment(
+    def test_update_untriggered_stop_limit_order_when_price_inside_market_then_rejects_amendment(
         self,
     ):
         # Arrange: Prepare market
@@ -796,14 +796,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.010"), order.trigger)
 
-    def test_amend_untriggered_stop_limit_order_when_price_valid_then_amends(self):
+    def test_update_untriggered_stop_limit_order_when_price_valid_then_amends(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -824,14 +824,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.011"))
+        self.strategy.update_order(order, order.quantity, Price("90.011"))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.011"), order.trigger)
 
-    def test_amend_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_amendment(
+    def test_update_triggered_post_only_stop_limit_order_when_price_inside_market_then_rejects_amendment(
         self,
     ):
         # Arrange: Prepare market
@@ -863,7 +863,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.010"))
+        self.strategy.update_order(order, order.quantity, Price("90.010"))
 
         # Assert
         self.assertEqual(OrderState.TRIGGERED, order.state)
@@ -871,7 +871,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.000"), order.price)
 
-    def test_amend_triggered_stop_limit_order_when_price_inside_market_then_fills(self):
+    def test_update_triggered_stop_limit_order_when_price_inside_market_then_fills(
+        self,
+    ):
         # Arrange: Prepare market
         tick1 = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -902,7 +904,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.010"))
+        self.strategy.update_order(order, order.quantity, Price("90.010"))
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
@@ -910,7 +912,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.010"), order.price)
 
-    def test_amend_triggered_stop_limit_order_when_price_valid_then_amends(self):
+    def test_update_triggered_stop_limit_order_when_price_valid_then_amends(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -940,7 +942,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick2)
 
         # Act
-        self.strategy.amend_order(order, order.quantity, Price("90.005"))
+        self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
         self.assertEqual(OrderState.TRIGGERED, order.state)
@@ -948,7 +950,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.005"), order.price)
 
-    def test_amend_bracket_orders_working_stop_loss(self):
+    def test_update_bracket_orders_working_stop_loss(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
@@ -973,7 +975,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Act
-        self.strategy.amend_order(
+        self.strategy.update_order(
             bracket_order.stop_loss, bracket_order.entry.quantity, Price("85.100")
         )
 

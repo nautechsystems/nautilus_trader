@@ -21,7 +21,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -30,10 +29,8 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class BarBuilder:
-    cdef readonly BarType bar_type
-    """The builders bar type.\n\n:returns: `BarType`"""
-    cdef readonly BarSpecification bar_spec
-    """The builders bar specification.\n\n:returns: `BarSpecification`"""
+    cdef BarType _bar_type
+
     cdef readonly bint use_previous_close
     """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
     cdef readonly bint initialized
@@ -74,20 +71,17 @@ cdef class BarAggregator:
 
 
 cdef class TickBarAggregator(BarAggregator):
-    cdef readonly int step
-    """The aggregators size threshold.\n\n:returns: `int`"""
+    pass
 
 
 cdef class VolumeBarAggregator(BarAggregator):
-    cdef readonly int step
-    """The aggregators volume threshold.\n\n:returns: `int`"""
+    pass
 
 
 cdef class ValueBarAggregator(BarAggregator):
-    cdef readonly int step
-    """The aggregators value threshold.\n\n:returns: `int`"""
-    cdef readonly object cum_value
-    """The aggregators current cumulative value.\n\n:returns: `Decimal`"""
+    cdef object _cum_value
+
+    cpdef object get_cumulative_value(self)
 
 
 cdef class TimeBarAggregator(BarAggregator):
@@ -102,8 +96,8 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly int64_t next_close_ns
     """The aggregators next closing time.\n\n:returns: `int64`"""
 
-    cpdef void set_partial(self, Bar partial_bar) except *
     cpdef datetime get_start_time(self)
+    cpdef void set_partial(self, Bar partial_bar) except *
     cpdef void stop(self) except *
     cdef timedelta _get_interval(self)
     cdef int64_t _get_interval_ns(self)
@@ -116,8 +110,6 @@ cdef class BulkTickBarBuilder:
     cdef TickBarAggregator aggregator
     cdef object callback
     cdef list bars
-
-    cpdef void _add_bar(self, Bar bar) except *
 
 
 cdef class BulkTimeBarUpdater:

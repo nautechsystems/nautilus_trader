@@ -129,7 +129,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_quote_tick(self, QuoteTick tick) except *:
         """
-        Add the given tick to the cache.
+        Add the given quote tick to the cache.
 
         Parameters
         ----------
@@ -151,12 +151,12 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_trade_tick(self, TradeTick tick) except *:
         """
-        Add the given tick to the cache.
+        Add the given trade tick to the cache.
 
         Parameters
         ----------
         tick : TradeTick
-            The received tick to add.
+            The tick to add.
 
         """
         Condition.not_none(tick, "tick")
@@ -173,17 +173,16 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_bar(self, Bar bar) except *:
         """
-        Add the given bar type and bar to the cache.
+        Add the given bar to the cache.
 
         Parameters
         ----------
         bar : Bar
-            The received bar to add.
+            The bar to add.
 
         """
         Condition.not_none(bar, "bar")
 
-        # Update ticks
         bars = self._bars.get(bar.type)
 
         if bars is None:
@@ -195,12 +194,12 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_quote_ticks(self, list ticks) except *:
         """
-        Add the given ticks to the cache, if it is empty.
+        Add the given quote ticks to the cache.
 
         Parameters
         ----------
         ticks : list[QuoteTick]
-            The tick to add.
+            The ticks to add.
 
         """
         Condition.not_none(ticks, "ticks")
@@ -232,12 +231,12 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_trade_ticks(self, list ticks) except *:
         """
-        Add the given ticks to the cache, if it is empty.
+        Add the given trade ticks to the cache.
 
         Parameters
         ----------
         ticks : list[TradeTick]
-            The received tick to add.
+            The ticks to add.
 
         """
         Condition.not_none(ticks, "ticks")
@@ -269,12 +268,12 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_bars(self, list bars) except *:
         """
-        Handle the given bar type and bar.
+        Add the given bars to the cache.
 
         Parameters
         ----------
         bars : list[Bar]
-            The received bars to add.
+            The bars to add.
 
         """
         Condition.not_none(bars, "bars")
@@ -329,7 +328,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """
-        Return the quote ticks for the given instrument_id.
+        Return the quote ticks for the given instrument identifier.
 
         Parameters
         ----------
@@ -347,7 +346,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list trade_ticks(self, InstrumentId instrument_id):
         """
-        Return trade ticks for the given instrument_id.
+        Return trade ticks for the given instrument identifier.
 
         Parameters
         ----------
@@ -370,7 +369,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         bar_type : BarType
-            The bar type to get.
+            The bar type for bars to get.
 
         Returns
         -------
@@ -383,7 +382,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):
         """
-        Return the instrument corresponding to the given instrument_id.
+        Return the instrument corresponding to the given instrument identifier.
 
         Parameters
         ----------
@@ -401,7 +400,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type):
         """
-        Return the price for the given instrument_id and price type.
+        Return the price for the given instrument identifier and price type.
 
         Parameters
         ----------
@@ -414,14 +413,8 @@ cdef class DataCache(DataCacheFacade):
         -------
         Price or None
 
-        Raises
-        ------
-        ValueError
-            If price_type is UNDEFINED.
-
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_equal(price_type, PriceType.UNDEFINED, "price_type", "UNDEFINED")
 
         cdef TradeTick trade_tick
         cdef QuoteTick quote_tick
@@ -435,7 +428,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """
-        Return the order book for the given instrument_id.
+        Return the order book for the given instrument identifier.
 
         Parameters
         ----------
@@ -450,7 +443,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """
-        Return the quote tick for the given instrument_id at the given index.
+        Return the quote tick for the given instrument identifier at the given index.
 
         Last quote tick if no index specified.
 
@@ -484,7 +477,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=0):
         """
-        Return the trade tick for the given instrument_id at the given index
+        Return the trade tick for the given instrument identifier at the given index
 
         Last trade tick if no index specified.
 
@@ -552,7 +545,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
         """
-        The count of quote ticks for the given instrument_id.
+        The count of quote ticks for the given instrument identifier.
 
         Parameters
         ----------
@@ -570,7 +563,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef int trade_tick_count(self, InstrumentId instrument_id) except *:
         """
-        The count of trade ticks for the given instrument_id.
+        The count of trade ticks for the given instrument identifier.
 
         Parameters
         ----------
@@ -607,7 +600,7 @@ cdef class DataCache(DataCacheFacade):
     cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has an order book
-        snapshot for the given instrument_id.
+        snapshot for the given instrument identifier.
 
         Parameters
         ----------
@@ -624,7 +617,7 @@ cdef class DataCache(DataCacheFacade):
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has quote ticks for
-        the given instrument_id.
+        the given instrument identifier.
 
         Parameters
         ----------
@@ -643,7 +636,7 @@ cdef class DataCache(DataCacheFacade):
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has trade ticks for
-        the given instrument_id.
+        the given instrument identifier.
 
         Parameters
         ----------
@@ -686,7 +679,7 @@ cdef class DataCache(DataCacheFacade):
         PriceType price_type=PriceType.MID,
     ):
         """
-        Return the calculated exchange rate for the given currencies.
+        Return the calculated exchange rate.
 
         Parameters
         ----------
@@ -706,7 +699,7 @@ cdef class DataCache(DataCacheFacade):
         Raises
         ------
         ValueError
-            If price_type is UNDEFINED or LAST.
+            If price_type is LAST.
 
         """
         Condition.not_none(from_currency, "from_currency")

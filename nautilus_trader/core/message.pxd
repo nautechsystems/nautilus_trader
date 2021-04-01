@@ -19,7 +19,6 @@ from nautilus_trader.core.uuid cimport UUID
 
 
 cpdef enum MessageType:
-    UNDEFINED = 0,  # Invalid value
     STRING = 1,
     COMMAND = 2,
     DOCUMENT = 3,

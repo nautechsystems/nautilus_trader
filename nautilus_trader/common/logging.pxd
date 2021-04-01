@@ -19,6 +19,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.queue cimport Queue
 
 
 cdef str RECV
@@ -30,7 +31,6 @@ cdef str RES
 
 
 cpdef enum LogLevel:
-    UNDEFINED = 0,  # Invalid value
     VERBOSE = 1,
     DEBUG = 2,
     INFO = 3,
@@ -69,8 +69,7 @@ cdef class LogMessage:
     cdef readonly int64_t thread_id
     """The thread identifier.\n\n:returns: `int64`"""
 
-    cdef str level_string(self)
-    cdef str as_string(self)
+    cdef inline str as_string(self)
 
 
 cdef class Logger:
@@ -80,8 +79,8 @@ cdef class Logger:
     cdef bint _console_prints
     cdef bint _log_thread
     cdef bint _log_to_file
+    cdef str _log_file_dir
     cdef str _log_file_path
-    cdef str _log_file
     cdef list _log_store
     cdef object _log_file_handler
     cdef object _logger
@@ -93,10 +92,13 @@ cdef class Logger:
     cdef readonly Clock clock
     """The loggers clock.\n\n:returns: `Clock`"""
 
+    cpdef str get_log_file_dir(self)
+    cpdef str get_log_file_path(self)
+    cpdef list get_log_store(self)
     cpdef void change_log_file_name(self, str name) except *
     cpdef void log(self, LogMessage message) except *
-    cpdef list get_log_store(self)
     cpdef void clear_log_store(self) except *
+
     cpdef void _log(self, LogMessage message) except *
     cdef str _format_output(self, LogMessage message)
     cdef void _in_memory_log_store(self, LogLevel level, str text) except *
@@ -132,9 +134,12 @@ cdef class TestLogger(Logger):
 
 
 cdef class LiveLogger(Logger):
-    cdef object _queue
-    cdef object _process
-    cdef object _thread
+    cdef object _loop
+    cdef object _run_task
+    cdef Queue _queue
 
+    cdef readonly bint is_running
+    """If the logger is running an event loop task.\n\n:returns: `bool`"""
+
+    cpdef void start(self) except *
     cpdef void stop(self) except *
-    cpdef void _consume_messages(self) except *

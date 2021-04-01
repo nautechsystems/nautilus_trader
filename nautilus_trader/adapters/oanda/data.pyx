@@ -453,7 +453,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if bar_type.spec.price_type == PriceType.UNDEFINED or bar_type.spec.price_type == PriceType.LAST:
+        if bar_type.spec.price_type == PriceType.LAST:
             self._log.error(f"`request_bars` was called with a `price_type` argument "
                             f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
                             f"when not supported by the brokerage (must be BID, ASK or MID).")

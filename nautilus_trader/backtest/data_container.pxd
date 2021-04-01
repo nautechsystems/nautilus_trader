@@ -13,28 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
-
 
 cdef class BacktestDataContainer:
-    cdef readonly set venues
-    cdef readonly set instrument_ids
+    cdef readonly dict clients
+    cdef readonly list generic_data
+    cdef readonly list order_book_snapshots
+    cdef readonly list order_book_operations
     cdef readonly dict instruments
     cdef readonly dict quote_ticks
     cdef readonly dict trade_ticks
     cdef readonly dict bars_bid
     cdef readonly dict bars_ask
-
-    cpdef void add_instrument(self, Instrument instrument) except *
-    cpdef void add_quote_ticks(self, InstrumentId instrument_id, data) except *
-    cpdef void add_trade_ticks(self, InstrumentId instrument_id, data) except *
-    cpdef void add_bars(self, InstrumentId instrument_id, BarAggregation aggregation, PriceType price_type, data) except *
-    cpdef void check_integrity(self) except *
-    cpdef bint has_quote_data(self, InstrumentId instrument_id) except *
-    cpdef bint has_trade_data(self, InstrumentId instrument_id) except *
-    cpdef int64_t total_data_size(self)

@@ -26,4 +26,4 @@ cdef class OrderBookOperationTypeParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderBookOperationType from_str(str value)
+    cdef OrderBookOperationType from_str(str value) except *

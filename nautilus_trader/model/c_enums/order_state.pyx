@@ -40,10 +40,10 @@ cdef class OrderStateParser:
         elif value == 11:
             return "FILLED"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderState from_str(str value):
+    cdef OrderState from_str(str value) except *:
         if value == "INITIALIZED":
             return OrderState.INITIALIZED
         elif value == "INVALID":
@@ -67,7 +67,7 @@ cdef class OrderStateParser:
         elif value == "FILLED":
             return OrderState.FILLED
         else:
-            return OrderState.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

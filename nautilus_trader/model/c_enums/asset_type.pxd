@@ -15,7 +15,6 @@
 
 
 cpdef enum AssetType:
-    UNDEFINED = 0,  # Invalid value
     SPOT = 1,
     SWAP = 2,
     FUTURE = 3,
@@ -31,4 +30,4 @@ cdef class AssetTypeParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef AssetType from_str(str value)
+    cdef AssetType from_str(str value) except *

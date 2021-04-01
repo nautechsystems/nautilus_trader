@@ -26,12 +26,14 @@ cdef class TimeInForceParser:
         elif value == 4:
             return "FOK"
         elif value == 5:
+            return "FAK"
+        elif value == 6:
             return "GTD"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef TimeInForce from_str(str value):
+    cdef TimeInForce from_str(str value) except *:
         if value == "DAY":
             return TimeInForce.DAY
         elif value == "GTC":
@@ -40,10 +42,12 @@ cdef class TimeInForceParser:
             return TimeInForce.IOC
         elif value == "FOK":
             return TimeInForce.FOK
+        elif value == "FAK":
+            return TimeInForce.FAK
         elif value == "GTD":
             return TimeInForce.GTD
         else:
-            return TimeInForce.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

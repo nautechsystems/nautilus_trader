@@ -15,7 +15,6 @@
 
 
 cpdef enum AssetClass:
-    UNDEFINED = 0,  # Invalid value
     FX = 1,
     STOCK = 2,
     COMMODITY = 3,
@@ -31,4 +30,4 @@ cdef class AssetClassParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef AssetClass from_str(str value)
+    cdef AssetClass from_str(str value) except *

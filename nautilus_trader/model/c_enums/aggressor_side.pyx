@@ -22,16 +22,16 @@ cdef class AggressorSideParser:
         elif value == 2:
             return "SELL"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef AggressorSide from_str(str value):
+    cdef AggressorSide from_str(str value) except *:
         if value == "BUY":
             return AggressorSide.BUY
         elif value == "SELL":
             return AggressorSide.SELL
         else:
-            return AggressorSide.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

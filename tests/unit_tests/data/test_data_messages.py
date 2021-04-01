@@ -44,7 +44,7 @@ class DataMessageTests(unittest.TestCase):
         command_id = self.uuid_factory.generate()
 
         command = Subscribe(
-            provider=BINANCE.value,
+            client_name=BINANCE.value,
             data_type=DataType(str, {"type": "newswire"}),  # str data type is invalid
             handler=handler,
             command_id=command_id,
@@ -55,7 +55,7 @@ class DataMessageTests(unittest.TestCase):
         self.assertEqual("Subscribe(<str> {'type': 'newswire'})", str(command))
         self.assertEqual(
             f"Subscribe("
-            f"provider=BINANCE, "
+            f"client_name=BINANCE, "
             f"data_type=<str> {{'type': 'newswire'}}, "
             f"handler={repr(handler)}, "
             f"id={command_id})",
@@ -69,7 +69,7 @@ class DataMessageTests(unittest.TestCase):
         request_id = self.uuid_factory.generate()
 
         request = DataRequest(
-            provider=BINANCE.value,
+            client_name=BINANCE.value,
             data_type=DataType(
                 str,
                 metadata={  # str data type is invalid
@@ -93,7 +93,7 @@ class DataMessageTests(unittest.TestCase):
         )
         self.assertEqual(
             f"DataRequest("
-            f"provider=BINANCE, "
+            f"client_name=BINANCE, "
             f"data_type=<str> {{'InstrumentId': InstrumentId('SOMETHING.RANDOM'), "
             f"'FromDateTime': None, "
             f"'ToDateTime': None, "
@@ -111,7 +111,7 @@ class DataMessageTests(unittest.TestCase):
         instrument_id = InstrumentId(Symbol("AUD/USD"), IDEALPRO)
 
         response = DataResponse(
-            provider=BINANCE.value,
+            client_name=BINANCE.value,
             data_type=DataType(QuoteTick, metadata={"InstrumentId": instrument_id}),
             data=[],
             correlation_id=correlation_id,
@@ -126,7 +126,7 @@ class DataMessageTests(unittest.TestCase):
         )
         self.assertEqual(
             f"DataResponse("
-            f"provider=BINANCE, "
+            f"client_name=BINANCE, "
             f"data_type=<QuoteTick> {{'InstrumentId': InstrumentId('AUD/USD.IDEALPRO')}}, "
             f"correlation_id={correlation_id}, "
             f"id={response_id})",

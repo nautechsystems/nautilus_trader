@@ -15,7 +15,6 @@
 
 
 cpdef enum OMSType:
-    UNDEFINED = 0,  # Invalid value
     NETTING = 1,
     HEDGING = 2,
 
@@ -26,4 +25,4 @@ cdef class OMSTypeParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OMSType from_str(str value)
+    cdef OMSType from_str(str value) except *

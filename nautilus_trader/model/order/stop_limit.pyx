@@ -22,9 +22,9 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -106,10 +106,6 @@ cdef class StopLimitOrder(PassiveOrder):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
-        ValueError
             If time_in_force is GTD and the expire_time is None.
 
         """
@@ -118,17 +114,17 @@ cdef class StopLimitOrder(PassiveOrder):
         if hidden:
             Condition.false(post_only, "A hidden order is not post-only")
         super().__init__(
-            cl_ord_id,
-            strategy_id,
-            instrument_id,
-            order_side,
-            OrderType.STOP_LIMIT,
-            quantity,
-            price,
-            time_in_force,
-            expire_time,
-            init_id,
-            timestamp_ns,
+            cl_ord_id=cl_ord_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            order_side=order_side,
+            order_type=OrderType.STOP_LIMIT,
+            quantity=quantity,
+            price=price,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=init_id,
+            timestamp_ns=timestamp_ns,
             options={
                 TRIGGER: str(trigger),
                 POST_ONLY: post_only,
@@ -153,13 +149,13 @@ cdef class StopLimitOrder(PassiveOrder):
                 f"{id_string}")
 
     @staticmethod
-    cdef StopLimitOrder create(OrderInitialized event):
+    cdef StopLimitOrder create(OrderInitialized init):
         """
         Return a stop-limit order from the given initialized event.
 
         Parameters
         ----------
-        event : OrderInitialized
+        init : OrderInitialized
             The event to initialize with.
 
         Returns
@@ -169,30 +165,30 @@ cdef class StopLimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to STOP_LIMIT.
+            If init.order_type is not equal to STOP_LIMIT.
 
         """
-        Condition.not_none(event, "event")
-        Condition.equal(event.order_type, OrderType.STOP_LIMIT, "event.order_type", "OrderType")
+        Condition.not_none(init, "init")
+        Condition.equal(init.order_type, OrderType.STOP_LIMIT, "init.order_type", "OrderType")
 
         return StopLimitOrder(
-            cl_ord_id=event.cl_ord_id,
-            strategy_id=event.strategy_id,
-            instrument_id=event.instrument_id,
-            order_side=event.order_side,
-            quantity=event.quantity,
-            price=Price(event.options[PRICE]),
-            trigger=Price(event.options[TRIGGER]),
-            time_in_force=event.time_in_force,
-            expire_time=event.options.get(EXPIRE_TIME),
-            init_id=event.id,
-            timestamp_ns=event.timestamp_ns,
-            post_only=event.options[POST_ONLY],
-            reduce_only=event.options[REDUCE_ONLY],
-            hidden=event.options[HIDDEN],
+            cl_ord_id=init.cl_ord_id,
+            strategy_id=init.strategy_id,
+            instrument_id=init.instrument_id,
+            order_side=init.order_side,
+            quantity=init.quantity,
+            price=Price(init.options[PRICE]),
+            trigger=Price(init.options[TRIGGER]),
+            time_in_force=init.time_in_force,
+            expire_time=init.options.get(EXPIRE_TIME),
+            init_id=init.id,
+            timestamp_ns=init.timestamp_ns,
+            post_only=init.options[POST_ONLY],
+            reduce_only=init.options[REDUCE_ONLY],
+            hidden=init.options[HIDDEN],
         )
 
-    cdef void _amended(self, OrderAmended event) except *:
+    cdef void _updated(self, OrderUpdated event) except *:
         self.id = event.order_id
         self.quantity = event.quantity
         if self.is_triggered:

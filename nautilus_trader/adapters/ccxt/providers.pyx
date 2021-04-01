@@ -148,7 +148,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         if asset_type_str is not None:
             asset_type = AssetTypeParser.from_str(asset_type_str.upper())
         else:
-            asset_type = AssetType.UNDEFINED
+            asset_type = AssetType.SPOT
 
         base_currency = values.get("base")
         if base_currency is not None:

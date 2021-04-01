@@ -13,15 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.data.engine cimport DataEngine
 
 
 cdef class LiveDataEngine(DataEngine):
     cdef dict _config
     cdef object _loop
-    cdef object _data_queue
-    cdef object _message_queue
     cdef object _run_queues_task
+    cdef Queue _data_queue
+    cdef Queue _message_queue
 
     cdef readonly bint is_running
 

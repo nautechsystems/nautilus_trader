@@ -24,10 +24,10 @@ cdef class PositionSideParser:
         elif value == 3:
             return "SHORT"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef PositionSide from_str(str value):
+    cdef PositionSide from_str(str value) except *:
         if value == "FLAT":
             return PositionSide.FLAT
         elif value == "LONG":
@@ -35,7 +35,7 @@ cdef class PositionSideParser:
         elif value == "SHORT":
             return PositionSide.SHORT
         else:
-            return PositionSide.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

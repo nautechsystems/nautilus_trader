@@ -22,4 +22,4 @@ cdef class StopMarketOrder(PassiveOrder):
     """If the order will only reduce an open position.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef StopMarketOrder create(OrderInitialized event)
+    cdef StopMarketOrder create(OrderInitialized init)
