@@ -62,7 +62,7 @@ from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
@@ -88,7 +88,7 @@ cdef tuple _WARNING_EVENTS = (
     OrderInvalid,
     OrderDenied,
     OrderRejected,
-    OrderCancelReject,
+    OrderCancelRejected,
 )
 
 

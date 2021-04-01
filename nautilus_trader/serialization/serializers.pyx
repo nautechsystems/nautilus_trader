@@ -41,7 +41,7 @@ from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderExpired
@@ -527,7 +527,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIMESTAMP] = event.rejected_ns
             package[REASON] = event.reason
-        elif isinstance(event, OrderCancelReject):
+        elif isinstance(event, OrderCancelRejected):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
@@ -698,8 +698,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 timestamp_ns,
             )
-        elif event_type == OrderCancelReject.__name__:
-            return OrderCancelReject(
+        elif event_type == OrderCancelRejected.__name__:
+            return OrderCancelRejected(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
