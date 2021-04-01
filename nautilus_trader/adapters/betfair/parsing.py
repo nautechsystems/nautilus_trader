@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal
 import hashlib
 import itertools
 from typing import List, Optional, Union
@@ -7,6 +8,7 @@ from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
 from betfairlightweight.filters import place_instruction
 from betfairlightweight.filters import replace_instruction
+import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -29,10 +31,12 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -327,5 +331,25 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
 async def generate_trades_list(
     self, order_id: OrderId, symbol: Symbol, since: datetime = None
 ) -> List[ExecutionReport]:
-    # filled = self.client().betting.list_cleared_orders()
-    return [ExecutionReport()]
+    filled = self.client().betting.list_cleared_orders(
+        bet_ids=[order_id],
+    )
+    if not filled["clearedOrders"]:
+        self._log.warn(f"Found no existing order for {order_id}")
+        return []
+    fill = filled["clearedOrders"][0]
+    timestamp_ns = millis_to_nanos(pd.Timestamp(fill["lastMatchedDate"]).timestamp())
+    return [
+        ExecutionReport(
+            cl_ord_id=self.order_id_to_cl_ord_id[order_id],
+            order_id=OrderId(fill["betId"]),
+            execution_id=ExecutionId(fill["lastMatchedDate"]),
+            last_qty=Decimal(fill["sizeSettled"]),
+            last_px=Decimal(fill["priceMatched"]),
+            commission_amount=None,  # Can be None
+            commission_currency=None,  # Can be None
+            liquidity_side=LiquiditySide.NONE,
+            execution_ns=timestamp_ns,
+            timestamp_ns=timestamp_ns,
+        )
+    ]

@@ -265,16 +265,21 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def cleared_orders():
-        return orjson.loads((TEST_PATH / "cleared_orders.json").read_bytes())
+    def list_cleared_orders(order_id=None):
+        data = orjson.loads((TEST_PATH / "list_cleared_orders.json").read_bytes())
+        if order_id:
+            data["clearedOrders"] = [
+                order for order in data["clearedOrders"] if order["betId"] == order_id
+            ]
+        return data
 
     @staticmethod
-    def current_orders():
-        return orjson.loads((TEST_PATH / "current_orders.json").read_bytes())
+    def list_current_orders():
+        return orjson.loads((TEST_PATH / "list_current_orders.json").read_bytes())
 
     @staticmethod
-    def current_orders_empty():
-        return orjson.loads((TEST_PATH / "current_orders_empty.json").read_bytes())
+    def list_current_orders_empty():
+        return orjson.loads((TEST_PATH / "list_current_orders_empty.json").read_bytes())
 
     @staticmethod
     def streaming_ocm_FULL_IMAGE():

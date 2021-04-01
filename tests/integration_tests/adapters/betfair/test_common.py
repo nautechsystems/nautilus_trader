@@ -1,7 +1,7 @@
-from adapters.betfair.common import price_to_probability
-from adapters.betfair.common import probability_to_price
-from adapters.betfair.common import round_price
-from adapters.betfair.common import round_probability
+from nautilus_trader.adapters.betfair.common import price_to_probability
+from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.common import round_price
+from nautilus_trader.adapters.betfair.common import round_probability
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 

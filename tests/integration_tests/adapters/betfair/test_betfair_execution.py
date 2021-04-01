@@ -19,6 +19,7 @@ import betfairlightweight
 import orjson
 import pytest
 
+from adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -258,14 +259,22 @@ async def test_generate_order_status_report(mocker, execution_client):
     raise NotImplementedError()
 
 
-# TODO
 @pytest.mark.asyncio
-@pytest.mark.skip
 async def test_generate_trades_list(mocker, execution_client):
-    mocker.patch("betfairlightweight.endpoints.betting.Betting.list_cleared_orders")
-    result = await execution_client.generate_trades_list()
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.list_cleared_orders",
+        return_value=BetfairTestStubs.list_cleared_orders(order_id="226125004209"),
+    )
+    mocker.patch.object(
+        execution_client,
+        "order_id_to_cl_ord_id",
+        {"226125004209": ClientOrderId("1")},
+    )
+
+    result = await generate_trades_list(
+        self=execution_client, order_id="226125004209", symbol=None, since=None
+    )
     assert result
-    raise NotImplementedError()
 
 
 # def test_connect(self):

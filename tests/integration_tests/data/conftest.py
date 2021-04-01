@@ -36,6 +36,6 @@ def socket_server() -> ThreadedTCPServer:
 
 
 @pytest.fixture()
-def logger():
+def logger(event_loop):
     clock = LiveClock()
-    return LiveLogger(clock)
+    return LiveLogger(loop=event_loop, clock=clock)
