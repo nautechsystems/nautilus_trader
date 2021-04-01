@@ -19,7 +19,7 @@ import betfairlightweight
 import orjson
 import pytest
 
-from adapters.betfair.parsing import generate_trades_list
+from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted

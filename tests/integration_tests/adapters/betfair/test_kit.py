@@ -1,6 +1,5 @@
 import asyncio
 import bz2
-import gzip
 import pathlib
 from unittest import mock
 
