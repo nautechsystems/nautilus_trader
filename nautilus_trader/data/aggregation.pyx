@@ -331,12 +331,10 @@ cdef class TickBarAggregator(BarAggregator):
             use_previous_close=False,
         )
 
-        self.step = bar_type.spec.step
-
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         self._builder.update(price, size, timestamp_ns)
 
-        if self._builder.count == self.step:
+        if self._builder.count == self.bar_type.spec.step:
             self._build_now_and_send()
 
 
@@ -374,14 +372,12 @@ cdef class VolumeBarAggregator(BarAggregator):
             use_previous_close=False,
         )
 
-        self.step = bar_type.spec.step
-
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         cdef int precision = size.precision_c()
         size_update = size
 
         while size_update > 0:  # While there is size to apply
-            if self._builder.volume + size_update < self.step:
+            if self._builder.volume + size_update < self.bar_type.spec.step:
                 # Update and break
                 self._builder.update(
                     price=price,
@@ -390,7 +386,7 @@ cdef class VolumeBarAggregator(BarAggregator):
                 )
                 break
 
-            size_diff: Decimal = self.step - self._builder.volume
+            size_diff: Decimal = self.bar_type.spec.step - self._builder.volume
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
@@ -440,8 +436,18 @@ cdef class ValueBarAggregator(BarAggregator):
             use_previous_close=False,
         )
 
-        self.step = bar_type.spec.step
-        self.cum_value = Decimal()  # Cumulative value
+        self._cum_value = Decimal()  # Cumulative value
+
+    cpdef object get_cumulative_value(self):
+        """
+        Return the current cumulative value of the aggregator.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return self._cum_value
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         cdef int precision = size.precision_c()
@@ -449,9 +455,9 @@ cdef class ValueBarAggregator(BarAggregator):
 
         while size_update > 0:  # While there is value to apply
             value_update = price * size_update  # Calculated value in quote currency
-            if self.cum_value + value_update < self.step:
+            if self._cum_value + value_update < self.bar_type.spec.step:
                 # Update and break
-                self.cum_value = self.cum_value + value_update
+                self._cum_value = self._cum_value + value_update
                 self._builder.update(
                     price=price,
                     size=Quantity(size_update, precision=precision),
@@ -459,7 +465,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 )
                 break
 
-            value_diff: Decimal = self.step - self.cum_value
+            value_diff: Decimal = self.bar_type.spec.step - self._cum_value
             size_diff: Decimal = size_update * (value_diff / value_update)
             # Update builder to the step threshold
             self._builder.update(
@@ -470,7 +476,7 @@ cdef class ValueBarAggregator(BarAggregator):
 
             # Build a bar and reset builder and cumulative value
             self._build_now_and_send()
-            self.cum_value = Decimal()
+            self._cum_value = Decimal()
 
             # Decrement the update size
             size_update -= size_diff

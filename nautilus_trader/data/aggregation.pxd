@@ -71,20 +71,17 @@ cdef class BarAggregator:
 
 
 cdef class TickBarAggregator(BarAggregator):
-    cdef readonly int step
-    """The aggregators size threshold.\n\n:returns: `int`"""
+    pass
 
 
 cdef class VolumeBarAggregator(BarAggregator):
-    cdef readonly int step
-    """The aggregators volume threshold.\n\n:returns: `int`"""
+    pass
 
 
 cdef class ValueBarAggregator(BarAggregator):
-    cdef readonly int step
-    """The aggregators value threshold.\n\n:returns: `int`"""
-    cdef readonly object cum_value
-    """The aggregators current cumulative value.\n\n:returns: `Decimal`"""
+    cdef object _cum_value
+
+    cpdef object get_cumulative_value(self)
 
 
 cdef class TimeBarAggregator(BarAggregator):
@@ -99,8 +96,8 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly int64_t next_close_ns
     """The aggregators next closing time.\n\n:returns: `int64`"""
 
-    cpdef void set_partial(self, Bar partial_bar) except *
     cpdef datetime get_start_time(self)
+    cpdef void set_partial(self, Bar partial_bar) except *
     cpdef void stop(self) except *
     cdef timedelta _get_interval(self)
     cdef int64_t _get_interval_ns(self)
