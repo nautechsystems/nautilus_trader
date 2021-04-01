@@ -6,8 +6,10 @@
 - Rename `AmendOrder` to `UpdateOrder`.
 - Rename `OrderAmended` to `OrderUpdated`.
 - Rename `amend` and `amended` related methods to `update` and `updated`.
+- Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense).
 
 ## Enhancements
+- Introduce `OrderUpdateRejected`, event separated for clarity.
 - Refined LiveLogger: Now runs on event loop with high-performance `Queue`.
 - Improved flexibility of when strategies are added to a `BacktestEngine`.
 - Improved checks for `OrderId` equality when applying order events.

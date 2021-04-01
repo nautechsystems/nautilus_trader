@@ -53,7 +53,7 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
@@ -665,7 +665,7 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
-        if isinstance(event, OrderCancelReject):
+        if isinstance(event, OrderCancelRejected):
             self._handle_order_cancel_reject(event)
             return  # Event will be sent to strategy
 
@@ -765,7 +765,7 @@ cdef class ExecutionEngine(Component):
             self._log.error(f"Cannot assign PositionId: "
                             f"{len(positions_open)} open positions")
 
-    cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
+    cdef inline void _handle_order_cancel_reject(self, OrderCancelRejected event) except *:
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:

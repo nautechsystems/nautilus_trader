@@ -37,7 +37,7 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
@@ -662,7 +662,7 @@ cdef class SimulatedExchange:
             order_id = OrderId.null_c()
 
         # Generate event
-        cdef OrderCancelReject cancel_reject = OrderCancelReject(
+        cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
             self.exec_client.account_id,
             cl_ord_id,
             order_id,
@@ -673,7 +673,7 @@ cdef class SimulatedExchange:
             self._clock.timestamp_ns(),
         )
 
-        self.exec_client.handle_event(cancel_reject)
+        self.exec_client.handle_event(cancel_rejected)
 
     cdef inline void _expire_order(self, PassiveOrder order) except *:
         # Generate event

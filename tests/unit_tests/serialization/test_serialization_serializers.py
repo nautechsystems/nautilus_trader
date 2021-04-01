@@ -30,7 +30,7 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelReject
+from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
@@ -644,7 +644,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_order_cancel_reject_events(self):
         # Arrange
-        event = OrderCancelReject(
+        event = OrderCancelRejected(
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),

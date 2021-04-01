@@ -104,7 +104,7 @@ cdef class OrderAccepted(OrderEvent):
     """The order accepted time.\n\n:returns: `int64`"""
 
 
-cdef class OrderCancelReject(OrderEvent):
+cdef class OrderCancelRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t rejected_ns

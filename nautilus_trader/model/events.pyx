@@ -474,10 +474,10 @@ cdef class OrderAccepted(OrderEvent):
                 f"event_id={self.id})")
 
 
-cdef class OrderCancelReject(OrderEvent):
+cdef class OrderCancelRejected(OrderEvent):
     """
-    Represents an event where an order cancel or update command has been
-    rejected by the exchange/broker.
+    Represents an event where an order cancel command has been rejected by the
+    exchange/broker.
     """
 
     def __init__(
@@ -492,7 +492,7 @@ cdef class OrderCancelReject(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderCancelReject` class.
+        Initialize a new instance of the `OrderCancelRejected` class.
 
         Parameters
         ----------
@@ -503,11 +503,11 @@ cdef class OrderCancelReject(OrderEvent):
         order_id : OrderId
             The exchange/broker order identifier.
         rejected_ns : datetime
-            The order cancel reject time.
+            The order cancel rejected time.
         response_to : str
-            The order cancel reject response.
+            The order cancel rejected response.
         reason : str
-            The order cancel reject reason.
+            The order cancel rejected reason.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
