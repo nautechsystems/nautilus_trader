@@ -474,10 +474,10 @@ cdef class OrderAccepted(OrderEvent):
                 f"event_id={self.id})")
 
 
-cdef class OrderCancelReject(OrderEvent):
+cdef class OrderUpdateRejected(OrderEvent):
     """
-    Represents an event where an order cancel or amend command has been
-    rejected by the exchange/broker.
+    Represents an event where an `UpdateOrder` command has been rejected by the
+    exchange/broker.
     """
 
     def __init__(
@@ -492,7 +492,7 @@ cdef class OrderCancelReject(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderCancelReject` class.
+        Initialize a new instance of the `OrderUpdateRejected` class.
 
         Parameters
         ----------
@@ -503,11 +503,83 @@ cdef class OrderCancelReject(OrderEvent):
         order_id : OrderId
             The exchange/broker order identifier.
         rejected_ns : datetime
-            The order cancel reject time.
+            The order update rejected time.
         response_to : str
-            The order cancel reject response.
+            The order update rejected response.
         reason : str
-            The order cancel reject reason.
+            The order update rejected reason.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        Raises
+        ------
+        ValueError
+            If order_id has a 'NULL' value.
+        ValueError
+            If rejected_response_to is not a valid string.
+        ValueError
+            If rejected_reason is not a valid string.
+
+        """
+        Condition.valid_string(response_to, "rejected_response_to")
+        Condition.valid_string(reason, "rejected_reason")
+        super().__init__(
+            cl_ord_id,
+            order_id,
+            event_id,
+            timestamp_ns,
+        )
+
+        self.account_id = account_id
+        self.rejected_ns = rejected_ns
+        self.response_to = response_to
+        self.reason = reason
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"cl_ord_id={self.cl_ord_id}, "
+                f"response_to={self.response_to}, "
+                f"reason='{self.reason}', "
+                f"event_id={self.id})")
+
+
+cdef class OrderCancelRejected(OrderEvent):
+    """
+    Represents an event where a `CancelOrder` command has been rejected by the
+    exchange/broker.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        int64_t rejected_ns,
+        str response_to not None,
+        str reason not None,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `OrderCancelRejected` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+        order_id : OrderId
+            The exchange/broker order identifier.
+        rejected_ns : datetime
+            The order cancel rejected time.
+        response_to : str
+            The order cancel rejected response.
+        reason : str
+            The order cancel rejected reason.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -604,10 +676,9 @@ cdef class OrderCancelled(OrderEvent):
                 f"event_id={self.id})")
 
 
-cdef class OrderAmended(OrderEvent):
+cdef class OrderUpdated(OrderEvent):
     """
-    Represents an event where an order has been amended with the
-    exchange/broker.
+    Represents an event where an order has been updated with the exchange/broker.
     """
 
     def __init__(
@@ -617,12 +688,12 @@ cdef class OrderAmended(OrderEvent):
         OrderId order_id not None,
         Quantity quantity not None,
         Price price not None,
-        int64_t amended_ns,
+        int64_t updated_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderAmended` class.
+        Initialize a new instance of the `OrderUpdated` class.
 
         Parameters
         ----------
@@ -636,8 +707,8 @@ cdef class OrderAmended(OrderEvent):
             The orders current quantity.
         price : Price
             The orders current price.
-        amended_ns : int64
-            The amended time.
+        updated_ns : int64
+            The updated time.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -660,7 +731,7 @@ cdef class OrderAmended(OrderEvent):
         self.account_id = account_id
         self.quantity = quantity
         self.price = price
-        self.amended_ns = amended_ns
+        self.updated_ns = updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("

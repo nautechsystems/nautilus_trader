@@ -26,10 +26,10 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
@@ -231,7 +231,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # No exceptions raised
 
-    def test_amend_order_when_not_connected_logs_and_does_not_send(self):
+    def test_update_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
         order = self.order_factory.stop_market(
             ETHUSDT_BINANCE.id,
@@ -240,7 +240,7 @@ class BacktestExecClientTests(unittest.TestCase):
             Price("1000.00"),
         )
 
-        command = AmendOrder(
+        command = UpdateOrder(
             order.instrument_id,
             self.trader_id,
             self.account_id,
@@ -252,7 +252,7 @@ class BacktestExecClientTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_client.amend_order(command)
+        self.exec_client.update_order(command)
 
         # Assert
         self.assertTrue(True)  # No exceptions raised

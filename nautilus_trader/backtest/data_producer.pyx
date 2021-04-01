@@ -40,7 +40,6 @@ from nautilus_trader.core.functions import get_size_of  # Not cimport
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -48,7 +47,6 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -58,6 +56,10 @@ cdef class DataProducerFacade:
     """
     Provides a read-only facade for data producers.
     """
+
+    cpdef list instruments(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
         """Abstract method (implement in subclass)."""
@@ -76,7 +78,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
     def __init__(
         self,
         BacktestDataContainer data not None,
-        DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
     ):
@@ -87,8 +88,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
         ----------
         data : BacktestDataContainer
             The data for the producer.
-        engine : DataEngine
-            The data engine to connect to the producer.
         clock : Clock
             The clock for the component.
         logger : Logger
@@ -97,20 +96,14 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         self._clock = clock
         self._log = LoggerAdapter(type(self).__name__, logger)
-        self._data_engine = engine
 
         # Check data integrity
         data.check_integrity()
 
         # Save instruments
-        self._instruments = data.instruments
+        self._instruments = list(data.instruments.values())
         cdef int instrument_counter = 0
         self._instrument_index = {}
-
-        # Prepare instruments
-        cdef Instrument instrument
-        for instrument in data.instruments.values():
-            self._data_engine.process(instrument)
 
         # Merge data stream
         cdef Data x
@@ -129,7 +122,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self.execution_resolutions = []
 
         cdef double ts_total = unix_timestamp()
-        for instrument in data.instruments.values():
+        for instrument in self._instruments:
             instrument_id = instrument.id
             self._log.info(f"Preparing {instrument_id} data...")
 
@@ -265,6 +258,17 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         return self._log
 
+    cpdef list instruments(self):
+        """
+        Return the instruments held by the data producer.
+
+        Returns
+        -------
+        list[Instrument]
+
+        """
+        return self._instruments.copy()
+
     def setup(self, int64_t start_ns, int64_t stop_ns):
         """
         Setup tick data for a backtest run.
@@ -277,10 +281,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
             The Unix timestamp (nanos) for the run stop.
 
         """
-        # Prepare instruments
-        for instrument in self._instruments.values():
-            self._data_engine.process(instrument)
-
         self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
@@ -525,6 +525,17 @@ cdef class CachedProducer(DataProducerFacade):
         self.has_data = False
 
         self._create_data_cache()
+
+    cpdef list instruments(self):
+        """
+        Return the instruments held by the data producer.
+
+        Returns
+        -------
+        list[Instrument]
+
+        """
+        return self._producer.instruments()
 
     def setup(self, int64_t start_ns, int64_t stop_ns):
         """

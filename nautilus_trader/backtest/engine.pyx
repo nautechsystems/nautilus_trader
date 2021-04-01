@@ -237,10 +237,13 @@ cdef class BacktestEngine:
 
         self._data_producer = BacktestDataProducer(
             data=data,
-            engine=self._data_engine,
             clock=self._test_clock,
             logger=self._test_logger,
         )
+
+        # Prepare instruments
+        for instrument in self._data_producer.instruments():
+            self._data_engine.process(instrument)
 
         if use_data_cache:
             self._data_producer = CachedProducer(self._data_producer)
@@ -571,6 +574,10 @@ cdef class BacktestEngine:
         # Setup data
         self._data_producer.setup(start_ns=start_ns, stop_ns=stop_ns)
 
+        # Prepare instruments
+        for instrument in self._data_producer.instruments():
+            self._data_engine.process(instrument)
+
         # Setup new strategies
         if strategies is not None:
             self.trader.initialize_strategies(strategies, warn_no_strategies=False)
@@ -590,16 +597,18 @@ cdef class BacktestEngine:
         self.trader.start()
 
         cdef Data data
+        cdef Venue venue
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
+            venue = data.instrument_id.venue
             self._advance_time(data.timestamp_ns)
             if isinstance(data, OrderBookOperations):
-                self._exchanges[data.instrument_id.venue].process_order_book_operations(data)
+                self._exchanges[venue].process_order_book_operations(data)
             elif isinstance(data, OrderBookSnapshot):
-                self._exchanges[data.instrument_id.venue].process_order_book_snapshot(data)
+                self._exchanges[venue].process_order_book_snapshot(data)
             elif isinstance(data, Tick):
-                self._exchanges[data.venue].process_tick(data)
+                self._exchanges[venue].process_tick(data)
             self._data_engine.process(data)
             self._process_modules(data.timestamp_ns)
             self.iteration += 1

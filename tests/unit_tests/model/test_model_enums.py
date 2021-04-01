@@ -736,6 +736,7 @@ class TestTimeInForce:
             [TimeInForce.GTC, "GTC"],
             [TimeInForce.IOC, "IOC"],
             [TimeInForce.FOK, "FOK"],
+            [TimeInForce.FAK, "FAK"],
             [TimeInForce.GTD, "GTD"],
         ],
     )
@@ -754,6 +755,7 @@ class TestTimeInForce:
             ["GTC", TimeInForce.GTC],
             ["IOC", TimeInForce.IOC],
             ["FOK", TimeInForce.FOK],
+            ["FAK", TimeInForce.FAK],
             ["GTD", TimeInForce.GTD],
         ],
     )

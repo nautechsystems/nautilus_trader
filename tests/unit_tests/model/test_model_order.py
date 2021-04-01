@@ -28,11 +28,11 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -704,7 +704,7 @@ class OrderTests(unittest.TestCase):
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
 
-        amended = OrderAmended(
+        updated = OrderUpdated(
             self.account_id,
             order.cl_ord_id,
             OrderId("1"),
@@ -716,7 +716,7 @@ class OrderTests(unittest.TestCase):
         )
 
         # Act
-        order.apply(amended)
+        order.apply(updated)
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)

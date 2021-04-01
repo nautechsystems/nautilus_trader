@@ -31,20 +31,21 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderAmended
-from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdateRejected
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -460,10 +461,10 @@ cdef class SimulatedExchange:
 
         self._cancel_order(command.cl_ord_id)
 
-    cpdef void handle_amend_order(self, AmendOrder command) except *:
+    cpdef void handle_update_order(self, UpdateOrder command) except *:
         Condition.not_none(command, "command")
 
-        self._amend_order(command.cl_ord_id, command.quantity, command.price)
+        self._update_order(command.cl_ord_id, command.quantity, command.price)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -594,42 +595,42 @@ cdef class SimulatedExchange:
         self._check_oco_order(order.cl_ord_id)
         self._clean_up_child_orders(order.cl_ord_id)
 
-    cdef inline void _amend_order(self, ClientOrderId cl_ord_id, Quantity qty, Price price) except *:
+    cdef inline void _update_order(self, ClientOrderId cl_ord_id, Quantity qty, Price price) except *:
         cdef PassiveOrder order = self._working_orders.get(cl_ord_id)
         if order is None:
-            self._cancel_reject(
+            self._reject_update(
                 cl_ord_id,
-                "amend order",
+                "update order",
                 f"repr{cl_ord_id} not found",
             )
-            return  # Cannot amend order
+            return  # Cannot update order
 
         cdef Instrument instrument = self.instruments[order.instrument_id]
 
         if qty <= 0:
-            self._cancel_reject(
+            self._reject_update(
                 order.cl_ord_id,
-                "amend order",
-                f"amended quantity {qty} invalid",
+                "update order",
+                f"new quantity {qty} invalid",
             )
-            return  # Cannot amend order
+            return  # Cannot update order
 
         cdef Price bid = self._market_bids[order.instrument_id]  # Market must exist
         cdef Price ask = self._market_asks[order.instrument_id]  # Market must exist
 
         if order.type == OrderType.LIMIT:
-            self._amend_limit_order(order, qty, price, bid, ask)
+            self._update_limit_order(order, qty, price, bid, ask)
         elif order.type == OrderType.STOP_MARKET:
-            self._amend_stop_market_order(order, qty, price, bid, ask)
+            self._update_stop_market_order(order, qty, price, bid, ask)
         elif order.type == OrderType.STOP_LIMIT:
-            self._amend_stop_limit_order(order, qty, price, bid, ask)
+            self._update_stop_limit_order(order, qty, price, bid, ask)
         else:
             raise RuntimeError(f"Invalid order type")
 
     cdef inline void _cancel_order(self, ClientOrderId cl_ord_id) except *:
         cdef PassiveOrder order = self._working_orders.pop(cl_ord_id, None)
         if order is None:
-            self._cancel_reject(
+            self._reject_cancel(
                 cl_ord_id,
                 "cancel order",
                 f"{repr(cl_ord_id)} not found",
@@ -649,7 +650,7 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(cancelled)
         self._check_oco_order(order.cl_ord_id)
 
-    cdef inline void _cancel_reject(
+    cdef inline void _reject_cancel(
         self,
         ClientOrderId cl_ord_id,
         str response,
@@ -662,7 +663,7 @@ cdef class SimulatedExchange:
             order_id = OrderId.null_c()
 
         # Generate event
-        cdef OrderCancelReject cancel_reject = OrderCancelReject(
+        cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
             self.exec_client.account_id,
             cl_ord_id,
             order_id,
@@ -673,7 +674,33 @@ cdef class SimulatedExchange:
             self._clock.timestamp_ns(),
         )
 
-        self.exec_client.handle_event(cancel_reject)
+        self.exec_client.handle_event(cancel_rejected)
+
+    cdef inline void _reject_update(
+        self,
+        ClientOrderId cl_ord_id,
+        str response,
+        str reason,
+    ) except *:
+        cdef Order order = self.exec_cache.order(cl_ord_id)
+        if order is not None:
+            order_id = order.id
+        else:
+            order_id = OrderId.null_c()
+
+        # Generate event
+        cdef OrderUpdateRejected update_rejected = OrderUpdateRejected(
+            self.exec_client.account_id,
+            cl_ord_id,
+            order_id,
+            self._clock.timestamp_ns(),
+            response,
+            reason,
+            self._uuid_factory.generate(),
+            self._clock.timestamp_ns(),
+        )
+
+        self.exec_client.handle_event(update_rejected)
 
     cdef inline void _expire_order(self, PassiveOrder order) except *:
         # Generate event
@@ -814,7 +841,7 @@ cdef class SimulatedExchange:
         self._working_orders[order.cl_ord_id] = order
         self._accept_order(order)
 
-    cdef inline void _amend_limit_order(
+    cdef inline void _update_limit_order(
         self,
         LimitOrder order,
         Quantity qty,
@@ -825,16 +852,16 @@ cdef class SimulatedExchange:
         cdef Price fill_px
         if self._is_limit_marketable(order.side, price, bid, ask):
             if order.is_post_only:
-                self._cancel_reject(
+                self._reject_update(
                     order.cl_ord_id,
-                    "amend order",
+                    "update order",
                     f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
-                    f"amended limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
+                    f"new limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
                 )
-                return  # Cannot amend order
+                return  # Cannot update order
             else:
                 # Immediate fill as TAKER
-                self._generate_order_amended(order, qty, price)
+                self._generate_order_updated(order, qty, price)
 
                 fill_px = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
                 self._fill_order(
@@ -844,9 +871,9 @@ cdef class SimulatedExchange:
                 )
                 return  # Filled
 
-        self._generate_order_amended(order, qty, price)
+        self._generate_order_updated(order, qty, price)
 
-    cdef inline void _amend_stop_market_order(
+    cdef inline void _update_stop_market_order(
         self,
         StopMarketOrder order,
         Quantity qty,
@@ -855,17 +882,17 @@ cdef class SimulatedExchange:
         Price ask,
     ) except *:
         if self._is_stop_marketable(order.side, price, bid, ask):
-            self._cancel_reject(
+            self._reject_update(
                 order.cl_ord_id,
-                "amend order",
+                "update order",
                 f"STOP {OrderSideParser.to_str(order.side)} order "
-                f"amended stop px of {price} was in the market: bid={bid}, ask={ask}",
+                f"new stop px of {price} was in the market: bid={bid}, ask={ask}",
             )
-            return  # Cannot amend order
+            return  # Cannot update order
 
-        self._generate_order_amended(order, qty, price)
+        self._generate_order_updated(order, qty, price)
 
-    cdef inline void _amend_stop_limit_order(
+    cdef inline void _update_stop_limit_order(
         self,
         StopLimitOrder order,
         Quantity qty,
@@ -877,29 +904,29 @@ cdef class SimulatedExchange:
         if not order.is_triggered:
             # Amending stop price
             if self._is_stop_marketable(order.side, price, bid, ask):
-                self._cancel_reject(
+                self._reject_update(
                     order.cl_ord_id,
-                    "amend order",
+                    "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
-                    f"amended stop px trigger of {price} was in the market: bid={bid}, ask={ask}",
+                    f"new stop px trigger of {price} was in the market: bid={bid}, ask={ask}",
                 )
-                return  # Cannot amend order
+                return  # Cannot update order
 
-            self._generate_order_amended(order, qty, price)
+            self._generate_order_updated(order, qty, price)
         else:
             # Amending limit price
             if self._is_limit_marketable(order.side, price, bid, ask):
                 if order.is_post_only:
-                    self._cancel_reject(
+                    self._reject_update(
                         order.cl_ord_id,
-                        "amend order",
+                        "update order",
                         f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order  "
-                        f"amended limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
+                        f"new limit px of {price} would have been a TAKER: bid={bid}, ask={ask}",
                     )
-                    return  # Cannot amend order
+                    return  # Cannot update order
                 else:
                     # Immediate fill as TAKER
-                    self._generate_order_amended(order, qty, price)
+                    self._generate_order_updated(order, qty, price)
 
                     fill_px = self._fill_price_taker(order.instrument_id, order.side, bid, ask)
                     self._fill_order(
@@ -909,11 +936,11 @@ cdef class SimulatedExchange:
                     )
                     return  # Filled
 
-            self._generate_order_amended(order, qty, price)
+            self._generate_order_updated(order, qty, price)
 
-    cdef inline void _generate_order_amended(self, PassiveOrder order, Quantity qty, Price price) except *:
+    cdef inline void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *:
         # Generate event
-        cdef OrderAmended amended = OrderAmended(
+        cdef OrderUpdated updated = OrderUpdated(
             order.account_id,
             order.cl_ord_id,
             order.id,
@@ -924,7 +951,7 @@ cdef class SimulatedExchange:
             self._clock.timestamp_ns(),
         )
 
-        self.exec_client.handle_event(amended)
+        self.exec_client.handle_event(updated)
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 

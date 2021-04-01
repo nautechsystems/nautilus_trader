@@ -34,7 +34,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 betfairlightweight = {extras = ["speed"], version = "^2.12.1"}
-ccxt = "^1.45.64"
+ccxt = "^1.45.77"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 ib_insync = "^0.9.65"

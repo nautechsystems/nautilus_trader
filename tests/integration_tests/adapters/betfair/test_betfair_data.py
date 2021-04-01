@@ -188,4 +188,4 @@ def test_orderbook_updates(betfair_data_client, data_engine):
                 ob.apply_operations(update)
             else:
                 print(f"Skipping {type(update)}")
-    print(ob)
+    assert ob.pprint() == ""

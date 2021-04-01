@@ -1835,7 +1835,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertFalse(strategy.execution.is_order_working(order.cl_ord_id))
         self.assertTrue(strategy.execution.is_order_completed(order.cl_ord_id))
 
-    def test_amend_order_when_no_changes_does_not_submit_command(self):
+    def test_update_order_when_no_changes_does_not_submit_command(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -1856,12 +1856,12 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order)
 
         # Act
-        strategy.amend_order(order, Quantity(100000), Price("90.001"))
+        strategy.update_order(order, Quantity(100000), Price("90.001"))
 
         # Assert
         self.assertEqual(1, self.exec_engine.command_count)
 
-    def test_amend_order(self):
+    def test_update_order(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -1882,7 +1882,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order)
 
         # Act
-        strategy.amend_order(order, Quantity(110000), Price("90.001"))
+        strategy.update_order(order, Quantity(110000), Price("90.001"))
 
         # Assert
         self.assertEqual(order, strategy.execution.orders()[0])
