@@ -1,5 +1,6 @@
 import asyncio
 import bz2
+import gzip
 import pathlib
 from unittest import mock
 
@@ -180,11 +181,11 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def navigation():
-        return orjson.loads((TEST_PATH / "navigation.json").read_bytes())
+        return orjson.loads(gzip.open(TEST_PATH / "navigation.json.gz").read())
 
     @staticmethod
     def market_catalogue():
-        return orjson.loads((TEST_PATH / "market_catalogue.json").read_bytes())
+        return orjson.loads(gzip.open(TEST_PATH / "market_catalogue.json.gz").read())
 
     @staticmethod
     def market_ids():
