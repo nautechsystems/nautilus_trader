@@ -19,6 +19,8 @@ import betfairlightweight
 import orjson
 import pytest
 
+from model.orderbook.book import OrderBookOperations
+from model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
@@ -28,8 +30,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookOperations
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.tick import TradeTick
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -175,18 +176,35 @@ def test_orderbook_repr(betfair_data_client, data_engine):
     assert ob.best_bid_price() == 0.58480
 
 
-def test_orderbook_updates(betfair_data_client, data_engine):
-    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
+def test_orderbook_updates(betfair_data_client):
+    order_books = {}
     for raw in BetfairTestStubs.streaming_market_updates():
-        betfair_data_client
-        update = orjson.loads(raw.encode())  # type: dict
         for update in on_market_update(
-            update=update, instrument_provider=betfair_data_client.instrument_provider()
+            update=orjson.loads(raw),
+            instrument_provider=betfair_data_client.instrument_provider(),
         ):
+            if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
+                continue
             if isinstance(update, OrderBookSnapshot):
-                ob.apply_snapshot(update)
+                order_books[update.instrument_id] = L2OrderBook(
+                    instrument_id=update.instrument_id
+                )
+                order_books[update.instrument_id].apply_snapshot(update)
             elif isinstance(update, OrderBookOperations):
-                ob.apply_operations(update)
+                order_books[update.instrument_id].apply_operations(update)
+            elif isinstance(update, TradeTick):
+                pass
             else:
-                print(f"Skipping {type(update)}")
-    assert ob.pprint() == ""
+                raise KeyError
+    ob = order_books[list(order_books)[0]]
+    assert (
+        ob.pprint()
+        == """bids       price   asks
+--------  -------  ---------
+          0.8621   [932.64]
+          0.8547   [1275.83]
+          0.8475   [151.96]
+[147.79]  0.8403
+[156.74]  0.8333
+[76.38]   0.8265"""
+    )
