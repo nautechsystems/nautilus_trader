@@ -334,7 +334,9 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def streaming_market_updates():
-        return (TEST_PATH / "streaming_market_updates.log").read_text().split("\n")
+        return (
+            (TEST_PATH / "streaming_market_updates.log").read_text().strip().split("\n")
+        )
 
     @staticmethod
     def place_orders_success():

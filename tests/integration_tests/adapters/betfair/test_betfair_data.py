@@ -175,7 +175,7 @@ def test_orderbook_repr(betfair_data_client, data_engine):
     assert ob.best_bid_price() == 0.58480
 
 
-def test_orderbook_updates(betfair_data_client):
+def test_orderbook_updates(betfair_data_client, data_engine):
     ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
     for raw in BetfairTestStubs.streaming_market_updates():
         update = orjson.loads(raw.encode())  # type: dict
@@ -186,3 +186,6 @@ def test_orderbook_updates(betfair_data_client):
                 ob.apply_snapshot(update)
             elif isinstance(update, OrderBookOperations):
                 ob.apply_operations(update)
+            else:
+                print(f"Skipping {type(update)}")
+    print(ob)
