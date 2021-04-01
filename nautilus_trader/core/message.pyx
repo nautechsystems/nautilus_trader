@@ -44,8 +44,6 @@ cpdef str message_type_to_str(int value):
         return "REQUEST"
     elif value == 6:
         return "RESPONSE"
-    else:
-        return "UNDEFINED"
 
 
 cpdef MessageType message_type_from_str(str value):
@@ -74,8 +72,6 @@ cpdef MessageType message_type_from_str(str value):
         return MessageType.REQUEST
     elif value == "RESPONSE":
         return MessageType.RESPONSE
-    else:
-        return MessageType.UNDEFINED
 
 
 cdef class Message:
@@ -103,14 +99,7 @@ cdef class Message:
         timestamp_ns : int64
             The Unix timestamp (nanos) of the message initialization.
 
-        Raises
-        ------
-        ValueError
-            If message_type is UNDEFINED.
-
         """
-        Condition.not_equal(msg_type, MessageType.UNDEFINED, "msg_type", "UNDEFINED")
-
         self.type = msg_type
         self.id = identifier
         self.timestamp_ns = timestamp_ns

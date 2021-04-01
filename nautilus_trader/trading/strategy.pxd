@@ -124,7 +124,7 @@ cdef class TradingStrategy(Component):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, str provider, DataType data_type) except *
+    cpdef void subscribe_data(self, str client_name, DataType data_type) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void subscribe_order_book(
         self,
@@ -137,7 +137,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_data(self, str provider, DataType data_type) except *
+    cpdef void unsubscribe_data(self, str client_name, DataType data_type) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=*) except *
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
@@ -146,7 +146,7 @@ cdef class TradingStrategy(Component):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, str provider, DataType data_type) except *
+    cpdef void request_data(self, str client_name, DataType data_type) except *
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -170,7 +170,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
-    cpdef void amend_order(
+    cpdef void update_order(
         self,
         PassiveOrder order,
         Quantity quantity=*,

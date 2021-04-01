@@ -47,16 +47,17 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -497,8 +498,8 @@ cdef class ExecutionEngine(Component):
             self._handle_submit_order(client, command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
-        elif isinstance(command, AmendOrder):
-            self._handle_amend_order(client, command)
+        elif isinstance(command, UpdateOrder):
+            self._handle_update_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -552,10 +553,10 @@ cdef class ExecutionEngine(Component):
         else:
             client.submit_bracket_order(command)
 
-    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
+    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot amend order: "
+            self._log.warning(f"Cannot update order: "
                               f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
@@ -563,7 +564,7 @@ cdef class ExecutionEngine(Component):
         if self._risk_engine is not None:
             self._risk_engine.execute(command)
         else:
-            client.amend_order(command)
+            client.update_order(command)
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command
@@ -665,8 +666,8 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
-        if isinstance(event, OrderCancelReject):
-            self._handle_order_cancel_reject(event)
+        if isinstance(event, (OrderCancelRejected, OrderUpdateRejected)):
+            self._handle_order_command_rejected(event)
             return  # Event will be sent to strategy
 
         # Fetch Order from cache
@@ -706,7 +707,7 @@ cdef class ExecutionEngine(Component):
 
         try:
             # Protected against duplicate OrderFilled
-            order.apply(event=event)
+            order.apply(event)
         except (KeyError, InvalidStateTrigger)  as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
@@ -765,7 +766,7 @@ cdef class ExecutionEngine(Component):
             self._log.error(f"Cannot assign PositionId: "
                             f"{len(positions_open)} open positions")
 
-    cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
+    cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
@@ -790,7 +791,7 @@ cdef class ExecutionEngine(Component):
 
         try:
             # Protected against duplicate OrderFilled
-            position.apply(fill=fill)
+            position.apply(fill)
         except KeyError as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
@@ -841,7 +842,7 @@ cdef class ExecutionEngine(Component):
         )
 
         # Close original position
-        position.apply(fill=fill_split1)
+        position.apply(fill_split1)
         self.cache.update_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)

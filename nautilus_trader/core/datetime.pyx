@@ -100,7 +100,7 @@ cpdef double nanos_to_secs(double nanos) except *:
 
     Parameters
     ----------
-    nanos : int64
+    nanos : double
         The nanoseconds to convert.
 
     Returns
@@ -259,7 +259,7 @@ cpdef datetime nanos_to_unix_dt(double nanos):
 
     Parameters
     ----------
-    nanos : int64
+    nanos : double
         The nanoseconds to convert.
 
     Returns

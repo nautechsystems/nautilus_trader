@@ -30,11 +30,11 @@ from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -195,8 +195,8 @@ cdef class RiskEngine(Component):
             self._handle_submit_order(client, command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
-        elif isinstance(command, AmendOrder):
-            self._handle_amend_order(client, command)
+        elif isinstance(command, UpdateOrder):
+            self._handle_update_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -229,9 +229,9 @@ cdef class RiskEngine(Component):
         else:
             client.submit_bracket_order(command)
 
-    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
+    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
         # Pass-through for now
-        client.amend_order(command)
+        client.update_order(command)
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Pass-through for now

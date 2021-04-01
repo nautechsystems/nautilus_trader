@@ -91,38 +91,34 @@ cdef class StopMarketOrder(PassiveOrder):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
-        ValueError
             If time_in_force is GTD and the expire_time is None.
 
         """
         super().__init__(
-            cl_ord_id,
-            strategy_id,
-            instrument_id,
-            order_side,
-            OrderType.STOP_MARKET,
-            quantity,
-            price,
-            time_in_force,
-            expire_time,
-            init_id,
-            timestamp_ns,
+            cl_ord_id=cl_ord_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            order_side=order_side,
+            order_type=OrderType.STOP_MARKET,
+            quantity=quantity,
+            price=price,
+            time_in_force=time_in_force,
+            expire_time=expire_time,
+            init_id=init_id,
+            timestamp_ns=timestamp_ns,
             options={REDUCE_ONLY: reduce_only},
         )
 
         self.is_reduce_only = reduce_only
 
     @staticmethod
-    cdef StopMarketOrder create(OrderInitialized event):
+    cdef StopMarketOrder create(OrderInitialized init):
         """
         Return a stop-market order from the given initialized event.
 
         Parameters
         ----------
-        event : OrderInitialized
+        init : OrderInitialized
             The event to initialize with.
 
         Returns
@@ -132,22 +128,22 @@ cdef class StopMarketOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to STOP_MARKET.
+            If init.order_type is not equal to STOP_MARKET.
 
         """
-        Condition.not_none(event, "event")
-        Condition.equal(event.order_type, OrderType.STOP_MARKET, "event.order_type", "OrderType")
+        Condition.not_none(init, "init")
+        Condition.equal(init.order_type, OrderType.STOP_MARKET, "init.order_type", "OrderType")
 
         return StopMarketOrder(
-            cl_ord_id=event.cl_ord_id,
-            strategy_id=event.strategy_id,
-            instrument_id=event.instrument_id,
-            order_side=event.order_side,
-            quantity=event.quantity,
-            price=Price(event.options[PRICE]),
-            time_in_force=event.time_in_force,
-            expire_time=event.options.get(EXPIRE_TIME),
-            init_id=event.id,
-            timestamp_ns=event.timestamp_ns,
-            reduce_only=event.options[REDUCE_ONLY],
+            cl_ord_id=init.cl_ord_id,
+            strategy_id=init.strategy_id,
+            instrument_id=init.instrument_id,
+            order_side=init.order_side,
+            quantity=init.quantity,
+            price=Price(init.options[PRICE]),
+            time_in_force=init.time_in_force,
+            expire_time=init.options.get(EXPIRE_TIME),
+            init_id=init.id,
+            timestamp_ns=init.timestamp_ns,
+            reduce_only=init.options[REDUCE_ONLY],
         )

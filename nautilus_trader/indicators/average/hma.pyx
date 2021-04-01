@@ -31,7 +31,7 @@ cdef class HullMovingAverage(MovingAverage):
     moving average.
     """
 
-    def __init__(self, int period, PriceType price_type=PriceType.UNDEFINED):
+    def __init__(self, int period, PriceType price_type=PriceType.LAST):
         """
         Initialize a new instance of the `HullMovingAverage` class.
 

@@ -25,10 +25,10 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -46,6 +46,8 @@ from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
@@ -77,6 +79,7 @@ cdef class SimulatedExchange:
     cdef readonly dict instruments
     cdef readonly dict data_ticks
 
+    cdef dict _books
     cdef dict _market_bids
     cdef dict _market_asks
     cdef dict _slippages
@@ -95,6 +98,8 @@ cdef class SimulatedExchange:
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
+    cpdef void process_order_book_operations(self, OrderBookOperations operations) except *
+    cpdef void process_order_book_snapshot(self, OrderBookSnapshot snapshot) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_modules(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
@@ -104,7 +109,7 @@ cdef class SimulatedExchange:
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void handle_amend_order(self, AmendOrder command) except *
+    cpdef void handle_update_order(self, UpdateOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
 # --------------------------------------------------------------------------------------------------
@@ -127,9 +132,10 @@ cdef class SimulatedExchange:
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
-    cdef inline void _amend_order(self, ClientOrderId cl_ord_id, Quantity qty, Price price) except *
+    cdef inline void _update_order(self, ClientOrderId cl_ord_id, Quantity qty, Price price) except *
     cdef inline void _cancel_order(self, ClientOrderId cl_ord_id) except *
-    cdef inline void _cancel_reject(self, ClientOrderId cl_ord_id, str response, str reason) except *
+    cdef inline void _reject_cancel(self, ClientOrderId cl_ord_id, str response, str reason) except *
+    cdef inline void _reject_update(self, ClientOrderId cl_ord_id, str response, str reason) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _trigger_order(self, StopLimitOrder order) except *
     cdef inline void _process_order(self, Order order) except *
@@ -137,13 +143,14 @@ cdef class SimulatedExchange:
     cdef inline void _process_limit_order(self, LimitOrder order, Price bid, Price ask) except *
     cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *
     cdef inline void _process_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *
-    cdef inline void _amend_limit_order(self, LimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
-    cdef inline void _amend_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price, Price bid, Price ask) except *
-    cdef inline void _amend_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
-    cdef inline void _generate_order_amended(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef inline void _update_limit_order(self, LimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
+    cdef inline void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price, Price bid, Price ask) except *
+    cdef inline void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
+    cdef inline void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
+    cdef inline void _iterate_matching_engine(self, InstrumentId instrument_id, Price bid, Price ask, int64_t timestamp_ns) except *
     cdef inline void _match_order(self, PassiveOrder order, Price bid, Price ask) except *
     cdef inline void _match_limit_order(self, LimitOrder order, Price bid, Price ask) except *
     cdef inline void _match_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *

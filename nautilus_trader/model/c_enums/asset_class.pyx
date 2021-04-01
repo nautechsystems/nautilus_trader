@@ -32,10 +32,10 @@ cdef class AssetClassParser:
         elif value == 7:
             return "BETTING"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef AssetClass from_str(str value):
+    cdef AssetClass from_str(str value) except *:
         if value == "FX":
             return AssetClass.FX
         elif value == "STOCK":
@@ -51,7 +51,7 @@ cdef class AssetClassParser:
         elif value == "BETTING":
             return AssetClass.BETTING
         else:
-            return AssetClass.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

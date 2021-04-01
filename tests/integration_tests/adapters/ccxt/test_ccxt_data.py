@@ -21,7 +21,6 @@ from unittest.mock import MagicMock
 from nautilus_trader.adapters.ccxt.data import CCXTDataClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.messages import DataRequest
@@ -72,15 +71,10 @@ class CCXTDataClientTests(unittest.TestCase):
         asyncio.set_event_loop(self.loop)
 
         # Setup logging
-        logger = LiveLogger(
+        self.logger = LiveLogger(
+            loop=self.loop,
             clock=self.clock,
-            name=self.trader_id.value,
-            level_console=LogLevel.INFO,
-            level_file=LogLevel.DEBUG,
-            level_store=LogLevel.WARNING,
         )
-
-        self.logger = LiveLogger(self.clock)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -123,7 +117,7 @@ class CCXTDataClientTests(unittest.TestCase):
             client=self.mock_ccxt,
             engine=self.data_engine,
             clock=self.clock,
-            logger=logger,
+            logger=self.logger,
         )
 
         self.data_engine.register_client(self.client)
@@ -447,7 +441,7 @@ class CCXTDataClientTests(unittest.TestCase):
             handler = ObjectStorer()
 
             request = DataRequest(
-                provider=BINANCE.value,
+                client_name=BINANCE.value,
                 data_type=DataType(
                     TradeTick,
                     metadata={
@@ -494,7 +488,7 @@ class CCXTDataClientTests(unittest.TestCase):
             bar_type = BarType(instrument_id=ETHUSDT, bar_spec=bar_spec)
 
             request = DataRequest(
-                provider=BINANCE.value,
+                client_name=BINANCE.value,
                 data_type=DataType(
                     Bar,
                     metadata={

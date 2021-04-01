@@ -52,15 +52,9 @@ cdef class BarSpecification:
         ------
         ValueError
             If step is not positive (> 0).
-        ValueError
-            If aggregation is UNDEFINED.
-        ValueError
-            If price type is UNDEFINED.
 
         """
         Condition.positive_int(step, 'step')
-        Condition.not_equal(aggregation, BarAggregation.UNDEFINED, 'aggregation', 'UNDEFINED')
-        Condition.not_equal(price_type, PriceType.UNDEFINED, 'price_type', 'UNDEFINED')
 
         self.step = step
         self.aggregation = aggregation
@@ -219,8 +213,6 @@ cdef class BarType:
 
         """
         self.instrument_id = instrument_id
-        self.symbol = instrument_id.symbol
-        self.venue = instrument_id.venue
         self.spec = bar_spec
         self.is_internal_aggregation = internal_aggregation
 

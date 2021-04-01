@@ -17,21 +17,25 @@ cdef class LiquiditySideParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
+        if value == 0:
+            return "NONE"
+        elif value == 1:
             return "MAKER"
         elif value == 2:
             return "TAKER"
         else:
-            return "NONE"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef LiquiditySide from_str(str value):
-        if value == "MAKER":
+    cdef LiquiditySide from_str(str value) except *:
+        if value == "NONE":
+            return LiquiditySide.NONE
+        elif value == "MAKER":
             return LiquiditySide.MAKER
         elif value == "TAKER":
             return LiquiditySide.TAKER
         else:
-            return LiquiditySide.NONE
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

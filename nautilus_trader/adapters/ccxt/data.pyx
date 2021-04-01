@@ -1092,7 +1092,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list data
         try:
             data = await self._client.fetch_ohlcv(
-                symbol=bar_type.symbol.value,
+                symbol=bar_type.instrument_id.symbol.value,
                 timeframe=timeframe,
                 since=dt_to_unix_millis(from_datetime) if from_datetime is not None else None,
                 limit=limit,

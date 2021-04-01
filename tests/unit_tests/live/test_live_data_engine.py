@@ -91,7 +91,7 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
         subscribe = Subscribe(
-            provider=BINANCE.value,
+            client_name=BINANCE.value,
             data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
@@ -118,7 +118,7 @@ class LiveDataEngineTests(unittest.TestCase):
 
         handler = []
         request = DataRequest(
-            provider="RANDOM",
+            client_name="RANDOM",
             data_type=DataType(
                 QuoteTick,
                 metadata={
@@ -152,7 +152,7 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
         response = DataResponse(
-            provider="BINANCE",
+            client_name="BINANCE",
             data_type=DataType(QuoteTick),
             data=[],
             correlation_id=self.uuid_factory.generate(),
@@ -241,7 +241,7 @@ class LiveDataEngineTests(unittest.TestCase):
             self.engine.start()
 
             subscribe = Subscribe(
-                provider=BINANCE.value,
+                client_name=BINANCE.value,
                 data_type=DataType(QuoteTick),
                 handler=[].append,
                 command_id=self.uuid_factory.generate(),
@@ -268,7 +268,7 @@ class LiveDataEngineTests(unittest.TestCase):
 
             handler = []
             request = DataRequest(
-                provider="RANDOM",
+                client_name="RANDOM",
                 data_type=DataType(
                     QuoteTick,
                     metadata={
@@ -304,7 +304,7 @@ class LiveDataEngineTests(unittest.TestCase):
             self.engine.start()
 
             response = DataResponse(
-                provider="BINANCE",
+                client_name="BINANCE",
                 data_type=DataType(QuoteTick),
                 data=[],
                 correlation_id=self.uuid_factory.generate(),

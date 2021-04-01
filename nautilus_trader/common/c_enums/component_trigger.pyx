@@ -34,10 +34,10 @@ cdef class ComponentTriggerParser:
         elif value == 8:
             return "DISPOSED"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef ComponentTrigger from_str(str value):
+    cdef ComponentTrigger from_str(str value) except *:
         if value == "START":
             return ComponentTrigger.START
         elif value == "RUNNING":
@@ -55,7 +55,7 @@ cdef class ComponentTriggerParser:
         elif value == "DISPOSED":
             return ComponentTrigger.DISPOSED
         else:
-            return ComponentTrigger.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

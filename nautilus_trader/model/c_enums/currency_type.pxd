@@ -15,7 +15,6 @@
 
 
 cpdef enum CurrencyType:
-    UNDEFINED = 0,
     CRYPTO = 1,
     FIAT = 2,
 
@@ -26,4 +25,4 @@ cdef class CurrencyTypeParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef CurrencyType from_str(str value)
+    cdef CurrencyType from_str(str value) except *

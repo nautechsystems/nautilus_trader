@@ -38,10 +38,10 @@ cdef class ComponentStateParser:
         elif value == 10:
             return "FAULTED"
         else:
-            return "UNDEFINED"
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef ComponentState from_str(str value):
+    cdef ComponentState from_str(str value) except *:
         if value == "INITIALIZED":
             return ComponentState.INITIALIZED
         elif value == "STARTING":
@@ -63,7 +63,7 @@ cdef class ComponentStateParser:
         elif value == "FAULTED":
             return ComponentState.FAULTED
         else:
-            return ComponentState.UNDEFINED
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):

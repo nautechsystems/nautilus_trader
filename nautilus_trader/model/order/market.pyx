@@ -24,9 +24,9 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -88,17 +88,13 @@ cdef class MarketOrder(Order):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
-        ValueError
             If time_in_force is other than GTC, IOC or FOK.
 
         """
         Condition.positive(quantity, "quantity")
         Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force was != GTC, IOC or FOK")
 
-        cdef OrderInitialized init_event = OrderInitialized(
+        cdef OrderInitialized init = OrderInitialized(
             cl_ord_id=cl_ord_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -111,16 +107,16 @@ cdef class MarketOrder(Order):
             options={},
         )
 
-        super().__init__(init_event)
+        super().__init__(init=init)
 
     @staticmethod
-    cdef MarketOrder create(OrderInitialized event):
+    cdef MarketOrder create(OrderInitialized init):
         """
         Return an order from the given initialized event.
 
         Parameters
         ----------
-        event : OrderInitialized
+        init : OrderInitialized
             The event to initialize with.
 
         Returns
@@ -130,21 +126,21 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If event.order_type is not equal to MARKET.
+            If init.order_type is not equal to MARKET.
 
         """
-        Condition.not_none(event, "event")
-        Condition.equal(event.order_type, OrderType.MARKET, "event.order_type", "OrderType")
+        Condition.not_none(init, "init")
+        Condition.equal(init.order_type, OrderType.MARKET, "init.order_type", "OrderType")
 
         return MarketOrder(
-            cl_ord_id=event.cl_ord_id,
-            strategy_id=event.strategy_id,
-            instrument_id=event.instrument_id,
-            order_side=event.order_side,
-            quantity=event.quantity,
-            time_in_force=event.time_in_force,
-            init_id=event.id,
-            timestamp_ns=event.timestamp_ns,
+            cl_ord_id=init.cl_ord_id,
+            strategy_id=init.strategy_id,
+            instrument_id=init.instrument_id,
+            order_side=init.order_side,
+            quantity=init.quantity,
+            time_in_force=init.time_in_force,
+            init_id=init.id,
+            timestamp_ns=init.timestamp_ns,
         )
 
     cdef str status_string_c(self):
@@ -152,8 +148,8 @@ cdef class MarketOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}")
 
-    cdef void _amended(self, OrderAmended event) except *:
-        raise NotImplemented("Cannot amend a market order")
+    cdef void _updated(self, OrderUpdated event) except *:
+        raise NotImplemented("Cannot update a market order")
 
     cdef void _filled(self, OrderFilled fill) except *:
         self.id = fill.order_id

@@ -20,7 +20,7 @@ from nautilus_trader.model.data cimport DataType
 
 
 cdef class DataCommand(Command):
-    cdef readonly str provider
+    cdef readonly str client_name
     """The data client name for the command.\n\n:returns: `str`"""
     cdef readonly DataType data_type
     """The command data type.\n\n:returns: `type`"""
@@ -37,7 +37,7 @@ cdef class Unsubscribe(DataCommand):
 
 
 cdef class DataRequest(Request):
-    cdef readonly str provider
+    cdef readonly str client_name
     """The data client name for the request.\n\n:returns: `str`"""
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
@@ -46,7 +46,7 @@ cdef class DataRequest(Request):
 
 
 cdef class DataResponse(Response):
-    cdef readonly str provider
+    cdef readonly str client_name
     """The data client name for the response.\n\n:returns: `str`"""
     cdef readonly DataType data_type
     """The response data type.\n\n:returns: `type`"""

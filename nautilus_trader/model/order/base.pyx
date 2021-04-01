@@ -37,7 +37,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
@@ -48,6 +47,7 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -81,8 +81,8 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
 
-# Valid states to amend an order in
-cdef tuple _AMENDING_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
+# Valid states to update an order in
+cdef (int, int) _UPDATABLE_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
 
 
 cdef class Order:
@@ -92,13 +92,13 @@ cdef class Order:
     This class should not be used directly, but through its concrete subclasses.
     """
 
-    def __init__(self, OrderInitialized event not None):
+    def __init__(self, OrderInitialized init not None):
         """
         Initialize a new instance of the `Order` class.
 
         Parameters
         ----------
-        event : OrderInitialized
+        init : OrderInitialized
             The order initialized event.
 
         Raises
@@ -107,9 +107,9 @@ cdef class Order:
             If event.strategy_id has a 'NULL' value.
 
         """
-        Condition.true(event.strategy_id.not_null(), f"event.strategy_id.value was 'NULL'")
+        Condition.true(init.strategy_id.not_null(), f"init.strategy_id.value was 'NULL'")
 
-        self._events = [event]    # type: list[OrderEvent]
+        self._events = [init]    # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
@@ -118,25 +118,25 @@ cdef class Order:
             state_parser=OrderStateParser.to_str,
         )
 
-        self.cl_ord_id = event.cl_ord_id
+        self.cl_ord_id = init.cl_ord_id
         self.id = OrderId.null_c()
         self.position_id = PositionId.null_c()
-        self.strategy_id = event.strategy_id
-        self.account_id = None        # Can be None
-        self.execution_id = None      # Can be None
-        self.instrument_id = event.instrument_id
-        self.symbol = event.instrument_id.symbol
-        self.venue = event.instrument_id.venue
-        self.side = event.order_side
-        self.type = event.order_type
-        self.quantity = event.quantity
-        self.timestamp_ns = event.timestamp_ns
-        self.time_in_force = event.time_in_force
+        self.strategy_id = init.strategy_id
+        self.account_id = None    # Can be None
+        self.execution_id = None  # Can be None
+        self.instrument_id = init.instrument_id
+        self.symbol = init.instrument_id.symbol
+        self.venue = init.instrument_id.venue
+        self.side = init.order_side
+        self.type = init.order_type
+        self.quantity = init.quantity
+        self.timestamp_ns = init.timestamp_ns
+        self.time_in_force = init.time_in_force
         self.filled_qty = Quantity()
         self.execution_ns = 0
         self.avg_px = None  # Can be None
         self.slippage = Decimal()
-        self.init_id = event.id
+        self.init_id = init.id
 
     def __eq__(self, Order other) -> bool:
         return self.cl_ord_id.value == other.cl_ord_id.value
@@ -363,16 +363,21 @@ cdef class Order:
 
     @staticmethod
     cdef OrderSide opposite_side_c(OrderSide side) except *:
-        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
-
-        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
+        if side == OrderSide.BUY:
+            return OrderSide.SELL
+        elif side == OrderSide.SELL:
+            return OrderSide.BUY
+        else:
+            raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
     cdef inline OrderSide flatten_side_c(PositionSide side) except *:
-        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
-        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
-
-        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
+        if side == PositionSide.LONG:
+            return OrderSide.SELL
+        elif side == PositionSide.SHORT:
+            return OrderSide.BUY
+        else:
+            raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
     def opposite_side(OrderSide side) -> OrderSide:
@@ -387,6 +392,11 @@ cdef class Order:
         Returns
         -------
         OrderSide
+
+        Raises
+        ------
+        ValueError
+            If side is invalid.
 
         """
         return Order.opposite_side_c(side)
@@ -408,7 +418,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If side is UNDEFINED or FLAT.
+            If side is FLAT or invalid.
 
         """
         return Order.flatten_side_c(side)
@@ -425,7 +435,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If event.order_id not equal to self.id (if assigned and not being amended).
+            If self.id and event.order_id are both not 'NULL', and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
         KeyError
@@ -434,6 +444,8 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
+        if self.id.not_null() and event.order_id.not_null():
+            Condition.equal(event.order_id, self.id, "event.order_id", "self.id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInvalid):
@@ -451,17 +463,13 @@ cdef class Order:
         elif isinstance(event, OrderAccepted):
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
-        elif isinstance(event, OrderAmended):
-            Condition.true(self._fsm.state in _AMENDING_STATES, "state was invalid for amending")
-            self._amended(event)
+        elif isinstance(event, OrderUpdated):
+            Condition.true(self._fsm.state in _UPDATABLE_STATES, "state was invalid for updating")
+            self._updated(event)
         elif isinstance(event, OrderCancelled):
-            # OrderId should have been assigned
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.CANCELLED)
             self._cancelled(event)
         elif isinstance(event, OrderExpired):
-            # OrderId should have been assigned
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
         elif isinstance(event, OrderTriggered):
@@ -470,7 +478,6 @@ cdef class Order:
             self._triggered(event)
         elif isinstance(event, OrderFilled):
             if self.id.not_null():
-                Condition.equal(self.id, event.order_id, "id", "event.order_id")
                 Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
             else:
                 self.id = event.order_id
@@ -498,7 +505,7 @@ cdef class Order:
     cdef void _accepted(self, OrderAccepted event) except *:
         self.id = event.order_id
 
-    cdef void _amended(self, OrderAmended event) except *:
+    cdef void _updated(self, OrderUpdated event) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
@@ -580,20 +587,10 @@ cdef class PassiveOrder(Order):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If order_side is UNDEFINED.
-        ValueError
-            If order_type is UNDEFINED.
-        ValueError
-            If time_in_force is UNDEFINED.
-        ValueError
             If time_in_force is GTD and the expire_time is None.
 
         """
-        # Condition for order_side not UNDEFINED checked in OrderInitialized
-        # Condition for order_type not UNDEFINED checked in OrderInitialized
-        # Condition for time_in_force not UNDEFINED checked in OrderInitialized
         Condition.positive(quantity, "quantity")
-        Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
             Condition.not_none(expire_time, "expire_time")
@@ -605,7 +602,7 @@ cdef class PassiveOrder(Order):
         if expire_time is not None:
             options[EXPIRE_TIME] = expire_time
 
-        cdef OrderInitialized init_event = OrderInitialized(
+        cdef OrderInitialized init = OrderInitialized(
             cl_ord_id=cl_ord_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -618,7 +615,7 @@ cdef class PassiveOrder(Order):
             options=options,
         )
 
-        super().__init__(init_event)
+        super().__init__(init=init)
 
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
@@ -632,7 +629,7 @@ cdef class PassiveOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
-    cdef void _amended(self, OrderAmended event) except *:
+    cdef void _updated(self, OrderUpdated event) except *:
         self.id = event.order_id
         self.quantity = event.quantity
         self.price = event.price

@@ -34,6 +34,7 @@ from nautilus_trader.core.datetime import nanos_to_micros
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import nanos_to_timedelta
+from nautilus_trader.core.datetime import nanos_to_unix_dt
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.datetime import timedelta_to_nanos
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -184,6 +185,25 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [-100_000_000, pd.Timestamp("1969-12-31 23:59:59.900000+0000", tz="UTC")],
+            [-1_000, pd.Timestamp("1969-12-31 23:59:59.999999+0000", tz="UTC")],
+            [0, UNIX_EPOCH],
+            [1_000, pd.Timestamp("1970-01-01 00:00:00.000001+0000", tz="UTC")],
+            [1_000_000_000, pd.Timestamp("1970-01-01 00:00:01+0000", tz="UTC")],
+        ],
+    )
+    def test_nanos_to_unix_dt(self, value, expected):
+        # Arrange
+        # Act
+        result = nanos_to_unix_dt(value)
+
+        # Assert
+        assert result == expected
+        assert result.tzinfo == pytz.utc
 
     @pytest.mark.parametrize(
         "value, expected",

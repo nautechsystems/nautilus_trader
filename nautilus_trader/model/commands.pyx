@@ -170,13 +170,13 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"command_id={self.id})")
 
 
-cdef class AmendOrder(TradingCommand):
+cdef class UpdateOrder(TradingCommand):
     """
     Represents a command to change to parameters of an existing order.
 
     References
     ----------
-    https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
     """
 
@@ -192,7 +192,7 @@ cdef class AmendOrder(TradingCommand):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `AmendOrder` class.
+        Initialize a new instance of the `UpdateOrder` class.
 
         Parameters
         ----------
@@ -205,9 +205,9 @@ cdef class AmendOrder(TradingCommand):
         cl_ord_id : OrderId
             The client order identifier.
         quantity : Quantity
-            The quantity for the order (amending optional).
+            The quantity for the order (update optional).
         price : Price
-            The price for the order (amending optional).
+            The price for the order (update optional).
         command_id : UUID
             The command identifier.
         timestamp_ns : int64

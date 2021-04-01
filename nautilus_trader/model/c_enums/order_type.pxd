@@ -15,7 +15,6 @@
 
 
 cpdef enum OrderType:
-    UNDEFINED = 0,  # Invalid value
     MARKET = 1,
     LIMIT = 2,
     STOP_MARKET = 3,
@@ -28,4 +27,4 @@ cdef class OrderTypeParser:
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderType from_str(str value)
+    cdef OrderType from_str(str value) except *

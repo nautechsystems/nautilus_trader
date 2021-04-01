@@ -129,6 +129,7 @@ class TradingNode:
 
         # Setup logging
         self._logger = LiveLogger(
+            loop=self._loop,
             clock=self._clock,
             name=self.trader_id.value,
             level_console=LogLevelParser.from_str_py(
@@ -141,12 +142,14 @@ class TradingNode:
             ),  # Run logger in a separate process
             log_thread=config_log.get("log_thread_id", False),
             log_to_file=config_log.get("log_to_file", False),
-            log_file_path=config_log.get("log_file_path", ""),
+            log_file_dir=config_log.get("log_file_dir", ""),
         )
 
         self._log = LoggerAdapter(
-            component_name=self.__class__.__name__, logger=self._logger
+            component_name=self.__class__.__name__,
+            logger=self._logger,
         )
+
         self._log_header()
         self._log.info("Building...")
 
@@ -409,6 +412,7 @@ class TradingNode:
 
             self._log.info("Stopping event loop...")
             self._cancel_all_tasks()
+            self._logger.stop()
             self._loop.stop()
         except RuntimeError as ex:
             self._log.exception(ex)
@@ -432,8 +436,6 @@ class TradingNode:
                 self._log.info(f"loop.is_closed={self._loop.is_closed()}")
 
             self._log.info("state=DISPOSED.")
-            self._logger.stop()  # Ensure process is stopped
-            time.sleep(0.1)  # Ensure final log messages
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
@@ -470,6 +472,7 @@ class TradingNode:
             self._log.info("state=STARTING...")
             self._is_running = True
 
+            self._logger.start()
             self._data_engine.start()
             self._exec_engine.start()
             self._risk_engine.start()

@@ -1,3 +1,28 @@
+# NautilusTrader 1.113.0 Beta - Release Notes
+
+**This release includes substantial breaking changes.**
+
+Further standardization of naming conventions along with internal refinements
+and fixes.
+
+## Breaking Changes
+- Rename `AmendOrder` to `UpdateOrder`.
+- Rename `OrderAmended` to `OrderUpdated`.
+- Rename `amend` and `amended` related methods to `update` and `updated`.
+- Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense).
+
+## Enhancements
+- Introduce `OrderUpdateRejected`, event separated for clarity.
+- Refined LiveLogger: Now runs on event loop with high-performance `Queue`.
+- Improved flexibility of when strategies are added to a `BacktestEngine`.
+- Improved checks for `OrderId` equality when applying order events.
+
+## Fixes
+- Removed `UNDEFINED` enum values. Do not allow invalid values to be represented
+in the system (prefer throwing exceptions).
+
+---
+
 # NautilusTrader 1.112.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**
