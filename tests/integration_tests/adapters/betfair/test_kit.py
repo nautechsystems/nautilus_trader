@@ -389,12 +389,12 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def update_order_command():
+    def update_order_command(instrument_id=None, cl_ord_id=None):
         return UpdateOrder(
-            instrument_id=BetfairTestStubs.instrument_id(),
+            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            cl_ord_id=ClientOrderId("1"),
+            cl_ord_id=cl_ord_id or ClientOrderId("1"),
             quantity=Quantity(50),
             price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),

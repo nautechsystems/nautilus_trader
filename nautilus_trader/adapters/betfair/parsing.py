@@ -29,8 +29,10 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -309,16 +311,16 @@ def on_market_update(update: dict, instrument_provider: BetfairInstrumentProvide
 
 
 # TODO - Need to handle pagination > 1000 orders
-async def generate_order_status_report(self) -> Optional[OrderStatusReport]:
+async def generate_order_status_report(self, order) -> Optional[OrderStatusReport]:
     return [
-        # OrderStatusReport(
-        #     cl_ord_id=ClientOrderId(),
-        #     order_id=OrderId(),
-        #     order_stat=OrderState(),
-        #     filled_qty=Quantity(),
-        #     timestamp_ns=millis_to_nanos(),
-        # )
-        # for order in self.client().betting.list_current_orders()["currentOrders"]
+        OrderStatusReport(
+            cl_ord_id=ClientOrderId(),
+            order_id=OrderId(),
+            order_state=OrderState(),
+            filled_qty=Quantity(),
+            timestamp_ns=millis_to_nanos(),
+        )
+        for order in self.client().betting.list_current_orders()["currentOrders"]
     ]
 
 
@@ -326,5 +328,4 @@ async def generate_trades_list(
     self, order_id: OrderId, symbol: Symbol, since: datetime = None
 ) -> List[ExecutionReport]:
     # filled = self.client().betting.list_cleared_orders()
-    # return [ExecutionReport()]
-    return []
+    return [ExecutionReport()]

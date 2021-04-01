@@ -211,7 +211,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-    # TODO - Does this also take 5s when IN-PLAY ??
     cpdef void update_order(self, UpdateOrder command) except *:
         self._log.debug("Received update order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
@@ -230,7 +229,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             instrument=instrument
         )
         self._log.debug(f"update kw: {kw}")
-        resp = self._client.betting.replace_orders(**kw)
+        resp = self._client.betting.replace_orders(**kw, async_=True)
         self._log.debug(f"update: {resp}")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
@@ -364,7 +363,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         now = start
         while (now - start) < secs_to_nanos(timeout_seconds):
             if order_id in self.order_id_to_cl_ord_id:
-                self._log.debug(f"Found order in {nanos_to_secs(now - start)} sec")
+                self._log.debug(f"Found order in {nanos_to_secs(now - start)} sec ")
                 return
             now = self._clock.timestamp_ns()
             await asyncio.sleep(0)
@@ -372,11 +371,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    async def generate_order_status_report(self) -> Optional[OrderStatusReport]:
-        return await generate_order_status_report(self)
+    async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
+        self._log.debug(f"generate_order_status_report: {order}")
+        return await generate_order_status_report(self, order)
 
-    async def generate_trades_list(self, order_id: OrderId, symbol: Symbol,  since: Optional[datetime]=None) -> List[ExecutionReport]:
-        return await generate_trades_list(self)
+    async def generate_exec_reports(self, order_id: OrderId, symbol: Symbol,  since: Optional[datetime]=None) -> List[ExecutionReport]:
+        self._log.debug(f"generate_exec_reports: {order_id}, {symbol}, {since}")
+        return await generate_trades_list(self, order_id,  symbol,  since)
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
