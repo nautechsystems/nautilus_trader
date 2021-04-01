@@ -39,6 +39,7 @@ from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderUpdateRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -631,6 +632,26 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             OrderId("1"),
             0,
+            uuid4(),
+            0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
+
+    def test_serialize_and_deserialize_order_update_reject_events(self):
+        # Arrange
+        event = OrderUpdateRejected(
+            self.account_id,
+            ClientOrderId("O-123456"),
+            OrderId("1"),
+            0,
+            "RESPONSE",
+            "ORDER_DOES_NOT_EXIST",
             uuid4(),
             0,
         )

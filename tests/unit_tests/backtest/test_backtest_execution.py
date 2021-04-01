@@ -231,7 +231,7 @@ class BacktestExecClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # No exceptions raised
 
-    def test_amend_order_when_not_connected_logs_and_does_not_send(self):
+    def test_update_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
         order = self.order_factory.stop_market(
             ETHUSDT_BINANCE.id,

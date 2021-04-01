@@ -239,7 +239,7 @@ class TestRiskEngine:
         assert self.exec_client.calls == ["connect"]
         assert self.exec_engine.event_count == 1
 
-    def test_amend_order_with_default_settings_sends_to_client(self):
+    def test_update_order_with_default_settings_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
 

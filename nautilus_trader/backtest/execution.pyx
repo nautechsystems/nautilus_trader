@@ -156,7 +156,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 
-        self._exchange.handle_amend_order(command)
+        self._exchange.handle_update_order(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """

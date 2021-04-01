@@ -50,6 +50,7 @@ from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -527,6 +528,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIMESTAMP] = event.rejected_ns
             package[REASON] = event.reason
+        elif isinstance(event, OrderUpdateRejected):
+            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[ORDER_ID] = event.order_id.value
+            package[ACCOUNT_ID] = event.account_id.value
+            package[REJECTED_TIMESTAMP] = event.rejected_ns
+            package[RESPONSE_TO] = event.response_to
+            package[REASON] = event.reason
         elif isinstance(event, OrderCancelRejected):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
@@ -695,6 +703,17 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 unpacked[CANCELLED_TIMESTAMP],
+                event_id,
+                timestamp_ns,
+            )
+        elif event_type == OrderUpdateRejected.__name__:
+            return OrderUpdateRejected(
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                unpacked[REJECTED_TIMESTAMP],
+                unpacked[RESPONSE_TO],
+                unpacked[REASON],
                 event_id,
                 timestamp_ns,
             )

@@ -147,7 +147,7 @@ class ExecutionClientTests(unittest.TestCase):
             NotImplementedError, self.client.submit_bracket_order, command
         )
 
-    def test_amend_order_raises_not_implemented_error(self):
+    def test_update_order_raises_not_implemented_error(self):
         # Arrange
         # Act
         command = UpdateOrder(

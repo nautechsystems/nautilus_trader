@@ -59,7 +59,7 @@ cdef class RiskEngine(Component):
     cdef inline void _handle_trading_command(self, TradingCommand command) except *
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
-    cdef inline void _handle_amend_order(self, ExecutionClient client, UpdateOrder command) except *
+    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------

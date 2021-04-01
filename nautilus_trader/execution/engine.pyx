@@ -57,6 +57,7 @@ from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -498,7 +499,7 @@ cdef class ExecutionEngine(Component):
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
         elif isinstance(command, UpdateOrder):
-            self._handle_amend_order(client, command)
+            self._handle_update_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -552,7 +553,7 @@ cdef class ExecutionEngine(Component):
         else:
             client.submit_bracket_order(command)
 
-    cdef inline void _handle_amend_order(self, ExecutionClient client, UpdateOrder command) except *:
+    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
             self._log.warning(f"Cannot update order: "
@@ -665,8 +666,8 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
-        if isinstance(event, OrderCancelRejected):
-            self._handle_order_cancel_reject(event)
+        if isinstance(event, (OrderCancelRejected, OrderUpdateRejected)):
+            self._handle_order_command_rejected(event)
             return  # Event will be sent to strategy
 
         # Fetch Order from cache
@@ -765,7 +766,7 @@ cdef class ExecutionEngine(Component):
             self._log.error(f"Cannot assign PositionId: "
                             f"{len(positions_open)} open positions")
 
-    cdef inline void _handle_order_cancel_reject(self, OrderCancelRejected event) except *:
+    cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
