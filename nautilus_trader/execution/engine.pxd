@@ -24,7 +24,6 @@ from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionChanged
@@ -93,7 +92,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _execute_command(self, TradingCommand command) except *
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
-    cdef inline void _handle_amend_order(self, ExecutionClient client, UpdateOrder command) except *
+    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
     cdef inline void _invalidate_order(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *
@@ -106,7 +105,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_order_event(self, OrderEvent event) except *
     cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *
     cdef inline void _confirm_position_id(self, OrderFilled fill) except *
-    cdef inline void _handle_order_cancel_reject(self, OrderCancelRejected event) except *
+    cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *
     cdef inline void _open_position(self, OrderFilled fill) except *
     cdef inline void _update_position(self, Position position, OrderFilled fill) except *

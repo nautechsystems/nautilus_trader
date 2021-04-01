@@ -196,7 +196,7 @@ cdef class RiskEngine(Component):
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
         elif isinstance(command, UpdateOrder):
-            self._handle_amend_order(client, command)
+            self._handle_update_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -229,7 +229,7 @@ cdef class RiskEngine(Component):
         else:
             client.submit_bracket_order(command)
 
-    cdef inline void _handle_amend_order(self, ExecutionClient client, UpdateOrder command) except *:
+    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
         # Pass-through for now
         client.update_order(command)
 

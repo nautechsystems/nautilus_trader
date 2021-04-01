@@ -31,6 +31,7 @@ from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderUpdateRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -202,6 +203,32 @@ class TestEvents:
         assert f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, order_id={123456}, event_id={uuid})", repr(
             event
         )  # noqa
+
+    def test_order_update_reject(self):
+        # Arrange
+        uuid = uuid4()
+        event = OrderUpdateRejected(
+            account_id=AccountId("SIM", "000"),
+            cl_ord_id=ClientOrderId("O-2020872378423"),
+            order_id=OrderId("123456"),
+            rejected_ns=0,
+            response_to="O-2020872378423",
+            reason="ORDER_DOES_NOT_EXIST",
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+
+        # Act
+        assert (
+            f"OrderUpdateRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})" == str(event)
+        )
+        assert (
+            f"OrderUpdateRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, "
+            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})" == repr(event)
+        )
 
     def test_order_cancel_reject(self):
         # Arrange

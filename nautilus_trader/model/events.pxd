@@ -104,6 +104,17 @@ cdef class OrderAccepted(OrderEvent):
     """The order accepted time.\n\n:returns: `int64`"""
 
 
+cdef class OrderUpdateRejected(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly int64_t rejected_ns
+    """The requests rejected time of the event.\n\n:returns: `int64`"""
+    cdef readonly str response_to
+    """The update rejection response to.\n\n:returns: `str`"""
+    cdef readonly str reason
+    """The reason for order update rejection.\n\n:returns: `str`"""
+
+
 cdef class OrderCancelRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
