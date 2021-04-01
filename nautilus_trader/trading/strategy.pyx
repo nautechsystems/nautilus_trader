@@ -55,10 +55,10 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.events cimport Event
@@ -1295,7 +1295,7 @@ cdef class TradingStrategy(Component):
 
         self._send_exec_cmd(command)
 
-    cpdef void amend_order(
+    cpdef void update_order(
         self,
         PassiveOrder order,
         Quantity quantity=None,
@@ -1303,27 +1303,27 @@ cdef class TradingStrategy(Component):
         Price trigger=None,
     ) except *:
         """
-        Amend the given order with optional parameters and routing instructions.
+        Update the given order with optional parameters and routing instructions.
 
-        An `AmendOrder` command is created and then sent to the
+        An `UpdateOrder` command is created and then sent to the
         `ExecutionEngine`. Either one or both values must differ from the
         original order for the command to be valid.
 
         Will use an Order Cancel/Replace Request (a.k.a Order Modification)
-        for FIX protocols, otherwise if order modification is not available with
+        for FIX protocols, otherwise if order update is not available with
         the API, then will cancel - then replace with a new order using the
         original `ClientOrderId`.
 
         Parameters
         ----------
         order : PassiveOrder
-            The order to amend.
+            The order to update.
         quantity : Quantity, optional
-            The amended quantity for the given order.
+            The updated quantity for the given order.
         price : Price, optional
-            The amended price for the given order.
+            The updated price for the given order.
         trigger : Price, optional
-            The amended trigger price for the given order.
+            The updated trigger price for the given order.
 
         Raises
         ------
@@ -1355,23 +1355,23 @@ cdef class TradingStrategy(Component):
 
         if trigger is not None:
             if order.is_triggered:
-                self.log.warning(f"Cannot amend order for {repr(order.cl_ord_id)}: already triggered.")
+                self.log.warning(f"Cannot update order for {repr(order.cl_ord_id)}: already triggered.")
                 return
             if trigger != order.trigger:
                 amending = True
 
         if not amending:
             self.log.error(
-                "Cannot create command AmendOrder "
+                "Cannot create command UpdateOrder "
                 "(both quantity and price were None)."
             )
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot amend order (no account assigned to order yet), {order}.")
+            self.log.error(f"Cannot update order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
-        cdef AmendOrder command = AmendOrder(
+        cdef UpdateOrder command = UpdateOrder(
             order.instrument_id,
             self.trader_id,
             order.account_id,

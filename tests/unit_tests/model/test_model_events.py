@@ -22,7 +22,6 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderCancelReject
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderDenied
@@ -32,6 +31,7 @@ from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -254,25 +254,25 @@ class TestEvents:
     def test_order_amended(self):
         # Arrange
         uuid = uuid4()
-        event = OrderAmended(
+        event = OrderUpdated(
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=OrderId("123456"),
             quantity=Quantity(500000),
             price=Price("1.95000"),
-            amended_ns=0,
+            updated_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
 
         # Act
         assert (
-            f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
+            f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
             f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
             == str(event)
         )
         assert (
-            f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
+            f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
             f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
             == repr(event)
         )

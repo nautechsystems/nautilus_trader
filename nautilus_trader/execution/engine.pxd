@@ -17,11 +17,11 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -93,7 +93,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _execute_command(self, TradingCommand command) except *
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
-    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *
+    cdef inline void _handle_amend_order(self, ExecutionClient client, UpdateOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
     cdef inline void _invalidate_order(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *

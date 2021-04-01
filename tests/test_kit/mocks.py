@@ -460,7 +460,7 @@ class MockExecutionClient(ExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def amend_order(self, command) -> None:
+    def update_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
@@ -553,7 +553,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def amend_order(self, command) -> None:
+    def update_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 

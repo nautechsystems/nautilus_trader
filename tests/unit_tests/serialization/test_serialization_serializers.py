@@ -19,10 +19,10 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -30,7 +30,6 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderCancelReject
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderDenied
@@ -40,6 +39,7 @@ from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -364,7 +364,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_amend_order_commands(self):
         # Arrange
-        command = AmendOrder(
+        command = UpdateOrder(
             AUDUSD_SIM.id,
             self.trader_id,
             self.account_id,
@@ -664,7 +664,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_order_amended_events(self):
         # Arrange
-        event = OrderAmended(
+        event = OrderUpdated(
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),

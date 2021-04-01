@@ -122,15 +122,15 @@ cdef class OrderCancelled(OrderEvent):
     """The order cancelled time.\n\n:returns: `int64`"""
 
 
-cdef class OrderAmended(OrderEvent):
+cdef class OrderUpdated(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly Quantity quantity
     """The orders current quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
-    cdef readonly int64_t amended_ns
-    """The order amended time.\n\n:returns: `int64`"""
+    cdef readonly int64_t updated_ns
+    """The order updated time.\n\n:returns: `int64`"""
 
 
 cdef class OrderExpired(OrderEvent):

@@ -33,15 +33,14 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
@@ -51,6 +50,7 @@ from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -338,7 +338,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[ENTRY] = self.order_serializer.serialize(command.bracket_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
-        elif isinstance(command, AmendOrder):
+        elif isinstance(command, UpdateOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
@@ -407,8 +407,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_id,
                 timestamp_ns,
             )
-        elif command_type == AmendOrder.__name__:
-            return AmendOrder(
+        elif command_type == UpdateOrder.__name__:
+            return UpdateOrder(
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
@@ -539,11 +539,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[CANCELLED_TIMESTAMP] = event.cancelled_ns
-        elif isinstance(event, OrderAmended):
+        elif isinstance(event, OrderUpdated):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[AMENDED_TIMESTAMP] = event.amended_ns
+            package[UPDATED_TIMESTAMP] = event.updated_ns
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
         elif isinstance(event, OrderExpired):
@@ -709,14 +709,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 timestamp_ns,
             )
-        elif event_type == OrderAmended.__name__:
-            return OrderAmended(
+        elif event_type == OrderUpdated.__name__:
+            return OrderUpdated(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 Quantity(unpacked[QUANTITY]),
                 Price(unpacked[PRICE]),
-                unpacked[AMENDED_TIMESTAMP],
+                unpacked[UPDATED_TIMESTAMP],
                 event_id,
                 timestamp_ns,
             )

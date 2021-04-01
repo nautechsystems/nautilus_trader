@@ -43,10 +43,10 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
@@ -383,20 +383,20 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._log.error("Cannot submit bracket orders in this version.")
 
-    cpdef void amend_order(self, AmendOrder command) except *:
+    cpdef void update_order(self, UpdateOrder command) except *:
         """
-        Amend the order with parameters contained in the command.
+        Update the order with parameters contained in the command.
 
         Parameters
         ----------
-        command : AmendOrder
+        command : UpdateOrder
             The command to execute.
 
         """
         Condition.not_none(command, "command")
 
         # TODO: Implement
-        self._log.error("Cannot amend orders in this version.")
+        self._log.error("Cannot update orders in this version.")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """
