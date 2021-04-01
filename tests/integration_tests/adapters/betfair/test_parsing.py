@@ -1,7 +1,7 @@
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
-from nautilus_trader.adapters.betfair.parsing import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
@@ -38,9 +38,9 @@ def test_order_submit_to_betfair(betting_instrument):
     assert result == expected
 
 
-def test_order_amend_to_betfair(betting_instrument):
-    result = order_amend_to_betfair(
-        command=BetfairTestStubs.amend_order_command(),
+def test_order_update_to_betfair(betting_instrument):
+    result = order_update_to_betfair(
+        command=BetfairTestStubs.update_order_command(),
         side=OrderSide.BUY,
         order_id=OrderId("1"),
         instrument=betting_instrument,

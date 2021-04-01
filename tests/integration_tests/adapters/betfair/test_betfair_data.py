@@ -178,6 +178,7 @@ def test_orderbook_repr(betfair_data_client, data_engine):
 def test_orderbook_updates(betfair_data_client, data_engine):
     ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
     for raw in BetfairTestStubs.streaming_market_updates():
+        betfair_data_client
         update = orjson.loads(raw.encode())  # type: dict
         for update in on_market_update(
             update=update, instrument_provider=betfair_data_client.instrument_provider()

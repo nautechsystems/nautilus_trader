@@ -17,9 +17,9 @@ from nautilus_trader.core.uuid import UUID
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -349,7 +349,7 @@ class BetfairTestStubs(TestStubs):
         return orjson.loads((TEST_PATH / "betting_place_order_error.json").read_bytes())
 
     @staticmethod
-    def amend_orders_success():
+    def update_orders_success():
         return orjson.loads(
             (TEST_PATH / "betting_replace_orders_success.json").read_bytes()
         )
@@ -389,8 +389,8 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def amend_order_command():
-        return AmendOrder(
+    def update_order_command():
+        return UpdateOrder(
             instrument_id=BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),

@@ -25,9 +25,9 @@ from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
-from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -84,13 +84,13 @@ def order_submit_to_betfair(
     }
 
 
-def order_amend_to_betfair(
-    command: AmendOrder,
+def order_update_to_betfair(
+    command: UpdateOrder,
     order_id: OrderId,
     side: OrderSide,
     instrument: BettingInstrument,
 ):
-    """ Convert an AmendOrder command into the data required by betfairlightweight """
+    """ Convert an UpdateOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.cl_ord_id.value,

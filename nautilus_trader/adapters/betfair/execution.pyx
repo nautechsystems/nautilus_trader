@@ -31,9 +31,9 @@ from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -43,9 +43,9 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import generate_order_status_report
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
-from nautilus_trader.adapters.betfair.parsing import order_amend_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
+from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
@@ -212,26 +212,26 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
     # TODO - Does this also take 5s when IN-PLAY ??
-    cpdef void amend_order(self, AmendOrder command) except *:
-        self._log.debug("Received amend order")
+    cpdef void update_order(self, UpdateOrder command) except *:
+        self._log.debug("Received update order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
         existing_order = self._engine.cache.order(command.cl_ord_id) # type: Order
         if existing_order is None:
-            self._log.warning(f"Attempting to amend order that does not exist in the cache: {command}")
+            self._log.warning(f"Attempting to update order that does not exist in the cache: {command}")
             return
         if existing_order.id == OrderId("NULL"):
             self._log.warning(f"Order found does not have `id` set: {existing_order}")
             return
         self._log.debug(f"existing_order: {existing_order}")
-        kw = order_amend_to_betfair(
+        kw = order_update_to_betfair(
             command=command,
             order_id=existing_order.id,
             side=existing_order.side,
             instrument=instrument
         )
-        self._log.debug(f"amend kw: {kw}")
+        self._log.debug(f"update kw: {kw}")
         resp = self._client.betting.replace_orders(**kw)
-        self._log.debug(f"amend: {resp}")
+        self._log.debug(f"update: {resp}")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         self._log.debug("Received cancel order")
@@ -244,7 +244,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # betfair allows up to 200 inserts per request
     #     raise NotImplementedError
 
-    # cpdef void bulk_submit_amend(self, list commands):
+    # cpdef void bulk_submit_update(self, list commands):
     # betfair allows up to 60 updates per request
     #     raise NotImplementedError
 

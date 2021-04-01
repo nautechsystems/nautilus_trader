@@ -54,7 +54,7 @@ def betfairlightweight_mocks(mocker):
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairTestStubs.amend_orders_success(),
+        return_value=BetfairTestStubs.update_orders_success(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",

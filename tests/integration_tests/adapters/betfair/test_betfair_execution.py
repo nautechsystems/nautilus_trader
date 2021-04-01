@@ -81,7 +81,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_amend_order(mocker, execution_client, exec_engine):
+async def test_update_order(mocker, execution_client, exec_engine):
     mock_replace_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
         return_value=BetfairTestStubs.place_orders_success(),
@@ -94,7 +94,7 @@ async def test_amend_order(mocker, execution_client, exec_engine):
     )
 
     # Actual test
-    execution_client.amend_order(BetfairTestStubs.amend_order_command())
+    execution_client.update_order(BetfairTestStubs.update_order_command())
     await asyncio.sleep(0.1)
     expected = {
         "customer_ref": "001",
@@ -105,8 +105,8 @@ async def test_amend_order(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_amend_order_fail(mocker, execution_client, exec_engine):
-    execution_client.amend_order(BetfairTestStubs.amend_order_command())
+async def test_update_order_fail(mocker, execution_client, exec_engine):
+    execution_client.update_order(BetfairTestStubs.update_order_command())
     await asyncio.sleep(0.1)
     mock_replace_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
