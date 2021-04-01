@@ -96,8 +96,12 @@ def round_probability(probability, side):
         return probability
     idx = all_probabilities.searchsorted(probability)
     if side == OrderSide.SELL:
+        if idx == len(all_probabilities):
+            return all_probabilities[-1]
         return all_probabilities[idx]
     elif side == OrderSide.BUY:
+        if idx == 0:
+            return all_probabilities[idx]
         return all_probabilities[idx - 1]
 
 

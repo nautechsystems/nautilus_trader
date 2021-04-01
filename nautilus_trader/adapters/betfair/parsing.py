@@ -85,7 +85,10 @@ def order_submit_to_betfair(
 
 
 def order_amend_to_betfair(
-    command: AmendOrder, side: OrderSide, instrument: BettingInstrument
+    command: AmendOrder,
+    order_id: OrderId,
+    side: OrderSide,
+    instrument: BettingInstrument,
 ):
     """ Convert an AmendOrder command into the data required by betfairlightweight """
     return {
@@ -93,7 +96,7 @@ def order_amend_to_betfair(
         "customer_ref": command.cl_ord_id.value,
         "instructions": [
             replace_instruction(
-                bet_id=command.cl_ord_id.value,
+                bet_id=order_id.value,
                 new_price=float(
                     probability_to_price(probability=command.price, side=side)
                 ),

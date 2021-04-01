@@ -54,6 +54,7 @@ from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.order.base import Order
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -161,7 +162,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         return self._client.account.get_account_funds()
 
     # -- COMMAND HANDLERS ------------------------------------------------------------------------------
-    # TODO - #  Do want to throttle updates if they're coming faster than x / sec? Maybe this is for risk engine?
+    # TODO - #  Do want to throttle updates into a bulk update if they're coming faster than x / sec? Maybe this is for risk engine?
     #  We could use some heuristics about the avg network latency and add an optional flag for throttle inserts etc.
 
     cpdef void submit_order(self, SubmitOrder command) except *:
@@ -210,17 +211,18 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-    # TODO - Does this also take 5s ??
+    # TODO - Does this also take 5s when IN-PLAY ??
     cpdef void amend_order(self, AmendOrder command) except *:
         self._log.debug("Received amend order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
-        existing_order = self._engine.cache.order(command.cl_ord_id)
+        existing_order = self._engine.cache.order(command.cl_ord_id) # type: Order
         if existing_order is None:
             self._log.warning(f"Attempting to amend order that does not exist in the cache: {command}")
             return
         self._log.debug(f"existing_order: {existing_order}")
         kw = order_amend_to_betfair(
             command=command,
+            order_id=existing_order.id,
             side=existing_order.side,
             instrument=instrument
         )
@@ -311,7 +313,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             timestamp_ns=millis_to_nanos(order['cd']),
                         )
                     # This is a full order, none has traded yet (size_remaining = original placed size)
-                    elif order['status'] == "E" and order["sr"] != 0 and order["sr"] == order["s"]:
+                    elif order['status'] == "E" and order["sr"] == order["s"]:
                         self._generate_order_accepted(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
@@ -319,11 +321,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                         )
                     # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
-                        self._generate_order_accepted(
-                            cl_ord_id=cl_ord_id,
-                            order_id=order_id,
-                            timestamp_ns=millis_to_nanos(order['pd']),
-                        )
                         self._generate_order_filled(
                             cl_ord_id=cl_ord_id,
                             order_id=order_id,
@@ -368,7 +365,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 return
             now = self._clock.timestamp_ns()
             await asyncio.sleep(0)
-        raise TimeoutError(f"Failed to find order_id: {order_id} in {timeout_seconds}")
+        raise TimeoutError(f"Failed to find order_id: {order_id} after {timeout_seconds} seconds")
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 

@@ -10,6 +10,8 @@ def test_round_probability():
     assert round_probability(0.5, side=OrderSide.BUY) == 0.5
     assert round_probability(0.49999, side=OrderSide.BUY) == 0.49505
     assert round_probability(0.49999, side=OrderSide.SELL) == 0.5
+    assert round_probability(0, side=OrderSide.SELL) == 0.001
+    assert round_probability(1, side=OrderSide.SELL) == 0.9901
 
 
 def test_round_price():

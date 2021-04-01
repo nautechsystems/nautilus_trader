@@ -48,7 +48,7 @@ config = {
         "log_level_store": "WRN",
         "log_thread_id": False,
         "log_to_file": True,
-        "log_file_path": f"{os.environ['HOME']}/data/logs",
+        "log_file_dir": f"{os.environ['HOME']}/data/logs/",
         "run_in_process": False,
     },
     "exec_database": {
