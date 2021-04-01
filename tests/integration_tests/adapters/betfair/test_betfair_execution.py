@@ -80,12 +80,36 @@ async def test_submit_order(mocker, execution_client, exec_engine):
     mock_place_orders.assert_called_with(**expected)
 
 
-# @pytest.mark.asyncio
-# async def test_amend_order(execution_client, exec_engine):
-#     execution_client.submit_order(BetfairTestStubs.submit_order_command())
-#     await asyncio.sleep(3)
-#     assert isinstance(exec_engine.events[0], OrderSubmitted)
-#     assert isinstance(exec_engine.events[1], OrderAccepted)
+@pytest.mark.asyncio
+async def test_amend_order(mocker, execution_client, exec_engine):
+    mock_replace_orders = mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.replace_orders",
+        return_value=BetfairTestStubs.place_orders_success(),
+    )
+    # Order must exist in cache
+    execution_client.engine().cache.add_order(
+        order=BetfairTestStubs.submit_order_command().order,
+        position_id=BetfairTestStubs.position_id(),
+    )
+    execution_client.amend_order(BetfairTestStubs.amend_order_command())
+    await asyncio.sleep(0.1)
+    expected = {
+        "customer_ref": "1",
+        "instructions": [{"betId": "1", "newPrice": 1.35}],
+        "market_id": "1.179082386",
+    }
+    mock_replace_orders.assert_called_with(**expected)
+
+
+@pytest.mark.asyncio
+async def test_amend_order_fail(mocker, execution_client, exec_engine):
+    execution_client.amend_order(BetfairTestStubs.amend_order_command())
+    await asyncio.sleep(0.1)
+    mock_replace_orders = mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.replace_orders",
+        return_value=BetfairTestStubs.place_orders_success(),
+    )
+    mock_replace_orders.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -193,7 +217,7 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
 @pytest.mark.asyncio
 async def test_post_order_submit_success(execution_client, exec_engine):
     f = asyncio.Future()
-    f.set_result(BetfairTestStubs.place_order_resp_success())
+    f.set_result(BetfairTestStubs.place_orders_success())
     execution_client._post_submit_order(f, ClientOrderId("O-20210327-091154-001-001-2"))
     await asyncio.sleep(0)
     assert isinstance(exec_engine.events[0], OrderAccepted)
@@ -202,7 +226,7 @@ async def test_post_order_submit_success(execution_client, exec_engine):
 @pytest.mark.asyncio
 async def test_post_order_submit_error(execution_client, exec_engine):
     f = asyncio.Future()
-    f.set_result(BetfairTestStubs.place_order_resp_error())
+    f.set_result(BetfairTestStubs.place_orders_error())
     execution_client._post_submit_order(f, ClientOrderId("O-20210327-091154-001-001-2"))
     await asyncio.sleep(0)
     assert isinstance(exec_engine.events[0], OrderRejected)

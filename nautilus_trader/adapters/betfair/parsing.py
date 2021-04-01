@@ -84,15 +84,19 @@ def order_submit_to_betfair(
     }
 
 
-def order_amend_to_betfair(command: AmendOrder, instrument: BettingInstrument):
+def order_amend_to_betfair(
+    command: AmendOrder, side: OrderSide, instrument: BettingInstrument
+):
     """ Convert an AmendOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.cl_ord_id.value,
-        "async": True,  # Order updates will be sent via stream API
         "instructions": [
             replace_instruction(
-                bet_id=command.cl_ord_id.value, new_price=float(command.price)
+                bet_id=command.cl_ord_id.value,
+                new_price=float(
+                    probability_to_price(probability=command.price, side=side)
+                ),
             )
         ],
     }
@@ -194,7 +198,9 @@ def build_market_update_messages(
                 handicap=str(runner.get("hc") or "0.0"),
             )
             instrument = instrument_provider.get_betting_instrument(**kw)
-            assert instrument
+            if not instrument:
+                continue
+            # assert instrument
             operations = []
             for side in B_SIDE_KINDS:
                 for upd in runner.get(side, []):

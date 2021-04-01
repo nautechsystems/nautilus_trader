@@ -153,12 +153,12 @@ def test_market_update_live_update(betfair_data_client, data_engine):
 async def test_request_search_instruments(betfair_data_client, data_engine, uuid):
     req = DataType(
         data_type=InstrumentSearch,
-        metadata={"event_type_id": "6"},
+        metadata={"event_type_id": "7"},
     )
     betfair_data_client.request(req, uuid)
     await asyncio.sleep(0)
     resp = data_engine.responses[0]
-    assert len(resp.data.data.instruments) == 495
+    assert len(resp.data.data.instruments) == 9383
 
 
 def test_orderbook_repr(betfair_data_client, data_engine):

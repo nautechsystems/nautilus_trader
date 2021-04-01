@@ -25,7 +25,7 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelled
-from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderEvent
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
@@ -74,8 +74,8 @@ class BetfairTestStrategy(TradingStrategy):
         self.midpoint = None
         self.trade_size = trade_size
         self.market_width = market_width
-        self.active_orders = set()
-        self._amend_orders = False
+        self._amend_orders = True
+        self._final_send = False
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -86,7 +86,8 @@ class BetfairTestStrategy(TradingStrategy):
 
     def on_event(self, event: Event):
         self.log.debug(f"{event}")
-        if isinstance(event, OrderAccepted):
+        if isinstance(event, OrderAccepted) and self._amend_orders:
+            self.log.info("Sending order amend")
             order = self.execution.order(event.cl_ord_id)
             new_price = (
                 order.price * 0.90
@@ -94,8 +95,16 @@ class BetfairTestStrategy(TradingStrategy):
                 else order.price * 1.10
             )
             self.amend(order=order, new_price=new_price)
-        if isinstance(event, (OrderCancelled, OrderFilled)):
-            self.active_orders.remove(event.cl_ord_id)
+        elif isinstance(event, OrderEvent) and not self._amend_orders:
+            self.log.info("Sending order delete")
+            order = self.execution.order(event.cl_ord_id)
+            self.delete(order=order)
+        elif isinstance(event, OrderCancelled) and not self._final_send:
+            self.log.info("Post cancel, sending another insert")
+            self.send_orders(midpoint=self.midpoint)
+            self._final_send = True
+        elif isinstance(event, OrderAccepted) and self._final_send:
+            self.stop()
 
     def on_data(self, data: GenericData):
         self.log.info(str(data))
@@ -147,29 +156,11 @@ class BetfairTestStrategy(TradingStrategy):
     def send_orders(self, midpoint):
         sell_price = midpoint + (self.market_width / Decimal(2.0))
         buy_price = midpoint - (self.market_width / Decimal(2.0))
-        if self.active_orders:
-            self.log.info("Strategy has active orders")
-            if self._amend_orders:
-                for cl_ord_id in self.active_orders:
-                    self.log.info(f"Sending amend for {cl_ord_id}")
-                    order = self.execution.order(cl_ord_id)
-                    new_price = (
-                        buy_price * 0.99
-                        if order.side == OrderSide.BUY
-                        else sell_price * 1.01
-                    )
-                    self.amend(order=order, new_price=new_price)
-                self._amend_orders = False
-                return
-            else:
-                for cl_ord_id in self.active_orders:
-                    self.log.info(f"Sending delete for {cl_ord_id}")
-                    self.delete(cl_ord_id=cl_ord_id)
         self.buy(price=buy_price)
         self.sell(price=sell_price)
 
     def amend(self, order, new_price):
-        self.amend_order(order=order, price=new_price)
+        self.amend_order(order=order, price=Price(new_price, precision=5))
 
     def delete(self, order):
         self.cancel_order(order=order)

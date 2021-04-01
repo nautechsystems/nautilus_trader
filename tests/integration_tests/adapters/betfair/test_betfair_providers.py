@@ -18,6 +18,19 @@ import pytest
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instrument
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+@pytest.fixture(autouse=True)
+def fix_mocks(mocker):
+    """
+    Override the `_short` version of `list_market_catalogue` used by the top level conftest
+    """
+    # Mock market catalogue endpoints
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
+        return_value=BetfairTestStubs.market_catalogue(),
+    )
 
 
 @pytest.fixture()

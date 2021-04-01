@@ -11,8 +11,6 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
-from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID
@@ -143,25 +141,12 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def betfair_client():
-        # Betfair client login
         mock.patch("betfairlightweight.endpoints.login.Login.__call__")
         return betfairlightweight.APIClient(
             username="username",
             password="password",
             app_key="app_key",
             certs="cert_location",
-        )
-
-    @staticmethod
-    def betfair_order_socket():
-        return BetfairOrderStreamClient(
-            client=BetfairTestStubs.betfair_client(), message_handler=None
-        )
-
-    @staticmethod
-    def betfair_market_socket():
-        return BetfairMarketStreamClient(
-            client=BetfairTestStubs.betfair_client(), message_handler=None
         )
 
     @staticmethod
@@ -202,22 +187,66 @@ class BetfairTestStubs(TestStubs):
         return orjson.loads((TEST_PATH / "market_catalogue.json").read_bytes())
 
     @staticmethod
-    def navigation_short():
-        nav = BetfairTestStubs.navigation()
-        nav["children"] = [
-            c
-            for c in nav["children"]
-            if c["name"] in ("Horse Racing", "American Football")
-        ]
-        return nav
+    def market_ids():
+        """
+        A list of market_ids used by the tests. Used in `navigation_short` and `market_catalogue_short`
+        """
+        return (
+            "1.148894697",
+            "1.159045690",
+            "1.160683973",
+            "1.160740937",
+            "1.160837650",
+            "1.163016936",
+            "1.164555327",
+            "1.166577732",
+            "1.166881256",
+            "1.167249009",
+            "1.167249195",
+            "1.167249197",
+            "1.170262001",
+            "1.170262002",
+            "1.170436895",
+            "1.170508139",
+            "1.171431228",
+            "1.172698506",
+            "1.173509358",
+            "1.175061137",
+            "1.175061138",
+            "1.175135109",
+            "1.175492291",
+            "1.175492292",
+            "1.175492293",
+            "1.175492294",
+            "1.175492295",
+            "1.175492296",
+            "1.175775529",
+            "1.175776462",
+            "1.176584117",
+            "1.176621195",
+            "1.177125720",
+            "1.177125722",
+            "1.177126187",
+            "1.177126652",
+            "1.177126864",
+            "1.178198625",
+            "1.180294966",
+            "1.180294971",
+            "1.180434883",
+            "1.180604981",
+            "1.180727728",
+            "1.180737193",
+        )
 
     @staticmethod
     def market_catalogue_short():
         catalogue = BetfairTestStubs.market_catalogue()
+        market_ids = BetfairTestStubs.market_ids()
         return [
             m
             for m in catalogue
             if m["eventType"]["name"] in ("Horse Racing", "American Football")
+            or m["marketId"] in market_ids
         ]
 
     @staticmethod
@@ -314,7 +343,9 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def amend_orders_success():
-        return orjson.loads((TEST_PATH / "betting_amend_orders.json").read_bytes())
+        return orjson.loads(
+            (TEST_PATH / "betting_replace_orders_success.json").read_bytes()
+        )
 
     @staticmethod
     def cancel_orders_success():
@@ -358,7 +389,7 @@ class BetfairTestStubs(TestStubs):
             account_id=BetfairTestStubs.account_id(),
             cl_ord_id=ClientOrderId("1"),
             quantity=Quantity(50),
-            price=Price(20),
+            price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )

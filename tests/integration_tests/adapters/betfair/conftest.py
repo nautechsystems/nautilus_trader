@@ -30,7 +30,7 @@ def betfairlightweight_mocks(mocker):
     # Mock Navigation / market catalogue endpoints
     mocker.patch(
         "betfairlightweight.endpoints.navigation.Navigation.list_navigation",
-        return_value=BetfairTestStubs.navigation_short(),
+        return_value=BetfairTestStubs.navigation(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
@@ -52,10 +52,14 @@ def betfairlightweight_mocks(mocker):
         "betfairlightweight.endpoints.betting.Betting.place_orders",
         return_value=BetfairTestStubs.place_orders_success(),
     )
-    # mocker.patch(
-    #     "betfairlightweight.endpoints.betting.Betting.replace_orders",
-    #     return_value=BetfairTestStubs.amend_orders_success()
-    # )
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.replace_orders",
+        return_value=BetfairTestStubs.amend_orders_success(),
+    )
+    mocker.patch(
+        "betfairlightweight.endpoints.betting.Betting.cancel_orders",
+        return_value=BetfairTestStubs.cancel_orders_success(),
+    )
 
     # Streaming endpoint
     mocker.patch(

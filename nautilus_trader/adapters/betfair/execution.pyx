@@ -212,9 +212,19 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     # TODO - Does this also take 5s ??
     cpdef void amend_order(self, AmendOrder command) except *:
-        self._log.debug("Received cancel order")
+        self._log.debug("Received amend order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
-        kw = order_amend_to_betfair(command=command, instrument=instrument)
+        existing_order = self._engine.cache.order(command.cl_ord_id)
+        if existing_order is None:
+            self._log.warning(f"Attempting to amend order that does not exist in the cache: {command}")
+            return
+        self._log.debug(f"existing_order: {existing_order}")
+        kw = order_amend_to_betfair(
+            command=command,
+            side=existing_order.side,
+            instrument=instrument
+        )
+        self._log.debug(f"amend kw: {kw}")
         resp = self._client.betting.replace_orders(**kw)
         self._log.debug(f"amend: {resp}")
 
@@ -249,6 +259,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
+
+    cpdef LiveExecutionEngine engine(self):
+        return self._engine
 
     # -- Order stream API ---------------------------------------------------------
 
