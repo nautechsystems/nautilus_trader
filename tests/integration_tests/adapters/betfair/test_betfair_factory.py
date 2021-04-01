@@ -15,7 +15,7 @@
 
 import pytest
 
-from adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory

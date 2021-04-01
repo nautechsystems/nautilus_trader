@@ -86,15 +86,18 @@ async def test_amend_order(mocker, execution_client, exec_engine):
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
         return_value=BetfairTestStubs.place_orders_success(),
     )
-    # Order must exist in cache
+    # Order must exist in cache - add one
+    order = BetfairTestStubs.submit_order_command().order
     execution_client.engine().cache.add_order(
-        order=BetfairTestStubs.submit_order_command().order,
+        order=order,
         position_id=BetfairTestStubs.position_id(),
     )
+
+    # Actual test
     execution_client.amend_order(BetfairTestStubs.amend_order_command())
     await asyncio.sleep(0.1)
     expected = {
-        "customer_ref": "1",
+        "customer_ref": "001",
         "instructions": [{"betId": "1", "newPrice": 1.35}],
         "market_id": "1.179082386",
     }

@@ -6,6 +6,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.objects import Money
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -41,6 +42,7 @@ def test_order_amend_to_betfair(betting_instrument):
     result = order_amend_to_betfair(
         command=BetfairTestStubs.amend_order_command(),
         side=OrderSide.BUY,
+        order_id=OrderId("1"),
         instrument=betting_instrument,
     )
     expected = {

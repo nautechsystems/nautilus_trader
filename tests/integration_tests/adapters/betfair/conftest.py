@@ -79,8 +79,8 @@ def provider(betfair_client) -> BetfairInstrumentProvider:
 
 
 @pytest.fixture()
-def clock():
-    return LiveClock()
+def clock() -> LiveClock:
+    return BetfairTestStubs.clock()
 
 
 @pytest.fixture()

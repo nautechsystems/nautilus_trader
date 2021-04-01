@@ -219,6 +219,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         if existing_order is None:
             self._log.warning(f"Attempting to amend order that does not exist in the cache: {command}")
             return
+        if existing_order.id == OrderId("NULL"):
+            self._log.warning(f"Order found does not have `id` set: {existing_order}")
+            return
         self._log.debug(f"existing_order: {existing_order}")
         kw = order_amend_to_betfair(
             command=command,

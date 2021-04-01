@@ -15,6 +15,7 @@
 import pandas as pd
 import pytest
 
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderBookOperationType
 from nautilus_trader.model.enums import OrderSide
@@ -105,11 +106,11 @@ def test_pprint_full_book(sample_book):
     result = sample_book.pprint()
     expected = """bids     price   asks
 ------  -------  ------
-         0.90    [20.0]
-         0.89    [10.0]
-         0.89    [5.0]
-[4.0]    0.83
-[1.0]    0.82"""
+        0.9000   [20.0]
+        0.8870   [10.0]
+        0.8860   [5.0]
+[4.0]   0.8300
+[1.0]   0.8200"""
     assert expected == result
 
 
@@ -145,11 +146,13 @@ def test_check_integrity_deep(empty_book):
 
 
 def test_orderbook_operation(empty_book):
+    clock = TestClock()
     op = OrderBookOperation(
         op_type=OrderBookOperationType.UPDATE,
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
+        timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_operation(op)
     assert empty_book.best_ask_price() == 0.5814

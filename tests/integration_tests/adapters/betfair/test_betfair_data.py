@@ -16,16 +16,20 @@ import asyncio
 import os
 
 import betfairlightweight
+import orjson
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
+from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook.book import L2OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -169,3 +173,16 @@ def test_orderbook_repr(betfair_data_client, data_engine):
     print(ob.pprint())
     assert ob.best_ask_price() == 0.58824
     assert ob.best_bid_price() == 0.58480
+
+
+def test_orderbook_updates(betfair_data_client):
+    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
+    for raw in BetfairTestStubs.streaming_market_updates():
+        update = orjson.loads(raw.encode())  # type: dict
+        for update in on_market_update(
+            update=update, instrument_provider=betfair_data_client.instrument_provider()
+        ):
+            if isinstance(update, OrderBookSnapshot):
+                ob.apply_snapshot(update)
+            elif isinstance(update, OrderBookOperations):
+                ob.apply_operations(update)

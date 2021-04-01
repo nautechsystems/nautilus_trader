@@ -236,6 +236,7 @@ class BetfairTestStubs(TestStubs):
             "1.180604981",
             "1.180727728",
             "1.180737193",
+            "1.180770798",
         )
 
     @staticmethod
@@ -330,6 +331,10 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def streaming_mcm_UPDATE_tv():
         return (TEST_PATH / "streaming_mcm_UPDATE_tv.json").read_bytes()
+
+    @staticmethod
+    def streaming_market_updates():
+        return (TEST_PATH / "streaming_market_updates.log").read_text().split("\n")
 
     @staticmethod
     def place_orders_success():
