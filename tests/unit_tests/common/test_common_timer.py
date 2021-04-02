@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
-import unittest
+
+import pytest
 
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.common.timer import TimeEventHandler
@@ -23,7 +24,7 @@ from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-class TimeEventTests(unittest.TestCase):
+class TestTimeEvent:
     def test_equality(self):
         # Arrange
         event1 = TimeEvent("EVENT_1", uuid4(), UNIX_EPOCH, 0, 0)
@@ -32,9 +33,9 @@ class TimeEventTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(event1 == event1)
-        self.assertTrue(event1 == event2)
-        self.assertTrue(event1 != event3)
+        assert event1 == event1
+        assert event1 == event2
+        assert event1 != event3
 
     def test_str_repr(self):
         # Arrange
@@ -43,19 +44,17 @@ class TimeEventTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(
+        assert str(event) == (
             f"TimeEvent(name=EVENT, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z)",
-            str(event),
-        )  # noqa
-        self.assertEqual(
+            f"event_timestamp=1970-01-01T00:00:00.000Z)"
+        )
+        assert repr(event) == (
             f"TimeEvent(name=EVENT, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z)",
-            repr(event),
-        )  # noqa
+            f"event_timestamp=1970-01-01T00:00:00.000Z)"
+        )
 
 
-class TimeEventHandlerTests(unittest.TestCase):
+class TestTimeEventHandler:
     def test_comparisons(self):
         # Arrange
         receiver = []
@@ -75,12 +74,12 @@ class TimeEventHandlerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(event1 == event1)
-        self.assertTrue(event1 != event2)
-        self.assertTrue(event1 < event2)
-        self.assertTrue(event1 <= event2)
-        self.assertTrue(event2 > event1)
-        self.assertTrue(event2 >= event1)
+        assert event1 == event1
+        assert event1 != event2
+        assert event1 < event2
+        assert event1 <= event2
+        assert event2 > event1
+        assert event2 >= event1
 
     def test_str_repr(self):
         # Arrange
@@ -90,18 +89,17 @@ class TimeEventHandlerTests(unittest.TestCase):
             TimeEvent("123", uuid, UNIX_EPOCH, 0, 0), receiver.append
         )
 
+        print(str(handler))
         # Act
         # Assert
-        self.assertEqual(
+        assert str(handler) == (
             f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z))",
-            str(handler),
-        )  # noqa
-        self.assertEqual(
+            f"event_timestamp=1970-01-01T00:00:00.000Z))"
+        )
+        assert repr(handler) == (
             f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z))",
-            repr(handler),
-        )  # noqa
+            f"event_timestamp=1970-01-01T00:00:00.000Z))"
+        )
 
     def test_sort(self):
         # Arrange
@@ -121,10 +119,10 @@ class TimeEventHandlerTests(unittest.TestCase):
         result = sorted([event3, event1, event2])
 
         # Assert
-        self.assertEqual([event1, event2, event3], result)
+        assert result == [event1, event2, event3]
 
 
-class TimerTests(unittest.TestCase):
+class TestTimer:
     def test_equality(self):
         # Arrange
         receiver = []
@@ -144,8 +142,8 @@ class TimerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(timer1 == timer1)
-        self.assertTrue(timer1 != timer2)
+        assert timer1 == timer1
+        assert timer1 != timer2
 
     def test_str_repr(self):
         # Arrange
@@ -159,24 +157,22 @@ class TimerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(
+        assert str(timer) == (
             "Timer(name=TIMER_1, "
             "interval_ns=1000000000, "
             "start_time_ns=1000000000, "
             "next_time_ns=2000000000, "
             "stop_time_ns=0, "
-            "is_expired=False)",
-            str(timer),
-        )  # noqa
-        self.assertEqual(
+            "is_expired=False)"
+        )
+        assert repr(timer) == (
             "Timer(name=TIMER_1, "
             "interval_ns=1000000000, "
             "start_time_ns=1000000000, "
             "next_time_ns=2000000000, "
             "stop_time_ns=0, "
-            "is_expired=False)",
-            repr(timer),
-        )  # noqa
+            "is_expired=False)"
+        )
 
     def test_hash(self):
         # Arrange
@@ -190,8 +186,8 @@ class TimerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(int, type(hash(timer)))
-        self.assertEqual(hash(timer), hash(timer))
+        assert isinstance(hash(timer), int)
+        assert hash(timer) == hash(timer)
 
     def test_cancel_when_not_overridden_raises_not_implemented_error(self):
         # Arrange
@@ -205,4 +201,5 @@ class TimerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, timer.cancel)
+        with pytest.raises(NotImplementedError):
+            timer.cancel()

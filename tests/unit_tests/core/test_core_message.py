@@ -81,8 +81,8 @@ class TestMessage:
 
         # Act
         # Assert
-        assert f"Document(id={uuid}, timestamp=0)" == str(message)
-        assert f"Document(id={uuid}, timestamp=0)" == str(message)
+        assert str(message) == f"Document(id={uuid}, timestamp=0)"
+        assert str(message) == f"Document(id={uuid}, timestamp=0)"
 
     def test_response_message_str_and_repr(self):
         # Arrange
@@ -96,13 +96,11 @@ class TestMessage:
 
         # Act
         # Assert
-        assert (
+        assert str(message) == (
             f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
-            == str(message)
         )
-        assert (
+        assert str(message) == (
             f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
-            == str(message)
         )
 
     @pytest.mark.parametrize(
@@ -122,7 +120,7 @@ class TestMessage:
         result = message_type_to_str(msg_type)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "string, expected",
@@ -141,4 +139,4 @@ class TestMessage:
         result = message_type_from_str(string)
 
         # Assert
-        assert expected == result
+        assert result == expected
