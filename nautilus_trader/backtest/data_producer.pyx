@@ -309,7 +309,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_asks = quote_ticks_slice["ask"].values
             self._quote_bid_sizes = quote_ticks_slice["bid_size"].values
             self._quote_ask_sizes = quote_ticks_slice["ask_size"].values
-            self._quote_timestamps = np.asarray([dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index])
+            self._quote_timestamps = np.asarray(
+                [dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index],
+                dtype=np.int64,
+            )
 
             # Calculate cumulative data size
             total_size += get_size_of(self._quote_instruments)
@@ -336,7 +339,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
             self._trade_sides = trade_ticks_slice["side"].values
-            self._trade_timestamps = np.asarray([dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index])
+            self._trade_timestamps = np.asarray(
+                [dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index],
+                dtype=np.int64,
+            )
 
             # Calculate cumulative data size
             total_size += get_size_of(self._trade_instruments)
