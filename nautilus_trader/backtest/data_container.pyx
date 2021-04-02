@@ -49,15 +49,16 @@ cdef class BacktestDataContainer:
         """
         Initialize a new instance of the `BacktestDataContainer` class.
         """
-        self.clients = {}                 # type: dict[str, type]
-        self.generic_data = []            # type: list[GenericData]
-        self.order_book_snapshots = []    # type: list[OrderBookSnapshot]
-        self.order_book_operations = []   # type: list[OrderBookOperations]
-        self.instruments = {}             # type: dict[InstrumentId, Instrument]
-        self.quote_ticks = {}             # type: dict[InstrumentId, pd.DataFrame]
-        self.trade_ticks = {}             # type: dict[InstrumentId, pd.DataFrame]
-        self.bars_bid = {}                # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
-        self.bars_ask = {}                # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self._added_instrument_ids = set()  # type: set[InstrumentId]
+        self.clients = {}                   # type: dict[str, type]
+        self.generic_data = []              # type: list[GenericData]
+        self.order_book_snapshots = []      # type: list[OrderBookSnapshot]
+        self.order_book_operations = []     # type: list[OrderBookOperations]
+        self.instruments = {}               # type: dict[InstrumentId, Instrument]
+        self.quote_ticks = {}               # type: dict[InstrumentId, pd.DataFrame]
+        self.trade_ticks = {}               # type: dict[InstrumentId, pd.DataFrame]
+        self.bars_bid = {}                  # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self.bars_ask = {}                  # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
 
     def add_generic_data(self, str client_name, list data) -> None:
         """
@@ -111,6 +112,8 @@ cdef class BacktestDataContainer:
         Condition.not_empty(snapshots, "snapshots")
         Condition.list_type(snapshots, OrderBookSnapshot, "snapshots")
 
+        self._added_instrument_ids.add(snapshots[0].instrument_id)
+
         cdef str client_name = snapshots[0].instrument_id.venue.first()
         # Add to clients to be constructed in backtest engine
         if client_name not in self.clients:
@@ -141,6 +144,8 @@ cdef class BacktestDataContainer:
         Condition.not_none(operations, "operations")
         Condition.not_empty(operations, "operations")
         Condition.list_type(operations, OrderBookOperations, "operations")
+
+        self._added_instrument_ids.add(operations[0].instrument_id)
 
         cdef str client_name = operations[0].instrument_id.venue.first()
         # Add to clients to be constructed in backtest engine
@@ -202,6 +207,8 @@ cdef class BacktestDataContainer:
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
 
+        self._added_instrument_ids.add(instrument_id)
+
         # Add to clients to be constructed in backtest engine
         cdef str client_name = instrument_id.venue.first()
         if client_name not in self.clients:
@@ -238,6 +245,8 @@ cdef class BacktestDataContainer:
         Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
+
+        self._added_instrument_ids.add(instrument_id)
 
         # Add to clients to be constructed in backtest engine
         cdef str client_name = instrument_id.venue.first()
@@ -282,6 +291,8 @@ cdef class BacktestDataContainer:
         Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
         Condition.false(data.empty, "data was empty")
 
+        self._added_instrument_ids.add(instrument_id)
+
         # Add to clients to be constructed in backtest engine
         cdef str client_name = instrument_id.venue.first()
         if client_name not in self.clients:
@@ -307,12 +318,23 @@ cdef class BacktestDataContainer:
 
         Raises
         ------
-        ValueError
+        RuntimeError
             If any integrity check fails.
 
         """
-        # Check there is the needed instrument for each data instrument_id
-        # TODO: Check added data have clients and instruments
+        cdef InstrumentId instrument_id
+        for instrument_id in self._added_instrument_ids:
+            # Check instrument for each added data instrument_id
+            if instrument_id not in self.instruments:
+                raise RuntimeError(
+                    f"Needed instrument {instrument_id} was not found in instruments",
+                )
+
+            # Check symmetry of bid ask bar data
+            bid_bars_keys = self.bars_bid.get(instrument_id, {}).keys()
+            ask_bars_keys = self.bars_ask.get(instrument_id, {}).keys()
+            if bid_bars_keys != ask_bars_keys:
+                raise RuntimeError(f"Bar data mismatch for {instrument_id}")
 
         # Check that all bar DataFrames for each instrument_id are of the same shape and index
         cdef dict shapes = {}  # type: dict[BarAggregation, tuple]

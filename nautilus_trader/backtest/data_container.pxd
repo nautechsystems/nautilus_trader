@@ -15,6 +15,7 @@
 
 
 cdef class BacktestDataContainer:
+    cdef set _added_instrument_ids
     cdef readonly dict clients
     cdef readonly list generic_data
     cdef readonly list order_book_snapshots
