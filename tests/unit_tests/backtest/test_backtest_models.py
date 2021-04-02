@@ -43,7 +43,7 @@ class FillModelTests(unittest.TestCase):
         # Arrange
         fill_model = FillModel(
             prob_fill_at_stop=0.5,
-            random_seed=42,
+            random_seed=41,
         )
 
         # Act
@@ -54,7 +54,7 @@ class FillModelTests(unittest.TestCase):
         # Arrange
         fill_model = FillModel(
             prob_fill_at_limit=0.5,
-            random_seed=42,
+            random_seed=41,
         )
 
         # Act
@@ -65,7 +65,7 @@ class FillModelTests(unittest.TestCase):
         # Arrange
         fill_model = FillModel(
             prob_slippage=0.5,
-            random_seed=42,
+            random_seed=41,
         )
 
         # Act

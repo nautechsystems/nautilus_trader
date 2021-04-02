@@ -13,13 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import random
+
+from libc.stdlib cimport RAND_MAX
+from libc.stdlib cimport rand
+from libc.stdlib cimport srand
+
 from nautilus_trader.core.correctness cimport Condition
 
 
-# C Standard Library
-cdef extern from "stdlib.h":
-    double drand48()  # Returns a double in range [0,1)
-    void srand48(long int seedval)
+# Returns a double in range [0, 1.0]
+cdef inline double _random_value() nogil:
+    return <double>rand() / <double>RAND_MAX
 
 
 cdef class FillModel:
@@ -62,7 +67,9 @@ cdef class FillModel:
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
-            srand48(random_seed)
+            srand(random_seed)
+        else:
+            srand(random.randint(0, 2147483647))  # int32 max positive value
 
         self.prob_fill_at_limit = prob_fill_at_limit
         self.prob_fill_at_stop = prob_fill_at_stop
@@ -109,4 +116,4 @@ cdef class FillModel:
         if probability == 0:
             return False
         else:
-            return probability >= drand48()
+            return probability >= _random_value()
