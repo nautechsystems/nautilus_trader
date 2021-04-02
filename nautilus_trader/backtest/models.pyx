@@ -15,16 +15,7 @@
 
 import random
 
-from libc.stdlib cimport RAND_MAX
-from libc.stdlib cimport rand
-from libc.stdlib cimport srand
-
 from nautilus_trader.core.correctness cimport Condition
-
-
-# Returns a double in range [0, 1.0]
-cdef inline double _random_value() nogil:
-    return <double>rand() / <double>RAND_MAX
 
 
 cdef class FillModel:
@@ -67,9 +58,7 @@ cdef class FillModel:
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
-            srand(random_seed)
-        else:
-            srand(random.randint(0, 2147483647))  # int32 max positive value
+            random.seed(random_seed)
 
         self.prob_fill_at_limit = prob_fill_at_limit
         self.prob_fill_at_stop = prob_fill_at_stop
@@ -115,5 +104,7 @@ cdef class FillModel:
         # probability is the probability of the event occurring [0, 1].
         if probability == 0:
             return False
+        elif probability == 1:
+            return True
         else:
-            return probability >= _random_value()
+            return probability >= random.random()
