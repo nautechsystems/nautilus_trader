@@ -43,7 +43,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
         data.add_bars(
@@ -161,7 +161,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD", self.venue)
+        self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
         data = BacktestDataContainer()
         data.add_instrument(self.gbpusd)
         data.add_bars(
@@ -223,7 +223,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD", self.venue)
+        self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         data = BacktestDataContainer()
         data.add_instrument(self.audusd)
         data.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
