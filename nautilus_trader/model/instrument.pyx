@@ -143,8 +143,8 @@ cdef class Instrument(Data):
             If min_price is negative (< 0).
 
         """
-        Condition.not_negative_int(price_precision, 'price_precision')
-        Condition.not_negative_int(size_precision, 'volume_precision')
+        Condition.not_negative_int(price_precision, "price_precision")
+        Condition.not_negative_int(size_precision, "volume_precision")
         Condition.type(tick_size, Decimal, "tick_size")
         Condition.positive(tick_size, "tick_size")
         Condition.type(multiplier, Decimal, "multiplier")
@@ -171,8 +171,6 @@ cdef class Instrument(Data):
         super().__init__(timestamp_ns)
 
         self.id = instrument_id
-        self.symbol = instrument_id.symbol
-        self.venue = instrument_id.venue
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.base_currency = base_currency  # Can be None
@@ -196,6 +194,30 @@ cdef class Instrument(Data):
         self.margin_maint = margin_maint
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
+
+    @property
+    def symbol(self):
+        """
+        The instruments ticker symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self.id.symbol
+
+    @property
+    def venue(self):
+        """
+        The instruments trading venue.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self.id.venue
 
     cdef bint _is_quanto(
         self,

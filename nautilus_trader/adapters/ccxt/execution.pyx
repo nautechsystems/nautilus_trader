@@ -143,7 +143,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for order in orders_all:
             if order.is_completed_c():
                 continue
-            if order.venue.first() == self.name:
+            if order.instrument_id.venue.first() == self.name:
                 self._cached_orders[order.id] = order
                 self._cached_filled[order.id] = order.filled_qty.as_decimal()
 
@@ -209,7 +209,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             response = await self._client.fetch_order(
                 id=order.id.value,
-                symbol=order.symbol.value,
+                symbol=order.instrument_id.symbol.value,
             )
             # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
         except CCXTError as ex:
@@ -510,7 +510,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.symbol.value,
+                symbol=order.instrument_id.symbol.value,
                 type=OrderTypeParser.to_str(order.type).lower(),
                 side=OrderSideParser.to_str(order.side).lower(),
                 amount=str(order.quantity),
@@ -537,7 +537,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             await self._client.cancel_order(
                 id=order.id.value,
-                symbol=order.symbol.value,
+                symbol=order.instrument_id.symbol.value,
             )
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._cancel_order.__name__)
@@ -765,7 +765,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.symbol.value,
+                symbol=order.instrument_id.symbol.value,
                 type=order_type,
                 side=OrderSideParser.to_str(order.side),
                 amount=str(order.quantity),
@@ -870,7 +870,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.symbol.value,
+                symbol=order.instrument_id.symbol.value,
                 type=order_type,
                 side=OrderSideParser.to_str(order.side).capitalize(),
                 amount=str(order.quantity),

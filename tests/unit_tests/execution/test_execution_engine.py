@@ -277,6 +277,8 @@ class ExecutionEngineTests(unittest.TestCase):
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
+            self.trader_id,
+            self.account_id,
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

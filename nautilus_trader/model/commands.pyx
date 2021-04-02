@@ -34,6 +34,8 @@ cdef class TradingCommand(Command):
 
     def __init__(
         self,
+        TraderId trader_id not None,
+        AccountId account_id not None,
         InstrumentId instrument_id not None,
         UUID command_id not None,
         int64_t timestamp_ns,
@@ -43,6 +45,10 @@ cdef class TradingCommand(Command):
 
         Parameters
         ----------
+        trader_id : TraderId
+            The trader identifier for the command.
+        account_id : AccountId
+            The account identifier for the command.
         instrument_id : InstrumentId
             The instrument identifier for the command.
         command_id : UUID
@@ -53,14 +59,19 @@ cdef class TradingCommand(Command):
         """
         super().__init__(command_id, timestamp_ns)
 
+        self.trader_id = trader_id
+        self.account_id = account_id
         self.instrument_id = instrument_id
-        self.symbol = instrument_id.symbol
-        self.venue = instrument_id.venue
 
 
 cdef class SubmitOrder(TradingCommand):
     """
     Represents a command to submit the given order.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_D_68.html
+
     """
 
     def __init__(
@@ -97,10 +108,14 @@ cdef class SubmitOrder(TradingCommand):
             The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, timestamp_ns)
+        super().__init__(
+            trader_id=trader_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            command_id=command_id,
+            timestamp_ns=timestamp_ns,
+        )
 
-        self.trader_id = trader_id
-        self.account_id = account_id
         self.strategy_id = strategy_id
         self.position_id = position_id
         self.order = order
@@ -120,6 +135,11 @@ cdef class SubmitOrder(TradingCommand):
 cdef class SubmitBracketOrder(TradingCommand):
     """
     Represents a command to submit a bracket order consisting of parent and child orders.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_E_69.html
+
     """
 
     def __init__(
@@ -153,10 +173,14 @@ cdef class SubmitBracketOrder(TradingCommand):
             The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, timestamp_ns)
+        super().__init__(
+            trader_id=trader_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            command_id=command_id,
+            timestamp_ns=timestamp_ns,
+        )
 
-        self.trader_id = trader_id
-        self.account_id = account_id
         self.strategy_id = strategy_id
         self.bracket_order = bracket_order
 
@@ -214,10 +238,14 @@ cdef class UpdateOrder(TradingCommand):
             The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, timestamp_ns)
+        super().__init__(
+            trader_id=trader_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            command_id=command_id,
+            timestamp_ns=timestamp_ns,
+        )
 
-        self.trader_id = trader_id
-        self.account_id = account_id
         self.cl_ord_id = cl_ord_id
         self.quantity = quantity
         self.price = price
@@ -236,6 +264,11 @@ cdef class UpdateOrder(TradingCommand):
 cdef class CancelOrder(TradingCommand):
     """
     Represents a command to cancel an order.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_F_70.html
+
     """
 
     def __init__(
@@ -269,10 +302,14 @@ cdef class CancelOrder(TradingCommand):
             The Unix timestamp (nanos) of the command.
 
         """
-        super().__init__(instrument_id, command_id, timestamp_ns)
+        super().__init__(
+            trader_id=trader_id,
+            account_id=account_id,
+            instrument_id=instrument_id,
+            command_id=command_id,
+            timestamp_ns=timestamp_ns,
+        )
 
-        self.trader_id = trader_id
-        self.account_id = account_id
         self.cl_ord_id = cl_ord_id
         self.order_id = order_id
 
