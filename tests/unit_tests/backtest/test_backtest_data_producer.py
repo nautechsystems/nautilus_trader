@@ -28,15 +28,15 @@ class TestBacktestDataProducer:
     def setup(self):
         # Fixture Setup
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        data = BacktestDataContainer()
-        data.add_instrument(usdjpy)
-        data.add_bars(
+        self.data = BacktestDataContainer()
+        self.data.add_instrument(usdjpy)
+        self.data.add_bars(
             usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid()[:2000],
         )
-        data.add_bars(
+        self.data.add_bars(
             usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,

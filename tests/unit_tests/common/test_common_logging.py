@@ -150,7 +150,7 @@ class TestLoggerTests:
         logger_adapter.verbose("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_debug_messages_to_console(self):
         # Arrange
@@ -161,7 +161,7 @@ class TestLoggerTests:
         logger_adapter.debug("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_info_messages_to_console(self):
         # Arrange
@@ -172,7 +172,7 @@ class TestLoggerTests:
         logger_adapter.info("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
@@ -183,7 +183,7 @@ class TestLoggerTests:
         logger_adapter.info("This is a log message.", LogColor.BLUE)
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
@@ -194,7 +194,7 @@ class TestLoggerTests:
         logger_adapter.info("This is a log message.", LogColor.GREEN)
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_info_messages_to_console_with_invalid_colour(self):
         # Arrange
@@ -205,7 +205,7 @@ class TestLoggerTests:
         logger_adapter.info("This is a log message.", 30)
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_warning_messages_to_console(self):
         # Arrange
@@ -216,7 +216,7 @@ class TestLoggerTests:
         logger_adapter.warning("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_error_messages_to_console(self):
         # Arrange
@@ -227,7 +227,7 @@ class TestLoggerTests:
         logger_adapter.error("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_critical_messages_to_console(self):
         # Arrange
@@ -238,7 +238,7 @@ class TestLoggerTests:
         logger_adapter.critical("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
 
 class TestLiveLogger:
@@ -260,7 +260,7 @@ class TestLiveLogger:
         self.logger_adapter.info("test message")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_start_runs_on_event_loop(self):
         async def run_test():

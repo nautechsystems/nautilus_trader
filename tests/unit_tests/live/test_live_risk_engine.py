@@ -116,7 +116,7 @@ class TestLiveRiskEngine:
         self.risk_engine.start()
 
         # Assert
-        assert True
+        assert True  # No exceptions raised
         self.risk_engine.stop()
 
     def test_get_event_loop_returns_expected_loop(self):
