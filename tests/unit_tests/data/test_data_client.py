@@ -40,7 +40,7 @@ from tests.test_kit.stubs import TestStubs
 
 
 SIM = Venue("SIM")
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 

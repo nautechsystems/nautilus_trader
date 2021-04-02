@@ -556,7 +556,7 @@ class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
         data.add_bars(
