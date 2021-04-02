@@ -71,7 +71,6 @@ class TestBacktestDataContainer:
         assert "NEWS_CLIENT" in data.clients
         assert len(data.generic_data) == 5
         assert data.generic_data[-1].timestamp_ns == 3000  # sorted
-        assert data.total_data_size() == 1322
 
     def test_add_instrument_adds_to_container(self):
         # Arrange
@@ -110,7 +109,6 @@ class TestBacktestDataContainer:
         # Assert
         assert "BINANCE" in data.clients
         assert data.order_book_snapshots == [snapshot1, snapshot2]  # <-- sorted
-        assert data.total_data_size() == 1488
 
     def test_add_order_book_operations_adds_to_container(self):
         # Arrange
@@ -169,7 +167,6 @@ class TestBacktestDataContainer:
         # Assert
         assert "BINANCE" in data.clients
         assert data.order_book_operations == [operations1, operations2]  # <-- sorted
-        assert data.total_data_size() == 1096
 
     def test_add_quote_ticks_adds_to_container(self):
         # Arrange
