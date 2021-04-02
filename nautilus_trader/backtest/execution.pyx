@@ -15,7 +15,7 @@
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.logging cimport TestLogger
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -37,7 +37,7 @@ cdef class BacktestExecClient(ExecutionClient):
         AccountId account_id not None,
         ExecutionEngine engine not None,
         TestClock clock not None,
-        TestLogger logger not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `BacktestExecClient` class.
@@ -52,7 +52,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The execution engine for the client.
         clock : TestClock
             The clock for the component.
-        logger : TestLogger
+        logger : Logger
             The logger for the component.
 
         """

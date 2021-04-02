@@ -34,8 +34,8 @@ from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.timer cimport TimeEventHandler
@@ -163,7 +163,7 @@ cdef class BacktestEngine:
 
         self.analyzer = PerformanceAnalyzer()
 
-        self._logger = TestLogger(
+        self._logger = Logger(
             clock=LiveClock(),
             name=trader_id.value,
             bypass_logging=False,
@@ -179,7 +179,7 @@ cdef class BacktestEngine:
         self._log_to_file = log_to_file
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=self._logger)
 
-        self._test_logger = TestLogger(
+        self._test_logger = Logger(
             clock=self._test_clock,
             name=trader_id.value,
             bypass_logging=bypass_logging,

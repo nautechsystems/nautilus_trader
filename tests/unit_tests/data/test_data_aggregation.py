@@ -17,7 +17,7 @@ from decimal import Decimal
 import unittest
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.aggregation import BarBuilder
 from nautilus_trader.data.aggregation import BulkTickBarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator
@@ -252,7 +252,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = TickBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -276,7 +276,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = TickBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
@@ -300,7 +300,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = TickBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -349,7 +349,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = TickBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
@@ -398,7 +398,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = TickBarAggregator(bar_type, handler, Logger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
             instrument=AUDUSD_SIM,
@@ -427,7 +427,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         handler = bar_store.store
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = TickBarAggregator(bar_type, handler, Logger(TestClock()))
 
         wrangler = TradeTickDataWrangler(
             instrument=ETHUSDT_BINANCE,
@@ -459,7 +459,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -483,7 +483,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
@@ -507,7 +507,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -556,7 +556,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
@@ -605,7 +605,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -664,7 +664,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
@@ -723,7 +723,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
             instrument=AUDUSD_SIM,
@@ -752,7 +752,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         handler = bar_store.store
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
-        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, Logger(TestClock()))
 
         wrangler = TradeTickDataWrangler(
             instrument=ETHUSDT_BINANCE,
@@ -784,7 +784,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = ValueBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -809,7 +809,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = ValueBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
@@ -834,7 +834,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = ValueBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -884,7 +884,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = ValueBarAggregator(bar_type, handler, Logger(TestClock()))
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
@@ -941,7 +941,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         instrument_id = TestStubs.audusd_id()
         bar_spec = BarSpecification(1000, BarAggregation.VALUE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
-        aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = ValueBarAggregator(bar_type, handler, Logger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
             instrument=AUDUSD_SIM,
@@ -970,7 +970,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         handler = bar_store.store
         bar_spec = BarSpecification(10000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
-        aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = ValueBarAggregator(bar_type, handler, Logger(TestClock()))
 
         wrangler = TradeTickDataWrangler(
             instrument=ETHUSDT_BINANCE,
@@ -1013,7 +1013,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
             handler,
             True,
             clock,
-            TestLogger(clock),
+            Logger(clock),
         )
 
     # TODO: WIP - Change to nanos
@@ -1047,7 +1047,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
     #
     #     # Act
     #     aggregator = TimeBarAggregator(
-    #         bar_type, handler, True, clock, TestLogger(clock)
+    #         bar_type, handler, True, clock, Logger(clock)
     #     )
     #
     #     # Assert
@@ -1062,7 +1062,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(instrument_id, bar_spec)
         aggregator = TimeBarAggregator(
-            bar_type, handler, True, TestClock(), TestLogger(clock)
+            bar_type, handler, True, TestClock(), Logger(clock)
         )
 
         tick1 = QuoteTick(
@@ -1128,7 +1128,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         bar_type = BarType(instrument_id, bar_spec)
 
         clock = TestClock()
-        logger = TestLogger(clock)
+        logger = Logger(clock)
 
         ticks = self.wrangler.build_ticks()
         builder = BulkTickBarBuilder(bar_type, logger, handler)
