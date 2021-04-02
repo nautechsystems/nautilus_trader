@@ -363,7 +363,7 @@ class TestLiveExecutionEngine:
             self.engine.stop()
 
             # Assert
-            assert True  # Does not throw exception - logs: State reconciled.
+            assert True  # No exceptions raised
 
         self.loop.run_until_complete(run_test())
 

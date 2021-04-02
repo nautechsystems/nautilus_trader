@@ -13,21 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.backtest.models import FillModel
 
 
-class FillModelTests(unittest.TestCase):
+class TestFillModel:
     def test_instantiate_with_no_random_seed(self):
         # Arrange
         fill_model = FillModel()
 
         # Act
         # Assert
-        self.assertFalse(fill_model.is_slipped())
-        self.assertTrue(fill_model.is_limit_filled())
-        self.assertTrue(fill_model.is_stop_filled())
+        assert not fill_model.is_slipped()
+        assert fill_model.is_limit_filled()
+        assert fill_model.is_stop_filled()
 
     def test_instantiate_with_random_seed(self):
         # Arrange
@@ -35,9 +33,9 @@ class FillModelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertFalse(fill_model.is_slipped())
-        self.assertTrue(fill_model.is_limit_filled())
-        self.assertTrue(fill_model.is_stop_filled())
+        assert not fill_model.is_slipped()
+        assert fill_model.is_limit_filled()
+        assert fill_model.is_stop_filled()
 
     def test_is_stop_filled_with_random_seed(self):
         # Arrange
@@ -48,7 +46,7 @@ class FillModelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertFalse(fill_model.is_stop_filled())
+        assert not fill_model.is_stop_filled()
 
     def test_is_limit_filled_with_random_seed(self):
         # Arrange
@@ -59,7 +57,7 @@ class FillModelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertFalse(fill_model.is_limit_filled())
+        assert not fill_model.is_limit_filled()
 
     def test_is_slipped_with_random_seed(self):
         # Arrange
@@ -70,4 +68,4 @@ class FillModelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertFalse(fill_model.is_slipped())
+        assert not fill_model.is_slipped()
