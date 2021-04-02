@@ -386,7 +386,7 @@ cdef class Bar(Data):
             low_price=Price(pieces[2]),
             close_price=Price(pieces[3]),
             volume=Quantity(pieces[4]),
-            timestamp_ns=long(pieces[5]),  # TODO: Standard C function for str->int64_t
+            timestamp_ns=int(pieces[5]),
         )
 
     @staticmethod
