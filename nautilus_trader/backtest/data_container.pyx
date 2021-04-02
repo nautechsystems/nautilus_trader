@@ -380,6 +380,7 @@ cdef class BacktestDataContainer:
             The total bytes.
 
         """
+        cdef int64_t internal_hashmaps_size = 424
         cdef int64_t size = 0
         size += get_size_of(self.generic_data)
         size += get_size_of(self.order_book_snapshots)
@@ -388,4 +389,4 @@ cdef class BacktestDataContainer:
         size += get_size_of(self.trade_ticks)
         size += get_size_of(self.bars_bid)
         size += get_size_of(self.bars_ask)
-        return size
+        return size - internal_hashmaps_size
