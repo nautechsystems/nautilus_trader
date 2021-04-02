@@ -180,11 +180,11 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def navigation():
-        return orjson.loads(bz2.open(TEST_PATH / "navigation.json.bz2").read())
+        return orjson.loads((TEST_PATH / "navigation.json").read_bytes())
 
     @staticmethod
     def market_catalogue():
-        return orjson.loads(bz2.open(TEST_PATH / "market_catalogue.json.bz2").read())
+        return orjson.loads((TEST_PATH / "market_catalogue.json").read_bytes())
 
     @staticmethod
     def market_ids():
