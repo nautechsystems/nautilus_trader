@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 
@@ -57,21 +56,6 @@ cdef class LogLevelParser:
     cdef LogLevel from_str(str value)
 
 
-cdef class LogMessage:
-    cdef readonly datetime timestamp
-    """The log message timestamp.\n\n:returns: `datetime`"""
-    cdef readonly LogLevel level
-    """The log level.\n\n:returns: `LogLevel` (Enum)"""
-    cdef readonly LogColor color
-    """The log text color.\n\n:returns: `LogColor` (Enum)"""
-    cdef readonly str text
-    """The log text.\n\n:returns: `str`"""
-    cdef readonly int64_t thread_id
-    """The thread identifier.\n\n:returns: `int64`"""
-
-    cdef inline str as_string(self)
-
-
 cdef class Logger:
     cdef LogLevel _log_level_console
     cdef LogLevel _log_level_file
@@ -96,13 +80,21 @@ cdef class Logger:
     cpdef str get_log_file_path(self)
     cpdef list get_log_store(self)
     cpdef void change_log_file_name(self, str name) except *
-    cpdef void log(self, LogMessage message) except *
     cpdef void clear_log_store(self) except *
 
-    cpdef void _log(self, LogMessage message) except *
-    cdef str _format_output(self, LogMessage message)
-    cdef void _in_memory_log_store(self, LogLevel level, str text) except *
-    cdef void _print_to_console(self, LogLevel level, str text) except *
+    cdef str format_text(
+        self,
+        datetime timestamp,
+        LogLevel level,
+        LogColor color,
+        str text,
+        int64_t thread_id,
+    )
+    cdef void log_c(self, tuple message) except *
+
+    cdef void _log(self, tuple message) except *
+    cdef inline void _in_memory_log_store(self, LogLevel level, str text) except *
+    cdef inline void _print_to_console(self, LogLevel level, str text) except *
 
 
 cdef class LoggerAdapter:
@@ -122,15 +114,10 @@ cdef class LoggerAdapter:
     cpdef void critical(self, str message) except *
     cpdef void exception(self, ex) except *
     cdef inline void _send_to_logger(self, LogLevel level, LogColor color, str message) except *
-    cdef inline str _format_message(self, str message)
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
 cpdef void log_memory(LoggerAdapter logger) except *
-
-
-cdef class TestLogger(Logger):
-    pass
 
 
 cdef class LiveLogger(Logger):

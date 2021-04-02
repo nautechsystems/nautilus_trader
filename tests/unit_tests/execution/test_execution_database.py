@@ -17,7 +17,7 @@ import unittest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.database import ExecutionDatabase
@@ -35,7 +35,7 @@ class ExecutionDatabaseTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
@@ -102,7 +102,7 @@ class BypassExecutionDatabaseTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()

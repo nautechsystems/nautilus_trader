@@ -21,7 +21,7 @@ from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.logging cimport TestLogger
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
@@ -88,7 +88,7 @@ cdef class SimulatedExchange:
         ExecutionCache exec_cache not None,
         FillModel fill_model not None,
         TestClock clock not None,
-        TestLogger logger not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `SimulatedExchange` class.
@@ -111,7 +111,7 @@ cdef class SimulatedExchange:
             The fill model for the backtest.
         clock : TestClock
             The clock for the component.
-        logger : TestLogger
+        logger : Logger
             The logger for the component.
 
         Raises

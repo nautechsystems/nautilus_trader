@@ -25,11 +25,8 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogLevelParser
-from nautilus_trader.common.logging import LogMessage
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import TestLogger
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestLogLevelParser:
@@ -74,26 +71,10 @@ class TestLogLevelParser:
 
 
 class TestLoggerBase:
-    def test_log_when_not_implemented_raises_not_implemented(self):
-        # Arrange
-        logger = Logger(clock=TestClock())
-
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            msg = LogMessage(
-                timestamp=UNIX_EPOCH,
-                level=LogLevel.INFO,
-                color=LogColor.NORMAL,
-                text="test message",
-            )
-
-            logger.log(msg)
-
     def test_setup_logger_log_to_file_with_no_path(self):
         # Arrange
         # Act
-        logger = TestLogger(
+        logger = Logger(
             clock=TestClock(),
             level_console=LogLevel.VERBOSE,
             log_to_file=True,
@@ -115,7 +96,7 @@ class TestLoggerBase:
     def test_setup_logger_log_to_file_given_path(self):
         # Arrange
         # Act
-        logger = TestLogger(
+        logger = Logger(
             name="TEST",
             clock=TestClock(),
             level_console=LogLevel.VERBOSE,
@@ -162,7 +143,7 @@ class TestLoggerBase:
 class TestLoggerTests:
     def test_log_verbose_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.VERBOSE)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.VERBOSE)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -173,7 +154,7 @@ class TestLoggerTests:
 
     def test_log_debug_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.DEBUG)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.DEBUG)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -184,7 +165,7 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.INFO)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -195,7 +176,7 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.INFO)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -206,7 +187,7 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.INFO)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -217,7 +198,7 @@ class TestLoggerTests:
 
     def test_log_info_messages_to_console_with_invalid_colour(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.INFO)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -228,7 +209,7 @@ class TestLoggerTests:
 
     def test_log_warning_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.WARNING)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.WARNING)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -239,7 +220,7 @@ class TestLoggerTests:
 
     def test_log_error_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.ERROR)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.ERROR)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
@@ -250,7 +231,7 @@ class TestLoggerTests:
 
     def test_log_critical_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.CRITICAL)
+        logger = Logger(clock=TestClock(), level_console=LogLevel.CRITICAL)
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act

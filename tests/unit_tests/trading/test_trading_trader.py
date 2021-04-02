@@ -22,7 +22,7 @@ from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -48,7 +48,7 @@ class TraderTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
-        logger = TestLogger(clock)
+        logger = Logger(clock)
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 

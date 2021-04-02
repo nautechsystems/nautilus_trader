@@ -22,7 +22,7 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -69,7 +69,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -1758,7 +1758,7 @@ class BitmexExchangeTests(unittest.TestCase):
 
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.portfolio = Portfolio(
             clock=self.clock,
