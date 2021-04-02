@@ -183,7 +183,7 @@ class TestBacktestDataContainer:
 
         # Assert
         assert "SIM" in data.clients
-        assert data.has_quote_data()
+        assert data.has_quote_data(AUDUSD_SIM.id)
         assert AUDUSD_SIM.id in data.quote_ticks
         assert len(data.quote_ticks[AUDUSD_SIM.id]) == 100000
 
@@ -199,7 +199,7 @@ class TestBacktestDataContainer:
 
         # Assert
         assert "BINANCE" in data.clients
-        assert data.has_trade_data()
+        assert data.has_trade_data(ETHUSDT_BINANCE.id)
         assert ETHUSDT_BINANCE.id in data.trade_ticks
         assert len(data.trade_ticks[ETHUSDT_BINANCE.id]) == 69806
 
