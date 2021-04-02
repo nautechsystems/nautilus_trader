@@ -1243,10 +1243,10 @@ cdef class TradingStrategy(Component):
             # Null object pattern
             position_id = PositionId.null_c()
 
-        cdef AccountId account_id = self.execution.account_id(order.venue)  # TODO should be first()
+        cdef AccountId account_id = self.execution.account_id(order.instrument_id.venue)  # TODO: should be first()
         if account_id is None:
             self.log.error(f"Cannot submit order: "
-                           f"no account registered for {order.venue}, {order}.")
+                           f"no account registered for {order.instrument_id.venue}, {order}.")
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(

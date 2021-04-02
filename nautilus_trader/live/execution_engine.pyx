@@ -160,7 +160,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Build order state map
         cdef Order order
         for order in active_orders.values():
-            name = order.venue.first()
+            name = order.instrument_id.venue.first()
             if name in client_orders:
                 client_orders[name].append(order)
             else:
@@ -196,7 +196,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
             resolved = True
             for order in active_orders.values():
-                name = order.venue.first()
+                name = order.instrument_id.venue.first()
                 report = client_mass_status[name].order_reports().get(order.id)
                 if report is None:
                     return False  # Will never resolve

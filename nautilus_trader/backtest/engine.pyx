@@ -260,7 +260,7 @@ cdef class BacktestEngine:
             elif client_type == BacktestMarketDataClient:
                 instruments = []
                 for instrument in data.instruments.values():
-                    if instrument.venue.first() == name:
+                    if instrument.id.venue.first() == name:
                         instruments.append(instrument)
 
                 data_client = BacktestMarketDataClient(
@@ -378,7 +378,7 @@ cdef class BacktestEngine:
         # Gather instruments for exchange
         instruments = []
         for instrument in self._data_engine.cache.instruments():
-            if instrument.venue == venue:
+            if instrument.id.venue == venue:
                 instruments.append(instrument)
 
         # Create exchange
@@ -711,7 +711,7 @@ cdef class BacktestEngine:
             # Find all positions for exchange venue
             positions = []
             for position in self._exec_engine.cache.positions():
-                if position.venue == exchange.id:
+                if position.instrument_id.venue == exchange.id:
                     positions.append(position)
 
             # Calculate statistics

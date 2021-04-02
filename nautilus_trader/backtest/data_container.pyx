@@ -167,7 +167,7 @@ cdef class BacktestDataContainer:
         Condition.not_none(instrument, "instrument")
 
         # Add to clients to be constructed in backtest engine
-        cdef str client_name = instrument.venue.first()
+        cdef str client_name = instrument.id.venue.first()
         if client_name not in self.clients:
             self.clients[client_name] = BacktestMarketDataClient
 

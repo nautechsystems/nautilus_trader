@@ -63,8 +63,6 @@ cdef class Position:
         self.instrument_id = fill.instrument_id
 
         # Properties
-        self.symbol = fill.instrument_id.symbol
-        self.venue = fill.instrument_id.venue
         self.entry = fill.order_side
         self.side = Position.side_from_order_side(fill.order_side)
         self.relative_qty = Decimal()  # Initialized in apply()
@@ -137,6 +135,30 @@ cdef class Position:
 
     cdef bint is_short_c(self) except *:
         return self.side == PositionSide.SHORT
+
+    @property
+    def symbol(self):
+        """
+        The positions ticker symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self.instrument_id.symbol
+
+    @property
+    def venue(self):
+        """
+        The positions trading venue.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self.instrument_id.venue
 
     @property
     def cl_ord_ids(self):

@@ -269,7 +269,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             if order_report.order_state in (OrderState.PARTIALLY_FILLED, OrderState.FILLED):
                 exec_reports = await self.generate_exec_reports(
                     order_id=order.id,
-                    symbol=order.symbol,
+                    symbol=order.instrument_id.symbol,
                     since=nanos_to_millis(nanos=order.timestamp_ns),
                 )
                 mass_status.add_exec_reports(order.id, exec_reports)

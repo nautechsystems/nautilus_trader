@@ -27,8 +27,6 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -52,10 +50,6 @@ cdef class Position:
     """The strategy identifier associated with the position.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
     """The position instrument identifier.\n\n:returns: `InstrumentId`"""
-    cdef readonly Symbol symbol
-    """The position symbol.\n\n:returns: `Symbol`"""
-    cdef readonly Venue venue
-    """The position venue.\n\n:returns: `Venue`"""
     cdef readonly OrderSide entry
     """The entry direction from open.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly PositionSide side
