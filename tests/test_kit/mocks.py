@@ -575,7 +575,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
         symbol: Symbol,
         since: datetime = None,
     ) -> List[ExecutionReport]:
-        print(self._trades_lists)
         self.calls.append(inspect.currentframe().f_code.co_name)
         return self._trades_lists[order_id]
 
