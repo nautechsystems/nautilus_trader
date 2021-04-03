@@ -43,7 +43,7 @@ class TestBacktestDataContainer:
 
         # Act
         # Assert: memory size of internal dicts currently 424
-        assert data.total_data_size() == 0
+        assert data.total_data_size() > 0
 
     def test_add_generic_data_adds_to_container(self):
         # Arrange
@@ -53,9 +53,7 @@ class TestBacktestDataContainer:
         generic_data1 = [
             GenericData(data_type, data="AAPL hacked", timestamp_ns=0),
             GenericData(data_type, data="AMZN hacked", timestamp_ns=1000),
-            GenericData(
-                data_type, data="NFLX hacked", timestamp_ns=3000
-            ),  # <-- not sorted
+            GenericData(data_type, data="NFLX hacked", timestamp_ns=3000),
             GenericData(data_type, data="MSFT hacked", timestamp_ns=2000),
         ]
 
@@ -108,6 +106,7 @@ class TestBacktestDataContainer:
 
         # Assert
         assert "BINANCE" in data.clients
+        assert ETHUSDT_BINANCE.id in data.books
         assert data.order_book_snapshots == [snapshot1, snapshot2]  # <-- sorted
 
     def test_add_order_book_operations_adds_to_container(self):
@@ -166,6 +165,7 @@ class TestBacktestDataContainer:
 
         # Assert
         assert "BINANCE" in data.clients
+        assert ETHUSDT_BINANCE.id in data.books
         assert data.order_book_operations == [operations1, operations2]  # <-- sorted
 
     def test_add_quote_ticks_adds_to_container(self):
@@ -236,6 +236,18 @@ class TestBacktestDataContainer:
 
         # Assert
         assert True  # No exceptions raised
+
+    def test_check_integrity_no_execution_data_for_instrument_raises_runtime_error(
+        self,
+    ):
+        # Arrange
+        data = BacktestDataContainer()
+        data.add_instrument(USDJPY_SIM)
+
+        # Act
+        # Assert
+        with pytest.raises(RuntimeError):
+            data.check_integrity()
 
     def test_check_integrity_when_instrument_not_added_raises_runtime_error(self):
         # Arrange

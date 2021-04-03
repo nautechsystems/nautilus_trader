@@ -237,7 +237,6 @@ cdef class BacktestEngine:
 
         self._data_producer = BacktestDataProducer(
             data=data,
-            clock=self._test_clock,
             logger=self._test_logger,
         )
 
