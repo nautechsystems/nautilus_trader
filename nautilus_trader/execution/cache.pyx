@@ -17,15 +17,14 @@
 The `ExecutionCache` provides an interface for querying on orders and positions.
 """
 
-import time
-
-from libc.math cimport lround
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.time cimport unix_timestamp
+from nautilus_trader.core.time cimport unix_timestamp_us
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
@@ -140,13 +139,13 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self.clear_index()
 
         self._log.debug(f"Building index...")
-        cdef double ts = time.time()
+        cdef double ts = unix_timestamp()
 
         self._build_index_venue_account()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
-        self._log.debug(f"Index built in {time.time() - ts:.3f}s.")
+        self._log.debug(f"Index built in {unix_timestamp() - ts:.3f}s.")
 
     cpdef bint check_integrity(self) except *:
         """
@@ -180,7 +179,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         # As there should be a bi-directional one-to-one relationship between
         # caches and indexes, each cache and index must be checked individually
 
-        cdef double ts = time.time()
+        cdef double timestamp_us = unix_timestamp_us()
         self._log.info("Checking data integrity...")
 
         # Check object caches
@@ -339,7 +338,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 error_count += 1
 
         # Finally
-        cdef int64_t total_us = lround((time.time() - ts) * 1000000)
+        cdef int64_t total_us = round(unix_timestamp_us() - timestamp_us)
         if error_count == 0:
             self._log.info(f"Integrity check passed in {total_us}μs.", LogColor.GREEN)
             return True
