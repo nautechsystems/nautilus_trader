@@ -59,6 +59,8 @@ cdef class FillModel:
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
             random.seed(random_seed)
+        else:
+            random.seed()
 
         self.prob_fill_at_limit = prob_fill_at_limit
         self.prob_fill_at_stop = prob_fill_at_stop

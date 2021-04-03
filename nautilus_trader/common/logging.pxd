@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -58,28 +57,17 @@ cdef class LogLevelParser:
 
 cdef class Logger:
     cdef LogLevel _log_level_console
-    cdef LogLevel _log_level_file
     cdef LogLevel _log_level_store
-    cdef bint _console_prints
-    cdef bint _log_thread
-    cdef bint _log_to_file
-    cdef str _log_file_dir
-    cdef str _log_file_path
     cdef list _log_store
-    cdef object _log_file_handler
-    cdef object _logger
 
     cdef readonly str name
     """The loggers name.\n\n:returns: `str`"""
-    cdef readonly bint bypass_logging
-    """If the logger is in bypass mode.\n\n:returns: `bool`"""
     cdef readonly Clock clock
     """The loggers clock.\n\n:returns: `Clock`"""
+    cdef readonly bint is_bypassed
+    """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
-    cpdef str get_log_file_dir(self)
-    cpdef str get_log_file_path(self)
     cpdef list get_log_store(self)
-    cpdef void change_log_file_name(self, str name) except *
     cpdef void clear_log_store(self) except *
 
     cdef str format_text(
@@ -88,13 +76,9 @@ cdef class Logger:
         LogLevel level,
         LogColor color,
         str text,
-        int64_t thread_id,
     )
     cdef void log_c(self, tuple message) except *
-
     cdef void _log(self, tuple message) except *
-    cdef inline void _in_memory_log_store(self, LogLevel level, str text) except *
-    cdef inline void _print_to_console(self, LogLevel level, str text) except *
 
 
 cdef class LoggerAdapter:

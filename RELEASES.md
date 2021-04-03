@@ -1,3 +1,22 @@
+# NautilusTrader 1.114.0 Beta - Release Notes
+
+**This release includes substantial breaking changes.**
+
+## Breaking Changes
+- Rename `AmendOrder` to `UpdateOrder`.
+- Rename `OrderAmended` to `OrderUpdated`.
+- Rename `amend` and `amended` related methods to `update` and `updated`.
+- Rename `OrderCancelReject` to `OrderCancelRejected` (standardize tense).
+
+## Enhancements
+- Improve efficiency of data wrangling.
+- Simplify `Logger` and general system logging.
+
+## Fixes
+- Backtest handling of `GenericData` and `OrderBook` related data.
+
+---
+
 # NautilusTrader 1.113.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**

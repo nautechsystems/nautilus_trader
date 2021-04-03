@@ -84,12 +84,7 @@ cdef class BacktestEngine:
         dict risk_config=None,
         bint bypass_logging=False,
         int level_console=LogLevel.INFO,
-        int level_file=LogLevel.DEBUG,
         int level_store=LogLevel.WARNING,
-        bint console_prints=True,
-        bint log_thread=False,
-        bint log_to_file=False,
-        str log_file_dir not None="backtests/",
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -118,18 +113,8 @@ cdef class BacktestEngine:
             If logging should be bypassed.
         level_console : int, optional
             The minimum log level for logging messages to the console.
-        level_file  : int, optional
-            The minimum log level for logging messages to the log file.
         level_store : int, optional
             The minimum log level for storing log messages in memory.
-        console_prints : bool, optional
-            If log messages should print.
-        log_thread : bool, optional
-            If log messages should log the thread.
-        log_to_file : bool, optional
-            If log messages should log to a file.
-        log_file_dir : str, optional
-            The name of the log file (cannot be None if log_to_file is True).
 
         Raises
         ------
@@ -139,8 +124,6 @@ cdef class BacktestEngine:
             If bar_capacity is not positive (> 0).
         TypeError
             If strategies contains a type other than TradingStrategy.
-        ValueError
-            If log_to_file is True and log_file_dir is None.
 
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
@@ -166,30 +149,19 @@ cdef class BacktestEngine:
         self._logger = Logger(
             clock=LiveClock(),
             name=trader_id.value,
-            bypass_logging=False,
             level_console=LogLevel.INFO,
-            level_file=LogLevel.INFO,
             level_store=LogLevel.WARNING,
-            console_prints=True,
-            log_thread=log_thread,
-            log_to_file=log_to_file,
-            log_file_dir=log_file_dir,
+            bypass_logging=False,
         )
 
-        self._log_to_file = log_to_file
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=self._logger)
 
         self._test_logger = Logger(
             clock=self._test_clock,
             name=trader_id.value,
-            bypass_logging=bypass_logging,
             level_console=level_console,
-            level_file=level_file,
             level_store=level_store,
-            console_prints=console_prints,
-            log_thread=log_thread,
-            log_to_file=log_to_file,
-            log_file_dir=log_file_dir,
+            bypass_logging=bypass_logging,
         )
 
         nautilus_header(self._log)
