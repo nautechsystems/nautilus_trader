@@ -236,7 +236,7 @@ cdef class LoggerAdapter:
         """
         return self._logger
 
-    cpdef void verbose(self, str message, LogColor color=LogColor.NORMAL) except *:
+    cpdef void verbose(self, str message) except *:
         """
         Log the given verbose message with the logger.
 
@@ -244,15 +244,13 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
-        color : LogColor (Enum), optional
-            The text color for the message.
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.VERBOSE, color, message)
+        self._send_to_logger(LogLevel.VERBOSE, LogColor.NORMAL, message)
 
-    cpdef void debug(self, str message, LogColor color=LogColor.NORMAL) except *:
+    cpdef void debug(self, str message) except *:
         """
         Log the given debug message with the logger.
 
@@ -260,15 +258,13 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
-        color : LogColor (Enum), optional
-            The text color for the message.
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.DEBUG, color, message)
+        self._send_to_logger(LogLevel.DEBUG, LogColor.NORMAL, message)
 
-    cpdef void info(self, str message, LogColor color=LogColor.NORMAL) except *:
+    cpdef void info(self, str message) except *:
         """
         Log the given information message with the logger.
 
@@ -276,13 +272,39 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
-        color : LogColor (Enum), optional
-            The text color for the message.
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.INFO, color, message)
+        self._send_to_logger(LogLevel.INFO, LogColor.NORMAL, message)
+
+    cpdef void info_blue(self, str message) except *:
+        """
+        Log the given information message with the logger in blue.
+
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
+        """
+        Condition.not_none(message, "message")
+
+        self._send_to_logger(LogLevel.INFO, LogColor.BLUE, message)
+
+    cpdef void info_green(self, str message) except *:
+        """
+        Log the given information message with the logger in green.
+
+        Parameters
+        ----------
+        message : str
+            The message to log.
+
+        """
+        Condition.not_none(message, "message")
+
+        self._send_to_logger(LogLevel.INFO, LogColor.GREEN, message)
 
     cpdef void warning(self, str message) except *:
         """
@@ -423,10 +445,12 @@ cpdef void log_memory(LoggerAdapter logger) except *:
     ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
     ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
     ram_avail_pc = 100 - psutil.virtual_memory()[2]
-    ram_avail_colour = LogColor.NORMAL if ram_avail_pc > 50 else LogColor.YELLOW
     logger.info(f"RAM-Total: {ram_total_mb:,} MB")
     logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({100 - ram_avail_pc:.2f}%)")
-    logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)", ram_avail_colour)
+    if ram_avail_pc <= 50:
+        logger.warning(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
+    else:
+        logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
 
 
 cdef class LiveLogger(Logger):
