@@ -122,7 +122,7 @@ cdef class TradingStrategy(Component):
         cdef Clock clock = LiveClock()
         super().__init__(
             clock=clock,
-            logger=Logger(clock, strategy_id.value),
+            logger=Logger(clock=clock, name=strategy_id.value),
             name=strategy_id.value,
             log_initialized=False,
         )

@@ -14,12 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import logging
-import os
 import platform
 from platform import python_version
 import sys
-import threading
 import traceback
 
 import numpy as np
@@ -110,14 +107,9 @@ cdef class Logger:
         self,
         Clock clock not None,
         str name=None,
-        bint bypass_logging=False,
         LogLevel level_console=LogLevel.INFO,
-        LogLevel level_file=LogLevel.DEBUG,
         LogLevel level_store=LogLevel.WARNING,
-        bint console_prints=True,
-        bint log_thread=False,
-        bint log_to_file=False,
-        str log_file_dir not None="log/",
+        bint bypass_logging=False,
     ):
         """
         Initialize a new instance of the `Logger` class.
@@ -126,86 +118,27 @@ cdef class Logger:
         ----------
         clock : Clock
             The clock for the logger.
-        name : str
-            The name of the logger.
-        bypass_logging : bool
-            If the logger should be bypassed.
+        name : str, optional
+            The identifying name of the logger.
         level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
-        level_file : LogLevel (Enum)
-            The minimum log level for logging messages to the log file.
         level_store : LogLevel (Enum)
             The minimum log level for storing log messages in memory.
-        console_prints : bool
-            If log messages should print to the console.
-        log_thread : bool
-            If log messages should include the thread.
-        log_to_file : bool
-            If log messages should be written to the log file.
-        log_file_dir : str
-            The log file directory.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-        ValueError
-            If log_file_dir is not a valid string.
+        bypass_logging : bool
+            If the logger should be bypassed.
 
         """
-        if name is not None:
-            Condition.valid_string(name, "name")
+        if name is None:
+            self.name = ""
         else:
-            name = "tmp"
-        if log_to_file:
-            if log_file_dir == "":
-                log_file_dir = "log/"
-            Condition.valid_string(log_file_dir, "log_file_dir")
+            self.name = name
 
-        self.name = name
-        self.bypass_logging = bypass_logging
-        self.clock = clock
         self._log_level_console = level_console
-        self._log_level_file = level_file
         self._log_level_store = level_store
-        self._console_prints = console_prints
-        self._log_thread = log_thread
-        self._log_to_file = log_to_file
-        self._log_file_dir = log_file_dir
-        self._log_file_path = f"{self._log_file_dir}{self.name}-{self.clock.utc_now().date().isoformat()}.log"
         self._log_store = []
-        self._logger = logging.getLogger(name)
-        self._logger.setLevel(logging.DEBUG)
 
-        # Setup log file handling
-        if log_to_file:
-            if not os.path.exists(self._log_file_dir):
-                # Create directory if it does not exist
-                os.makedirs(self._log_file_dir)
-            self._log_file_handler = logging.FileHandler(self._log_file_path)
-            self._logger.addHandler(self._log_file_handler)
-
-    cpdef str get_log_file_dir(self):
-        """
-        Return the current log file directory.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._log_file_dir
-
-    cpdef str get_log_file_path(self):
-        """
-        Return the current log file path.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._log_file_path
+        self.clock = clock
+        self.is_bypassed = bypass_logging
 
     cpdef list get_log_store(self):
         """
@@ -217,23 +150,6 @@ cdef class Logger:
 
         """
         return self._log_store
-
-    cpdef void change_log_file_name(self, str name) except *:
-        """
-        Change the log file name.
-
-        Parameters
-        ----------
-        name : str
-            The new name of the log file.
-
-        """
-        Condition.valid_string(name, "name")
-
-        self._log_file_path = f"{self._log_file_dir}{name}.log"
-        self._logger.removeHandler(self._log_file_handler)
-        self._log_file_handler = logging.FileHandler(self._log_file_path)
-        self._logger.addHandler(self._log_file_handler)
 
     cpdef void clear_log_store(self) except *:
         """
@@ -247,11 +163,9 @@ cdef class Logger:
         LogLevel level,
         LogColor color,
         str text,
-        int64_t thread_id,
     ):
         # Return the formatted log message from the given arguments
         cdef str time = format_iso8601_us(timestamp)
-        cdef str thread = "" if self._log_thread is False else f"[{thread_id}]"
         cdef str colour_cmd = ""
 
         if color == LogColor.NORMAL:
@@ -265,7 +179,7 @@ cdef class Logger:
         elif color == LogColor.RED:
             colour_cmd = _RED
 
-        return (f"{_BOLD}{time}{_ENDC} {thread}{colour_cmd}"
+        return (f"{_BOLD}{time}{_ENDC} {colour_cmd}"
                 f"[{LogLevelParser.to_str(level)}] {text}{_ENDC}")
 
     cdef void log_c(self, tuple message) except *:
@@ -274,24 +188,13 @@ cdef class Logger:
     cdef void _log(self, tuple message) except *:
         cdef LogLevel level = message[0]
         cdef str text = message[1]
-        self._in_memory_log_store(level, text)
-        self._print_to_console(level, text)
 
-        if self._log_to_file and level >= self._log_level_file:
-            try:
-                self._logger.debug(text)
-            except IOError as ex:
-                self._print_to_console(LogLevel.ERROR, f"IOError: {ex}.")
-
-    cdef inline void _in_memory_log_store(self, LogLevel level, str text) except *:
-        # Store the given log message if the given log level is >= the log_level_store
+        # Sinks
+        # -----
         if level >= self._log_level_store:
             self._log_store.append(text)
 
-    cdef inline void _print_to_console(self, LogLevel level, str text) except *:
-        # Print the given log message to the console if the given log level if
-        # >= the log_level_console level.
-        if self._console_prints and level >= self._log_level_console:
+        if level >= self._log_level_console:
             print(text)
 
 
@@ -320,7 +223,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self.component_name = component_name
-        self.is_bypassed = logger.bypass_logging
+        self.is_bypassed = logger.is_bypassed
 
     cpdef Logger get_logger(self):
         """
@@ -460,7 +363,6 @@ cdef class LoggerAdapter:
             level=level,
             color=color,
             text=f"{self.component_name}: {message}",
-            thread_id=threading.current_thread().ident,
         )
 
         self._logger.log_c((level, text))
@@ -537,15 +439,9 @@ cdef class LiveLogger(Logger):
         loop not None,
         LiveClock clock not None,
         str name=None,
-        bint bypass_logging=False,
         LogLevel level_console=LogLevel.INFO,
-        LogLevel level_file=LogLevel.DEBUG,
         LogLevel level_store=LogLevel.WARNING,
-        bint run_in_process=False,
-        bint console_prints=True,
-        bint log_thread=False,
-        bint log_to_file=False,
-        str log_file_dir not None="logs/",
+        bint bypass_logging=False,
         int maxsize=10000,
     ):
         """
@@ -557,46 +453,24 @@ cdef class LiveLogger(Logger):
             The event loop to run the logger on.
         clock : LiveClock
             The clock for the logger.
-        name : str
-            The name of the logger.
+        name : str, optional
+            The identifying name of the logger.
         level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
-        level_file : LogLevel (Enum)
-            The minimum log level for logging messages to the log file.
         level_store : LogLevel (Enum)
             The minimum log level for storing log messages in memory.
-        run_in_process : bool
-            If the logger should be run in a separate multiprocessing process.
-        console_prints : bool
-            If log messages should print to the console.
-        log_thread : bool
-            If log messages should include the thread.
-        log_to_file : bool
-            If log messages should write to the log file.
-        log_file_dir : str
-            The log file directory (cannot be empty if log_to_file is True).
+        bypass_logging : bool
+            If the logger should be bypassed.
         maxsize : int, optional
             The maximum capacity for the log queue.
 
-        Raises
-        ------
-        ValueError
-            If the name is not a valid string.
-        ValueError
-            If the log_file_dir is not a valid string.
-
         """
         super().__init__(
-            clock,
-            name,
-            bypass_logging,
-            level_console,
-            level_file,
-            level_store,
-            console_prints,
-            log_thread,
-            log_to_file,
-            log_file_dir,
+            clock=clock,
+            name=name,
+            level_console=level_console,
+            level_store=level_store,
+            bypass_logging=bypass_logging,
         )
 
         self._loop = loop
@@ -632,7 +506,6 @@ cdef class LiveLogger(Logger):
                     level=LogLevel.WARNING,
                     color=LogColor.YELLOW,
                     text=f"LiveLogger: Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
-                    thread_id=threading.current_thread().ident,
                 )
                 self._log((LogLevel.WARNING, text))
                 self._loop.create_task(self._queue.put(message))  # Blocking until qsize reduces

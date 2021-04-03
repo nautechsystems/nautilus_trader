@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
-import shutil
 
 import pytest
 
@@ -68,76 +66,6 @@ class TestLogLevelParser:
 
         # Assert
         assert result == expected
-
-
-class TestLoggerBase:
-    def test_setup_logger_log_to_file_with_no_path(self):
-        # Arrange
-        # Act
-        logger = Logger(
-            clock=TestClock(),
-            level_console=LogLevel.VERBOSE,
-            log_to_file=True,
-        )
-
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        logger_adapter.info("hello, world")
-
-        # Assert
-        assert os.path.isdir(logger.get_log_file_dir())
-        assert os.path.exists(logger.get_log_file_path())
-        assert logger.get_log_file_dir().endswith("log/")
-        assert logger.get_log_file_path().endswith("tmp-1970-01-01.log")
-
-        # Teardown
-        shutil.rmtree(logger.get_log_file_dir())
-
-    def test_setup_logger_log_to_file_given_path(self):
-        # Arrange
-        # Act
-        logger = Logger(
-            name="TEST",
-            clock=TestClock(),
-            level_console=LogLevel.VERBOSE,
-            log_to_file=True,
-            log_file_dir="log1/",
-        )
-
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        logger_adapter.info("hello, world")
-
-        # Assert
-        assert os.path.isdir(logger.get_log_file_dir())
-        assert os.path.exists(logger.get_log_file_path())
-        assert logger.get_log_file_dir().endswith("log1/")
-        assert logger.get_log_file_path().endswith("TEST-1970-01-01.log")
-
-        # Teardown
-        shutil.rmtree(logger.get_log_file_dir())
-
-    def test_change_log_file_name(self):
-        # Arrange
-        # Act
-        logger = Logger(
-            name="TEST",
-            clock=TestClock(),
-            level_console=LogLevel.VERBOSE,
-            log_to_file=True,
-            log_file_dir="log2/",
-        )
-
-        logger.change_log_file_name("TEST-1970-01-02")
-
-        # Assert
-        assert os.path.isdir(logger.get_log_file_dir())
-        assert os.path.exists(logger.get_log_file_path())
-        assert logger.get_log_file_dir().endswith("log2/")
-        assert logger.get_log_file_path().endswith("TEST-1970-01-02.log")
-
-        # Teardown
-        shutil.rmtree(logger.get_log_file_dir())
 
 
 class TestLoggerTests:
