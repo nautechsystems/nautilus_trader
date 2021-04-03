@@ -37,7 +37,6 @@ cdef class DataProducerFacade:
 
 
 cdef class BacktestDataProducer(DataProducerFacade):
-    cdef Clock _clock
     cdef LoggerAdapter _log
 
     cdef list _instruments
