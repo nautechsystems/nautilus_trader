@@ -26,7 +26,6 @@ total risk exposures and total net positions.
 
 from decimal import Decimal
 
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -208,10 +207,11 @@ cdef class Portfolio(PortfolioFacade):
         for venue in self._orders_working.keys():
             self._update_initial_margin(venue)
 
-        self._log.info(
-            f"Initialized {working_count} working order{'' if working_count == 1 else 's'}.",
-            color=LogColor.NORMAL if working_count == 0 else LogColor.BLUE,
-        )
+        msg = f"Initialized {working_count} working order{'' if working_count == 1 else 's'}."
+        if working_count > 0:
+            self._log.info_blue(msg)
+        else:
+            self._log.info(msg)
 
     cpdef void initialize_positions(self, set positions) except *:
         """
@@ -256,14 +256,17 @@ cdef class Portfolio(PortfolioFacade):
             for instrument_id in self._instruments_open_for_venue(venue):
                 self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
 
-        self._log.info(
-            f"Initialized {open_count} open position{'' if open_count == 1 else 's'}.",
-            color=LogColor.NORMAL if open_count == 0 else LogColor.BLUE,
-        )
-        self._log.info(
-            f"Initialized {closed_count} closed position{'' if closed_count == 1 else 's'}.",
-            color=LogColor.NORMAL if closed_count == 0 else LogColor.BLUE,
-        )
+        msg = f"Initialized {open_count} open position{'' if open_count == 1 else 's'}."
+        if open_count > 0:
+            self._log.info_blue(msg)
+        else:
+            self._log.info(msg)
+
+        msg = f"Initialized {closed_count} closed position{'' if closed_count == 1 else 's'}."
+        if closed_count > 0:
+            self._log.info_blue(msg)
+        else:
+            self._log.info(msg)
 
     cpdef void update_tick(self, QuoteTick tick) except *:
         """

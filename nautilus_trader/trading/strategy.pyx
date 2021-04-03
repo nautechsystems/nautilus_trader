@@ -37,7 +37,6 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
@@ -675,9 +674,9 @@ cdef class TradingStrategy(Component):
             self.log.debug("Saving state...")
             user_state = self.on_save()
             if len(user_state) > 0:
-                self.log.info(f"Saved state: {user_state}.", LogColor.BLUE)
+                self.log.info_blue(f"Saved state: {user_state}.")
             else:
-                self.log.info("No user state to save.", LogColor.BLUE)
+                self.log.info_blue("No user state to save.")
             return user_state
         except Exception as ex:
             self.log.exception(ex)
@@ -709,13 +708,13 @@ cdef class TradingStrategy(Component):
         self._check_trader_registered()
 
         if not state:
-            self.log.info("No user state to load.", LogColor.BLUE)
+            self.log.info_blue("No user state to load.")
             return
 
         try:
             self.log.debug(f"Loading state...")
             self.on_load(state)
-            self.log.info(f"Loaded state {state}.", LogColor.BLUE)
+            self.log.info_blue(f"Loaded state {state}.")
         except Exception as ex:
             self.log.exception(ex)
             raise

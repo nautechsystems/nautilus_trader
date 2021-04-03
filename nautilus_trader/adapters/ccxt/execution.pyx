@@ -25,7 +25,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
@@ -148,7 +147,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._cached_filled[order.id] = order.filled_qty.as_decimal()
 
         if self._client.check_required_credentials():
-            self._log.info("API credentials validated.", LogColor.GREEN)
+            self._log.info_green("API credentials validated.")
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
@@ -285,7 +284,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return reports  # TODO: Is this necessary??
 
         cdef list fills = [fill for fill in response if fill["order"] == order_id.value]
-        self._log.info(str(fills), LogColor.GREEN)  # TODO: Development
+        self._log.info_green(str(fills))  # TODO: Development
 
         if not fills:
             return reports

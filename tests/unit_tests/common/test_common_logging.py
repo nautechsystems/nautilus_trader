@@ -20,7 +20,6 @@ import pytest
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import Logger
@@ -108,7 +107,7 @@ class TestLoggerTests:
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
-        logger_adapter.info("This is a log message.", LogColor.BLUE)
+        logger_adapter.info_blue("This is a log message.")
 
         # Assert
         assert True  # No exceptions raised
@@ -119,18 +118,7 @@ class TestLoggerTests:
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
-        logger_adapter.info("This is a log message.", LogColor.GREEN)
-
-        # Assert
-        assert True  # No exceptions raised
-
-    def test_log_info_messages_to_console_with_invalid_colour(self):
-        # Arrange
-        logger = Logger(clock=TestClock(), level_console=LogLevel.INFO)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        # Act
-        logger_adapter.info("This is a log message.", 30)
+        logger_adapter.info_green("This is a log message.")
 
         # Assert
         assert True  # No exceptions raised
