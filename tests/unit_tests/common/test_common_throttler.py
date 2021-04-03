@@ -16,7 +16,7 @@
 from datetime import timedelta
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.throttler import Throttler
 
 
@@ -24,7 +24,7 @@ class TestThrottler:
     def setup(self):
         # Fixture setup
         self.clock = TestClock()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.handler = []
         self.throttler = Throttler(

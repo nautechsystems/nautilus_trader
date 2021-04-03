@@ -19,7 +19,7 @@ import unittest
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.execution.cache import ExecutionCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.bar import BarSpecification
@@ -54,7 +54,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
-        logger = TestLogger(clock)
+        logger = Logger(clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
@@ -767,7 +767,7 @@ class ExecutionCacheIntegrityCheckTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
         data.add_bars(

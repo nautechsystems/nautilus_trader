@@ -27,15 +27,12 @@ import pandas as pd
 import psutil
 import scipy
 
-from nautilus_trader import __version__
-
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from nautilus_trader import __version__
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogLevel
-from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
@@ -104,58 +101,9 @@ cdef class LogLevelParser:
         return LogLevelParser.from_str(value)
 
 
-cdef class LogMessage:
-    """
-    Represents a log message including timestamp and log level.
-    """
-    def __init__(
-        self,
-        datetime timestamp not None,
-        LogLevel level,
-        LogColor color,
-        str text not None,
-        int64_t thread_id=0,
-    ):
-        """
-        Initialize a new instance of the `LogMessage` class.
-
-        Parameters
-        ----------
-        timestamp : datetime
-            The log message timestamp.
-        level :  LogLevel (Enum)
-            The log message level.
-        color :  LogColor (Enum)
-            The log message color.
-        text : str
-            The log message text.
-        thread_id : int64, optional
-            The thread the log message was created on.
-
-        """
-        self.timestamp = timestamp
-        self.level = level
-        self.color = color
-        self.text = text
-        self.thread_id = thread_id
-
-    cdef inline str as_string(self):
-        """
-        Return the string representation of the log message.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{format_iso8601_us(self.timestamp)} [{self.thread_id}][{LogLevelParser.to_str(self.level)}] {self.text}"
-
-
 cdef class Logger:
     """
-    The abstract base class for all Loggers.
-
-    This class should not be used directly, but through its concrete subclasses.
+    Provides a high-performance logger.
     """
 
     def __init__(
@@ -169,7 +117,7 @@ cdef class Logger:
         bint console_prints=True,
         bint log_thread=False,
         bint log_to_file=False,
-        str log_file_dir not None="",
+        str log_file_dir not None="log/",
     ):
         """
         Initialize a new instance of the `Logger` class.
@@ -287,55 +235,60 @@ cdef class Logger:
         self._log_file_handler = logging.FileHandler(self._log_file_path)
         self._logger.addHandler(self._log_file_handler)
 
-    cpdef void log(self, LogMessage message) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef void clear_log_store(self) except *:
         """
         Clear the log store.
         """
         self._log_store = []
 
-    cpdef void _log(self, LogMessage message) except *:
-        cdef str formatted_msg = self._format_output(message)
-        self._in_memory_log_store(message.level, formatted_msg)
-        self._print_to_console(message.level, formatted_msg)
+    cdef str format_text(
+        self,
+        datetime timestamp,
+        LogLevel level,
+        LogColor color,
+        str text,
+        int64_t thread_id,
+    ):
+        # Return the formatted log message from the given arguments
+        cdef str time = format_iso8601_us(timestamp)
+        cdef str thread = "" if self._log_thread is False else f"[{thread_id}]"
+        cdef str colour_cmd = ""
 
-        if self._log_to_file and message.level >= self._log_level_file:
+        if color == LogColor.NORMAL:
+            pass
+        elif color == LogColor.BLUE:
+            colour_cmd = _BLUE
+        elif color == LogColor.GREEN:
+            colour_cmd = _GREEN
+        elif color == LogColor.YELLOW:
+            colour_cmd = _YELLOW
+        elif color == LogColor.RED:
+            colour_cmd = _RED
+
+        return (f"{_BOLD}{time}{_ENDC} {thread}{colour_cmd}"
+                f"[{LogLevelParser.to_str(level)}] {text}{_ENDC}")
+
+    cdef void log_c(self, tuple message) except *:
+        self._log(message)
+
+    cdef void _log(self, tuple message) except *:
+        cdef LogLevel level = message[0]
+        cdef str text = message[1]
+        self._in_memory_log_store(level, text)
+        self._print_to_console(level, text)
+
+        if self._log_to_file and level >= self._log_level_file:
             try:
-                self._logger.debug(message.as_string())
+                self._logger.debug(text)
             except IOError as ex:
                 self._print_to_console(LogLevel.ERROR, f"IOError: {ex}.")
 
-    cdef str _format_output(self, LogMessage message):
-        # Return the formatted log message from the given arguments
-        cdef str time = format_iso8601_us(message.timestamp)
-        cdef str thread = "" if self._log_thread is False else f"[{message.thread_id}]"
-        cdef str colour_cmd
-
-        if message.color == LogColor.NORMAL:
-            colour_cmd = ""
-        elif message.color == LogColor.BLUE:
-            colour_cmd = _BLUE
-        elif message.color == LogColor.GREEN:
-            colour_cmd = _GREEN
-        elif message.color == LogColor.YELLOW:
-            colour_cmd = _YELLOW
-        elif message.color == LogColor.RED:
-            colour_cmd = _RED
-        else:
-            colour_cmd = ""
-
-        return (f"{_BOLD}{time}{_ENDC} {thread}{colour_cmd}"
-                f"[{LogLevelParser.to_str(message.level)}] {message.text}{_ENDC}")
-
-    cdef void _in_memory_log_store(self, LogLevel level, str text) except *:
+    cdef inline void _in_memory_log_store(self, LogLevel level, str text) except *:
         # Store the given log message if the given log level is >= the log_level_store
         if level >= self._log_level_store:
             self._log_store.append(text)
 
-    cdef void _print_to_console(self, LogLevel level, str text) except *:
+    cdef inline void _print_to_console(self, LogLevel level, str text) except *:
         # Print the given log message to the console if the given log level if
         # >= the log_level_console level.
         if self._console_prints and level >= self._log_level_console:
@@ -499,21 +452,18 @@ cdef class LoggerAdapter:
         LogColor color,
         str message,
     ) except *:
-        cdef:
-            LogMessage msg
-        if not self.is_bypassed:
-            msg = LogMessage(
-                self._logger.clock.utc_now(),
-                level,
-                color,
-                self._format_message(message),
-                threading.current_thread().ident,
-            )
-            self._logger.log(msg)
+        if self.is_bypassed:
+            return
 
-    cdef inline str _format_message(self, str message):
-        # Add the components name to the front of the log message
-        return f"{self.component_name}: {message}"
+        cdef str text = self._logger.format_text(
+            timestamp=self._logger.clock.utc_now(),
+            level=level,
+            color=color,
+            text=f"{self.component_name}: {message}",
+            thread_id=threading.current_thread().ident,
+        )
+
+        self._logger.log_c((level, text))
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:
@@ -575,89 +525,6 @@ cpdef void log_memory(LoggerAdapter logger) except *:
     logger.info(f"RAM-Total: {ram_total_mb:,} MB")
     logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({100 - ram_avail_pc:.2f}%)")
     logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)", ram_avail_colour)
-
-
-cdef class TestLogger(Logger):
-    """
-    Provides a single threaded logger for testing.
-    """
-    __test__ = False
-
-    def __init__(
-        self,
-        Clock clock not None,
-        str name=None,
-        bint bypass_logging=False,
-        LogLevel level_console=LogLevel.DEBUG,
-        LogLevel level_file=LogLevel.DEBUG,
-        LogLevel level_store=LogLevel.WARNING,
-        bint console_prints=True,
-        bint log_thread=False,
-        bint log_to_file=False,
-        str log_file_dir not None="log/",
-    ):
-        """
-        Initialize a new instance of the `TestLogger` class.
-
-        Parameters
-        ----------
-        clock : Clock
-            The clock for the logger.
-        name : str
-            The name of the logger.
-        bypass_logging : bool
-            If logging should be entirely bypasses.
-        level_console : LogLevel (Enum)
-            The minimum log level for logging messages to the console.
-        level_file : LogLevel (Enum)
-            The minimum log level for logging messages to the log file.
-        level_store : LogLevel (Enum)
-            The minimum log level for storing log messages in memory.
-        console_prints : bool
-            If log messages should print to the console.
-        log_thread : bool
-            If log messages should include the thread.
-        log_to_file : bool
-            If log messages should write to the log file.
-        log_file_dir : str
-            The log file directory (cannot be empty if log_to_file is True).
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-        ValueError
-            If log_file_dir is not a valid string.
-
-        """
-        if log_file_dir is "":
-            log_file_dir = "log/"
-        super().__init__(
-            clock,
-            name,
-            bypass_logging,
-            level_console,
-            level_file,
-            level_store,
-            console_prints,
-            log_thread,
-            log_to_file,
-            log_file_dir,
-        )
-
-    cpdef void log(self, LogMessage message) except *:
-        """
-        Log the given log message.
-
-        Parameters
-        ----------
-        message : LogMessage
-            The message to log.
-
-        """
-        Condition.not_none(message, "message")
-
-        self._log(message)
 
 
 cdef class LiveLogger(Logger):
@@ -738,7 +605,7 @@ cdef class LiveLogger(Logger):
         self._run_task = None
         self.is_running = False
 
-    cpdef void log(self, LogMessage message) except *:
+    cdef void log_c(self, tuple message) except *:
         """
         Log the given message.
 
@@ -750,8 +617,8 @@ cdef class LiveLogger(Logger):
 
         Parameters
         ----------
-        message : LogMessage
-            The log message to log.
+        message : tuple(int, str)
+            The log level and text.
 
         """
         Condition.not_none(message, "message")
@@ -760,14 +627,14 @@ cdef class LiveLogger(Logger):
             try:
                 self._queue.put_nowait(message)
             except asyncio.QueueFull:
-                queue_full_msg = LogMessage(
+                text = self.format_text(
                     timestamp=self.clock.utc_now(),
                     level=LogLevel.WARNING,
                     color=LogColor.YELLOW,
                     text=f"LiveLogger: Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
                     thread_id=threading.current_thread().ident,
                 )
-                self._log(queue_full_msg)
+                self._log((LogLevel.WARNING, text))
                 self._loop.create_task(self._queue.put(message))  # Blocking until qsize reduces
         else:
             # If event loop is not running then pass message directly to the

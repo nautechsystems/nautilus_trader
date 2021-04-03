@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.generators import ClientOrderIdGenerator
 from nautilus_trader.common.generators import PositionIdGenerator
@@ -24,8 +22,8 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 
 
-class OrderIdGeneratorTests(unittest.TestCase):
-    def setUp(self):
+class TestOrderIdGenerator:
+    def setup(self):
         # Fixture Setup
         self.order_id_generator = ClientOrderIdGenerator(
             id_tag_trader=IdTag("001"), id_tag_strategy=IdTag("001"), clock=TestClock()
@@ -39,9 +37,9 @@ class OrderIdGeneratorTests(unittest.TestCase):
         result3 = self.order_id_generator.generate()
 
         # Assert
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), result1)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), result2)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-3"), result3)
+        assert result1 == ClientOrderId("O-19700101-000000-001-001-1")
+        assert result2 == ClientOrderId("O-19700101-000000-001-001-2")
+        assert result3 == ClientOrderId("O-19700101-000000-001-001-3")
 
     def test_reset_id_generator(self):
         # Arrange
@@ -54,11 +52,11 @@ class OrderIdGeneratorTests(unittest.TestCase):
         result1 = self.order_id_generator.generate()
 
         # Assert
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), result1)
+        assert result1 == ClientOrderId("O-19700101-000000-001-001-1")
 
 
-class PositionIdGeneratorTests(unittest.TestCase):
-    def setUp(self):
+class TestPositionIdGenerator:
+    def setup(self):
         # Fixture Setup
         self.position_id_generator = PositionIdGenerator(
             id_tag_trader=IdTag("001"),
@@ -73,9 +71,9 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result3 = self.position_id_generator.generate(StrategyId("S", "002"))
 
         # Assert
-        self.assertEqual(PositionId("P-19700101-000000-001-002-1"), result1)
-        self.assertEqual(PositionId("P-19700101-000000-001-002-2"), result2)
-        self.assertEqual(PositionId("P-19700101-000000-001-002-3"), result3)
+        assert result1 == PositionId("P-19700101-000000-001-002-1")
+        assert result2 == PositionId("P-19700101-000000-001-002-2")
+        assert result3 == PositionId("P-19700101-000000-001-002-3")
 
     def test_generate_position_id_with_flip_appends_correctly(self):
         # Arrange
@@ -89,9 +87,9 @@ class PositionIdGeneratorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(PositionId("P-19700101-000000-001-001-1"), result1)
-        self.assertEqual(PositionId("P-19700101-000000-001-002-1F"), result2)
-        self.assertEqual(PositionId("P-19700101-000000-001-001-2F"), result3)
+        assert result1 == PositionId("P-19700101-000000-001-001-1")
+        assert result2 == PositionId("P-19700101-000000-001-002-1F")
+        assert result3 == PositionId("P-19700101-000000-001-001-2F")
 
     def test_set_count_with_valid_strategy_identifier(self):
         # Arrange
@@ -101,7 +99,7 @@ class PositionIdGeneratorTests(unittest.TestCase):
         self.position_id_generator.set_count(strategy_id, 5)
 
         # Assert
-        self.assertEqual(5, self.position_id_generator.get_count(strategy_id))
+        assert self.position_id_generator.get_count(strategy_id) == 5
 
     def test_get_count_when_strategy_id_has_no_count_returns_zero(self):
         # Arrange
@@ -111,7 +109,7 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result = self.position_id_generator.get_count(strategy_id)
 
         # Assert
-        self.assertEqual(0, result)
+        assert result == 0
 
     def test_reset_id_generator(self):
         # Arrange
@@ -124,4 +122,4 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result1 = self.position_id_generator.generate(StrategyId("S", "002"))
 
         # Assert
-        self.assertEqual(PositionId("P-19700101-000000-001-002-1"), result1)
+        assert result1 == PositionId("P-19700101-000000-001-002-1")

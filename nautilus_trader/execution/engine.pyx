@@ -488,10 +488,10 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._clients.get(command.venue.first())
+        cdef ExecutionClient client = self._clients.get(command.instrument_id.venue.first())
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.venue.first()}, {command}.")
+                            f"No client registered for {command.instrument_id.venue.first()}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):

@@ -34,8 +34,8 @@ from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.timer cimport TimeEventHandler
@@ -163,7 +163,7 @@ cdef class BacktestEngine:
 
         self.analyzer = PerformanceAnalyzer()
 
-        self._logger = TestLogger(
+        self._logger = Logger(
             clock=LiveClock(),
             name=trader_id.value,
             bypass_logging=False,
@@ -179,7 +179,7 @@ cdef class BacktestEngine:
         self._log_to_file = log_to_file
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=self._logger)
 
-        self._test_logger = TestLogger(
+        self._test_logger = Logger(
             clock=self._test_clock,
             name=trader_id.value,
             bypass_logging=bypass_logging,
@@ -260,7 +260,7 @@ cdef class BacktestEngine:
             elif client_type == BacktestMarketDataClient:
                 instruments = []
                 for instrument in data.instruments.values():
-                    if instrument.venue.first() == name:
+                    if instrument.id.venue.first() == name:
                         instruments.append(instrument)
 
                 data_client = BacktestMarketDataClient(
@@ -378,7 +378,7 @@ cdef class BacktestEngine:
         # Gather instruments for exchange
         instruments = []
         for instrument in self._data_engine.cache.instruments():
-            if instrument.venue == venue:
+            if instrument.id.venue == venue:
                 instruments.append(instrument)
 
         # Create exchange
@@ -711,7 +711,7 @@ cdef class BacktestEngine:
             # Find all positions for exchange venue
             positions = []
             for position in self._exec_engine.cache.positions():
-                if position.venue == exchange.id:
+                if position.instrument_id.venue == exchange.id:
                     positions.append(position)
 
             # Calculate statistics

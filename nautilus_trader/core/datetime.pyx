@@ -26,10 +26,26 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport datetime_tzinfo
 from cpython.datetime cimport timedelta
 from cpython.unicode cimport PyUnicode_Contains
-from libc.math cimport lround
+from libc.math cimport llround as llround_func
+from libc.math cimport lround as lround_func
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+
+
+ctypedef int64_t (* round_func_type)(double x) nogil
+
+cdef round_func_type _get_round_func() nogil:
+    if sizeof(long) == 8:
+        return <round_func_type>lround_func
+    elif sizeof(long long) == 8:
+        return <round_func_type>llround_func
+    else:
+        return NULL
+
+cdef round_func_type lround = _get_round_func()
+if lround == NULL:
+    raise TypeError(f"Can't support 'C' lround function.")
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970

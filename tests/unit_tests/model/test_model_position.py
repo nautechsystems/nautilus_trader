@@ -101,6 +101,8 @@ class PositionTests(unittest.TestCase):
         position = Position(fill=fill)
 
         # Assert
+        assert position.symbol == AUDUSD_SIM.id.symbol
+        assert position.venue == AUDUSD_SIM.id.venue
         self.assertFalse(position != position)  # Equality operator test
         self.assertEqual(
             ClientOrderId("O-19700101-000000-000-001-1"), position.from_order

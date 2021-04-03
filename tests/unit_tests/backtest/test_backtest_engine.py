@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
@@ -33,8 +31,8 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_SIM = TestStubs.usdjpy_id()
 
 
-class BacktestEngineTests(unittest.TestCase):
-    def setUp(self):
+class TestBacktestEngine:
+    def setup(self):
         # Fixture Setup
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         data = BacktestDataContainer()
@@ -66,7 +64,7 @@ class BacktestEngineTests(unittest.TestCase):
             fill_model=FillModel(),
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.reset()
         self.engine.dispose()
 
@@ -74,7 +72,7 @@ class BacktestEngineTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(1, len(self.engine.trader.strategy_states()))
+        len(self.engine.trader.strategy_states()) == 1
 
     def test_reset_engine(self):
         # Arrange
@@ -84,7 +82,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.reset()
 
         # Assert
-        self.assertEqual(0, self.engine.iteration)  # No exceptions raised
+        assert self.engine.iteration == 0  # No exceptions raised
 
     def test_run_empty_strategy(self):
         # Arrange
@@ -92,7 +90,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.run()
 
         # Assert
-        self.assertEqual(7999, self.engine.iteration)
+        assert self.engine.iteration == 7999
 
     def test_change_fill_model(self):
         # Arrange
@@ -100,4 +98,4 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.change_fill_model(Venue("SIM"), FillModel())
 
         # Assert
-        self.assertTrue(True)  # No exception raised
+        assert True  # No exceptions raised

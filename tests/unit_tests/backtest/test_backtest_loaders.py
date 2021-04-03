@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import unittest
 
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -23,7 +22,7 @@ from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
 
-class BacktestLoadersTests(unittest.TestCase):
+class TestBacktestLoaders:
     def test_default_fx_with_5_dp_returns_expected_instrument(self):
         # Arrange
         loader = TestInstrumentProvider()
@@ -32,11 +31,11 @@ class BacktestLoadersTests(unittest.TestCase):
         instrument = loader.default_fx_ccy("AUD/USD")
 
         # Assert
-        self.assertEqual(InstrumentId(Symbol("AUD/USD"), Venue("SIM")), instrument.id)
-        self.assertEqual(5, instrument.price_precision)
-        self.assertEqual(Decimal("0.00001"), instrument.tick_size)
-        self.assertEqual("AUD", instrument.base_currency.code)
-        self.assertEqual("USD", instrument.quote_currency.code)
+        assert instrument.id == InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert instrument.price_precision == 5
+        assert instrument.tick_size == Decimal("0.00001")
+        assert instrument.base_currency.code == "AUD"
+        assert instrument.quote_currency.code == "USD"
 
     def test_default_fx_with_3_dp_returns_expected_instrument(self):
         # Arrange
@@ -46,26 +45,26 @@ class BacktestLoadersTests(unittest.TestCase):
         instrument = loader.default_fx_ccy("USD/JPY", Venue("SIM"))
 
         # Assert
-        self.assertEqual(InstrumentId(Symbol("USD/JPY"), Venue("SIM")), instrument.id)
-        self.assertEqual(3, instrument.price_precision)
-        self.assertEqual(Decimal("0.001"), instrument.tick_size)
-        self.assertEqual("USD", instrument.base_currency.code)
-        self.assertEqual("JPY", instrument.quote_currency.code)
+        assert instrument.id == InstrumentId(Symbol("USD/JPY"), Venue("SIM"))
+        assert instrument.price_precision == 3
+        assert instrument.tick_size == Decimal("0.001")
+        assert instrument.base_currency.code == "USD"
+        assert instrument.quote_currency.code == "JPY"
 
 
-class ParquetTickDataLoadersTests(unittest.TestCase):
+class TestParquetTickDataLoaders:
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
         # Act
         trade_ticks = TestDataProvider.parquet_btcusdt_trades()
 
         # Assert
-        self.assertEqual(len(trade_ticks), 2001)
-        self.assertIn("trade_id", trade_ticks.columns)
-        self.assertIn("price", trade_ticks.columns)
-        self.assertIn("quantity", trade_ticks.columns)
-        self.assertIn("buyer_maker", trade_ticks.columns)
-        self.assertEqual(trade_ticks.iloc[0]["trade_id"], 553287559)
+        assert len(trade_ticks), 2001
+        assert "trade_id" in trade_ticks.columns
+        assert "price" in trade_ticks.columns
+        assert "quantity" in trade_ticks.columns
+        assert "buyer_maker" in trade_ticks.columns
+        assert trade_ticks.iloc[0]["trade_id"] == 553287559
 
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
@@ -73,11 +72,11 @@ class ParquetTickDataLoadersTests(unittest.TestCase):
         quote_ticks = TestDataProvider.parquet_btcusdt_quotes()
 
         # Assert
-        self.assertEqual(len(quote_ticks), 451)
-        self.assertIn("symbol", quote_ticks.columns)
-        self.assertIn("ask_size", quote_ticks.columns)
-        self.assertIn("ask", quote_ticks.columns)
-        self.assertIn("bid_size", quote_ticks.columns)
-        self.assertIn("bid", quote_ticks.columns)
-        self.assertEqual(quote_ticks.iloc[0]["ask"], 39433.62)
-        self.assertEqual(quote_ticks.iloc[0]["bid"], 39432.99)
+        assert len(quote_ticks), 451
+        assert "symbol" in quote_ticks.columns
+        assert "ask_size" in quote_ticks.columns
+        assert "ask" in quote_ticks.columns
+        assert "bid_size" in quote_ticks.columns
+        assert "bid" in quote_ticks.columns
+        assert quote_ticks.iloc[0]["ask"] == 39433.62
+        assert quote_ticks.iloc[0]["bid"] == 39432.99

@@ -226,6 +226,8 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
+        self.assertEqual(AUDUSD_SIM.id.symbol, order.symbol)
+        self.assertEqual(AUDUSD_SIM.id.venue, order.venue)
         self.assertEqual(OrderType.MARKET, order.type)
         self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(1, order.event_count)
