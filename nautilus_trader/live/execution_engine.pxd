@@ -29,3 +29,5 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cpdef int qsize(self) except *
 
     cpdef void kill(self) except *
+
+    cdef inline void _enqueue_sentinel(self)

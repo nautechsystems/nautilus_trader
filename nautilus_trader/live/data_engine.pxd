@@ -32,3 +32,5 @@ cdef class LiveDataEngine(DataEngine):
     cpdef int message_qsize(self) except *
 
     cpdef void kill(self) except *
+
+    cdef inline void _enqueue_sentinels(self)

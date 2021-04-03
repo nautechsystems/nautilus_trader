@@ -40,6 +40,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
     """
+    _sentinel = None
 
     def __init__(
         self,
@@ -286,8 +287,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cpdef void _on_stop(self) except *:
         if self.is_running:
             self.is_running = False
-            self._queue.put_nowait(None)  # Sentinel message pattern
-            self._log.debug(f"Sentinel message placed on message queue.")
+            self._enqueue_sentinel()
 
     async def _run(self):
         self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
@@ -309,3 +309,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
+
+    cdef inline void _enqueue_sentinel(self):
+        self._queue.put_nowait(self._sentinel)
+        self._log.debug(f"Sentinel message placed on message queue.")
