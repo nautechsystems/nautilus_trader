@@ -29,13 +29,11 @@ cdef str RES
 
 
 cpdef enum LogLevel:
-    VERBOSE = 1,
-    DEBUG = 2,
-    INFO = 3,
-    WARNING = 4,
-    ERROR = 5,
-    CRITICAL = 6,
-    FATAL = 7,
+    DEBUG = 10,
+    INFO = 20,
+    WARNING = 30,
+    ERROR = 40,
+    CRITICAL = 50,
 
 
 cpdef enum LogColor:
@@ -85,7 +83,6 @@ cdef class LoggerAdapter:
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void verbose(self, str message) except *
     cpdef void debug(self, str message) except *
     cpdef void info(self, str message) except *
     cpdef void info_blue(self, str message) except *

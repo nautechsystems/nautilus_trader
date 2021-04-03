@@ -57,26 +57,20 @@ cdef class LogLevelParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
-            return "VRB"
-        elif value == 2:
+        if value == 10:
             return "DBG"
-        elif value == 3:
+        elif value == 20:
             return "INF"
-        elif value == 4:
+        elif value == 30:
             return "WRN"
-        elif value == 5:
+        elif value == 40:
             return "ERR"
-        elif value == 6:
+        elif value == 50:
             return "CRT"
-        elif value == 7:
-            return "FTL"
 
     @staticmethod
     cdef LogLevel from_str(str value):
-        if value == "VRB":
-            return LogLevel.VERBOSE
-        elif value == "DBG":
+        if value == "DBG":
             return LogLevel.DEBUG
         elif value == "INF":
             return LogLevel.INFO
@@ -86,8 +80,6 @@ cdef class LogLevelParser:
             return LogLevel.ERROR
         elif value == "CRT":
             return LogLevel.CRITICAL
-        elif value == "FTL":
-            return LogLevel.FATAL
 
     @staticmethod
     def to_str_py(int value):
@@ -210,20 +202,6 @@ cdef class LoggerAdapter:
 
         """
         return self._logger
-
-    cpdef void verbose(self, str message) except *:
-        """
-        Log the given verbose message with the logger.
-
-        Parameters
-        ----------
-        message : str
-            The message to log.
-
-        """
-        Condition.not_none(message, "message")
-
-        self._send_to_logger(LogLevel.VERBOSE, LogColor.NORMAL, message)
 
     cpdef void debug(self, str message) except *:
         """
