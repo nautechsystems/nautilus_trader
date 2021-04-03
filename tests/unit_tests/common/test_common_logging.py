@@ -30,13 +30,11 @@ class TestLogLevelParser:
     @pytest.mark.parametrize(
         "enum,expected",
         [
-            [LogLevel.VERBOSE, "VRB"],
             [LogLevel.DEBUG, "DBG"],
             [LogLevel.INFO, "INF"],
             [LogLevel.WARNING, "WRN"],
             [LogLevel.ERROR, "ERR"],
             [LogLevel.CRITICAL, "CRT"],
-            [LogLevel.FATAL, "FTL"],
         ],
     )
     def test_log_level_to_str(self, enum, expected):
@@ -50,12 +48,11 @@ class TestLogLevelParser:
     @pytest.mark.parametrize(
         "string,expected",
         [
-            ["VRB", LogLevel.VERBOSE],
             ["DBG", LogLevel.DEBUG],
             ["INF", LogLevel.INFO],
+            ["WRN", LogLevel.WARNING],
             ["ERR", LogLevel.ERROR],
             ["CRT", LogLevel.CRITICAL],
-            ["FTL", LogLevel.FATAL],
         ],
     )
     def test_log_level_from_str(self, string, expected):
@@ -68,17 +65,6 @@ class TestLogLevelParser:
 
 
 class TestLoggerTests:
-    def test_log_verbose_messages_to_console(self):
-        # Arrange
-        logger = Logger(clock=TestClock(), level_console=LogLevel.VERBOSE)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        # Act
-        logger_adapter.verbose("This is a log message.")
-
-        # Assert
-        assert True  # No exceptions raised
-
     def test_log_debug_messages_to_console(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_console=LogLevel.DEBUG)
