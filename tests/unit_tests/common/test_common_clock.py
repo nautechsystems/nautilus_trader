@@ -636,7 +636,7 @@ class TestLiveClockWithThreadTimer:
 
         # Assert
         assert type(result) == datetime
-        assert str(result).endswith("+11:00")
+        assert str(result).endswith("+11:00") or str(result).endswith("+10:00")
 
     def test_delta(self):
         # Arrange

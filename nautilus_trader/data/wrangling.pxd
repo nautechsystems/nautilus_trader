@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -32,7 +30,7 @@ cdef class QuoteTickDataWrangler:
     cdef readonly processed_data
     cdef readonly BarAggregation resolution
 
-    cpdef QuoteTick _build_tick_from_values(self, str[:] values, int64_t timestamp_ns)
+    cpdef QuoteTick _build_tick_from_values(self, str[:] values, double timestamp)
 
 
 cdef class TradeTickDataWrangler:
@@ -41,7 +39,7 @@ cdef class TradeTickDataWrangler:
     cdef readonly Instrument instrument
     cdef readonly processed_data
 
-    cpdef TradeTick _build_tick_from_values(self, str[:] values, int64_t timestamp_ns)
+    cpdef TradeTick _build_tick_from_values(self, str[:] values, double timestamp)
 
 
 cdef class BarDataWrangler:
@@ -50,4 +48,4 @@ cdef class BarDataWrangler:
     cdef int _size_precision
     cdef object _data
 
-    cpdef Bar _build_bar(self, double[:] values, int64_t timestamp_ns)
+    cpdef Bar _build_bar(self, double[:] values, double timestamp)
