@@ -128,14 +128,12 @@ class TradingNode:
 
         # Setup logging
         level_console = LogLevelParser.from_str_py(config_log.get("log_level_console"))
-        level_store = LogLevelParser.from_str_py(config_log.get("log_level_store"))
 
         self._logger = LiveLogger(
             loop=self._loop,
             clock=self._clock,
             name=self.trader_id.value,
             level_console=level_console,
-            level_store=level_store,
         )
 
         self._log = LoggerAdapter(

@@ -108,7 +108,6 @@ cdef class Logger:
         Clock clock not None,
         str name=None,
         LogLevel level_console=LogLevel.INFO,
-        LogLevel level_store=LogLevel.WARNING,
         bint bypass_logging=False,
     ):
         """
@@ -122,8 +121,6 @@ cdef class Logger:
             The identifying name of the logger.
         level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
-        level_store : LogLevel (Enum)
-            The minimum log level for storing log messages in memory.
         bypass_logging : bool
             If the logger should be bypassed.
 
@@ -134,28 +131,9 @@ cdef class Logger:
             self.name = name
 
         self._log_level_console = level_console
-        self._log_level_store = level_store
-        self._log_store = []
 
         self.clock = clock
         self.is_bypassed = bypass_logging
-
-    cpdef list get_log_store(self):
-        """
-        Return the log store of message strings.
-
-        Returns
-        -------
-        list[str]
-
-        """
-        return self._log_store
-
-    cpdef void clear_log_store(self) except *:
-        """
-        Clear the log store.
-        """
-        self._log_store = []
 
     cdef str format_text(
         self,
@@ -191,9 +169,6 @@ cdef class Logger:
 
         # Sinks
         # -----
-        if level >= self._log_level_store:
-            self._log_store.append(text)
-
         if level >= self._log_level_console:
             print(text)
 
@@ -464,7 +439,6 @@ cdef class LiveLogger(Logger):
         LiveClock clock not None,
         str name=None,
         LogLevel level_console=LogLevel.INFO,
-        LogLevel level_store=LogLevel.WARNING,
         bint bypass_logging=False,
         int maxsize=10000,
     ):
@@ -481,8 +455,6 @@ cdef class LiveLogger(Logger):
             The identifying name of the logger.
         level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
-        level_store : LogLevel (Enum)
-            The minimum log level for storing log messages in memory.
         bypass_logging : bool
             If the logger should be bypassed.
         maxsize : int, optional
@@ -493,7 +465,6 @@ cdef class LiveLogger(Logger):
             clock=clock,
             name=name,
             level_console=level_console,
-            level_store=level_store,
             bypass_logging=bypass_logging,
         )
 

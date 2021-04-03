@@ -84,7 +84,6 @@ cdef class BacktestEngine:
         dict risk_config=None,
         bint bypass_logging=False,
         int level_console=LogLevel.INFO,
-        int level_store=LogLevel.WARNING,
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -113,8 +112,6 @@ cdef class BacktestEngine:
             If logging should be bypassed.
         level_console : int, optional
             The minimum log level for logging messages to the console.
-        level_store : int, optional
-            The minimum log level for storing log messages in memory.
 
         Raises
         ------
@@ -150,7 +147,6 @@ cdef class BacktestEngine:
             clock=LiveClock(),
             name=trader_id.value,
             level_console=LogLevel.INFO,
-            level_store=LogLevel.WARNING,
             bypass_logging=False,
         )
 
@@ -160,7 +156,6 @@ cdef class BacktestEngine:
             clock=self._test_clock,
             name=trader_id.value,
             level_console=level_console,
-            level_store=level_store,
             bypass_logging=bypass_logging,
         )
 
@@ -381,23 +376,6 @@ cdef class BacktestEngine:
         exchange.register_client(exec_client)
         self._exec_engine.register_client(exec_client)
 
-    cpdef void print_log_store(self) except *:
-        """
-        Print the contents of the test loggers store to the console.
-        """
-        self._log.info("")
-        self._log.info("=================================================================")
-        self._log.info(" LOG STORE")
-        self._log.info("=================================================================")
-
-        cdef list log_store = self._test_logger.get_log_store()
-        cdef str message
-        if not log_store:
-            self._log.info("No log messages were stored.")
-        else:
-            for message in self._test_logger.get_log_store():
-                print(message)
-
     cpdef void reset(self) except *:
         """
         Reset the backtest engine.
@@ -427,9 +405,6 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             exchange.reset()
-
-        self._logger.clear_log_store()
-        self._test_logger.clear_log_store()
 
         self.iteration = 0
 
@@ -476,7 +451,6 @@ cdef class BacktestEngine:
         datetime start=None,
         datetime stop=None,
         list strategies=None,
-        bint print_log_store=True,
     ) except *:
         """
         Run a backtest from the start datetime to the stop datetime.
@@ -491,8 +465,6 @@ cdef class BacktestEngine:
             run to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).
-        print_log_store : bool
-            If the log store should be printed at the end of the run.
 
         Raises
         ------
@@ -522,13 +494,6 @@ cdef class BacktestEngine:
             Condition.list_type(strategies, TradingStrategy, "strategies")
 
         cdef datetime run_started = self._clock.utc_now()
-
-        # Setup logging
-        self._test_logger.clear_log_store()
-        if self._log_to_file:
-            backtest_log_name = f"{self._logger.name}-{format_iso8601(run_started)}"
-            self._logger.change_log_file_name(backtest_log_name)
-            self._test_logger.change_log_file_name(backtest_log_name)
 
         self._log_header(run_started, start, stop)
         self._log.info(f"Setting up backtest...")
@@ -588,8 +553,6 @@ cdef class BacktestEngine:
         self.trader.stop()
 
         self._log_footer(run_started, self._clock.utc_now(), start, stop)
-        if print_log_store:
-            self.print_log_store()
 
     cdef inline void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy

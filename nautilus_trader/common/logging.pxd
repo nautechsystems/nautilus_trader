@@ -57,8 +57,6 @@ cdef class LogLevelParser:
 
 cdef class Logger:
     cdef LogLevel _log_level_console
-    cdef LogLevel _log_level_store
-    cdef list _log_store
 
     cdef readonly str name
     """The loggers name.\n\n:returns: `str`"""
@@ -66,9 +64,6 @@ cdef class Logger:
     """The loggers clock.\n\n:returns: `Clock`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
-
-    cpdef list get_log_store(self)
-    cpdef void clear_log_store(self) except *
 
     cdef str format_text(
         self,
