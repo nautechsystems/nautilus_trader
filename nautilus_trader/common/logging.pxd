@@ -13,11 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
+from nautilus_trader.core.uuid cimport UUID
 
 
 cdef str RECV
@@ -55,11 +54,15 @@ cdef class LogLevelParser:
 
 cdef class Logger:
     cdef LogLevel _log_level_console
+    cdef LogLevel _log_level_stdout
+    cdef LogLevel _log_level_stderr
 
     cdef readonly str name
     """The loggers name.\n\n:returns: `str`"""
     cdef readonly Clock clock
     """The loggers clock.\n\n:returns: `Clock`"""
+    cdef readonly UUID id
+    """The logger identifier.\n\n:returns: `UUID`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
@@ -86,7 +89,7 @@ cdef class LoggerAdapter:
     cpdef void error(self, str msg, dict metadata=*) except *
     cpdef void critical(self, str msg, dict metadata=*) except *
     cpdef void exception(self, ex, dict metadata=*) except *
-    cdef inline void _send_to_logger(self, dict record, dict metadata) except *
+    cdef inline dict _create_record(self, LogLevel level, str msg, dict metadata)
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
