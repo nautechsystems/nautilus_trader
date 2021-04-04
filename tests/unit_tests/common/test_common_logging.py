@@ -87,6 +87,19 @@ class TestLoggerTests:
         # Assert
         assert True  # No exceptions raised
 
+    def test_log_info_with_metadata_messages_to_console(self):
+        # Arrange
+        logger = Logger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+
+        metadata = {"my_tag": "something"}
+
+        # Act
+        logger_adapter.info("This is a log message.", metadata=metadata)
+
+        # Assert
+        assert True  # No exceptions raised
+
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_console=LogLevel.INFO)
