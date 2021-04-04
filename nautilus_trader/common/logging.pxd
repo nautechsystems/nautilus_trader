@@ -63,15 +63,10 @@ cdef class Logger:
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
-    cdef str format_text(
-        self,
-        datetime timestamp,
-        LogLevel level,
-        LogColor color,
-        str text,
-    )
-    cdef void log_c(self, tuple message) except *
-    cdef void _log(self, tuple message) except *
+    cdef void log_c(self, dict record) except *
+
+    cdef inline void _log(self, dict record) except *
+    cdef inline str _format_record(self, LogLevel level, dict record)
 
 
 cdef class LoggerAdapter:
@@ -83,15 +78,15 @@ cdef class LoggerAdapter:
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str message) except *
-    cpdef void info(self, str message) except *
-    cpdef void info_blue(self, str message) except *
-    cpdef void info_green(self, str message) except *
-    cpdef void warning(self, str message) except *
-    cpdef void error(self, str message) except *
-    cpdef void critical(self, str message) except *
-    cpdef void exception(self, ex) except *
-    cdef inline void _send_to_logger(self, LogLevel level, LogColor color, str message) except *
+    cpdef void debug(self, str msg, dict metadata=*) except *
+    cpdef void info(self, str msg, dict metadata=*) except *
+    cpdef void info_blue(self, str msg, dict metadata=*) except *
+    cpdef void info_green(self, str msg, dict metadata=*) except *
+    cpdef void warning(self, str msg, dict metadata=*) except *
+    cpdef void error(self, str msg, dict metadata=*) except *
+    cpdef void critical(self, str msg, dict metadata=*) except *
+    cpdef void exception(self, ex, dict metadata=*) except *
+    cdef inline void _send_to_logger(self, dict record, dict metadata) except *
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
