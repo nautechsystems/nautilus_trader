@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.tick cimport QuoteTick

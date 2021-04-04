@@ -101,7 +101,7 @@ class TestBacktestDataProducer:
         )
 
         data.add_generic_data("NEWS_CLIENT", generic_data1)
-        data.add_order_book_snapshots([snapshot1, snapshot2])
+        data.add_order_book_data([snapshot1, snapshot2])
 
         producer = BacktestDataProducer(data=data, logger=self.logger)
         producer.setup(producer.min_timestamp_ns, producer.max_timestamp_ns)

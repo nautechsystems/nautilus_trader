@@ -36,8 +36,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.orderbook.book cimport OrderBookOperations
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
+from nautilus_trader.model.orderbook.book cimport OrderBookData
 
 
 cdef class BacktestDataContainer:
@@ -53,8 +52,7 @@ cdef class BacktestDataContainer:
         self.clients = {}                   # type: dict[str, type]
         self.generic_data = []              # type: list[GenericData]
         self.books = []                     # type: list[InstrumentId]
-        self.order_book_snapshots = []      # type: list[OrderBookSnapshot]
-        self.order_book_operations = []     # type: list[OrderBookOperations]
+        self.order_book_data = []           # type: list[OrderBookData]
         self.instruments = {}               # type: dict[InstrumentId, Instrument]
         self.quote_ticks = {}               # type: dict[InstrumentId, pd.DataFrame]
         self.trade_ticks = {}               # type: dict[InstrumentId, pd.DataFrame]
@@ -94,26 +92,26 @@ cdef class BacktestDataContainer:
             key=lambda x: x.timestamp_ns,
         )
 
-    def add_order_book_snapshots(self, list snapshots) -> None:
+    def add_order_book_data(self, list data) -> None:
         """
-        Add the order book snapshots to the container.
+        Add the order book data to the container.
 
         Parameters
         ----------
-        snapshots : list[OrderBookSnapshot]
-            The snapshots to add.
+        data : list[OrderBookData]
+            The order book data to add.
 
         Raises
         ------
         ValueError
-            If snapshots is empty.
+            If data is empty.
 
         """
-        Condition.not_none(snapshots, "snapshots")
-        Condition.not_empty(snapshots, "snapshots")
-        Condition.list_type(snapshots, OrderBookSnapshot, "snapshots")
+        Condition.not_none(data, "data")
+        Condition.not_empty(data, "data")
+        Condition.list_type(data, OrderBookData, "snapshots")
 
-        cdef InstrumentId instrument_id = snapshots[0].instrument_id
+        cdef InstrumentId instrument_id = data[0].instrument_id
         self._added_instrument_ids.add(instrument_id)
 
         if instrument_id not in self.books:
@@ -125,46 +123,9 @@ cdef class BacktestDataContainer:
             self.clients[client_name] = BacktestMarketDataClient
 
         # Add data
-        cdef OrderBookSnapshot x
-        self.order_book_snapshots = sorted(
-            self.order_book_snapshots + snapshots,
-            key=lambda x: x.timestamp_ns,
-        )
-
-    def add_order_book_operations(self, list operations) -> None:
-        """
-        Add the order book operations to the container.
-
-        Parameters
-        ----------
-        operations : list[OrderBookOperations]
-            The operations to add.
-
-        Raises
-        ------
-        ValueError
-            If operations is empty.
-
-        """
-        Condition.not_none(operations, "operations")
-        Condition.not_empty(operations, "operations")
-        Condition.list_type(operations, OrderBookOperations, "operations")
-
-        cdef InstrumentId instrument_id = operations[0].instrument_id
-        self._added_instrument_ids.add(instrument_id)
-
-        if instrument_id not in self.books:
-            self.books.append(instrument_id)
-
-        cdef str client_name = instrument_id.venue.first()
-        # Add to clients to be constructed in backtest engine
-        if client_name not in self.clients:
-            self.clients[client_name] = BacktestMarketDataClient
-
-        # Add data
-        cdef OrderBookOperations x
-        self.order_book_operations = sorted(
-            self.order_book_operations + operations,
+        cdef OrderBookData x
+        self.order_book_data = sorted(
+            self.order_book_data + data,
             key=lambda x: x.timestamp_ns,
         )
 
@@ -421,8 +382,7 @@ cdef class BacktestDataContainer:
         """
         cdef int64_t size = 0
         size += get_size_of(self.generic_data)
-        size += get_size_of(self.order_book_snapshots)
-        size += get_size_of(self.order_book_operations)
+        size += get_size_of(self.order_book_data)
         size += get_size_of(self.quote_ticks)
         size += get_size_of(self.trade_ticks)
         size += get_size_of(self.bars_bid)
