@@ -24,7 +24,6 @@ import pandas as pd
 import psutil
 import scipy
 
-from cpython.datetime cimport datetime
 from nautilus_trader import __version__
 
 from nautilus_trader.common.clock cimport Clock
@@ -34,6 +33,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601_us
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 
 
 cdef str _HEADER = "\033[95m"
@@ -127,42 +127,51 @@ cdef class Logger:
         self.clock = clock
         self.is_bypassed = bypass_logging
 
-    cdef str format_text(
-        self,
-        datetime timestamp,
-        LogLevel level,
-        LogColor color,
-        str text,
-    ):
-        # Return the formatted log message from the given arguments
-        cdef str time = format_iso8601_us(timestamp)
-        cdef str colour_cmd = ""
+    cdef void log_c(self, dict record) except *:
+        """
+        Handle the given record by sending it to configured sinks.
 
-        if color == LogColor.NORMAL:
-            pass
-        elif color == LogColor.BLUE:
-            colour_cmd = _BLUE
-        elif color == LogColor.GREEN:
-            colour_cmd = _GREEN
-        elif color == LogColor.YELLOW:
-            colour_cmd = _YELLOW
-        elif color == LogColor.RED:
-            colour_cmd = _RED
+        Override this method to handle log records through a `Queue`.
 
-        return (f"{_BOLD}{time}{_ENDC} {colour_cmd}"
-                f"[{LogLevelParser.to_str(level)}] {text}{_ENDC}")
+        Parameters
+        ----------
+        record : dict[str, object]
 
-    cdef void log_c(self, tuple message) except *:
-        self._log(message)
+        """
+        self._log(record)
 
-    cdef void _log(self, tuple message) except *:
-        cdef LogLevel level = message[0]
-        cdef str text = message[1]
+    cdef inline void _log(self, dict record) except *:
+        cdef LogLevel level = LogLevelParser.from_str(record["level"])
 
         # Sinks
         # -----
         if level >= self._log_level_console:
-            print(text)
+            print(self._format_record(level, record))
+
+    cdef inline str _format_record(self, LogLevel level, dict record):
+        # Return the formatted log message from the given arguments
+        cdef str time = format_iso8601_us(nanos_to_unix_dt(record["timestamp"]))
+        cdef LogColor color
+
+        # Set log color
+        cdef str colour_cmd = ""
+        if level == LogLevel.DEBUG:
+            pass
+        elif level == LogLevel.INFO:
+            color = record.get("color", 0)
+            if color == LogColor.BLUE:
+                colour_cmd = _BLUE
+            elif color == LogColor.GREEN:
+                colour_cmd = _GREEN
+        elif level == LogLevel.WARNING:
+            colour_cmd = _YELLOW
+        elif level == LogLevel.ERROR:
+            colour_cmd = _RED
+        elif level == LogLevel.CRITICAL:
+            colour_cmd = _RED
+
+        return (f"{_BOLD}{time}{_ENDC} {colour_cmd}"
+                f"[{LogLevelParser.to_str(level)}] {record['msg']}{_ENDC}")
 
 
 cdef class LoggerAdapter:
@@ -203,105 +212,177 @@ cdef class LoggerAdapter:
         """
         return self._logger
 
-    cpdef void debug(self, str message) except *:
+    cpdef void debug(self, str msg, dict metadata=None) except *:
         """
         Log the given debug message with the logger.
 
         Parameters
         ----------
-        message : str
+        msg : str
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(msg, "message")
 
-        self._send_to_logger(LogLevel.DEBUG, LogColor.NORMAL, message)
+        if self.is_bypassed:
+            return
 
-    cpdef void info(self, str message) except *:
+        cdef dict record = {
+            "level": LogLevelParser.to_str(LogLevel.DEBUG),
+            "msg": msg,
+        }
+
+        self._send_to_logger(record, metadata)
+
+    cpdef void info(self, str msg, dict metadata=None) except *:
         """
         Log the given information message with the logger.
 
         Parameters
         ----------
-        message : str
+        msg : str
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(msg, "msg")
 
-        self._send_to_logger(LogLevel.INFO, LogColor.NORMAL, message)
+        if self.is_bypassed:
+            return
 
-    cpdef void info_blue(self, str message) except *:
+        cdef dict record = {
+            "level": LogLevelParser.to_str(LogLevel.INFO),
+            "msg": msg,
+        }
+
+        self._send_to_logger(record, metadata)
+
+    cpdef void info_blue(self, str msg, dict metadata=None) except *:
         """
         Log the given information message with the logger in blue.
 
         Parameters
         ----------
-        message : str
+        msg : str
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(msg, "msg")
 
-        self._send_to_logger(LogLevel.INFO, LogColor.BLUE, message)
+        if self.is_bypassed:
+            return
 
-    cpdef void info_green(self, str message) except *:
+        cdef dict record = {
+            "level": LogLevelParser.to_str(LogLevel.INFO),
+            "color": LogColor.BLUE,
+            "msg": msg,
+        }
+
+        self._send_to_logger(record, metadata)
+
+    cpdef void info_green(self, str msg, dict metadata=None) except *:
         """
         Log the given information message with the logger in green.
 
         Parameters
         ----------
-        message : str
+        msg : str
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(msg, "msg")
 
-        self._send_to_logger(LogLevel.INFO, LogColor.GREEN, message)
+        if self.is_bypassed:
+            return
 
-    cpdef void warning(self, str message) except *:
+        cdef dict record = {
+            "level": LogLevelParser.to_str(LogLevel.INFO),
+            "color": LogColor.GREEN,
+            "msg": msg,
+        }
+
+        self._send_to_logger(record, metadata)
+
+    cpdef void warning(self, str msg, dict metadata=None) except *:
         """
         Log the given warning message with the logger.
 
         Parameters
         ----------
-        message : str
+        msg : str
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(msg, "msg")
 
-        self._send_to_logger(LogLevel.WARNING, LogColor.YELLOW, message)
+        if self.is_bypassed:
+            return
 
-    cpdef void error(self, str message) except *:
+        cdef dict record = {
+            "level": LogLevelParser.to_str(LogLevel.WARNING),
+            "msg": msg,
+        }
+
+        self._send_to_logger(record, metadata)
+
+    cpdef void error(self, str msg, dict metadata=None) except *:
         """
         Log the given error message with the logger.
 
         Parameters
         ----------
-        message : str
+        msg : str
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(msg, "msg")
 
-        self._send_to_logger(LogLevel.ERROR, LogColor.RED, message)
+        if self.is_bypassed:
+            return
 
-    cpdef void critical(self, str message) except *:
+        cdef dict record = {
+            "level": LogLevelParser.to_str(LogLevel.ERROR),
+            "msg": msg,
+        }
+
+        self._send_to_logger(record, metadata)
+
+    cpdef void critical(self, str msg, dict metadata=None) except *:
         """
         Log the given critical message with the logger.
 
         Parameters
         ----------
-        message : str
+        msg : str
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(msg, "msg")
 
-        self._send_to_logger(LogLevel.CRITICAL, LogColor.RED, message)
+        if self.is_bypassed:
+            return
 
-    cpdef void exception(self, ex) except *:
+        cdef dict record = {
+            "level": LogLevelParser.to_str(LogLevel.CRITICAL),
+            "msg": msg,
+        }
+
+        self._send_to_logger(record, metadata)
+
+    cpdef void exception(self, ex, dict metadata=None) except *:
         """
         Log the given exception including stack trace information.
 
@@ -309,6 +390,8 @@ cdef class LoggerAdapter:
         ----------
         ex : Exception
             The message to log.
+        metadata : dict[str, object]
+            The metadata for the log record.
 
         """
         Condition.not_none(ex, "ex")
@@ -322,25 +405,16 @@ cdef class LoggerAdapter:
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(f"{ex_string} {stack_trace_lines}")
+        self.error(f"{ex_string} {stack_trace_lines}", metadata)
 
-    cdef inline void _send_to_logger(
-        self,
-        LogLevel level,
-        LogColor color,
-        str message,
-    ) except *:
-        if self.is_bypassed:
-            return
+    cdef inline void _send_to_logger(self, dict record, dict metadata) except *:
+        if metadata is not None:
+            record = {**record, **metadata}
 
-        cdef str text = self._logger.format_text(
-            timestamp=self._logger.clock.utc_now(),
-            level=level,
-            color=color,
-            text=f"{self.component_name}: {message}",
-        )
+        record["timestamp"] = self._logger.clock.timestamp_ns()
+        record["component"] = self.component_name
 
-        self._logger.log_c((level, text))
+        self._logger.log_c(record)
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:
@@ -452,7 +526,7 @@ cdef class LiveLogger(Logger):
         self._run_task = None
         self.is_running = False
 
-    cdef void log_c(self, tuple message) except *:
+    cdef void log_c(self, dict record) except *:
         """
         Log the given message.
 
@@ -464,28 +538,29 @@ cdef class LiveLogger(Logger):
 
         Parameters
         ----------
-        message : tuple(int, str)
-            The log level and text.
+        record : dict[str, object]
+            The log record.
 
         """
-        Condition.not_none(message, "message")
+        Condition.not_none(record, "record")
 
         if self.is_running:
             try:
-                self._queue.put_nowait(message)
+                self._queue.put_nowait(record)
             except asyncio.QueueFull:
-                text = self.format_text(
-                    timestamp=self.clock.utc_now(),
-                    level=LogLevel.WARNING,
-                    color=LogColor.YELLOW,
-                    text=f"LiveLogger: Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
-                )
-                self._log((LogLevel.WARNING, text))
-                self._loop.create_task(self._queue.put(message))  # Blocking until qsize reduces
+                record = {
+                    "timestamp": self.clock.timestamp_ns(),
+                    "level": LogLevelParser.to_str(LogLevel.WARNING),
+                    "color": LogColor.YELLOW,
+                    "msg": f"LiveLogger: Blocking on `_queue.put` as queue full at {self._queue.qsize()} items."
+                }
+
+                self._log(record)
+                self._loop.create_task(self._queue.put(record))  # Blocking until qsize reduces
         else:
             # If event loop is not running then pass message directly to the
             # base class to log.
-            self._log(message)
+            self._log(record)
 
     cpdef void start(self) except *:
         """
