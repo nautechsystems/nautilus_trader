@@ -103,8 +103,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef Data x
         self._stream = sorted(
             data.generic_data +
-            data.order_book_snapshots +
-            data.order_book_operations,
+            data.order_book_data,
             key=lambda x: x.timestamp_ns,
             )
 

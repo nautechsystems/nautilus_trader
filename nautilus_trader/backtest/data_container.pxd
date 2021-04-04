@@ -19,8 +19,7 @@ cdef class BacktestDataContainer:
     cdef readonly dict clients
     cdef readonly list generic_data
     cdef readonly list books
-    cdef readonly list order_book_snapshots
-    cdef readonly list order_book_operations
+    cdef readonly list order_book_data
     cdef readonly dict instruments
     cdef readonly dict quote_ticks
     cdef readonly dict trade_ticks

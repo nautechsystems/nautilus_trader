@@ -102,12 +102,12 @@ class TestBacktestDataContainer:
         )
 
         # Act
-        data.add_order_book_snapshots([snapshot2, snapshot1])  # <-- reverse order
+        data.add_order_book_data([snapshot2, snapshot1])  # <-- reverse order
 
         # Assert
         assert "BINANCE" in data.clients
         assert ETHUSDT_BINANCE.id in data.books
-        assert data.order_book_snapshots == [snapshot1, snapshot2]  # <-- sorted
+        assert data.order_book_data == [snapshot1, snapshot2]  # <-- sorted
 
     def test_add_order_book_operations_adds_to_container(self):
         # Arrange
@@ -161,12 +161,12 @@ class TestBacktestDataContainer:
         )
 
         # Act
-        data.add_order_book_operations([operations2, operations1])  # <-- not sorted
+        data.add_order_book_data([operations2, operations1])  # <-- not sorted
 
         # Assert
         assert "BINANCE" in data.clients
         assert ETHUSDT_BINANCE.id in data.books
-        assert data.order_book_operations == [operations1, operations2]  # <-- sorted
+        assert data.order_book_data == [operations1, operations2]  # <-- sorted
 
     def test_add_quote_ticks_adds_to_container(self):
         # Arrange
