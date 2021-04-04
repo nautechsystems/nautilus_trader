@@ -233,3 +233,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 03/01/21  5518555 function calls (5480845 primitive calls) in 6.529 seconds (make handlers c methods)
         # 31/01/21  5408449 function calls (5370737 primitive calls) in 6.890 seconds (refactor execution engine)
         # 31/01/21  5410257 function calls (5372573 primitive calls) in 7.611 seconds (performance check)
+        # 04/02/21  5405862 function calls (5368174 primitive calls) in 7.359 seconds (performance check)

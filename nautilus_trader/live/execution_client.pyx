@@ -21,7 +21,6 @@ from decimal import Decimal
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
@@ -325,25 +324,25 @@ cdef class LiveExecutionClient(ExecutionClient):
                 f"No reconciliation required for completed order {order}.")
             return True
 
-        self._log.info(f"Reconciling state for {repr(order.id)}...", LogColor.BLUE)
+        self._log.info_blue(f"Reconciling state for {repr(order.id)}...")
 
         if report.order_state == OrderState.REJECTED:
             # No OrderId would have been assigned from the exchange
             # TODO: Investigate if exchanges record rejected orders?
-            self._log.info("Generating OrderRejected event...", LogColor.GREEN)
+            self._log.info_green("Generating OrderRejected event...")
             self._generate_order_rejected(report.cl_ord_id, "unknown", report.timestamp_ns)
             return True
         elif report.order_state == OrderState.EXPIRED:
-            self._log.info("Generating OrderExpired event...", LogColor.GREEN)
+            self._log.info_green("Generating OrderExpired event...")
             self._generate_order_expired(report.cl_ord_id, report.order_id, report.timestamp_ns)
             return True
         elif report.order_state == OrderState.CANCELLED:
-            self._log.info("Generating OrderCancelled event...", LogColor.GREEN)
+            self._log.info_green("Generating OrderCancelled event...")
             self._generate_order_cancelled(report.cl_ord_id, report.order_id, report.timestamp_ns)
             return True
         elif report.order_state == OrderState.ACCEPTED:
             if order.state_c() == OrderState.SUBMITTED:
-                self._log.info("Generating OrderAccepted event...", LogColor.GREEN)
+                self._log.info_green("Generating OrderAccepted event...")
                 self._generate_order_accepted(report.cl_ord_id, report.order_id, report.timestamp_ns)
             return True
             # TODO: Consider other scenarios
@@ -359,7 +358,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         for exec_report in exec_reports:
             if exec_report.id in order.execution_ids_c():
                 continue  # Trade already applied
-            self._log.info(f"Generating OrderFilled event for {repr(exec_report.id)}...", LogColor.GREEN)
+            self._log.info_green(f"Generating OrderFilled event for {repr(exec_report.id)}...")
             self._generate_order_filled(
                 cl_ord_id=order.cl_ord_id,
                 order_id=order.id,

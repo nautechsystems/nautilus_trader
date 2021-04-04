@@ -29,13 +29,11 @@ cdef str RES
 
 
 cpdef enum LogLevel:
-    VERBOSE = 1,
-    DEBUG = 2,
-    INFO = 3,
-    WARNING = 4,
-    ERROR = 5,
-    CRITICAL = 6,
-    FATAL = 7,
+    DEBUG = 10,
+    INFO = 20,
+    WARNING = 30,
+    ERROR = 40,
+    CRITICAL = 50,
 
 
 cpdef enum LogColor:
@@ -57,8 +55,6 @@ cdef class LogLevelParser:
 
 cdef class Logger:
     cdef LogLevel _log_level_console
-    cdef LogLevel _log_level_store
-    cdef list _log_store
 
     cdef readonly str name
     """The loggers name.\n\n:returns: `str`"""
@@ -67,18 +63,10 @@ cdef class Logger:
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
-    cpdef list get_log_store(self)
-    cpdef void clear_log_store(self) except *
+    cdef void log_c(self, dict record) except *
 
-    cdef str format_text(
-        self,
-        datetime timestamp,
-        LogLevel level,
-        LogColor color,
-        str text,
-    )
-    cdef void log_c(self, tuple message) except *
-    cdef void _log(self, tuple message) except *
+    cdef inline void _log(self, dict record) except *
+    cdef inline str _format_record(self, LogLevel level, dict record)
 
 
 cdef class LoggerAdapter:
@@ -90,14 +78,15 @@ cdef class LoggerAdapter:
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void verbose(self, str message, LogColor color=*) except *
-    cpdef void debug(self, str message, LogColor color=*) except *
-    cpdef void info(self, str message, LogColor color=*) except *
-    cpdef void warning(self, str message) except *
-    cpdef void error(self, str message) except *
-    cpdef void critical(self, str message) except *
-    cpdef void exception(self, ex) except *
-    cdef inline void _send_to_logger(self, LogLevel level, LogColor color, str message) except *
+    cpdef void debug(self, str msg, dict metadata=*) except *
+    cpdef void info(self, str msg, dict metadata=*) except *
+    cpdef void info_blue(self, str msg, dict metadata=*) except *
+    cpdef void info_green(self, str msg, dict metadata=*) except *
+    cpdef void warning(self, str msg, dict metadata=*) except *
+    cpdef void error(self, str msg, dict metadata=*) except *
+    cpdef void critical(self, str msg, dict metadata=*) except *
+    cpdef void exception(self, ex, dict metadata=*) except *
+    cdef inline void _send_to_logger(self, dict record, dict metadata) except *
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *

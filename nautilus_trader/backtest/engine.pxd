@@ -66,7 +66,6 @@ cdef class BacktestEngine:
         list modules=*,
         FillModel fill_model=*,
     ) except *
-    cpdef void print_log_store(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
     cpdef void change_fill_model(self, Venue venue, FillModel model) except *
@@ -75,7 +74,6 @@ cdef class BacktestEngine:
         datetime start=*,
         datetime stop=*,
         list strategies=*,
-        bint print_log_store=*,
     ) except *
 
     cdef inline void _advance_time(self, int64_t now_ns) except *

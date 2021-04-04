@@ -19,7 +19,6 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
@@ -41,6 +40,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
     """
+    _sentinel = None
 
     def __init__(
         self,
@@ -143,14 +143,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         }  # type: dict[ClientOrderId, Order]
 
         if not active_orders:
-            self._log.info(f"State reconciled.", LogColor.GREEN)
+            self._log.info_green(f"State reconciled.")
             return True  # Execution states reconciled
 
         cdef int count = len(active_orders)
-        self._log.info(
-            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
-            LogColor.BLUE,
-        )
+        self._log.info_blue(f"Reconciling state: {count} active order{'s' if count > 1 else ''}...")
 
         # Initialize order state map
         cdef dict client_orders = {
@@ -209,7 +206,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 break
             await asyncio.sleep(0.001)  # One millisecond sleep
 
-        self._log.info(f"State reconciled.", LogColor.GREEN)
+        self._log.info_green(f"State reconciled.")
         return True  # Execution states reconciled
 
     cpdef void kill(self) except *:
@@ -290,8 +287,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cpdef void _on_stop(self) except *:
         if self.is_running:
             self.is_running = False
-            self._queue.put_nowait(None)  # Sentinel message pattern
-            self._log.debug(f"Sentinel message placed on message queue.")
+            self._enqueue_sentinel()
 
     async def _run(self):
         self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
@@ -313,3 +309,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
+
+    cdef inline void _enqueue_sentinel(self):
+        self._queue.put_nowait(self._sentinel)
+        self._log.debug(f"Sentinel message placed on message queue.")

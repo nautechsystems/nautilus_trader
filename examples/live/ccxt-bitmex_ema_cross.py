@@ -50,7 +50,6 @@ config = {
     },
     "logging": {
         "log_level_console": "INF",
-        "log_level_store": "WRN",
     },
     "exec_database": {
         "type": "redis",
