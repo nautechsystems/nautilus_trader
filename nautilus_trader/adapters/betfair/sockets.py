@@ -127,6 +127,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         segmentation_enabled: bool = True,
         subscribe_book_updates=True,
         subscribe_trade_updates=True,
+        subscribe_market_definitions=True,
     ):
         """
         See `betfairlightweight.filters.streaming_market_filter` for full docstring
@@ -180,6 +181,8 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             data_fields.append("EX_ALL_OFFERS")
         if subscribe_trade_updates:
             data_fields.append("EX_TRADED")
+        if subscribe_market_definitions:
+            data_fields.append("EX_MARKET_DEF")
         market_data_filter = streaming_market_data_filter(
             fields=data_fields,
         )
