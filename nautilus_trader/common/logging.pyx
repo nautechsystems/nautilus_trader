@@ -31,6 +31,7 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601_us
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
@@ -100,6 +101,8 @@ cdef class Logger:
         Clock clock not None,
         str name=None,
         LogLevel level_console=LogLevel.INFO,
+        LogLevel level_stdout=LogLevel.INFO,
+        LogLevel level_stderr=LogLevel.ERROR,
         bint bypass_logging=False,
     ):
         """
@@ -113,6 +116,10 @@ cdef class Logger:
             The identifying name of the logger.
         level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
+        level_stdout : LogLevel (Enum)
+            The minimum log level for logging messages to stdout.
+        level_stderr : LogLevel (Enum)
+            The minimum log level for logging messages to stderr.
         bypass_logging : bool
             If the logger should be bypassed.
 
@@ -123,8 +130,11 @@ cdef class Logger:
             self.name = name
 
         self._log_level_console = level_console
+        self._log_level_stdout = level_stdout
+        self._log_level_stderr = level_stderr
 
         self.clock = clock
+        self.id = UUIDFactory().generate()
         self.is_bypassed = bypass_logging
 
     cdef void log_c(self, dict record) except *:
@@ -143,9 +153,11 @@ cdef class Logger:
     cdef inline void _log(self, dict record) except *:
         cdef LogLevel level = LogLevelParser.from_str(record["level"])
 
-        # Sinks
-        # -----
-        if level >= self._log_level_console:
+        if level >= self._log_level_stderr:
+            sys.stderr.write(f"{self._format_record(level, record)}\n")
+        elif level >= self._log_level_stdout:
+            sys.stdout.write(f"{self._format_record(level, record)}\n")
+        elif level >= self._log_level_console:
             print(self._format_record(level, record))
 
     cdef inline str _format_record(self, LogLevel level, dict record):
@@ -171,7 +183,8 @@ cdef class Logger:
             colour_cmd = _RED
 
         return (f"{_BOLD}{time}{_ENDC} {colour_cmd}"
-                f"[{LogLevelParser.to_str(level)}] {record['msg']}{_ENDC}")
+                f"[{LogLevelParser.to_str(level)}] "
+                f"{self.name}.{record['component']}: {record['msg']}{_ENDC}")
 
 
 cdef class LoggerAdapter:
@@ -229,12 +242,9 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = {
-            "level": LogLevelParser.to_str(LogLevel.DEBUG),
-            "msg": msg,
-        }
+        cdef dict record = self._create_record(LogLevel.DEBUG, msg, metadata)
 
-        self._send_to_logger(record, metadata)
+        self._logger.log_c(record)
 
     cpdef void info(self, str msg, dict metadata=None) except *:
         """
@@ -253,12 +263,9 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = {
-            "level": LogLevelParser.to_str(LogLevel.INFO),
-            "msg": msg,
-        }
+        cdef dict record = self._create_record(LogLevel.INFO, msg, metadata)
 
-        self._send_to_logger(record, metadata)
+        self._logger.log_c(record)
 
     cpdef void info_blue(self, str msg, dict metadata=None) except *:
         """
@@ -277,13 +284,10 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = {
-            "level": LogLevelParser.to_str(LogLevel.INFO),
-            "color": LogColor.BLUE,
-            "msg": msg,
-        }
+        cdef dict record = self._create_record(LogLevel.INFO, msg, metadata)
+        record["color"] = LogColor.BLUE
 
-        self._send_to_logger(record, metadata)
+        self._logger.log_c(record)
 
     cpdef void info_green(self, str msg, dict metadata=None) except *:
         """
@@ -302,13 +306,10 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = {
-            "level": LogLevelParser.to_str(LogLevel.INFO),
-            "color": LogColor.GREEN,
-            "msg": msg,
-        }
+        cdef dict record = self._create_record(LogLevel.INFO, msg, metadata)
+        record["color"] = LogColor.GREEN
 
-        self._send_to_logger(record, metadata)
+        self._logger.log_c(record)
 
     cpdef void warning(self, str msg, dict metadata=None) except *:
         """
@@ -327,12 +328,9 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = {
-            "level": LogLevelParser.to_str(LogLevel.WARNING),
-            "msg": msg,
-        }
+        cdef dict record = self._create_record(LogLevel.WARNING, msg, metadata)
 
-        self._send_to_logger(record, metadata)
+        self._logger.log_c(record)
 
     cpdef void error(self, str msg, dict metadata=None) except *:
         """
@@ -351,12 +349,9 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = {
-            "level": LogLevelParser.to_str(LogLevel.ERROR),
-            "msg": msg,
-        }
+        cdef dict record = self._create_record(LogLevel.ERROR, msg, metadata)
 
-        self._send_to_logger(record, metadata)
+        self._logger.log_c(record)
 
     cpdef void critical(self, str msg, dict metadata=None) except *:
         """
@@ -375,12 +370,9 @@ cdef class LoggerAdapter:
         if self.is_bypassed:
             return
 
-        cdef dict record = {
-            "level": LogLevelParser.to_str(LogLevel.CRITICAL),
-            "msg": msg,
-        }
+        cdef dict record = self._create_record(LogLevel.CRITICAL, msg, metadata)
 
-        self._send_to_logger(record, metadata)
+        self._logger.log_c(record)
 
     cpdef void exception(self, ex, dict metadata=None) except *:
         """
@@ -407,14 +399,20 @@ cdef class LoggerAdapter:
 
         self.error(f"{ex_string} {stack_trace_lines}", metadata)
 
-    cdef inline void _send_to_logger(self, dict record, dict metadata) except *:
+    cdef inline dict _create_record(self, LogLevel level, str msg, dict metadata):
+        cdef dict record = {
+            "timestamp": self._logger.clock.timestamp_ns(),
+            "trader_id": self._logger.name,
+            "component": self.component_name,
+            "level": LogLevelParser.to_str(level),
+            "msg": msg,
+            "logger_id": self._logger.id.value,
+        }
+
         if metadata is not None:
             record = {**record, **metadata}
 
-        record["timestamp"] = self._logger.clock.timestamp_ns()
-        record["component"] = self.component_name
-
-        self._logger.log_c(record)
+        return record
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:
@@ -491,11 +489,13 @@ cdef class LiveLogger(Logger):
         LiveClock clock not None,
         str name=None,
         LogLevel level_console=LogLevel.INFO,
+        LogLevel level_stdout=LogLevel.INFO,
+        LogLevel level_stderr=LogLevel.ERROR,
         bint bypass_logging=False,
         int maxsize=10000,
     ):
         """
-        Initialize a new instance of the `LiveLogger` class.
+        Initialize a new instance of the ``LiveLogger`` class.
 
         Parameters
         ----------
@@ -507,6 +507,10 @@ cdef class LiveLogger(Logger):
             The identifying name of the logger.
         level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
+        level_stdout : LogLevel (Enum)
+            The minimum log level for logging messages to stdout.
+        level_stderr : LogLevel (Enum)
+            The minimum log level for logging messages to stderr.
         bypass_logging : bool
             If the logger should be bypassed.
         maxsize : int, optional
@@ -517,6 +521,8 @@ cdef class LiveLogger(Logger):
             clock=clock,
             name=name,
             level_console=level_console,
+            level_stdout=level_stdout,
+            level_stderr=level_stderr,
             bypass_logging=bypass_logging,
         )
 
@@ -548,11 +554,14 @@ cdef class LiveLogger(Logger):
             try:
                 self._queue.put_nowait(record)
             except asyncio.QueueFull:
+                # TODO: Refactor below into _create_record
                 record = {
                     "timestamp": self.clock.timestamp_ns(),
+                    "trader_id": self.name,
+                    "component": "LiveLogger",
                     "level": LogLevelParser.to_str(LogLevel.WARNING),
-                    "color": LogColor.YELLOW,
-                    "msg": f"LiveLogger: Blocking on `_queue.put` as queue full at {self._queue.qsize()} items."
+                    "msg": f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
+                    "logger_id": self.id.value,
                 }
 
                 self._log(record)
