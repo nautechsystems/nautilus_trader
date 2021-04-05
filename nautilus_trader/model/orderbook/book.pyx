@@ -618,7 +618,35 @@ cdef class L1OrderBook(OrderBook):
         return order
 
 
-cdef class OrderBookSnapshot(Data):
+cdef class OrderBookData(Data):
+    """
+    The abstract base class for all `OrderBook` data.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `OrderBookData` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the book.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the snapshot.
+
+        """
+        super().__init__(timestamp_ns)
+
+        self.instrument_id = instrument_id
+
+
+cdef class OrderBookSnapshot(OrderBookData):
     """
     Represents a snapshot in time for an `OrderBook`.
     """
@@ -648,9 +676,8 @@ cdef class OrderBookSnapshot(Data):
             The Unix timestamp (nanos) of the snapshot.
 
         """
-        super().__init__(timestamp_ns)
+        super().__init__(instrument_id, timestamp_ns)
 
-        self.instrument_id = instrument_id
         self.level = level
         self.bids = bids
         self.asks = asks
@@ -663,7 +690,7 @@ cdef class OrderBookSnapshot(Data):
                 f"timestamp_ns={self.timestamp_ns})")
 
 
-cdef class OrderBookOperations(Data):
+cdef class OrderBookOperations(OrderBookData):
     """
     Represents bulk operations for an `OrderBook`.
     """
@@ -690,8 +717,7 @@ cdef class OrderBookOperations(Data):
             The Unix timestamp (nanos) of the operations.
 
         """
-        super().__init__(timestamp_ns)
-        self.instrument_id = instrument_id
+        super().__init__(instrument_id, timestamp_ns)
         self.level = level
         self.ops = ops
 

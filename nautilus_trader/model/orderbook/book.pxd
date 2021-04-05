@@ -77,9 +77,12 @@ cdef class L1OrderBook(OrderBook):
     cdef inline Order _process_order(self, Order order)
 
 
-cdef class OrderBookSnapshot(Data):
+cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+
+
+cdef class OrderBookSnapshot(OrderBookData):
     cdef readonly OrderBookLevel level
     """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list bids
@@ -88,9 +91,7 @@ cdef class OrderBookSnapshot(Data):
     """The snapshot asks.\n\n:returns: `list`"""
 
 
-cdef class OrderBookOperations(Data):
-    cdef readonly InstrumentId instrument_id
-    """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+cdef class OrderBookOperations(OrderBookData):
     cdef readonly OrderBookLevel level
     """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list ops
