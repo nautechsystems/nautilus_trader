@@ -79,7 +79,7 @@ cdef class Throttler:
         Condition.callable(output, "output")
 
         self._clock = clock
-        self._log = LoggerAdapter(name, logger)
+        self._log = LoggerAdapter(component=name, logger=logger)
         self._queue = Queue()
         self._limit = limit
         self._vouchers = limit

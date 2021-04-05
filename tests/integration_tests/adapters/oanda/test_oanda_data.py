@@ -66,8 +66,8 @@ class OandaDataClientTests(unittest.TestCase):
         logger = LiveLogger(
             loop=self.loop,
             clock=self.clock,
-            name=self.trader_id.value,
-            level_console=LogLevel.DEBUG,
+            trader_id=self.trader_id,
+            level_stdout=LogLevel.DEBUG,
         )
 
         self.logger = LiveLogger(

@@ -119,7 +119,7 @@ cdef class Component:
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(name, logger)
+        self._log = LoggerAdapter(component=name, logger=logger)
         self._fsm = ComponentFSMFactory.create()
 
         if log_initialized:
@@ -151,7 +151,7 @@ cdef class Component:
     cdef void _change_logger(self, Logger logger) except *:
         Condition.not_none(logger, "logger")
 
-        self._log = LoggerAdapter(self.name, logger)
+        self._log = LoggerAdapter(component=self.name, logger=logger)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

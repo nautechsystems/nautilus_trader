@@ -127,7 +127,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
         self._data = None  # Initialized when cache registered
 
         self._ticks = {}             # type: dict[InstrumentId: QuoteTick]

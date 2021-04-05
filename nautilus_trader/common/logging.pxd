@@ -17,6 +17,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef str RECV
@@ -53,43 +54,41 @@ cdef class LogLevelParser:
 
 
 cdef class Logger:
-    cdef LogLevel _log_level_console
+    cdef Clock _clock
     cdef LogLevel _log_level_stdout
-    cdef LogLevel _log_level_stderr
+    cdef LogLevel _log_level_raw
 
-    cdef readonly str name
-    """The loggers name.\n\n:returns: `str`"""
-    cdef readonly Clock clock
-    """The loggers clock.\n\n:returns: `Clock`"""
-    cdef readonly UUID id
-    """The logger identifier.\n\n:returns: `UUID`"""
+    cdef readonly TraderId trader_id
+    """The loggers trader identifier.\n\n:returns: `TraderId`"""
+    cdef readonly UUID system_id
+    """The loggers system identifier.\n\n:returns: `UUID`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cdef void log_c(self, dict record) except *
+    cdef inline dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
 
     cdef inline void _log(self, dict record) except *
-    cdef inline str _format_record(self, LogLevel level, dict record)
+    cdef inline str _format_record(self, LogLevel level, LogColor color, dict record)
 
 
 cdef class LoggerAdapter:
     cdef Logger _logger
 
-    cdef readonly str component_name
+    cdef readonly str component
     """The loggers component name.\n\n:returns: `str`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str msg, dict metadata=*) except *
-    cpdef void info(self, str msg, dict metadata=*) except *
-    cpdef void info_blue(self, str msg, dict metadata=*) except *
-    cpdef void info_green(self, str msg, dict metadata=*) except *
-    cpdef void warning(self, str msg, dict metadata=*) except *
-    cpdef void error(self, str msg, dict metadata=*) except *
-    cpdef void critical(self, str msg, dict metadata=*) except *
-    cpdef void exception(self, ex, dict metadata=*) except *
-    cdef inline dict _create_record(self, LogLevel level, str msg, dict metadata)
+    cpdef void debug(self, str msg, dict annotations=*) except *
+    cpdef void info(self, str msg, dict annotations=*) except *
+    cpdef void info_blue(self, str msg, dict annotations=*) except *
+    cpdef void info_green(self, str msg, dict annotations=*) except *
+    cpdef void warning(self, str msg, dict annotations=*) except *
+    cpdef void error(self, str msg, dict annotations=*) except *
+    cpdef void critical(self, str msg, dict annotations=*) except *
+    cpdef void exception(self, ex, dict annotations=*) except *
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
