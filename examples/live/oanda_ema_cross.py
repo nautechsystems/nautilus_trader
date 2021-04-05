@@ -51,7 +51,7 @@ config = {
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
     "logging": {
-        "log_level_console": "INF",
+        "log_level_stdout": "INF",
     },
     "exec_database": {
         "type": "redis",
