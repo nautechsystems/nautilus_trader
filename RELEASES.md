@@ -14,11 +14,12 @@ and fixes.
 ## Enhancements
 - Improve efficiency of data wrangling.
 - Simplify `Logger` and general system logging.
-- Add `stdout` and `stderr` log stream configuration.
+- Add `stdout` and `stderr` log streams with configuration.
 - Add `OrderBookData` base class.
 
 ## Fixes
 - Backtest handling of `GenericData` and `OrderBook` related data.
+- Backtest `DataClient` creation logic prevented client registering.
 
 ---
 
