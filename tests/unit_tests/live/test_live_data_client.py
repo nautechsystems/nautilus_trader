@@ -40,7 +40,7 @@ class LiveDataClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock, level_console=LogLevel.DEBUG)
+        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -77,7 +77,7 @@ class LiveMarketDataClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock, level_console=LogLevel.DEBUG)
+        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
         self.portfolio = Portfolio(
             clock=self.clock,

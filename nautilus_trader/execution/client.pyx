@@ -69,7 +69,10 @@ cdef class ExecutionClient:
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(config.get("name", f"ExecClient-{name}"), logger)
+        self._log = LoggerAdapter(
+            component=config.get("name", f"ExecClient-{name}"),
+            logger=logger,
+        )
         self._engine = engine
         self._config = config
 

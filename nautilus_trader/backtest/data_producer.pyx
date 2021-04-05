@@ -89,7 +89,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
             The logger for the component.
 
         """
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(
+            component=type(self).__name__,
+            logger=logger,
+        )
 
         # Check data integrity
         data.check_integrity()

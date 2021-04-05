@@ -48,9 +48,9 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
+        self.trader_id = TraderId("TESTER", "000")
         self.logger = Logger(self.clock, bypass_logging=True)
 
-        self.trader_id = TraderId("TESTER", "000")
         self.account_id = AccountId("BINANCE", "001")
 
         self.portfolio = Portfolio(

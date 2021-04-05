@@ -60,7 +60,7 @@ cdef class DataCache(DataCacheFacade):
         if config is None:
             config = {}
 
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
         self._xrate_calculator = ExchangeRateCalculator()
         self._xrate_symbols = {}  # type: dict[InstrumentId, str]
 
