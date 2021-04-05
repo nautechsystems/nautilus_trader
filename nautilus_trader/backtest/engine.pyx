@@ -239,7 +239,7 @@ cdef class BacktestEngine:
                     logger=self._test_logger,
                 )
 
-                self._data_engine.register_client(data_client)
+            self._data_engine.register_client(data_client)
 
         self._exec_engine = ExecutionEngine(
             database=exec_db,
