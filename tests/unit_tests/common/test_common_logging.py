@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
-import shutil
 
 import pytest
 
@@ -25,24 +23,19 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogLevelParser
-from nautilus_trader.common.logging import LogMessage
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.common.logging import TestLogger
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestLogLevelParser:
     @pytest.mark.parametrize(
         "enum,expected",
         [
-            [LogLevel.VERBOSE, "VRB"],
             [LogLevel.DEBUG, "DBG"],
             [LogLevel.INFO, "INF"],
             [LogLevel.WARNING, "WRN"],
             [LogLevel.ERROR, "ERR"],
             [LogLevel.CRITICAL, "CRT"],
-            [LogLevel.FATAL, "FTL"],
         ],
     )
     def test_log_level_to_str(self, enum, expected):
@@ -56,12 +49,11 @@ class TestLogLevelParser:
     @pytest.mark.parametrize(
         "string,expected",
         [
-            ["VRB", LogLevel.VERBOSE],
             ["DBG", LogLevel.DEBUG],
             ["INF", LogLevel.INFO],
+            ["WRN", LogLevel.WARNING],
             ["ERR", LogLevel.ERROR],
             ["CRT", LogLevel.CRITICAL],
-            ["FTL", LogLevel.FATAL],
         ],
     )
     def test_log_level_from_str(self, string, expected):
@@ -73,191 +65,96 @@ class TestLogLevelParser:
         assert result == expected
 
 
-class TestLoggerBase:
-    def test_log_when_not_implemented_raises_not_implemented(self):
-        # Arrange
-        logger = Logger(clock=TestClock())
-
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            msg = LogMessage(
-                timestamp=UNIX_EPOCH,
-                level=LogLevel.INFO,
-                color=LogColor.NORMAL,
-                text="test message",
-            )
-
-            logger.log(msg)
-
-    def test_setup_logger_log_to_file_with_no_path(self):
-        # Arrange
-        # Act
-        logger = TestLogger(
-            clock=TestClock(),
-            level_console=LogLevel.VERBOSE,
-            log_to_file=True,
-        )
-
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        logger_adapter.info("hello, world")
-
-        # Assert
-        assert os.path.isdir(logger.get_log_file_dir())
-        assert os.path.exists(logger.get_log_file_path())
-        assert logger.get_log_file_dir().endswith("log/")
-        assert logger.get_log_file_path().endswith("tmp-1970-01-01.log")
-
-        # Teardown
-        shutil.rmtree(logger.get_log_file_dir())
-
-    def test_setup_logger_log_to_file_given_path(self):
-        # Arrange
-        # Act
-        logger = TestLogger(
-            name="TEST",
-            clock=TestClock(),
-            level_console=LogLevel.VERBOSE,
-            log_to_file=True,
-            log_file_dir="log1/",
-        )
-
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        logger_adapter.info("hello, world")
-
-        # Assert
-        assert os.path.isdir(logger.get_log_file_dir())
-        assert os.path.exists(logger.get_log_file_path())
-        assert logger.get_log_file_dir().endswith("log1/")
-        assert logger.get_log_file_path().endswith("TEST-1970-01-01.log")
-
-        # Teardown
-        shutil.rmtree(logger.get_log_file_dir())
-
-    def test_change_log_file_name(self):
-        # Arrange
-        # Act
-        logger = Logger(
-            name="TEST",
-            clock=TestClock(),
-            level_console=LogLevel.VERBOSE,
-            log_to_file=True,
-            log_file_dir="log2/",
-        )
-
-        logger.change_log_file_name("TEST-1970-01-02")
-
-        # Assert
-        assert os.path.isdir(logger.get_log_file_dir())
-        assert os.path.exists(logger.get_log_file_path())
-        assert logger.get_log_file_dir().endswith("log2/")
-        assert logger.get_log_file_path().endswith("TEST-1970-01-02.log")
-
-        # Teardown
-        shutil.rmtree(logger.get_log_file_dir())
-
-
 class TestLoggerTests:
-    def test_log_verbose_messages_to_console(self):
-        # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.VERBOSE)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        # Act
-        logger_adapter.verbose("This is a log message.")
-
-        # Assert
-        assert True  # No exception raised
-
     def test_log_debug_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.DEBUG)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.DEBUG)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.debug("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_info_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.info("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
+
+    def test_log_info_with_annotation_sends_to_stdout(self):
+        # Arrange
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+
+        annotations = {"my_tag": "something"}
+
+        # Act
+        logger_adapter.info("This is a log message.", annotations=annotations)
+
+        # Assert
+        assert True  # No exceptions raised
 
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
 
         # Act
-        logger_adapter.info("This is a log message.", LogColor.BLUE)
+        logger_adapter.info("This is a log message.", color=LogColor.BLUE)
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
 
         # Act
-        logger_adapter.info("This is a log message.", LogColor.GREEN)
+        logger_adapter.info("This is a log message.", color=LogColor.GREEN)
 
         # Assert
-        assert True  # No exception raised
-
-    def test_log_info_messages_to_console_with_invalid_colour(self):
-        # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
-
-        # Act
-        logger_adapter.info("This is a log message.", 30)
-
-        # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_warning_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.WARNING)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.WARNING)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.warning("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_error_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.ERROR)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.ERROR)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.error("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_log_critical_messages_to_console(self):
         # Arrange
-        logger = TestLogger(clock=TestClock(), level_console=LogLevel.CRITICAL)
-        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.critical("This is a log message.")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
 
 class TestLiveLogger:
@@ -271,7 +168,9 @@ class TestLiveLogger:
             clock=LiveClock(),
         )
 
-        self.logger_adapter = LoggerAdapter("LIVE_LOGGER", logger=self.logger)
+        self.logger_adapter = LoggerAdapter(
+            component="LIVER_LOGGER", logger=self.logger
+        )
 
     def test_log_when_not_running_on_event_loop_successfully_logs(self):
         # Arrange
@@ -279,7 +178,7 @@ class TestLiveLogger:
         self.logger_adapter.info("test message")
 
         # Assert
-        assert True  # No exception raised
+        assert True  # No exceptions raised
 
     def test_start_runs_on_event_loop(self):
         async def run_test():
@@ -322,7 +221,7 @@ class TestLiveLogger:
                 maxsize=1,
             )
 
-            logger_adapter = LoggerAdapter("LIVE_LOGGER", logger=logger)
+            logger_adapter = LoggerAdapter(component="LIVE_LOGGER", logger=logger)
             logger.start()
 
             # Act

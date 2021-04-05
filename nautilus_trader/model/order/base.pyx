@@ -125,8 +125,6 @@ cdef class Order:
         self.account_id = None    # Can be None
         self.execution_id = None  # Can be None
         self.instrument_id = init.instrument_id
-        self.symbol = init.instrument_id.symbol
-        self.venue = init.instrument_id.venue
         self.side = init.order_side
         self.type = init.order_type
         self.quantity = init.quantity
@@ -203,6 +201,30 @@ cdef class Order:
             or self._fsm.state == OrderState.CANCELLED \
             or self._fsm.state == OrderState.EXPIRED \
             or self._fsm.state == OrderState.FILLED
+
+    @property
+    def symbol(self):
+        """
+        The orders ticker symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self.instrument_id.symbol
+
+    @property
+    def venue(self):
+        """
+        The orders trading venue.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self.instrument_id.venue
 
     @property
     def state(self):

@@ -45,17 +45,13 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
+        "loop_debug": False,  # The event loop debug mode
         "connection_timeout": 5.0,  # Timeout for successful connections for all engine clients
         "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
     "logging": {
-        "log_level_console": "INF",
-        "log_level_file": "DBG",
-        "log_level_store": "WRN",
-        "log_thread_id": False,
-        "log_to_file": False,
-        "log_file_dir": "logs/",
+        "level_stdout": "INF",
     },
     "exec_database": {
         "type": "redis",

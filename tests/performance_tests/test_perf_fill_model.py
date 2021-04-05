@@ -13,24 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.backtest.models import FillModel
+from tests.test_kit.performance import PerformanceHarness
 
 
-cdef class LiveDataEngine(DataEngine):
-    cdef dict _config
-    cdef object _loop
-    cdef object _run_queues_task
-    cdef Queue _data_queue
-    cdef Queue _message_queue
+model = FillModel(
+    prob_fill_at_stop=0.95,
+    prob_fill_at_limit=0.5,
+    random_seed=42,
+)
 
-    cdef readonly bint is_running
 
-    cpdef object get_event_loop(self)
-    cpdef object get_run_queue_task(self)
-    cpdef int data_qsize(self) except *
-    cpdef int message_qsize(self) except *
+class TestFillModelPerformance:
+    @staticmethod
+    def test_is_limit_filled():
+        PerformanceHarness.profile_function(model.is_limit_filled, 100000, 1)
+        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
 
-    cpdef void kill(self) except *
-
-    cdef inline void _enqueue_sentinels(self)
+    @staticmethod
+    def test_is_stop_filled():
+        PerformanceHarness.profile_function(model.is_stop_filled, 100000, 1)
+        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.

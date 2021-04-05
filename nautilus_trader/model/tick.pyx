@@ -174,7 +174,7 @@ cdef class QuoteTick(Tick):
             Price(pieces[1]),
             Quantity(pieces[2]),
             Quantity(pieces[3]),
-            long(pieces[4]),  # TODO: Standard C function str -> int64_t
+            int(pieces[4]),
         )
 
     @staticmethod
@@ -280,7 +280,7 @@ cdef class TradeTick(Tick):
             Quantity(pieces[1]),
             OrderSideParser.from_str(pieces[2]),
             TradeMatchId(pieces[3]),
-            long(pieces[4]),
+            int(pieces[4]),
         )
 
     @staticmethod

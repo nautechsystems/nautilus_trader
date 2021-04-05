@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.engine import DataEngine
@@ -29,12 +27,12 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
-class BacktestDataClientTests(unittest.TestCase):
-    def setUp(self):
+class TestBacktestDataClient:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -61,7 +59,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.connect()
 
         # Assert
-        self.assertTrue(self.client.is_connected)
+        assert self.client.is_connected
 
     def test_disconnect(self):
         # Arrange
@@ -71,7 +69,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.disconnect()
 
         # Assert
-        self.assertFalse(self.client.is_connected)
+        assert not self.client.is_connected
 
     def test_reset(self):
         # Arrange
@@ -79,7 +77,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.reset()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        assert True  # No exceptions raised
 
     def test_dispose(self):
         # Arrange
@@ -87,7 +85,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.dispose()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        assert True  # No exceptions raised
 
     def test_subscribe_instrument(self):
         # Arrange
@@ -97,7 +95,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_instrument(USDJPY_SIM.id)
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_subscribe_quote_ticks(self):
         # Arrange
@@ -107,7 +105,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_subscribe_trade_ticks(self):
         # Arrange
@@ -117,7 +115,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_subscribe_bars(self):
         # Arrange
@@ -127,7 +125,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_unsubscribe_instrument(self):
         # Arrange
@@ -137,7 +135,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_instrument(USDJPY_SIM.id)
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_unsubscribe_quote_ticks(self):
         # Arrange
@@ -147,7 +145,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_unsubscribe_trade_ticks(self):
         # Arrange
@@ -157,7 +155,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_unsubscribe_bars(self):
         # Arrange
@@ -167,7 +165,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_request_instrument(self):
         # Arrange
@@ -177,7 +175,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_instrument(USDJPY_SIM.id, uuid4())
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_request_instruments(self):
         # Arrange
@@ -187,7 +185,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_instruments(uuid4())
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_request_quote_ticks(self):
         # Arrange
@@ -197,7 +195,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_request_trade_ticks(self):
         # Arrange
@@ -207,7 +205,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised
 
     def test_request_bars(self):
         # Arrange
@@ -221,4 +219,4 @@ class BacktestDataClientTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertTrue(True)
+        assert True  # No exceptions raised

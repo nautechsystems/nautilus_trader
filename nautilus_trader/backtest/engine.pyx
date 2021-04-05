@@ -34,8 +34,8 @@ from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.timer cimport TimeEventHandler
@@ -54,8 +54,7 @@ from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.orderbook.book cimport OrderBookOperations
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
+from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.risk.engine cimport RiskEngine
@@ -83,13 +82,7 @@ cdef class BacktestEngine:
         bint exec_db_flush=True,
         dict risk_config=None,
         bint bypass_logging=False,
-        int level_console=LogLevel.INFO,
-        int level_file=LogLevel.DEBUG,
-        int level_store=LogLevel.WARNING,
-        bint console_prints=True,
-        bint log_thread=False,
-        bint log_to_file=False,
-        str log_file_dir not None="backtests/",
+        int level_stdout=LogLevel.INFO,
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -116,20 +109,8 @@ cdef class BacktestEngine:
             The configuration for the risk engine.
         bypass_logging : bool, optional
             If logging should be bypassed.
-        level_console : int, optional
-            The minimum log level for logging messages to the console.
-        level_file  : int, optional
-            The minimum log level for logging messages to the log file.
-        level_store : int, optional
-            The minimum log level for storing log messages in memory.
-        console_prints : bool, optional
-            If log messages should print.
-        log_thread : bool, optional
-            If log messages should log the thread.
-        log_to_file : bool, optional
-            If log messages should log to a file.
-        log_file_dir : str, optional
-            The name of the log file (cannot be None if log_to_file is True).
+        level_stdout : int, optional
+            The minimum log level for logging messages to stdout.
 
         Raises
         ------
@@ -139,8 +120,6 @@ cdef class BacktestEngine:
             If bar_capacity is not positive (> 0).
         TypeError
             If strategies contains a type other than TradingStrategy.
-        ValueError
-            If log_to_file is True and log_file_dir is None.
 
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
@@ -160,36 +139,25 @@ cdef class BacktestEngine:
         self._test_clock = TestClock()
         self._test_clock.set_time(self._clock.timestamp_ns())
         self._uuid_factory = UUIDFactory()
+        self.system_id = self._uuid_factory.generate()
 
-        self.analyzer = PerformanceAnalyzer()
-
-        self._logger = TestLogger(
+        self._logger = Logger(
             clock=LiveClock(),
-            name=trader_id.value,
-            bypass_logging=False,
-            level_console=LogLevel.INFO,
-            level_file=LogLevel.INFO,
-            level_store=LogLevel.WARNING,
-            console_prints=True,
-            log_thread=log_thread,
-            log_to_file=log_to_file,
-            log_file_dir=log_file_dir,
+            trader_id=trader_id,
+            system_id=self.system_id,
         )
 
-        self._log_to_file = log_to_file
-        self._log = LoggerAdapter(component_name=type(self).__name__, logger=self._logger)
+        self._log = LoggerAdapter(
+            component=type(self).__name__,
+            logger=self._logger,
+        )
 
-        self._test_logger = TestLogger(
+        self._test_logger = Logger(
             clock=self._test_clock,
-            name=trader_id.value,
+            trader_id=trader_id,
+            system_id=self.system_id,
+            level_stdout=level_stdout,
             bypass_logging=bypass_logging,
-            level_console=level_console,
-            level_file=level_file,
-            level_store=level_store,
-            console_prints=console_prints,
-            log_thread=log_thread,
-            log_to_file=log_to_file,
-            log_file_dir=log_file_dir,
         )
 
         nautilus_header(self._log)
@@ -218,8 +186,9 @@ cdef class BacktestEngine:
         if self._exec_db_flush:
             exec_db.flush()
 
-        # Setup execution cache
         self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
+
+        self.analyzer = PerformanceAnalyzer()
 
         self.portfolio = Portfolio(
             clock=self._test_clock,
@@ -237,7 +206,6 @@ cdef class BacktestEngine:
 
         self._data_producer = BacktestDataProducer(
             data=data,
-            clock=self._test_clock,
             logger=self._test_logger,
         )
 
@@ -260,7 +228,7 @@ cdef class BacktestEngine:
             elif client_type == BacktestMarketDataClient:
                 instruments = []
                 for instrument in data.instruments.values():
-                    if instrument.venue.first() == name:
+                    if instrument.id.venue.first() == name:
                         instruments.append(instrument)
 
                 data_client = BacktestMarketDataClient(
@@ -271,7 +239,7 @@ cdef class BacktestEngine:
                     logger=self._test_logger,
                 )
 
-                self._data_engine.register_client(data_client)
+            self._data_engine.register_client(data_client)
 
         self._exec_engine = ExecutionEngine(
             database=exec_db,
@@ -378,7 +346,7 @@ cdef class BacktestEngine:
         # Gather instruments for exchange
         instruments = []
         for instrument in self._data_engine.cache.instruments():
-            if instrument.venue == venue:
+            if instrument.id.venue == venue:
                 instruments.append(instrument)
 
         # Create exchange
@@ -410,23 +378,6 @@ cdef class BacktestEngine:
         exchange.register_client(exec_client)
         self._exec_engine.register_client(exec_client)
 
-    cpdef void print_log_store(self) except *:
-        """
-        Print the contents of the test loggers store to the console.
-        """
-        self._log.info("")
-        self._log.info("=================================================================")
-        self._log.info(" LOG STORE")
-        self._log.info("=================================================================")
-
-        cdef list log_store = self._test_logger.get_log_store()
-        cdef str message
-        if not log_store:
-            self._log.info("No log messages were stored.")
-        else:
-            for message in self._test_logger.get_log_store():
-                print(message)
-
     cpdef void reset(self) except *:
         """
         Reset the backtest engine.
@@ -456,9 +407,6 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             exchange.reset()
-
-        self._logger.clear_log_store()
-        self._test_logger.clear_log_store()
 
         self.iteration = 0
 
@@ -505,7 +453,6 @@ cdef class BacktestEngine:
         datetime start=None,
         datetime stop=None,
         list strategies=None,
-        bint print_log_store=True,
     ) except *:
         """
         Run a backtest from the start datetime to the stop datetime.
@@ -520,8 +467,6 @@ cdef class BacktestEngine:
             run to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).
-        print_log_store : bool
-            If the log store should be printed at the end of the run.
 
         Raises
         ------
@@ -551,13 +496,6 @@ cdef class BacktestEngine:
             Condition.list_type(strategies, TradingStrategy, "strategies")
 
         cdef datetime run_started = self._clock.utc_now()
-
-        # Setup logging
-        self._test_logger.clear_log_store()
-        if self._log_to_file:
-            backtest_log_name = f"{self._logger.name}-{format_iso8601(run_started)}"
-            self._logger.change_log_file_name(backtest_log_name)
-            self._test_logger.change_log_file_name(backtest_log_name)
 
         self._log_header(run_started, start, stop)
         self._log.info(f"Setting up backtest...")
@@ -601,14 +539,11 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            venue = data.instrument_id.venue
             self._advance_time(data.timestamp_ns)
-            if isinstance(data, OrderBookOperations):
-                self._exchanges[venue].process_order_book_operations(data)
-            elif isinstance(data, OrderBookSnapshot):
-                self._exchanges[venue].process_order_book_snapshot(data)
+            if isinstance(data, OrderBookData):
+                self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
-                self._exchanges[venue].process_tick(data)
+                self._exchanges[data.instrument_id.venue].process_tick(data)
             self._data_engine.process(data)
             self._process_modules(data.timestamp_ns)
             self.iteration += 1
@@ -617,8 +552,6 @@ cdef class BacktestEngine:
         self.trader.stop()
 
         self._log_footer(run_started, self._clock.utc_now(), start, stop)
-        if print_log_store:
-            self.print_log_store()
 
     cdef inline void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy
@@ -711,7 +644,7 @@ cdef class BacktestEngine:
             # Find all positions for exchange venue
             positions = []
             for position in self._exec_engine.cache.positions():
-                if position.venue == exchange.id:
+                if position.instrument_id.venue == exchange.id:
                     positions.append(position)
 
             # Calculate statistics

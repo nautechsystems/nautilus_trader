@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.cache import DataCache
@@ -47,7 +47,7 @@ class TestRiskEngine:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
@@ -107,6 +107,8 @@ class TestRiskEngine:
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
+            self.trader_id,
+            self.account_id,
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

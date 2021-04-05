@@ -13,15 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -51,12 +49,12 @@ BINANCE = Venue("BINANCE")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class BacktestExecClientTests(unittest.TestCase):
-    def setUp(self):
+class TestBacktestExecClientTests:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = AccountId("BINANCE", "000")
@@ -114,7 +112,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertFalse(self.exec_client.is_connected)
+        assert not self.exec_client.is_connected
 
     def test_connect(self):
         # Arrange
@@ -122,7 +120,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.connect()
 
         # Assert
-        self.assertTrue(self.exec_client.is_connected)
+        assert self.exec_client.is_connected
 
     def test_disconnect(self):
         # Arrange
@@ -132,7 +130,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.disconnect()
 
         # Assert
-        self.assertFalse(self.exec_client.is_connected)
+        assert not self.exec_client.is_connected
 
     def test_reset(self):
         # Arrange
@@ -140,7 +138,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.reset()
 
         # Assert
-        self.assertFalse(self.exec_client.is_connected)  # No exceptions raised
+        assert not self.exec_client.is_connected
 
     def test_dispose(self):
         # Arrange
@@ -148,7 +146,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.dispose()
 
         # Assert
-        self.assertFalse(self.exec_client.is_connected)  # No exceptions raised
+        assert not self.exec_client.is_connected
 
     def test_submit_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
@@ -174,7 +172,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.submit_order(command)
 
         # Assert
-        self.assertEqual(OrderState.INITIALIZED, order.state)
+        assert order.state == OrderState.INITIALIZED
 
     def test_submit_bracket_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
@@ -205,7 +203,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.submit_bracket_order(command)
 
         # Assert
-        self.assertEqual(OrderState.INITIALIZED, entry.state)
+        assert entry.state == OrderState.INITIALIZED
 
     def test_cancel_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
@@ -229,7 +227,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.cancel_order(command)
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        assert True  # No exceptions raised
 
     def test_update_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
@@ -255,4 +253,4 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.update_order(command)
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        assert True  # No exceptions raised

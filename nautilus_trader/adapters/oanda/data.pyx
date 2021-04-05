@@ -601,7 +601,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         cdef dict res
         try:
             req = InstrumentsCandles(
-                instrument=instrument.symbol.value.replace('/', '_'),
+                instrument=instrument.id.symbol.value.replace('/', '_'),
                 params=params,
             )
             res = self._client.request(req)

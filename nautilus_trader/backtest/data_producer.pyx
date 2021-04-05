@@ -19,7 +19,6 @@ This module provides a data producer for backtesting.
 
 from bisect import bisect_left
 import gc
-import time
 
 import numpy as np
 import pandas as pd
@@ -29,7 +28,6 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.data_container cimport BacktestDataContainer
-from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
@@ -78,7 +76,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
     def __init__(
         self,
         BacktestDataContainer data not None,
-        Clock clock not None,
         Logger logger not None,
     ):
         """
@@ -88,14 +85,14 @@ cdef class BacktestDataProducer(DataProducerFacade):
         ----------
         data : BacktestDataContainer
             The data for the producer.
-        clock : Clock
-            The clock for the component.
         logger : Logger
             The logger for the component.
 
         """
-        self._clock = clock
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(
+            component=type(self).__name__,
+            logger=logger,
+        )
 
         # Check data integrity
         data.check_integrity()
@@ -109,8 +106,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef Data x
         self._stream = sorted(
             data.generic_data +
-            data.order_book_snapshots +
-            data.order_book_operations,
+            data.order_book_data,
             key=lambda x: x.timestamp_ns,
             )
 
@@ -168,8 +164,11 @@ cdef class BacktestDataProducer(DataProducerFacade):
                                f"{unix_timestamp() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
+            if instrument_id in data.books:
+                execution_resolution = "ORDER_BOOK"
+
             if execution_resolution is None:
-                self._log.warning(f"No execution level data for {instrument_id}.")
+                raise RuntimeError(f"No execution level data for {instrument_id}")
 
             # Increment counter for indexing the next instrument
             instrument_counter += 1
@@ -177,15 +176,17 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self.execution_resolutions.append(f"{instrument_id}={execution_resolution}")
 
         # Merge and sort all ticks
-        self._log.info(f"Merging tick data streams...")
         if quote_tick_frames:
+            self._log.info(f"Merging QuoteTick data streams...")
             self._quote_tick_data = pd.concat(quote_tick_frames)
             self._quote_tick_data.sort_index(axis=0, kind="mergesort", inplace=True)
 
         if trade_tick_frames:
+            self._log.info(f"Merging TradeTick data streams...")
             self._trade_tick_data = pd.concat(trade_tick_frames)
             self._trade_tick_data.sort_index(axis=0, kind="mergesort", inplace=True)
 
+        # TODO: Refactor timestamping below
         # Set timestamps
         cdef datetime min_timestamp = None
         cdef datetime max_timestamp = None
@@ -205,12 +206,18 @@ cdef class BacktestDataProducer(DataProducerFacade):
             else:
                 max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
+        if min_timestamp is None:
+            min_timestamp = as_utc_timestamp(pd.Timestamp.max)
+
+        if max_timestamp is None:
+            max_timestamp = as_utc_timestamp(pd.Timestamp.min)
+
         self.min_timestamp_ns = dt_to_unix_nanos(min_timestamp)
         self.max_timestamp_ns = dt_to_unix_nanos(max_timestamp)
 
         if self._stream:
-            self.min_timestamp_ns = min(self.min_timestamp_ns, self._stream[0])
-            self.max_timestamp_ns = max(self.max_timestamp_ns, self._stream[-1])
+            self.min_timestamp_ns = min(self.min_timestamp_ns, self._stream[0].timestamp_ns)
+            self.max_timestamp_ns = max(self.max_timestamp_ns, self._stream[-1].timestamp_ns)
 
         self.min_timestamp = as_utc_timestamp(nanos_to_unix_dt(self.min_timestamp_ns))
         self.max_timestamp = as_utc_timestamp(nanos_to_unix_dt(self.max_timestamp_ns))
@@ -242,8 +249,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         self.has_data = False
 
-        self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
-                       f"total tick rows in {unix_timestamp() - ts_total:.3f}s.")
+        total_elements = len(self._quote_tick_data) + len(self._trade_tick_data) + len(self._stream)
+
+        self._log.info(f"Prepared {total_elements:,} total data elements "
+                       f"in {unix_timestamp() - ts_total:.3f}s.")
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
@@ -286,12 +295,20 @@ cdef class BacktestDataProducer(DataProducerFacade):
         # Calculate data size
         cdef uint64_t total_size = 0
 
-        # Setup data stream index
-        cdef Data x
+        cdef int idx
+        cdef Data data
         if self._stream:
-            self._stream_index = bisect_left(self._stream, start_ns, key=lambda x: x.timestamp_ns)
-            self._stream_index_last = bisect_left(self._stream, stop_ns, key=lambda x: x.timestamp_ns)
+            # Set data stream start index
+            self._stream_index = next(
+                idx for idx, data in enumerate(self._stream) if start_ns <= data.timestamp_ns
+            )
 
+            # Set data stream stop index
+            self._stream_index_last = len(self._stream) - 1 - next(
+                idx for idx, data in enumerate(reversed(self._stream)) if stop_ns <= data.timestamp_ns
+            )
+
+            total_size += get_size_of(self._stream)
             # Prepare initial data
             self._iterate_stream()
 
@@ -309,7 +326,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_asks = quote_ticks_slice["ask"].values
             self._quote_bid_sizes = quote_ticks_slice["bid_size"].values
             self._quote_ask_sizes = quote_ticks_slice["ask_size"].values
-            self._quote_timestamps = np.asarray([dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index])
+            self._quote_timestamps = np.asarray(
+                [dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index],
+                dtype=np.int64,
+            )
 
             # Calculate cumulative data size
             total_size += get_size_of(self._quote_instruments)
@@ -336,7 +356,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
             self._trade_sides = trade_ticks_slice["side"].values
-            self._trade_timestamps = np.asarray([dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index])
+            self._trade_timestamps = np.asarray(
+                [dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index],
+                dtype=np.int64,
+            )
 
             # Calculate cumulative data size
             total_size += get_size_of(self._trade_instruments)
@@ -418,7 +441,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         """
         # Determine next data element
-        cdef int64_t next_timestamp_ns = 0
+        cdef int64_t next_timestamp_ns = 9223372036854775807  # int64 max
         cdef int choice = 0
 
         if self._next_quote_tick is not None:
@@ -426,12 +449,12 @@ cdef class BacktestDataProducer(DataProducerFacade):
             choice = 1
 
         if self._next_trade_tick is not None:
-            if choice == 0 or self._next_trade_tick.timestamp_ns < next_timestamp_ns:
+            if choice == 0 or self._next_trade_tick.timestamp_ns <= next_timestamp_ns:
                 choice = 2
 
         cdef Data next_data = None
         if self._next_data is not None:
-            if choice == 0 or self._next_data.timestamp_ns < next_timestamp_ns:
+            if choice == 0 or self._next_data.timestamp_ns <= next_timestamp_ns:
                 next_data = self._next_data
                 self._iterate_stream()
                 return next_data
@@ -596,7 +619,7 @@ cdef class CachedProducer(DataProducerFacade):
         self._log.info(f"Pre-caching data...")
         self._producer.setup(self.min_timestamp_ns, self.max_timestamp_ns)
 
-        cdef double ts = time.time()
+        cdef double ts = unix_timestamp()
 
         cdef Data data
         while self._producer.has_data:
@@ -605,7 +628,7 @@ cdef class CachedProducer(DataProducerFacade):
             self._timestamp_cache.append(data.timestamp_ns)
 
         self._log.info(f"Pre-cached {len(self._data_cache):,} "
-                       f"total data items in {time.time() - ts:.3f}s.")
+                       f"total data items in {unix_timestamp() - ts:.3f}s.")
 
         self._producer.reset()
         self._producer.clear()

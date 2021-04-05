@@ -243,7 +243,10 @@ cdef class BarAggregator:
         """
         self.bar_type = bar_type
         self._handler = handler
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(
+            component=type(self).__name__,
+            logger=logger,
+        )
         self._builder = BarBuilder(
             bar_type=self.bar_type,
             use_previous_close=use_previous_close,

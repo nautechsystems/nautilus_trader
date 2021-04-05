@@ -34,10 +34,6 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Instrument(Data):
     cdef readonly InstrumentId id
     """The instrument identifier.\n\n:returns: `InstrumentId`"""
-    cdef readonly Symbol symbol
-    """The instrument symbol.\n\n:returns: `Symbol`"""
-    cdef readonly Venue venue
-    """The instrument venue.\n\n:returns: `Venue`"""
     cdef readonly AssetClass asset_class
     """The asset class of the instrument.\n\n:returns: `AssetClass`"""
     cdef readonly AssetType asset_type

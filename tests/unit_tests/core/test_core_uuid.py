@@ -44,9 +44,9 @@ class TestUUID:
 
         # Assert
         assert isinstance(uuid, UUID)
-        assert "UUID('12345678-1234-5678-1234-567812345678')" == repr(uuid)
-        assert "12345678-1234-5678-1234-567812345678" == str(uuid)
-        assert 24197857161011715162171839636988778104 == uuid.int_val
+        assert repr(uuid) == "UUID('12345678-1234-5678-1234-567812345678')"
+        assert str(uuid) == "12345678-1234-5678-1234-567812345678"
+        assert uuid.int_val == 24197857161011715162171839636988778104
 
     def test_equality(self):
         # Arrange
@@ -88,8 +88,8 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 24197857161011715162171839636988778104 == int(uuid)
-        assert 24197857161011715162171839636988778104 == uuid.int_val
+        assert int(uuid) == 24197857161011715162171839636988778104
+        assert uuid.int_val == 24197857161011715162171839636988778104
 
     def test_bytes(self):
         # Arrange
@@ -113,7 +113,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert (305419896, 4660, 22136, 18, 52, 95073701484152) == uuid.fields
+        assert uuid.fields == (305419896, 4660, 22136, 18, 52, 95073701484152)
 
     def test_time_low(self):
         # Arrange
@@ -121,7 +121,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 305419896 == uuid.time_low
+        assert uuid.time_low == 305419896
 
     def test_time_mid(self):
         # Arrange
@@ -129,7 +129,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 4660 == uuid.time_mid
+        assert uuid.time_mid == 4660
 
     def test_time_high_version(self):
         # Arrange
@@ -137,7 +137,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 22136 == uuid.time_hi_version
+        assert uuid.time_hi_version == 22136
 
     def test_clock_seq_hi_variant(self):
         # Arrange
@@ -145,7 +145,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 18 == uuid.clock_seq_hi_variant
+        assert uuid.clock_seq_hi_variant == 18
 
     def test_clock_seq_low(self):
         # Arrange
@@ -153,7 +153,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 52 == uuid.clock_seq_low
+        assert uuid.clock_seq_low == 52
 
     def test_time(self):
         # Arrange
@@ -161,7 +161,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 466142576285865592 == uuid.time
+        assert uuid.time == 466142576285865592
 
     def test_clock_seq(self):
         # Arrange
@@ -169,7 +169,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 4660 == uuid.clock_seq
+        assert uuid.clock_seq == 4660
 
     def test_node(self):
         # Arrange
@@ -177,7 +177,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert 95073701484152 == uuid.node
+        assert uuid.node == 95073701484152
 
     def test_hex(self):
         # Arrange
@@ -185,7 +185,7 @@ class TestUUID:
 
         # Act
         # Assert
-        assert "12345678123456781234567812345678" == uuid.hex
+        assert uuid.hex == "12345678123456781234567812345678"
 
     def test_urn(self):
         # Arrange
@@ -193,4 +193,4 @@ class TestUUID:
 
         # Act
         # Assert
-        assert "urn:uuid:12345678-1234-5678-1234-567812345678" == uuid.urn
+        assert uuid.urn == "urn:uuid:12345678-1234-5678-1234-567812345678"
