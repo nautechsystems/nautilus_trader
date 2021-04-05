@@ -38,6 +38,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -220,13 +221,68 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         self.assertEqual({}, orders)
 
-    def test_submit_order_with_no_market_rejects_order(self):
+    def test_submit_buy_limit_order_with_no_market_accepts_order(self):
         # Arrange
-        order = self.strategy.order_factory.stop_market(
+        order = self.strategy.order_factory.limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
-            Price("80.000"),
+            Price("1.0000"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.ACCEPTED, order.state)
+        self.assertEqual(2, self.strategy.object_storer.count)
+        self.assertTrue(
+            isinstance(self.strategy.object_storer.get_store()[1], OrderAccepted)
+        )
+
+    def test_submit_sell_limit_order_with_no_market_accepts_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("1.0000"),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.ACCEPTED, order.state)
+        self.assertEqual(2, self.strategy.object_storer.count)
+        self.assertTrue(
+            isinstance(self.strategy.object_storer.get_store()[1], OrderAccepted)
+        )
+
+    def test_submit_buy_market_order_with_no_market_rejects_order(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.REJECTED, order.state)
+        self.assertEqual(2, self.strategy.object_storer.count)
+        self.assertTrue(
+            isinstance(self.strategy.object_storer.get_store()[1], OrderRejected)
+        )
+
+    def test_submit_sell_market_order_with_no_market_rejects_order(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity(100000),
         )
 
         # Act
