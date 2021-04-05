@@ -37,6 +37,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
@@ -694,8 +695,11 @@ cdef class ExecutionEngine(Component):
 
             # Set the correct ClientOrderId for the event
             event.cl_ord_id = cl_ord_id
-            self._log.info_green(f"{repr(cl_ord_id)} was found in cache and "
-                                 f"applying event to order with {repr(order.id)}.")
+            self._log.info(
+                f"{repr(cl_ord_id)} was found in cache and "
+                f"applying event to order with {repr(order.id)}.",
+                color=LogColor.GREEN,
+            )
 
         if isinstance(event, OrderFilled):
             # The StrategyId needs to be confirmed prior to the PositionId.
