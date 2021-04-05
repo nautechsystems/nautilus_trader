@@ -19,6 +19,7 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
@@ -143,11 +144,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         }  # type: dict[ClientOrderId, Order]
 
         if not active_orders:
-            self._log.info_green(f"State reconciled.")
+            self._log.info(f"State reconciled.", color=LogColor.GREEN)
             return True  # Execution states reconciled
 
         cdef int count = len(active_orders)
-        self._log.info_blue(f"Reconciling state: {count} active order{'s' if count > 1 else ''}...")
+        self._log.info(
+            f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
+            color=LogColor.BLUE,
+        )
 
         # Initialize order state map
         cdef dict client_orders = {
@@ -206,7 +210,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 break
             await asyncio.sleep(0.001)  # One millisecond sleep
 
-        self._log.info_green(f"State reconciled.")
+        self._log.info(f"State reconciled.", color=LogColor.GREEN)
         return True  # Execution states reconciled
 
     cpdef void kill(self) except *:
