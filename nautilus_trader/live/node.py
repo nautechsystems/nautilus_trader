@@ -117,6 +117,7 @@ class TradingNode:
         # Components
         self._clock = LiveClock(loop=self._loop)
         self._uuid_factory = UUIDFactory()
+        self.system_id = self._uuid_factory.generate()
         self.created_time = self._clock.utc_now()
         self._is_running = False
 
@@ -127,17 +128,18 @@ class TradingNode:
         )
 
         # Setup logging
-        level_console = LogLevelParser.from_str_py(config_log.get("log_level_console"))
+        level_stdout = LogLevelParser.from_str_py(config_log.get("level_stdout"))
 
         self._logger = LiveLogger(
             loop=self._loop,
             clock=self._clock,
-            name=self.trader_id.value,
-            level_console=level_console,
+            trader_id=self.trader_id,
+            system_id=self.system_id,
+            level_stdout=level_stdout,
         )
 
         self._log = LoggerAdapter(
-            component_name=self.__class__.__name__,
+            component=self.__class__.__name__,
             logger=self._logger,
         )
 

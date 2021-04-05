@@ -24,6 +24,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -49,6 +50,7 @@ cdef class BacktestEngine:
     cdef dict _exchanges
 
     cdef readonly Trader trader
+    cdef readonly UUID system_id
     cdef readonly datetime created_time
     cdef readonly timedelta time_to_initialize
     cdef readonly int iteration

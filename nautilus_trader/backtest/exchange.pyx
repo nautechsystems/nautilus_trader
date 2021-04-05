@@ -136,7 +136,10 @@ cdef class SimulatedExchange:
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(f"{type(self).__name__}({venue})", logger)
+        self._log = LoggerAdapter(
+            component=f"{type(self).__name__}({venue})",
+            logger=logger,
+        )
 
         self.id = venue
         self.oms_type = oms_type

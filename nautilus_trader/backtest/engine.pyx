@@ -83,7 +83,7 @@ cdef class BacktestEngine:
         bint exec_db_flush=True,
         dict risk_config=None,
         bint bypass_logging=False,
-        int level_console=LogLevel.INFO,
+        int level_stdout=LogLevel.INFO,
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -110,8 +110,8 @@ cdef class BacktestEngine:
             The configuration for the risk engine.
         bypass_logging : bool, optional
             If logging should be bypassed.
-        level_console : int, optional
-            The minimum log level for logging messages to the console.
+        level_stdout : int, optional
+            The minimum log level for logging messages to stdout.
 
         Raises
         ------
@@ -140,22 +140,24 @@ cdef class BacktestEngine:
         self._test_clock = TestClock()
         self._test_clock.set_time(self._clock.timestamp_ns())
         self._uuid_factory = UUIDFactory()
-
-        self.analyzer = PerformanceAnalyzer()
+        self.system_id = self._uuid_factory.generate()
 
         self._logger = Logger(
             clock=LiveClock(),
-            name=trader_id.value,
-            level_console=LogLevel.INFO,
-            bypass_logging=False,
+            trader_id=trader_id,
+            system_id=self.system_id,
         )
 
-        self._log = LoggerAdapter(component_name=type(self).__name__, logger=self._logger)
+        self._log = LoggerAdapter(
+            component=type(self).__name__,
+            logger=self._logger,
+        )
 
         self._test_logger = Logger(
             clock=self._test_clock,
-            name=trader_id.value,
-            level_console=level_console,
+            trader_id=trader_id,
+            system_id=self.system_id,
+            level_stdout=level_stdout,
             bypass_logging=bypass_logging,
         )
 
@@ -185,8 +187,9 @@ cdef class BacktestEngine:
         if self._exec_db_flush:
             exec_db.flush()
 
-        # Setup execution cache
         self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
+
+        self.analyzer = PerformanceAnalyzer()
 
         self.portfolio = Portfolio(
             clock=self._test_clock,
@@ -537,14 +540,13 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            venue = data.instrument_id.venue
             self._advance_time(data.timestamp_ns)
             if isinstance(data, OrderBookOperations):
-                self._exchanges[venue].process_order_book_operations(data)
+                self._exchanges[data.instrument_id.venue].process_order_book_operations(data)
             elif isinstance(data, OrderBookSnapshot):
-                self._exchanges[venue].process_order_book_snapshot(data)
+                self._exchanges[data.instrument_id.venue].process_order_book_snapshot(data)
             elif isinstance(data, Tick):
-                self._exchanges[venue].process_tick(data)
+                self._exchanges[data.instrument_id.venue].process_tick(data)
             self._data_engine.process(data)
             self._process_modules(data.timestamp_ns)
             self.iteration += 1
