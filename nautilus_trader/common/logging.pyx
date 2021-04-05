@@ -181,7 +181,7 @@ cdef class Logger:
             sys.stdout.write(f"{self._format_record(level, color, record)}\n")
 
         if level >= self._log_level_raw:
-            pass  # TODO: Raw sink out
+            pass  # TODO: Raw sink out - str(record)
 
     cdef inline str _format_record(
         self,
@@ -193,18 +193,18 @@ cdef class Logger:
         cdef str time = format_iso8601_us(nanos_to_unix_dt(record["timestamp"]))
 
         # Set log color
-        cdef str colour_cmd = ""
+        cdef str color_cmd = ""
         if color == LogColor.YELLOW:
-            colour_cmd = _YELLOW
+            color_cmd = _YELLOW
         elif color == LogColor.GREEN:
             color_cmd = _GREEN
         elif color == LogColor.BLUE:
-            colour_cmd = _BLUE
+            color_cmd = _BLUE
         elif color == LogColor.RED:
-            colour_cmd = _RED
+            color_cmd = _RED
 
         cdef str trader_id_str = f"{self.trader_id.value}." if self.trader_id is not None else ""
-        return (f"{_BOLD}{time}{_ENDC} {colour_cmd}"
+        return (f"{_BOLD}{time}{_ENDC} {color_cmd}"
                 f"[{LogLevelParser.to_str(level)}] "
                 f"{trader_id_str}{record['component']}: {record['msg']}{_ENDC}")
 
@@ -274,7 +274,11 @@ cdef class LoggerAdapter:
 
         self._logger.log_c(record)
 
-    cpdef void info(self, str msg, dict annotations=None) except *:
+    cpdef void info(
+        self, str msg,
+        LogColor color=LogColor.NORMAL,
+        dict annotations=None,
+    ) except *:
         """
         Log the given information message with the logger.
 
@@ -282,6 +286,8 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
+        color : LogColor (Enum), optional
+            The custom log color for the message.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
@@ -293,61 +299,7 @@ cdef class LoggerAdapter:
 
         cdef dict record = self._logger.create_record(
             level=LogLevel.INFO,
-            color=LogColor.NORMAL,
-            component=self.component,
-            msg=msg,
-            annotations=annotations,
-        )
-
-        self._logger.log_c(record)
-
-    cpdef void info_blue(self, str msg, dict annotations=None) except *:
-        """
-        Log the given information message with the logger in blue.
-
-        Parameters
-        ----------
-        msg : str
-            The message to log.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
-
-        """
-        Condition.not_none(msg, "msg")
-
-        if self.is_bypassed:
-            return
-
-        cdef dict record = self._logger.create_record(
-            level=LogLevel.INFO,
-            color=LogColor.BLUE,
-            component=self.component,
-            msg=msg,
-            annotations=annotations,
-        )
-
-        self._logger.log_c(record)
-
-    cpdef void info_green(self, str msg, dict annotations=None) except *:
-        """
-        Log the given information message with the logger in green.
-
-        Parameters
-        ----------
-        msg : str
-            The message to log.
-        annotations : dict[str, object], optional
-            The annotations for the log record.
-
-        """
-        Condition.not_none(msg, "msg")
-
-        if self.is_bypassed:
-            return
-
-        cdef dict record = self._logger.create_record(
-            level=LogLevel.INFO,
-            color=LogColor.GREEN,
+            color=color,
             component=self.component,
             msg=msg,
             annotations=annotations,

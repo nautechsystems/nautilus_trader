@@ -82,9 +82,7 @@ cdef class LoggerAdapter:
 
     cpdef Logger get_logger(self)
     cpdef void debug(self, str msg, dict annotations=*) except *
-    cpdef void info(self, str msg, dict annotations=*) except *
-    cpdef void info_blue(self, str msg, dict annotations=*) except *
-    cpdef void info_green(self, str msg, dict annotations=*) except *
+    cpdef void info(self, str msg, LogColor color=*, dict annotations=*) except *
     cpdef void warning(self, str msg, dict annotations=*) except *
     cpdef void error(self, str msg, dict annotations=*) except *
     cpdef void critical(self, str msg, dict annotations=*) except *
