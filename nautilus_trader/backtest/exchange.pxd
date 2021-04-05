@@ -46,8 +46,7 @@ from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
-from nautilus_trader.model.orderbook.book cimport OrderBookOperations
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
+from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
@@ -98,8 +97,7 @@ cdef class SimulatedExchange:
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
-    cpdef void process_order_book_operations(self, OrderBookOperations operations) except *
-    cpdef void process_order_book_snapshot(self, OrderBookSnapshot snapshot) except *
+    cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_modules(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
