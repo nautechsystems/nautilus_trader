@@ -246,71 +246,50 @@ cdef class SimulatedExchange:
         """
         self.exec_client.handle_event(self._generate_account_event())
 
-    cpdef void process_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
+    cpdef void process_order_book(self, OrderBookData data) except *:
         """
         Process the exchanges market for the given snapshot.
 
         Parameters
         ----------
-        snapshot : OrderBookSnapshot
-            The order book snapshot to process.
+        data : OrderBookData
+            The order book data process.
 
         """
-        Condition.not_none(snapshot, "snapshot")
+        Condition.not_none(data, "data")
 
-        self._clock.set_time(snapshot.timestamp_ns)
+        self._clock.set_time(data.timestamp_ns)
 
-        cdef InstrumentId instrument_id = snapshot.instrument_id
+        cdef InstrumentId instrument_id = data.instrument_id
         cdef Instrument instrument = self.instruments[instrument_id]
 
-        # TODO: Confirm sorting order in snapshot?
-        cdef Price bid = Price(snapshot.bids[0], instrument.price_precision)
-        cdef Price ask = Price(snapshot.asks[0], instrument.price_precision)
+        cdef Price bid
+        cdef Price ask
+        cdef L2OrderBook order_book
+        if isinstance(data, OrderBookSnapshot):
+            if data.bids:
+                bid = Price(data.bids[0], instrument.price_precision)
+            if data.asks:
+                ask = Price(data.asks[0], instrument.price_precision)
+        elif isinstance(data, OrderBookOperations):
+            order_book = self._books.get(instrument_id)
+            if order_book is None:
+                order_book = L2OrderBook(instrument_id=instrument_id)
+                self._books[instrument_id] = order_book
+            order_book.apply_operations(data)
+
+            bid = Price(order_book.best_bid_price(), instrument.price_precision)
+            ask = Price(order_book.best_ask_price(), instrument.price_precision)
+
         self._market_bids[instrument_id] = bid
         self._market_asks[instrument_id] = ask
-        # TODO: Assumption that neither bid or ask are None...
+        # bid or ask could be None here
 
         self._iterate_matching_engine(
             instrument_id,
             bid,
             ask,
-            snapshot.timestamp_ns,
-        )
-
-    cpdef void process_order_book_operations(self, OrderBookOperations operations) except *:
-        """
-        Process the exchanges market for the given operations.
-
-        Parameters
-        ----------
-        operations : OrderBookOperations
-            The order book operations to process.
-
-        """
-        Condition.not_none(operations, "operations")
-
-        self._clock.set_time(operations.timestamp_ns)
-
-        cdef InstrumentId instrument_id = operations.instrument_id
-        cdef Instrument instrument = self.instruments[instrument_id]
-
-        cdef L2OrderBook order_book = self._books.get(instrument_id)
-        if order_book is None:
-            order_book = L2OrderBook(instrument_id=instrument_id)
-            self._books[instrument_id] = order_book
-
-        order_book.apply_operations(operations)
-
-        cdef Price bid = Price(order_book.best_bid_price(), instrument.price_precision)
-        cdef Price ask = Price(order_book.best_ask_price(), instrument.price_precision)
-        self._market_bids[instrument_id] = bid
-        self._market_asks[instrument_id] = ask
-
-        self._iterate_matching_engine(
-            instrument_id,
-            bid,
-            ask,
-            order_book.timestamp_ns,
+            data.timestamp_ns,
         )
 
     cpdef void process_tick(self, Tick tick) except *:
@@ -768,11 +747,6 @@ cdef class SimulatedExchange:
         cdef Price bid = self._market_bids.get(order.instrument_id)
         cdef Price ask = self._market_asks.get(order.instrument_id)
 
-        # Check market exists
-        if bid is None or ask is None:  # Market not initialized
-            self._reject_order(order, f"no market for {order.instrument_id}")
-            return  # Cannot accept order
-
         if order.type == OrderType.MARKET:
             self._process_market_order(order, bid, ask)
         elif order.type == OrderType.LIMIT:
@@ -785,6 +759,14 @@ cdef class SimulatedExchange:
             raise RuntimeError(f"Invalid order type")
 
     cdef inline void _process_market_order(self, MarketOrder order, Price bid, Price ask) except *:
+        # Check market exists
+        if order.side == OrderSide.BUY and not ask:
+            self._reject_order(order, f"no market for {order.instrument_id}")
+            return  # Cannot accept order
+        elif order.side == OrderSide.SELL and not bid:
+            self._reject_order(order, f"no market for {order.instrument_id}")
+            return  # Cannot accept order
+
         self._accept_order(order)
 
         # Immediately fill marketable order
@@ -1035,27 +1017,43 @@ cdef class SimulatedExchange:
 
     cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
+            if ask is None:
+                return False  # No market
             return order_price >= ask  # Match with LIMIT sells
         else:  # => OrderSide.SELL
+            if bid is None:  # No market
+                return False
             return order_price <= bid  # Match with LIMIT buys
 
     cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
+            if bid is None:
+                return False  # No market
             return bid < order_price or (bid == order_price and self.fill_model.is_limit_filled())
         else:  # => OrderSide.SELL
+            if ask is None:
+                return False  # No market
             return ask > order_price or (ask == order_price and self.fill_model.is_limit_filled())
 
     cdef inline bint _is_stop_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
-            return order_price <= ask  # Match with LIMIT sells
+            if ask is None:
+                return False  # No market
+            return ask >= order_price  # Match with LIMIT sells
         else:  # => OrderSide.SELL
-            return order_price >= bid  # Match with LIMIT buys
+            if bid is None:
+                return False  # No market
+            return bid <= order_price  # Match with LIMIT buys
 
     cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *:
         if side == OrderSide.BUY:
-            return order_price < ask or (order_price == ask and self.fill_model.is_stop_filled())
+            if ask is None:
+                return False  # No market
+            return ask > order_price or (ask == order_price and self.fill_model.is_stop_filled())
         else:  # => OrderSide.SELL
-            return order_price > bid or (order_price == bid and self.fill_model.is_stop_filled())
+            if bid is None:
+                return False  # No market
+            return bid < order_price or (bid == order_price and self.fill_model.is_stop_filled())
 
     cdef inline Price _fill_price_maker(self, OrderSide side, Price bid, Price ask):
         # LIMIT orders will always fill at the top of the book,
