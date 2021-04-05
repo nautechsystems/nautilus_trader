@@ -85,7 +85,7 @@ def clock() -> LiveClock:
 
 @pytest.fixture()
 def live_logger(event_loop, clock):
-    return LiveLogger(loop=event_loop, clock=clock, level_console=LogLevel.DEBUG)
+    return LiveLogger(loop=event_loop, clock=clock, level_stdout=LogLevel.DEBUG)
 
 
 @pytest.fixture()
