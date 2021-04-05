@@ -16,7 +16,7 @@
 import unittest
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
@@ -40,7 +40,7 @@ from tests.test_kit.stubs import TestStubs
 
 
 SIM = Venue("SIM")
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
@@ -49,7 +49,7 @@ class DataClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -146,7 +146,7 @@ class MarketDataClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.portfolio = Portfolio(
             clock=self.clock,

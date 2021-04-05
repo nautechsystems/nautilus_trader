@@ -37,6 +37,9 @@ cdef class Data:
         """
         self.timestamp_ns = timestamp_ns
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(timestamp_ns={self.timestamp_ns})"
+
 
 cdef class DataType:
     """

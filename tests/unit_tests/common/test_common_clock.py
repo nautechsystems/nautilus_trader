@@ -25,6 +25,8 @@ from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEvent
+from nautilus_trader.common.timer import TimeEventHandler
+from nautilus_trader.core.datetime import millis_to_nanos
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -76,6 +78,259 @@ class TestClockBase:
 
 
 class TestTestClock:
+    def setup(self):
+        # Fixture Setup
+        self.handler = []
+        self.clock = TestClock()
+        self.clock.register_default_handler(self.handler.append)
+
+    def teardown(self):
+        self.clock.cancel_timers()
+
+    def test_instantiated_clock(self):
+        # Arrange
+        # Act
+        # Assert
+        assert self.clock.is_default_handler_registered
+        assert self.clock.timer_names() == []
+
+    def test_utc_now(self):
+        # Arrange
+        # Act
+        # Assert
+        assert type(self.clock.utc_now()) == datetime
+        assert self.clock.utc_now().tzinfo == pytz.utc
+        assert type(self.clock.timestamp_ns()) == int
+
+    def test_local_now(self):
+        # Arrange
+        # Act
+        result = self.clock.local_now(pytz.timezone("Australia/Sydney"))
+
+        # Assert
+        assert type(result) == datetime
+        assert result == UNIX_EPOCH.astimezone(tz=pytz.timezone("Australia/Sydney"))
+        assert str(result) == "1970-01-01 10:00:00+10:00"
+
+    def test_delta1(self):
+        # Arrange
+        start = self.clock.utc_now()
+
+        # Act
+        self.clock.set_time(1_000_000_000)
+        result = self.clock.delta(start)
+
+        # Assert
+        assert result > timedelta(0)
+        assert type(result) == timedelta
+
+    def test_delta2(self):
+        # Arrange
+        clock = TestClock()
+
+        # Act
+        events = clock.delta(UNIX_EPOCH - timedelta(minutes=9))
+
+        assert events == timedelta(minutes=9)
+
+    def test_set_time_alert(self):
+        # Arrange
+        name = "TEST_ALERT"
+        alert_time = self.clock.utc_now() + timedelta(milliseconds=100)
+
+        # Act
+        self.clock.set_time_alert(name, alert_time)
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(200))
+
+        # Assert
+        assert self.clock.timer_names() == []
+        assert len(events) == 1
+        assert type(events[0]) == TimeEventHandler
+
+    def test_cancel_time_alert(self):
+        # Arrange
+        name = "TEST_ALERT"
+        interval = timedelta(milliseconds=100)
+        alert_time = self.clock.utc_now() + interval
+
+        self.clock.set_time_alert(name, alert_time)
+
+        # Act
+        self.clock.cancel_timer(name)
+
+        # Assert
+        assert self.clock.timer_names() == []
+        assert len(self.handler) == 0
+
+    def test_set_multiple_time_alerts(self):
+        # Arrange
+        alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
+        alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
+
+        # Act
+        self.clock.set_time_alert("TEST_ALERT1", alert_time1)
+        self.clock.set_time_alert("TEST_ALERT2", alert_time2)
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(300))
+
+        # Assert
+        assert self.clock.timer_names() == []
+        assert len(events) == 2
+
+    def test_set_timer_with_immediate_start_time(self):
+        # Arrange
+        name = "TEST_TIMER"
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=timedelta(milliseconds=100),
+            start_time=None,
+            stop_time=None,
+        )
+
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(400))
+
+        # Assert
+        assert self.clock.timer_names() == [name]
+        assert len(events) == 4
+        assert events[0].event.event_timestamp_ns == 100_000_000
+        assert events[1].event.event_timestamp_ns == 200_000_000
+        assert events[2].event.event_timestamp_ns == 300_000_000
+        assert events[3].event.event_timestamp_ns == 400_000_000
+        assert events[0].event.event_timestamp == datetime(
+            1970, 1, 1, 0, 0, 0, 100000, tzinfo=pytz.utc
+        )
+        assert events[1].event.event_timestamp == datetime(
+            1970, 1, 1, 0, 0, 0, 200000, tzinfo=pytz.utc
+        )
+        assert events[2].event.event_timestamp == datetime(
+            1970, 1, 1, 0, 0, 0, 300000, tzinfo=pytz.utc
+        )
+        assert events[3].event.event_timestamp == datetime(
+            1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc
+        )
+
+    def test_set_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=None,
+            stop_time=None,
+        )
+
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(400))
+
+        # Assert
+        assert self.clock.timer_names() == [name]
+        assert len(events) == 4
+
+    def test_set_timer_with_stop_time(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            stop_time=self.clock.utc_now() + timedelta(milliseconds=300),
+        )
+
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(300))
+
+        # Assert
+        assert self.clock.timer_names() == []
+        assert len(events) == 3
+
+    def test_cancel_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=self.clock.utc_now() + timedelta(milliseconds=10),
+            stop_time=None,
+        )
+
+        # Act
+        self.clock.cancel_timer(name)
+
+        # Assert
+        assert self.clock.timer_names() == []
+
+    def test_set_repeating_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+
+        # Act
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=self.clock.utc_now(),
+            stop_time=None,
+        )
+
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(400))
+
+        # Assert
+        assert self.clock.timer_names() == [name]
+        assert len(events) == 4
+
+    def test_cancel_repeating_timer(self):
+        # Arrange
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+        start_time = self.clock.utc_now()
+        stop_time = start_time + timedelta(seconds=5)
+
+        self.clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=start_time,
+            stop_time=stop_time,
+        )
+
+        # Act
+        self.clock.cancel_timer(name)
+
+        # Assert
+        assert self.clock.timer_names() == []
+
+    def test_set_two_repeating_timers(self):
+        # Arrange
+        start_time = self.clock.utc_now()
+        interval = timedelta(milliseconds=100)
+
+        # Act
+        self.clock.set_timer(
+            name="TEST_TIMER1",
+            interval=interval,
+            start_time=self.clock.utc_now(),
+            stop_time=None,
+        )
+
+        self.clock.set_timer(
+            name="TEST_TIMER2",
+            interval=interval,
+            start_time=self.clock.utc_now(),
+            stop_time=None,
+        )
+
+        events = self.clock.advance_time(to_time_ns=millis_to_nanos(500))
+
+        # Assert
+        assert len(events) == 10
+        assert self.clock.utc_now() == start_time + timedelta(milliseconds=500)
+        assert self.clock.timestamp_ns() == 500_000_000
+
     def test_instantiate_has_expected_time_and_properties(self):
         # Arrange
         initial_ns = 42_000_000
@@ -86,7 +341,7 @@ class TestTestClock:
         assert clock.timestamp_ns() == initial_ns
         assert clock.is_test_clock
 
-    def test_utc_now_returns_expected_datetime(self):
+    def test_timestamp_ns_returns_expected_datetime(self):
         # Arrange
         clock = TestClock()
 
@@ -146,24 +401,6 @@ class TestTestClock:
         with pytest.raises(ValueError):
             clock.advance_time(-1_000_000_000)
 
-    def test_local_now(self):
-        # Arrange
-        clock = TestClock()
-
-        # Act
-        result = clock.local_now(pytz.timezone("Australia/Sydney"))
-
-        assert str(result) == "1970-01-01 10:00:00+10:00"
-
-    def test_delta(self):
-        # Arrange
-        clock = TestClock()
-
-        # Act
-        events = clock.delta(UNIX_EPOCH - timedelta(minutes=9))
-
-        assert events == timedelta(minutes=9)
-
     def test_cancel_timer_when_no_timers_does_nothing(self):
         # Arrange
         clock = TestClock()
@@ -186,7 +423,7 @@ class TestTestClock:
         assert clock.timer_names() == []
         assert clock.timer_count == 0
 
-    def test_set_time_alert(self):
+    def test_set_time_alert2(self):
         # Arrange
         clock = TestClock()
         name = "TEST_ALERT"
@@ -239,7 +476,7 @@ class TestTestClock:
         assert clock.timer_names() == []
         assert clock.timer_count == 0
 
-    def test_set_timer(self):
+    def test_set_timer2(self):
         # Arrange
         clock = TestClock()
         name = "TEST_TIMER"
@@ -399,7 +636,7 @@ class TestLiveClockWithThreadTimer:
 
         # Assert
         assert type(result) == datetime
-        assert str(result).endswith("+11:00")
+        assert str(result).endswith("+11:00") or str(result).endswith("+10:00")
 
     def test_delta(self):
         # Arrange

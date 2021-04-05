@@ -488,10 +488,10 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._clients.get(command.venue.first())
+        cdef ExecutionClient client = self._clients.get(command.instrument_id.venue.first())
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.venue.first()}, {command}.")
+                            f"No client registered for {command.instrument_id.venue.first()}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
@@ -695,8 +695,11 @@ cdef class ExecutionEngine(Component):
 
             # Set the correct ClientOrderId for the event
             event.cl_ord_id = cl_ord_id
-            self._log.info(f"{repr(cl_ord_id)} was found in cache and "
-                           f"applying event to order with {repr(order.id)}.", LogColor.GREEN)
+            self._log.info(
+                f"{repr(cl_ord_id)} was found in cache and "
+                f"applying event to order with {repr(order.id)}.",
+                color=LogColor.GREEN,
+            )
 
         if isinstance(event, OrderFilled):
             # The StrategyId needs to be confirmed prior to the PositionId.

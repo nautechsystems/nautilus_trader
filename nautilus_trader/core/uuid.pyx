@@ -67,7 +67,6 @@ cdef class UUID:
 
         # Set UUID 128-bit integer value
         self.int_val = int.from_bytes(value, byteorder="big")
-        assert 0 <= self.int_val < 1 << 128, "int is out of range (need a 128-bit value)"
 
         # Construct hex string from integer value
         cdef str hex_str = '%032x' % self.int_val
@@ -76,10 +75,10 @@ cdef class UUID:
         self.value = '%s-%s-%s-%s-%s' % (hex_str[:8], hex_str[8:12], hex_str[12:16], hex_str[16:20], hex_str[20:])
 
     def __eq__(self, UUID other) -> bool:
-        return self.value == other.value
+        return self.int_val == other.int_val
 
     def __ne__(self, UUID other) -> bool:
-        return self.value != other.value
+        return self.int_val != other.int_val
 
     # Q. What's the value of being able to sort UUIDs?
     # A. Use them as keys in a B-Tree or similar mapping.

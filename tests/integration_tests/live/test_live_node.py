@@ -33,9 +33,6 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             },
             "logging": {
                 "log_level_console": "INF",
-                "log_level_file": "DBG",
-                "log_level_store": "WRN",
-                "run_in_process": False,  # Avoid pytest hanging on multiprocessing resources
             },
             "exec_database": {
                 "type": "in-memory",
@@ -76,9 +73,6 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             },
             "logging": {
                 "log_level_console": "INF",
-                "log_level_file": "DBG",
-                "log_level_store": "WRN",
-                "run_in_process": False,  # Avoid pytest hanging on multiprocessing resources
             },
             "exec_database": {
                 "type": "redis",
@@ -127,9 +121,6 @@ class TradingNodeOperationTests(unittest.TestCase):
             },
             "logging": {
                 "log_level_console": "INF",
-                "log_level_file": "DBG",
-                "log_level_store": "WRN",
-                "run_in_process": False,  # Avoid pytest hanging on multiprocessing resources
             },
             "exec_database": {
                 "type": "in-memory",

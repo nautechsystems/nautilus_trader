@@ -19,7 +19,7 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -49,7 +49,7 @@ class TestLiveRiskEngine:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
@@ -116,7 +116,7 @@ class TestLiveRiskEngine:
         self.risk_engine.start()
 
         # Assert
-        assert True
+        assert True  # No exceptions raised
         self.risk_engine.stop()
 
     def test_get_event_loop_returns_expected_loop(self):

@@ -34,6 +34,7 @@ cdef class LiveDataEngine(DataEngine):
     """
     Provides a high-performance asynchronous live data engine.
     """
+    _sentinel = None
 
     def __init__(
         self,
@@ -261,10 +262,7 @@ cdef class LiveDataEngine(DataEngine):
     cpdef void _on_stop(self) except *:
         if self.is_running:
             self.is_running = False
-            self._data_queue.put_nowait(None)     # Sentinel message pattern
-            self._message_queue.put_nowait(None)  # Sentinel message pattern
-            self._log.debug(f"Sentinel message placed on data queue.")
-            self._log.debug(f"Sentinel message placed on message queue.")
+            self._enqueue_sentinels()
 
     async def _run_data_queue(self):
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
@@ -304,3 +302,9 @@ cdef class LiveDataEngine(DataEngine):
                                   f"with {self.message_qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
+
+    cdef inline void _enqueue_sentinels(self):
+        self._data_queue.put_nowait(self._sentinel)
+        self._message_queue.put_nowait(self._sentinel)
+        self._log.debug(f"Sentinel message placed on data queue.")
+        self._log.debug(f"Sentinel message placed on message queue.")

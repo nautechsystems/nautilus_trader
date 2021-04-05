@@ -41,6 +41,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
     """
+    _sentinel = None
 
     def __init__(
         self,
@@ -143,13 +144,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         }  # type: dict[ClientOrderId, Order]
 
         if not active_orders:
-            self._log.info(f"State reconciled.", LogColor.GREEN)
+            self._log.info(f"State reconciled.", color=LogColor.GREEN)
             return True  # Execution states reconciled
 
         cdef int count = len(active_orders)
         self._log.info(
             f"Reconciling state: {count} active order{'s' if count > 1 else ''}...",
-            LogColor.BLUE,
+            color=LogColor.BLUE,
         )
 
         # Initialize order state map
@@ -160,7 +161,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Build order state map
         cdef Order order
         for order in active_orders.values():
-            name = order.venue.first()
+            name = order.instrument_id.venue.first()
             if name in client_orders:
                 client_orders[name].append(order)
             else:
@@ -196,7 +197,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
             resolved = True
             for order in active_orders.values():
-                name = order.venue.first()
+                name = order.instrument_id.venue.first()
                 report = client_mass_status[name].order_reports().get(order.id)
                 if report is None:
                     return False  # Will never resolve
@@ -209,7 +210,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 break
             await asyncio.sleep(0.001)  # One millisecond sleep
 
-        self._log.info(f"State reconciled.", LogColor.GREEN)
+        self._log.info(f"State reconciled.", color=LogColor.GREEN)
         return True  # Execution states reconciled
 
     cpdef void kill(self) except *:
@@ -290,8 +291,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cpdef void _on_stop(self) except *:
         if self.is_running:
             self.is_running = False
-            self._queue.put_nowait(None)  # Sentinel message pattern
-            self._log.debug(f"Sentinel message placed on message queue.")
+            self._enqueue_sentinel()
 
     async def _run(self):
         self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
@@ -313,3 +313,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
+
+    cdef inline void _enqueue_sentinel(self):
+        self._queue.put_nowait(self._sentinel)
+        self._log.debug(f"Sentinel message placed on message queue.")

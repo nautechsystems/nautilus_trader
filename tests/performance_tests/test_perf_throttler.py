@@ -16,7 +16,7 @@
 from datetime import timedelta
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.throttler import Throttler
 from tests.test_kit.performance import PerformanceHarness
 
@@ -25,7 +25,7 @@ class TestThrottlerPerformance:
     def setup(self):
         # Fixture setup
         self.clock = TestClock()
-        self.logger = TestLogger(self.clock, bypass_logging=True)
+        self.logger = Logger(self.clock, bypass_logging=True)
 
         self.handler = []
         self.throttler = Throttler(

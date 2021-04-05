@@ -21,7 +21,7 @@ import redis
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
@@ -57,7 +57,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
         self.trader_id = TraderId("TESTER", "000")
 
         self.strategy = TradingStrategy(order_id_tag="001")
@@ -556,7 +556,7 @@ class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY", self.venue)
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
         data.add_bars(

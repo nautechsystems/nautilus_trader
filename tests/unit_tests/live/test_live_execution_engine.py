@@ -20,7 +20,7 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
@@ -57,7 +57,7 @@ class TestLiveExecutionEngine:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = TestStubs.account_id()
@@ -363,7 +363,7 @@ class TestLiveExecutionEngine:
             self.engine.stop()
 
             # Assert
-            assert True  # Does not throw exception - logs: State reconciled.
+            assert True  # No exceptions raised
 
         self.loop.run_until_complete(run_test())
 

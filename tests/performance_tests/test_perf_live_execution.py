@@ -21,7 +21,7 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -48,9 +48,9 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock, bypass_logging=True)
-
         self.trader_id = TraderId("TESTER", "000")
+        self.logger = Logger(self.clock, bypass_logging=True)
+
         self.account_id = AccountId("BINANCE", "001")
 
         self.portfolio = Portfolio(

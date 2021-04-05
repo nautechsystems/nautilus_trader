@@ -26,9 +26,9 @@ class TestObjectCache:
 
         # Act
         # Assert
-        assert str == cache.type_key
-        assert InstrumentId == cache.type_value
-        assert [] == cache.keys()
+        assert cache.type_key == str
+        assert cache.type_value == InstrumentId
+        assert cache.keys() == []
 
     @pytest.mark.parametrize(
         "value,ex",
@@ -58,8 +58,8 @@ class TestObjectCache:
         result = cache.get(instrument_id)
 
         # Assert
-        assert instrument_id == str(result)
-        assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
+        assert str(result) == instrument_id
+        assert cache.keys() == ["AUD/USD.SIM,FX,SPOT"]
 
     def test_get_from_cache(self):
         # Arrange
@@ -73,9 +73,9 @@ class TestObjectCache:
         result2 = cache.get(instrument_id)
 
         # Assert
-        assert instrument_id == str(result1)
+        assert str(result1) == instrument_id
         assert id(result1) == id(result2)
-        assert ["AUD/USD.SIM,FX,SPOT"] == cache.keys()
+        assert cache.keys() == ["AUD/USD.SIM,FX,SPOT"]
 
     def test_keys_when_cache_empty_returns_empty_list(self):
         # Arrange
@@ -97,4 +97,4 @@ class TestObjectCache:
         cache.clear()
 
         # Assert
-        assert [] == cache.keys()
+        assert cache.keys() == []

@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
-
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef str RECV
@@ -31,13 +29,11 @@ cdef str RES
 
 
 cpdef enum LogLevel:
-    VERBOSE = 1,
-    DEBUG = 2,
-    INFO = 3,
-    WARNING = 4,
-    ERROR = 5,
-    CRITICAL = 6,
-    FATAL = 7,
+    DEBUG = 10,
+    INFO = 20,
+    WARNING = 30,
+    ERROR = 40,
+    CRITICAL = 50,
 
 
 cpdef enum LogColor:
@@ -57,80 +53,44 @@ cdef class LogLevelParser:
     cdef LogLevel from_str(str value)
 
 
-cdef class LogMessage:
-    cdef readonly datetime timestamp
-    """The log message timestamp.\n\n:returns: `datetime`"""
-    cdef readonly LogLevel level
-    """The log level.\n\n:returns: `LogLevel` (Enum)"""
-    cdef readonly LogColor color
-    """The log text color.\n\n:returns: `LogColor` (Enum)"""
-    cdef readonly str text
-    """The log text.\n\n:returns: `str`"""
-    cdef readonly int64_t thread_id
-    """The thread identifier.\n\n:returns: `int64`"""
-
-    cdef inline str as_string(self)
-
-
 cdef class Logger:
-    cdef LogLevel _log_level_console
-    cdef LogLevel _log_level_file
-    cdef LogLevel _log_level_store
-    cdef bint _console_prints
-    cdef bint _log_thread
-    cdef bint _log_to_file
-    cdef str _log_file_dir
-    cdef str _log_file_path
-    cdef list _log_store
-    cdef object _log_file_handler
-    cdef object _logger
+    cdef Clock _clock
+    cdef LogLevel _log_level_stdout
+    cdef LogLevel _log_level_raw
 
-    cdef readonly str name
-    """The loggers name.\n\n:returns: `str`"""
-    cdef readonly bint bypass_logging
+    cdef readonly TraderId trader_id
+    """The loggers trader identifier.\n\n:returns: `TraderId`"""
+    cdef readonly UUID system_id
+    """The loggers system identifier.\n\n:returns: `UUID`"""
+    cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
-    cdef readonly Clock clock
-    """The loggers clock.\n\n:returns: `Clock`"""
 
-    cpdef str get_log_file_dir(self)
-    cpdef str get_log_file_path(self)
-    cpdef list get_log_store(self)
-    cpdef void change_log_file_name(self, str name) except *
-    cpdef void log(self, LogMessage message) except *
-    cpdef void clear_log_store(self) except *
+    cdef void log_c(self, dict record) except *
+    cdef inline dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
 
-    cpdef void _log(self, LogMessage message) except *
-    cdef str _format_output(self, LogMessage message)
-    cdef void _in_memory_log_store(self, LogLevel level, str text) except *
-    cdef void _print_to_console(self, LogLevel level, str text) except *
+    cdef inline void _log(self, dict record) except *
+    cdef inline str _format_record(self, LogLevel level, LogColor color, dict record)
 
 
 cdef class LoggerAdapter:
     cdef Logger _logger
 
-    cdef readonly str component_name
+    cdef readonly str component
     """The loggers component name.\n\n:returns: `str`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void verbose(self, str message, LogColor color=*) except *
-    cpdef void debug(self, str message, LogColor color=*) except *
-    cpdef void info(self, str message, LogColor color=*) except *
-    cpdef void warning(self, str message) except *
-    cpdef void error(self, str message) except *
-    cpdef void critical(self, str message) except *
-    cpdef void exception(self, ex) except *
-    cdef inline void _send_to_logger(self, LogLevel level, LogColor color, str message) except *
-    cdef inline str _format_message(self, str message)
+    cpdef void debug(self, str msg, dict annotations=*) except *
+    cpdef void info(self, str msg, LogColor color=*, dict annotations=*) except *
+    cpdef void warning(self, str msg, dict annotations=*) except *
+    cpdef void error(self, str msg, dict annotations=*) except *
+    cpdef void critical(self, str msg, dict annotations=*) except *
+    cpdef void exception(self, ex, dict annotations=*) except *
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
 cpdef void log_memory(LoggerAdapter logger) except *
-
-
-cdef class TestLogger(Logger):
-    pass
 
 
 cdef class LiveLogger(Logger):

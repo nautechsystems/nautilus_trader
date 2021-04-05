@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import UUID
 
 
-class UUIDFactoryTests(unittest.TestCase):
+class TestUUIDFactory:
     def test_factory_returns_unique_uuids(self):
         # Arrange
         factory = UUIDFactory()
@@ -29,6 +27,6 @@ class UUIDFactoryTests(unittest.TestCase):
         result2 = factory.generate()
         result3 = factory.generate()
 
-        self.assertEqual(UUID, type(result1))
-        self.assertNotEqual(result1, result2)
-        self.assertNotEqual(result2, result3)
+        assert type(result1) == UUID
+        assert result1 != result2
+        assert result2 != result3

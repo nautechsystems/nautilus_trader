@@ -108,18 +108,18 @@ class TradingNode:
         self._load_strategy_state = config_strategy.get("load_state", True)
         self._save_strategy_state = config_strategy.get("save_state", True)
 
-        # Components
-        self._uuid_factory = UUIDFactory()
+        # Setup loop
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
-        self._clock = LiveClock(loop=self._loop)
+        self._loop.set_debug(config_system.get("loop_debug", False))
 
+        # Components
+        self._clock = LiveClock(loop=self._loop)
+        self._uuid_factory = UUIDFactory()
+        self.system_id = self._uuid_factory.generate()
         self.created_time = self._clock.utc_now()
         self._is_running = False
-
-        # Uncomment for debugging
-        # self._loop.set_debug(True)  # TODO: Development
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -128,25 +128,18 @@ class TradingNode:
         )
 
         # Setup logging
+        level_stdout = LogLevelParser.from_str_py(config_log.get("level_stdout"))
+
         self._logger = LiveLogger(
             loop=self._loop,
             clock=self._clock,
-            name=self.trader_id.value,
-            level_console=LogLevelParser.from_str_py(
-                config_log.get("log_level_console")
-            ),
-            level_file=LogLevelParser.from_str_py(config_log.get("log_level_file")),
-            level_store=LogLevelParser.from_str_py(config_log.get("log_level_store")),
-            run_in_process=config_log.get(
-                "run_in_process", True
-            ),  # Run logger in a separate process
-            log_thread=config_log.get("log_thread_id", False),
-            log_to_file=config_log.get("log_to_file", False),
-            log_file_dir=config_log.get("log_file_dir", ""),
+            trader_id=self.trader_id,
+            system_id=self.system_id,
+            level_stdout=level_stdout,
         )
 
         self._log = LoggerAdapter(
-            component_name=self.__class__.__name__,
+            component=self.__class__.__name__,
             logger=self._logger,
         )
 
@@ -155,6 +148,8 @@ class TradingNode:
 
         self._setup_loop()  # Requires the logger to be initialized
 
+        # Build platform
+        # ----------------------------------------------------------------------
         self.portfolio = Portfolio(
             clock=self._clock,
             logger=self._logger,

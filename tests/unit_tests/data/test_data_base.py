@@ -25,8 +25,8 @@ from tests.test_kit.stubs import TestStubs
 
 
 SIM = Venue("SIM")
-USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class DataTypeTests(unittest.TestCase):

@@ -46,7 +46,7 @@ cdef class ExecutionDatabase:
 
         """
         self.trader_id = trader_id
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
 
         self._log.info("Initialized.")
 
