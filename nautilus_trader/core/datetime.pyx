@@ -49,6 +49,7 @@ if lround == NULL:
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+# https://en.wikipedia.org/wiki/Unix_time
 cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 # Time unit conversion constants

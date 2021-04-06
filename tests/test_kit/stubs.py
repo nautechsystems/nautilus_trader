@@ -53,6 +53,7 @@ from nautilus_trader.model.tick import TradeTick
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+# https://en.wikipedia.org/wiki/Unix_time
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
