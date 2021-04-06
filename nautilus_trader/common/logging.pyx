@@ -558,14 +558,14 @@ cdef class LiveLogger(Logger):
             try:
                 self._queue.put_nowait(record)
             except asyncio.QueueFull:
-                record = self.create_record(
+                blocking = self.create_record(
                     level=LogLevel.WARNING,
                     color=LogColor.YELLOW,
                     component=type(self).__name__,
                     msg=f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
                 )
 
-                self._log(record)
+                self._log(blocking)
                 self._loop.create_task(self._queue.put(record))  # Blocking until qsize reduces
         else:
             # If event loop is not running then pass message directly to the
