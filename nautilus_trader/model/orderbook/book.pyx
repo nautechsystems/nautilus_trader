@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from operator import itemgetter
 
 from tabulate import tabulate
 
@@ -124,6 +125,14 @@ cdef class OrderBook:
 
         """
         self._delete(order=order)
+
+    cpdef void apply_operation(self, OrderBookOperation operation) except *:
+        if operation.type == OrderBookOperationType.ADD:
+            self.add(order=operation.order)
+        elif operation.type == OrderBookOperationType.UPDATE:
+            self.update(order=operation.order)
+        elif operation.type == OrderBookOperationType.DELETE:
+            self.delete(order=operation.order)
 
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
         """
@@ -379,34 +388,30 @@ cdef class OrderBook:
         else:
             return None
 
-    cpdef str pprint(self, int num_levels=3):
-        levels = reversed(
-            [
-                lvl
-                for lvl in self.bids.levels[-num_levels:]
-                           + self.asks.levels[:num_levels]
-            ]
-        )
+    cpdef str pprint(self, int num_levels=3, show='volume'):
+        levels = [(lvl.price(), lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]]
+        levels = list(reversed(sorted(levels, key=itemgetter(0))))
+        print(levels)
         data = [
             {
                 "bids": [
-                            order.id
+                            getattr(order, show)
                             for order in level.orders
                             if level.price() in self.bids.prices()
                         ]
                         or None,
                 "price": level.price(),
                 "asks": [
-                            order.id
+                            getattr(order, show)
                             for order in level.orders
                             if level.price() in self.asks.prices()
                         ]
                         or None,
             }
-            for level in levels
+            for _, level in levels
         ]
         return tabulate(
-            data, headers="keys", numalign="center", floatfmt=".2f", tablefmt="fancy"
+            data, headers="keys", numalign="center", floatfmt=".4f", tablefmt="fancy"
         )
 
 
@@ -713,7 +718,6 @@ cdef class OrderBookOperations(OrderBookData):
 
         """
         super().__init__(instrument_id, timestamp_ns)
-
         self.level = level
         self.ops = ops
 

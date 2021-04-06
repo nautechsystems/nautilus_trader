@@ -12,15 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pandas as pd
 import pytest
 
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderBookOperationType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookOperation
+from nautilus_trader.model.orderbook.book import OrderBookOperations
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
@@ -75,7 +77,13 @@ def empty_book():
 @pytest.fixture(scope="function")
 def sample_book():
     ob = L3OrderBook(TestStubs.audusd_id())
-    orders = [Order()]
+    orders = [
+        Order(price=0.900, volume=20, side=OrderSide.SELL),
+        Order(price=0.887, volume=10, side=OrderSide.SELL),
+        Order(price=0.886, volume=5, side=OrderSide.SELL),
+        Order(price=0.830, volume=4, side=OrderSide.BUY),
+        Order(price=0.820, volume=1, side=OrderSide.BUY),
+    ]
     for order in orders:
         ob.add(order)
     return ob
@@ -92,6 +100,18 @@ def test_pprint_when_no_orders():
     result = ob.pprint()
 
     assert "" == result
+
+
+def test_pprint_full_book(sample_book):
+    result = sample_book.pprint()
+    expected = """bids     price   asks
+------  -------  ------
+        0.9000   [20.0]
+        0.8870   [10.0]
+        0.8860   [5.0]
+[4.0]   0.8300
+[1.0]   0.8200"""
+    assert expected == result
 
 
 def test_add(empty_book):
@@ -123,6 +143,37 @@ def test_check_integrity_deep(empty_book):
     empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
     empty_book.add(Order(price=5, volume=5, side=OrderSide.BUY))
     empty_book.check_integrity()
+
+
+def test_orderbook_operation(empty_book):
+    clock = TestClock()
+    op = OrderBookOperation(
+        op_type=OrderBookOperationType.UPDATE,
+        order=Order(
+            0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
+        ),
+        timestamp_ns=clock.timestamp(),
+    )
+    empty_book.apply_operation(op)
+    assert empty_book.best_ask_price() == 0.5814
+
+
+def test_orderbook_operations(empty_book):
+    op = OrderBookOperation(
+        op_type=OrderBookOperationType.UPDATE,
+        order=Order(
+            0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
+        ),
+        timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+    )
+    ops = OrderBookOperations(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L2,
+        ops=[op],
+        timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+    )
+    empty_book.apply_operations(ops)
+    assert empty_book.best_ask_price() == 0.5814
 
 
 # def test_auction_match_match_orders():
