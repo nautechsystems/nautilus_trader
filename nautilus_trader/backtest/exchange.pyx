@@ -184,7 +184,8 @@ cdef class SimulatedExchange:
         self._market_bids = {}          # type: dict[InstrumentId, Price]
         self._market_asks = {}          # type: dict[InstrumentId, Price]
 
-        self._working_orders = {}       # type: dict[ClientOrderId, Order]
+        self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
+        self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
         self._child_orders = {}         # type: dict[ClientOrderId, list[Order]]
         self._oco_orders = {}           # type: dict[ClientOrderId, ClientOrderId]
@@ -393,6 +394,7 @@ cdef class SimulatedExchange:
         self._books.clear()
         self._market_bids.clear()
         self._market_asks.clear()
+        self._instrument_orders.clear()
         self._working_orders.clear()
         self._position_index.clear()
         self._child_orders.clear()
@@ -619,6 +621,10 @@ cdef class SimulatedExchange:
             )
             return  # Rejected the cancel order command
 
+        cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
+        if instrument_orders is not None:
+            instrument_orders.pop(order.client_order_id)
+
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
             order.account_id,
@@ -787,7 +793,7 @@ cdef class SimulatedExchange:
                 return  # Invalid price
 
         # Order is valid and accepted
-        self._working_orders[order.client_order_id] = order
+        self._add_order(order)
         self._accept_order(order)
 
         # Check for immediate fill
@@ -810,7 +816,7 @@ cdef class SimulatedExchange:
             return  # Invalid price
 
         # Order is valid and accepted
-        self._working_orders[order.client_order_id] = order
+        self._add_order(order)
         self._accept_order(order)
 
     cdef inline void _process_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *:
@@ -823,7 +829,7 @@ cdef class SimulatedExchange:
             return  # Invalid price
 
         # Order is valid and accepted
-        self._working_orders[order.client_order_id] = order
+        self._add_order(order)
         self._accept_order(order)
 
     cdef inline void _update_limit_order(
@@ -938,6 +944,20 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(updated)
 
+    cdef inline void _add_order(self, PassiveOrder order) except *:
+        self._working_orders[order.client_order_id] = order
+        cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
+        if instrument_orders is None:
+            instrument_orders = {}
+            self._instrument_orders[order.instrument_id] = instrument_orders
+        instrument_orders[order.client_order_id] = order
+
+    cdef inline void _delete_order(self, Order order) except *:
+        self._working_orders.pop(order.client_order_id, None)
+        cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
+        if instrument_orders is not None:
+            instrument_orders.pop(order.client_order_id, None)
+
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
     cdef inline void _iterate_matching_engine(
@@ -946,10 +966,12 @@ cdef class SimulatedExchange:
         Price ask,
         int64_t timestamp_ns,
     ) except *:
+        cdef dict working_orders = self._instrument_orders.get(instrument_id)
+        if working_orders is None:
+            return  # No orders to iterate
+
         cdef PassiveOrder order
-        for order in self._working_orders.copy().values():  # Copy dict for safe loop
-            if order.instrument_id != instrument_id:
-                continue  # Order is for a different instrument_id
+        for order in working_orders.copy().values():  # Copy dict for safe loop
             if not order.is_working_c():
                 continue  # Orders state has changed since the loop started
 
@@ -958,7 +980,7 @@ cdef class SimulatedExchange:
 
             # Check for order expiry (if expire time then compare nanoseconds)
             if order.expire_time and timestamp_ns >= order.expire_time_ns:
-                self._working_orders.pop(order.client_order_id, None)
+                self._delete_order(order)
                 self._expire_order(order)
 
     cdef inline void _match_order(self, PassiveOrder order, Price bid, Price ask) except *:
@@ -1002,7 +1024,7 @@ cdef class SimulatedExchange:
                 # Check for immediate fill
                 if self._is_limit_marketable(order.side, order.price, bid, ask):
                     if order.is_post_only:  # Would be liquidity taker
-                        del self._working_orders[order.client_order_id]  # Remove order from working orders
+                        self._delete_order(order)  # Remove order from working orders
                         self._reject_order(
                             order,
                             f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
@@ -1084,7 +1106,7 @@ cdef class SimulatedExchange:
         Price fill_px,
         LiquiditySide liquidity_side,
     ) except *:
-        self._working_orders.pop(order.client_order_id, None)  # Remove order from working orders if found
+        self._delete_order(order)  # Remove order from working orders (if found)
 
         # Query if there is an existing position for this order
         cdef PositionId position_id = self._position_index.get(order.client_order_id)
@@ -1213,6 +1235,8 @@ cdef class SimulatedExchange:
         cdef PassiveOrder oco_order = self._working_orders.pop(oco_client_order_id, None)
         if oco_order is None:
             return  # No linked order
+
+        self._delete_order(oco_order)
 
         # Reject any latent bracket child orders first
         cdef ClientOrderId bracket_order_id
