@@ -1,3 +1,21 @@
+# NautilusTrader 1.115.0 Beta - Release Notes
+
+**This release includes substantial breaking changes.**
+
+Further standardization of naming conventions along with internal refinements
+and fixes.
+
+## Breaking Changes
+- Rename `AssetClass.STOCK` to `AssetClass.EQUITY`.
+
+## Enhancements
+- Add `AssetClass.METAL` and `AssetClass.ENERGY`.
+
+## Fixes
+- LiveLogger log message when blocking.
+
+---
+
 # NautilusTrader 1.114.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**
