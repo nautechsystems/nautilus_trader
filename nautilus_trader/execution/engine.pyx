@@ -920,7 +920,7 @@ cdef class ExecutionEngine(Component):
                             f"{repr(strategy_id)} not registered for {event}.")
             return  # Cannot send to strategy
 
-        strategy.handle_event_c(event)
+        strategy.handle_event(event)
 
     cdef inline void _send_to_risk_engine(self, Event event) except *:
         # If a `RiskEngine` is registered then send the event there
