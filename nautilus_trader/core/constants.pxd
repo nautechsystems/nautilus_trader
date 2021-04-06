@@ -24,11 +24,11 @@ cdef str OPTIONS
 cdef str TIMESTAMP
 cdef str VENUE
 cdef str INSTRUMENT_ID
-cdef str ORDER_ID
 cdef str TRADER_ID
 cdef str STRATEGY_ID
 cdef str ACCOUNT_ID
 cdef str CLIENT_ORDER_ID
+cdef str VENUE_ORDER_ID
 cdef str INIT_ID
 cdef str LABEL
 cdef str SUBMITTED_TIMESTAMP

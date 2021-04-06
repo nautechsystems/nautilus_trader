@@ -36,10 +36,10 @@ from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -603,12 +603,12 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertEqual(
             "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
-            "cl_ord_id=O-19700101-000000-000-001-1, id=1)",
+            "cl_ord_id=O-19700101-000000-000-001-1, venue_order_id=1)",
             str(order),
         )
         self.assertEqual(
             "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
-            "cl_ord_id=O-19700101-000000-000-001-1, id=1)",
+            "cl_ord_id=O-19700101-000000-000-001-1, venue_order_id=1)",
             repr(order),
         )
 
@@ -709,7 +709,7 @@ class OrderTests(unittest.TestCase):
         updated = OrderUpdated(
             self.account_id,
             order.cl_ord_id,
-            OrderId("1"),
+            VenueOrderId("1"),
             Quantity(120000),
             Price("1.00001"),
             0,
@@ -722,7 +722,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
-        self.assertEqual(OrderId("1"), order.id)
+        self.assertEqual(VenueOrderId("1"), order.venue_order_id)
         self.assertEqual(Quantity(120000), order.quantity)
         self.assertEqual(Price("1.00001"), order.price)
         self.assertTrue(order.is_working)
@@ -907,7 +907,7 @@ class OrderTests(unittest.TestCase):
         filled = OrderFilled(
             self.account_id,
             order.cl_ord_id,
-            OrderId("1"),
+            VenueOrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
             StrategyId.null(),
@@ -954,7 +954,7 @@ class OrderTests(unittest.TestCase):
         partially = OrderFilled(
             self.account_id,
             order.cl_ord_id,
-            OrderId("1"),
+            VenueOrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
             StrategyId.null(),

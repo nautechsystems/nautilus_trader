@@ -40,9 +40,9 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -53,9 +53,9 @@ cdef class Order:
     cdef FiniteStateMachine _fsm
 
     cdef readonly ClientOrderId cl_ord_id
-    """The orders client order identifier.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderId id
-    """The order identifier (exchange/broker).\n\n:returns: `OrderId`"""
+    """The client order identifier.\n\n:returns: `ClientOrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue assigned order identifier.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId position_id
     """The position identifier associated with the order.\n\n:returns: `PositionId`"""
     cdef readonly StrategyId strategy_id

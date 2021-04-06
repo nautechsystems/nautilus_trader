@@ -34,11 +34,11 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.order.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
@@ -513,17 +513,19 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger,
         )
 
-        self._order_status_reports = {}  # type: dict[OrderId, OrderStatusReport]
-        self._trades_lists = {}  # type: dict[OrderId, list[ExecutionReport]]
+        self._order_status_reports = {}  # type: dict[VenueOrderId, OrderStatusReport]
+        self._trades_lists = {}  # type: dict[VenueOrderId, list[ExecutionReport]]
 
         self.calls = []
         self.commands = []
 
     def add_order_status_report(self, report: OrderStatusReport) -> None:
-        self._order_status_reports[report.order_id] = report
+        self._order_status_reports[report.venue_order_id] = report
 
-    def add_trades_list(self, order_id: OrderId, trades: List[ExecutionReport]) -> None:
-        self._trades_lists[order_id] = trades
+    def add_trades_list(
+        self, venue_order_id: VenueOrderId, trades: List[ExecutionReport]
+    ) -> None:
+        self._trades_lists[venue_order_id] = trades
 
     def connect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -565,16 +567,16 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self, order: Order
     ) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._order_status_reports[order.id]
+        return self._order_status_reports[order.venue_order_id]
 
     async def generate_exec_reports(
         self,
-        order_id: OrderId,
+        venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: datetime = None,
     ) -> List[ExecutionReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._trades_lists[order_id]
+        return self._trades_lists[venue_order_id]
 
 
 class MockExecutionDatabase(ExecutionDatabase):

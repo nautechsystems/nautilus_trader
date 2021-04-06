@@ -34,9 +34,9 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -124,7 +124,7 @@ cdef class SimulatedExchange:
 
     cdef inline object _get_tick_sizes(self)
     cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
-    cdef inline OrderId _generate_order_id(self, InstrumentId instrument_id)
+    cdef inline VenueOrderId _generate_order_id(self, InstrumentId instrument_id)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
     cdef inline void _submit_order(self, Order order) except *

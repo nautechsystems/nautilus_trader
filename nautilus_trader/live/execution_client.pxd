@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 
 
 cdef class LiveExecutionClientFactory:
@@ -42,11 +42,11 @@ cdef class LiveExecutionClient(ExecutionClient):
     cdef inline void _generate_order_invalid(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, int64_t timestamp_ns) except *
     cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason, int64_t timestamp_ns) except *
-    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, int64_t timestamp_ns) except *
+    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
     cdef inline void _generate_order_filled(
         self,
         ClientOrderId cl_ord_id,
-        OrderId order_id,
+        VenueOrderId venue_order_id,
         ExecutionId execution_id,
         InstrumentId instrument_id,
         OrderSide order_side,
@@ -59,5 +59,5 @@ cdef class LiveExecutionClient(ExecutionClient):
         LiquiditySide liquidity_side,
         int64_t timestamp_ns
     ) except *
-    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, int64_t timestamp_ns) except *
-    cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, int64_t timestamp_ns) except *
+    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *

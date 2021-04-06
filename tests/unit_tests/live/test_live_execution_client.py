@@ -29,11 +29,11 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
@@ -108,7 +108,7 @@ class TestLiveExecutionClient:
             # Arrange
             report = OrderStatusReport(
                 cl_ord_id=ClientOrderId("O-123456"),
-                order_id=OrderId("1"),
+                venue_order_id=VenueOrderId("1"),
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
                 timestamp_ns=0,
@@ -166,7 +166,7 @@ class TestLiveExecutionClient:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELLED,
                 filled_qty=Quantity(0),
                 timestamp_ns=0,
@@ -222,7 +222,7 @@ class TestLiveExecutionClient:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
                 timestamp_ns=0,
@@ -278,7 +278,7 @@ class TestLiveExecutionClient:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
                 timestamp_ns=0,

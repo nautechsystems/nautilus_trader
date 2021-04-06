@@ -30,10 +30,10 @@ from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -72,7 +72,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Cached indexes
         self._index_venue_account = {}        # type: dict[Venue, AccountId]
-        self._index_order_ids = {}            # type: dict[OrderId, ClientOrderId]
+        self._index_venue_order_ids = {}            # type: dict[VenueOrderId, ClientOrderId]
         self._index_order_position = {}       # type: dict[ClientOrderId, PositionId]
         self._index_order_strategy = {}       # type: dict[ClientOrderId, StrategyId]
         self._index_position_strategy = {}    # type: dict[PositionId, StrategyId]
@@ -244,9 +244,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(account_id)} not found in self._cached_accounts")
                 error_count += 1
 
-        for order_id, cl_ord_id in self._index_order_ids.items():
+        for venue_order_id, cl_ord_id in self._index_venue_order_ids.items():
             if cl_ord_id not in self._cached_orders:
-                self._log.error(f"{failure} in _index_order_ids: "
+                self._log.error(f"{failure} in _index_venue_order_ids: "
                                 f"{repr(cl_ord_id)} not found in self._cached_orders")
                 error_count += 1
 
@@ -415,7 +415,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Clearing index...")
 
         self._index_venue_account.clear()
-        self._index_order_ids.clear()
+        self._index_venue_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
@@ -461,9 +461,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef ClientOrderId cl_ord_id
         cdef Order order
         for cl_ord_id, order in self._cached_orders.items():
-            # 1: Build _index_order_ids -> {OrderId, ClientOrderId}
-            if order.id.not_null():
-                self._index_order_ids[order.id] = order.cl_ord_id
+            # 1: Build _index_venue_order_ids -> {VenueOrderId, ClientOrderId}
+            if order.venue_order_id.not_null():
+                self._index_venue_order_ids[order.venue_order_id] = order.cl_ord_id
 
             # 2: Build _index_order_position -> {ClientOrderId, PositionId}
             if order.position_id.not_null():
@@ -653,21 +653,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Raises
         ------
         ValueError
-            If order.id is already contained in the cached_orders.
+            If order.client_order_id is already contained in the cached_orders.
         ValueError
-            If order.id is already contained in the index_orders.
+            If order.client_order_id is already contained in the index_orders.
         ValueError
-            If order.id is already contained in the index_order_position.
+            If order.client_order_id is already contained in the index_order_position.
         ValueError
-            If order.id is already contained in the index_order_strategy.
+            If order.client_order_id is already contained in the index_order_strategy.
 
         """
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
-        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.cl_ord_id", "cached_orders")
-        Condition.not_in(order.cl_ord_id, self._index_orders, "order.cl_ord_id", "index_orders")
-        Condition.not_in(order.cl_ord_id, self._index_order_position, "order.cl_ord_id", "index_order_position")
-        Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.cl_ord_id", "index_order_strategy")
+        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.client_order_id", "cached_orders")
+        Condition.not_in(order.cl_ord_id, self._index_orders, "order.client_order_id", "index_orders")
+        Condition.not_in(order.cl_ord_id, self._index_order_position, "order.client_order_id", "index_order_position")
+        Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.client_order_id", "index_order_strategy")
 
         self._cached_orders[order.cl_ord_id] = order
         self._index_orders.add(order.cl_ord_id)
@@ -810,9 +810,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(order, "order")
 
-        if order.id.not_null():
+        if order.venue_order_id.not_null():
             # Assumes order_id does not change
-            self._index_order_ids[order.id] = order.cl_ord_id
+            self._index_venue_order_ids[order.venue_order_id] = order.cl_ord_id
 
         if order.is_completed_c():
             self._index_orders_completed.add(order.cl_ord_id)
@@ -992,7 +992,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cpdef set order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all client order identifiers with the given query filters.
 
@@ -1015,7 +1015,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         else:
             return self._index_orders.intersection(query)
 
-    cpdef set order_working_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all working client order identifiers with the given query
         filters.
@@ -1039,7 +1039,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         else:
             return self._index_orders_working.intersection(query)
 
-    cpdef set order_completed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all completed client order identifiers with the given query
         filters.
@@ -1158,28 +1158,33 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._cached_orders.get(cl_ord_id)
 
-    cpdef ClientOrderId cl_ord_id(self, OrderId order_id):
+    cpdef ClientOrderId cl_ord_id(self, VenueOrderId venue_order_id):
         """
         Return the client order identifier matching the given order identifier
         (if found).
+
+        Parameters
+        ----------
+        venue_order_id : VenueOrderId
+            The venue assigned order identifier.
 
         Returns
         -------
         ClientOrderId or None
 
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(venue_order_id, "venue_order_id")
 
-        return self._index_order_ids.get(order_id)
+        return self._index_venue_order_ids.get(venue_order_id)
 
-    cpdef OrderId order_id(self, ClientOrderId cl_ord_id):
+    cpdef VenueOrderId venue_order_id(self, ClientOrderId cl_ord_id):
         """
         Return the order identifier matching the given client order identifier
         (if found).
 
         Returns
         -------
-        OrderId or None
+        VenueOrderId or None
 
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
@@ -1187,7 +1192,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef Order order = self._cached_orders.get(cl_ord_id)
         if order is None:
             return None
-        return order.id
+        return order.venue_order_id
 
     cpdef list orders(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
@@ -1205,7 +1210,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_ids(instrument_id, strategy_id)
+        cdef set cl_ord_ids = self.client_order_ids(instrument_id, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders
@@ -1232,7 +1237,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_working_ids(instrument_id, strategy_id)
+        cdef set cl_ord_ids = self.client_order_ids_working(instrument_id, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders_working
@@ -1259,7 +1264,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_completed_ids(instrument_id, strategy_id)
+        cdef set cl_ord_ids = self.client_order_ids_completed(instrument_id, strategy_id)
 
         cdef ClientOrderId cl_ord_id
         cdef list orders_completed
@@ -1463,7 +1468,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.order_ids(instrument_id, strategy_id))
+        return len(self.client_order_ids(instrument_id, strategy_id))
 
     cpdef int orders_working_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
@@ -1481,7 +1486,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.order_working_ids(instrument_id, strategy_id))
+        return len(self.client_order_ids_working(instrument_id, strategy_id))
 
     cpdef int orders_completed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
@@ -1499,7 +1504,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.order_completed_ids(instrument_id, strategy_id))
+        return len(self.client_order_ids_completed(instrument_id, strategy_id))
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """

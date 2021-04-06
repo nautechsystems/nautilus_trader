@@ -43,7 +43,7 @@ cdef class ReportProvider:
 
         Parameters
         ----------
-        orders : dict[OrderId, Order]
+        orders : dict[VenueOrderId, Order]
             The orders for the report.
 
         Returns
@@ -66,7 +66,7 @@ cdef class ReportProvider:
 
         Parameters
         ----------
-        orders : dict[OrderId, Order]
+        orders : dict[VenueOrderId, Order]
             The orders for the report.
 
         Returns
@@ -147,7 +147,7 @@ cdef class ReportProvider:
     cdef dict _order_to_dict(self, Order order):
         return {
             "cl_ord_id": order.cl_ord_id.value,
-            "order_id": order.id.value,
+            "venue_order_id": order.venue_order_id.value,
             "instrument_id": order.instrument_id.value,
             "side": OrderSideParser.to_str(order.side),
             "type": OrderTypeParser.to_str(order.type),

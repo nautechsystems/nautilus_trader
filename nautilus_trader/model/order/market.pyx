@@ -152,7 +152,7 @@ cdef class MarketOrder(Order):
         raise NotImplemented("Cannot update a market order")
 
     cdef void _filled(self, OrderFilled fill) except *:
-        self.id = fill.order_id
+        self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id
         self._execution_ids.append(fill.execution_id)

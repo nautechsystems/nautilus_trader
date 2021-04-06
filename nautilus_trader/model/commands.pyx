@@ -226,7 +226,7 @@ cdef class UpdateOrder(TradingCommand):
             The trader identifier for the command.
         account_id : AccountId
             The account identifier for the command.
-        cl_ord_id : OrderId
+        cl_ord_id : VenueOrderId
             The client order identifier.
         quantity : Quantity
             The quantity for the order (update optional).
@@ -277,7 +277,7 @@ cdef class CancelOrder(TradingCommand):
         TraderId trader_id not None,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         UUID command_id not None,
         int64_t timestamp_ns,
     ):
@@ -294,8 +294,8 @@ cdef class CancelOrder(TradingCommand):
             The account identifier for the command.
         cl_ord_id : ClientOrderId
             The client order identifier to cancel.
-        order_id : OrderId
-            The order identifier to cancel.
+        venue_order_id : VenueOrderId
+            The venue order identifier to cancel.
         command_id : UUID
             The command identifier.
         timestamp_ns : int64
@@ -311,7 +311,7 @@ cdef class CancelOrder(TradingCommand):
         )
 
         self.cl_ord_id = cl_ord_id
-        self.order_id = order_id
+        self.venue_order_id = venue_order_id
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -319,5 +319,5 @@ cdef class CancelOrder(TradingCommand):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
-                f"order_id={self.order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
                 f"command_id={self.id})")

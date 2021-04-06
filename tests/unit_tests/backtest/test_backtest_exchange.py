@@ -42,11 +42,11 @@ from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -655,7 +655,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             trader_id=self.trader_id,
             account_id=self.account_id,
             cl_ord_id=ClientOrderId("O-123456"),
-            order_id=OrderId("001"),
+            venue_order_id=VenueOrderId("001"),
             command_id=self.uuid_factory.generate(),
             timestamp_ns=0,
         )

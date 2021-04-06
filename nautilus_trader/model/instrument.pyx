@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
+
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
@@ -25,6 +26,8 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Quantity
 
 

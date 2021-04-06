@@ -98,7 +98,7 @@ cdef class OrderEvent(Event):
     def __init__(
         self,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -109,8 +109,8 @@ cdef class OrderEvent(Event):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -120,7 +120,7 @@ cdef class OrderEvent(Event):
         super().__init__(event_id, timestamp_ns)
 
         self.cl_ord_id = cl_ord_id
-        self.order_id = order_id
+        self.venue_order_id = venue_order_id
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -176,7 +176,7 @@ cdef class OrderInitialized(OrderEvent):
         """
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),  # Pending assignment by exchange/broker
+            VenueOrderId.null_c(),  # Pending assignment by venue
             event_id,
             timestamp_ns,
         )
@@ -237,7 +237,7 @@ cdef class OrderInvalid(OrderEvent):
         Condition.valid_string(reason, "invalid_reason")
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),  # Never assigned
+            VenueOrderId.null_c(),  # Never assigned
             event_id,
             timestamp_ns,
         )
@@ -289,7 +289,7 @@ cdef class OrderDenied(OrderEvent):
         Condition.valid_string(reason, "denied_reason")
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),  # Never assigned
+            VenueOrderId.null_c(),  # Never assigned
             event_id,
             timestamp_ns,
         )
@@ -306,7 +306,7 @@ cdef class OrderDenied(OrderEvent):
 cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted by the system to the
-    exchange/broker.
+    trading venue.
     """
 
     def __init__(
@@ -336,7 +336,7 @@ cdef class OrderSubmitted(OrderEvent):
         """
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),  # Pending accepted
+            VenueOrderId.null_c(),  # Pending accepted
             event_id,
             timestamp_ns,
         )
@@ -353,7 +353,7 @@ cdef class OrderSubmitted(OrderEvent):
 
 cdef class OrderRejected(OrderEvent):
     """
-    Represents an event where an order has been rejected by the exchange/broker.
+    Represents an event where an order has been rejected by the trading venue.
     """
 
     def __init__(
@@ -392,7 +392,7 @@ cdef class OrderRejected(OrderEvent):
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),  # Not assigned on rejection
+            VenueOrderId.null_c(),  # Not assigned on rejection
             event_id,
             timestamp_ns,
         )
@@ -411,7 +411,7 @@ cdef class OrderRejected(OrderEvent):
 
 cdef class OrderAccepted(OrderEvent):
     """
-    Represents an event where an order has been accepted by the exchange/broker.
+    Represents an event where an order has been accepted by the trading venue.
 
     This event often corresponds to a `NEW` OrdStatus <39> field in FIX
     execution reports.
@@ -426,7 +426,7 @@ cdef class OrderAccepted(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         int64_t accepted_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -440,8 +440,8 @@ cdef class OrderAccepted(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         accepted_ns : int64
             The order accepted time.
         event_id : UUID
@@ -455,10 +455,10 @@ cdef class OrderAccepted(OrderEvent):
             If order_id has a 'NULL' value.
 
         """
-        Condition.true(order_id.not_null(), "order_id was 'NULL'")
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -470,21 +470,21 @@ cdef class OrderAccepted(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
 
 cdef class OrderUpdateRejected(OrderEvent):
     """
     Represents an event where an `UpdateOrder` command has been rejected by the
-    exchange/broker.
+    trading venue.
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         int64_t rejected_ns,
         str response_to not None,
         str reason not None,
@@ -500,8 +500,8 @@ cdef class OrderUpdateRejected(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         rejected_ns : datetime
             The order update rejected time.
         response_to : str
@@ -527,7 +527,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -549,14 +549,14 @@ cdef class OrderUpdateRejected(OrderEvent):
 cdef class OrderCancelRejected(OrderEvent):
     """
     Represents an event where a `CancelOrder` command has been rejected by the
-    exchange/broker.
+    trading venue.
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         int64_t rejected_ns,
         str response_to not None,
         str reason not None,
@@ -572,8 +572,8 @@ cdef class OrderCancelRejected(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         rejected_ns : datetime
             The order cancel rejected time.
         response_to : str
@@ -599,7 +599,7 @@ cdef class OrderCancelRejected(OrderEvent):
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -620,15 +620,14 @@ cdef class OrderCancelRejected(OrderEvent):
 
 cdef class OrderCancelled(OrderEvent):
     """
-    Represents an event where an order has been cancelled with the
-    exchange/broker.
+    Represents an event where an order has been cancelled at the trading venue.
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         int64_t cancelled_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -642,8 +641,8 @@ cdef class OrderCancelled(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         cancelled_ns : int64
             The event order cancelled time.
         event_id : UUID
@@ -657,10 +656,10 @@ cdef class OrderCancelled(OrderEvent):
             If order_id has a 'NULL' value.
 
         """
-        Condition.true(order_id.not_null(), "order_id was 'NULL'")
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -672,20 +671,20 @@ cdef class OrderCancelled(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
 
 cdef class OrderUpdated(OrderEvent):
     """
-    Represents an event where an order has been updated with the exchange/broker.
+    Represents an event where an order has been updated at the trading venue.
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         Quantity quantity not None,
         Price price not None,
         int64_t updated_ns,
@@ -701,8 +700,8 @@ cdef class OrderUpdated(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         quantity : Quantity
             The orders current quantity.
         price : Price
@@ -720,10 +719,10 @@ cdef class OrderUpdated(OrderEvent):
             If order_id has a 'NULL' value.
 
         """
-        Condition.true(order_id.not_null(), "order_id was 'NULL'")
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -737,7 +736,7 @@ cdef class OrderUpdated(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
                 f"qty={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"event_id={self.id})")
@@ -745,14 +744,14 @@ cdef class OrderUpdated(OrderEvent):
 
 cdef class OrderExpired(OrderEvent):
     """
-    Represents an event where an order has expired with the exchange/broker.
+    Represents an event where an order has expired at the trading venue.
     """
 
     def __init__(
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         int64_t expired_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -766,8 +765,8 @@ cdef class OrderExpired(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         expired_ns : int64
             The order expired time.
         event_id : UUID
@@ -781,10 +780,10 @@ cdef class OrderExpired(OrderEvent):
             If order_id has a 'NULL' value.
 
         """
-        Condition.true(order_id.not_null(), "order_id was 'NULL'")
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -796,7 +795,7 @@ cdef class OrderExpired(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
 
@@ -809,7 +808,7 @@ cdef class OrderTriggered(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         int64_t triggered_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -823,8 +822,8 @@ cdef class OrderTriggered(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         triggered_ns : int64
             The order triggered time.
         event_id : UUID
@@ -838,10 +837,10 @@ cdef class OrderTriggered(OrderEvent):
             If order_id has a 'NULL' value.
 
         """
-        Condition.true(order_id.not_null(), "order_id was 'NULL'")
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -853,7 +852,7 @@ cdef class OrderTriggered(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
 
@@ -866,7 +865,7 @@ cdef class OrderFilled(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
         PositionId position_id not None,
         StrategyId strategy_id not None,
@@ -894,8 +893,8 @@ cdef class OrderFilled(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The exchange/broker order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         execution_id : ExecutionId
             The execution identifier.
         position_id : PositionId
@@ -937,12 +936,12 @@ cdef class OrderFilled(OrderEvent):
             If order_id has a 'NULL' value.
 
         """
-        Condition.true(order_id.not_null(), "order_id was 'NULL'")
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         if info is None:
             info = {}
         super().__init__(
             cl_ord_id,
-            order_id,
+            venue_order_id,
             event_id,
             timestamp_ns,
         )
@@ -968,7 +967,7 @@ cdef class OrderFilled(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
                 f"position_id={self.position_id}, "
                 f"strategy_id={self.strategy_id}, "
                 f"instrument_id={self.instrument_id}, "

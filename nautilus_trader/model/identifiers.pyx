@@ -504,7 +504,7 @@ cdef class BracketOrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `OrderId` class.
+        Initialize a new instance of the `VenueOrderId` class.
 
         Parameters
         ----------
@@ -555,21 +555,21 @@ cdef class ClientOrderLinkId(Identifier):
         super().__init__(value)
 
 
-cdef OrderId _NULL_ORDER_ID = OrderId(_NULL_ID)
+cdef VenueOrderId _NULL_ORDER_ID = VenueOrderId(_NULL_ID)
 
-cdef class OrderId(Identifier):
+cdef class VenueOrderId(Identifier):
     """
-    Represents a valid order identifier.
+    Represents a valid venue order identifier.
     """
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `OrderId` class.
+        Initialize a new instance of the `VenueOrderId` class.
 
         Parameters
         ----------
         value : str
-            The exchange/broker assigned order identifier value.
+            The venue assigned order identifier value.
 
         Raises
         ------
@@ -585,7 +585,7 @@ cdef class OrderId(Identifier):
         super().__init__(value)
 
     @staticmethod
-    cdef OrderId null_c():
+    cdef VenueOrderId null_c():
         return _NULL_ORDER_ID
 
     cdef bint is_null(self) except *:
@@ -601,7 +601,7 @@ cdef class OrderId(Identifier):
 
         Returns
         -------
-        OrderId
+        VenueOrderId
 
         """
         return _NULL_ORDER_ID
@@ -621,7 +621,7 @@ cdef class PositionId(Identifier):
         Parameters
         ----------
         value : str
-            The exchange/broker assigned position identifier value.
+            The position identifier value.
 
         Raises
         ------

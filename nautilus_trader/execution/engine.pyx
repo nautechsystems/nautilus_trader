@@ -676,13 +676,13 @@ cdef class ExecutionEngine(Component):
         cdef str event_str
         if order is None:
             self._log.warning(f"{repr(event.cl_ord_id)} was not found in cache "
-                              f"for {repr(event.order_id)} to apply {event}.")
+                              f"for {repr(event.venue_order_id)} to apply {event}.")
 
-            # Search cache for ClientOrderId matching the OrderId
-            cl_ord_id = self.cache.cl_ord_id(event.order_id)
+            # Search cache for ClientOrderId matching the VenueOrderId
+            cl_ord_id = self.cache.cl_ord_id(event.venue_order_id)
             if cl_ord_id is None:
                 self._log.error(f"Cannot apply event to any order: "
-                                f"{repr(event.cl_ord_id)} and {repr(event.order_id)} "
+                                f"{repr(event.cl_ord_id)} and {repr(event.venue_order_id)} "
                                 f"not found in cache.")
                 return  # Cannot process event further
 
@@ -697,7 +697,7 @@ cdef class ExecutionEngine(Component):
             event.cl_ord_id = cl_ord_id
             self._log.info(
                 f"{repr(cl_ord_id)} was found in cache and "
-                f"applying event to order with {repr(order.id)}.",
+                f"applying event to order with {repr(order.venue_order_id)}.",
                 color=LogColor.GREEN,
             )
 
@@ -825,7 +825,7 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split1 = OrderFilled(
             fill.account_id,
             fill.cl_ord_id,
-            fill.order_id,
+            fill.venue_order_id,
             fill.execution_id,
             fill.position_id,
             fill.strategy_id,
@@ -861,7 +861,7 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split2 = OrderFilled(
             fill.account_id,
             ClientOrderId(f"{fill.cl_ord_id.value}F"),
-            fill.order_id,
+            fill.venue_order_id,
             fill.execution_id,
             position_id_flip,
             fill.strategy_id,
