@@ -30,7 +30,7 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry nox --use-feature=2020-resolver
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
