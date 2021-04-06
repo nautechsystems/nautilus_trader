@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 from datetime import datetime
 from decimal import Decimal
@@ -139,7 +140,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._client.client_logout()
         self._log.info("Disconnected.")
 
-    # -- ACCOUNT HANDLERS ------------------------------------------------------------------------------
+# -- ACCOUNT HANDLERS ------------------------------------------------------------------------------
+
     async def connection_account_state(self):
         aws = [
             self._loop.run_in_executor(None, self._get_account_details),
@@ -161,7 +163,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug("Sending get_account_funds request")
         return self._client.account.get_account_funds()
 
-    # -- COMMAND HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+
     # TODO - #  Do want to throttle updates into a bulk update if they're coming faster than x / sec? Maybe this is for risk engine?
     #  We could use some heuristics about the avg network latency and add an optional flag for throttle inserts etc.
 

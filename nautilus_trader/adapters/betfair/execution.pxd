@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
@@ -23,8 +24,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef str _account_currency
     cpdef public dict order_id_to_client_order_id
 
+# -- INTERNAL --------------------------------------------------------------------------------------
 
-    # -- INTERNAL --------------------------------------------------------------------------------------
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef object client(self)
     cpdef LiveExecutionEngine engine(self)
@@ -32,7 +33,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef dict _get_account_details(self)
     cpdef dict _get_account_funds(self)
 
-    # -- EVENTS ----------------------------------------------------------------------------------------
+# -- EVENTS ----------------------------------------------------------------------------------------
+
     # cdef inline void _on_account_state(self, dict event) except *
     # cdef inline void _on_order_status(self, dict event) except *
     # cdef inline void _on_exec_report(self, dict event) except *
