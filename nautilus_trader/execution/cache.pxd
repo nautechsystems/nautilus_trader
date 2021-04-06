@@ -35,7 +35,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef dict _cached_positions
 
     cdef dict _index_venue_account
-    cdef dict _index_order_ids
+    cdef dict _index_venue_order_ids
     cdef dict _index_order_position
     cdef dict _index_order_strategy
     cdef dict _index_position_strategy
@@ -73,7 +73,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id) except *
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId client_order_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position) except *
 
     cpdef void update_account(self, Account account) except *

@@ -16,12 +16,14 @@
 
 cpdef enum AssetClass:
     FX = 1,
-    STOCK = 2,
+    EQUITY = 2,
     COMMODITY = 3,
-    BOND = 4,
-    INDEX = 5,
-    CRYPTO = 6,
-    BETTING = 7,
+    METAL = 4,
+    ENERGY = 5,
+    BOND = 6,
+    INDEX = 7,
+    CRYPTO = 8,
+    BETTING = 9,
 
 
 cdef class AssetClassParser:

@@ -34,9 +34,9 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -124,16 +124,16 @@ cdef class SimulatedExchange:
 
     cdef inline object _get_tick_sizes(self)
     cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
-    cdef inline OrderId _generate_order_id(self, InstrumentId instrument_id)
+    cdef inline VenueOrderId _generate_order_id(self, InstrumentId instrument_id)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
-    cdef inline void _update_order(self, ClientOrderId cl_ord_id, Quantity qty, Price price) except *
-    cdef inline void _cancel_order(self, ClientOrderId cl_ord_id) except *
-    cdef inline void _reject_cancel(self, ClientOrderId cl_ord_id, str response, str reason) except *
-    cdef inline void _reject_update(self, ClientOrderId cl_ord_id, str response, str reason) except *
+    cdef inline void _update_order(self, ClientOrderId client_order_id, Quantity qty, Price price) except *
+    cdef inline void _cancel_order(self, ClientOrderId client_order_id) except *
+    cdef inline void _reject_cancel(self, ClientOrderId client_order_id, str response, str reason) except *
+    cdef inline void _reject_update(self, ClientOrderId client_order_id, str response, str reason) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _trigger_order(self, StopLimitOrder order) except *
     cdef inline void _process_order(self, Order order) except *
@@ -164,7 +164,7 @@ cdef class SimulatedExchange:
 # --------------------------------------------------------------------------------------------------
 
     cdef inline void _fill_order(self, Order order, Price fill_px, LiquiditySide liquidity_side) except *
-    cdef inline void _clean_up_child_orders(self, ClientOrderId cl_ord_id) except *
-    cdef inline void _check_oco_order(self, ClientOrderId cl_ord_id) except *
+    cdef inline void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
+    cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *
     cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *

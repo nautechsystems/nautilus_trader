@@ -61,18 +61,6 @@ cdef class Clock:
         self.next_event_time = None
         self.next_event_time_ns = 0
 
-    cpdef datetime utc_now(self):
-        """
-        Return the current time (UTC).
-
-        Returns
-        -------
-        datetime
-            The current tz-aware UTC time of the clock.
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef double timestamp(self) except *:
         """
         Return the current Unix time in seconds.
@@ -80,6 +68,10 @@ cdef class Clock:
         Returns
         -------
         double
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
 
         """
         raise NotImplementedError("method must be implemented in the subclass")
@@ -92,17 +84,34 @@ cdef class Clock:
         -------
         int64
 
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef datetime local_now(self, tzinfo tz):
+    cpdef datetime utc_now(self):
+        """
+        Return the current time (UTC).
+
+        Returns
+        -------
+        datetime
+            The current tz-aware UTC time of the clock.
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef datetime local_now(self, tzinfo tz=None):
         """
         Return the current datetime of the clock in the given local timezone.
 
         Parameters
         ----------
-        tz : tzinfo
-            The local timezone.
+        tz : tzinfo, optional
+            The local timezone (if None the system local timezone is assumed for
+            the target timezone).
 
         Returns
         -------
@@ -448,6 +457,10 @@ cdef class TestClock(Clock):
         -------
         double
 
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
         """
         return nanos_to_secs(self._time_ns)
 
@@ -458,6 +471,10 @@ cdef class TestClock(Clock):
         Returns
         -------
         int64
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
 
         """
         return self._time_ns
@@ -558,6 +575,36 @@ cdef class LiveClock(Clock):
         self._loop = loop
         self._utc = pytz.utc
 
+    cpdef double timestamp(self) except *:
+        """
+        Return the current Unix time in seconds from the system clock.
+
+        Returns
+        -------
+        double
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        return unix_timestamp()
+
+    cpdef int64_t timestamp_ns(self) except *:
+        """
+        Return the current Unix time in nanoseconds (ns) from the system clock.
+
+        Returns
+        -------
+        int64
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        return unix_timestamp_ns()
+
     cpdef datetime utc_now(self):
         """
         Return the current time (UTC).
@@ -578,28 +625,6 @@ cdef class LiveClock(Clock):
         # in UTC, converting to localtime only when generating output to be read
         # by humans.
         return datetime.now(tz=self._utc)
-
-    cpdef double timestamp(self) except *:
-        """
-        Return the current Unix time in seconds from the system clock.
-
-        Returns
-        -------
-        double
-
-        """
-        return unix_timestamp()
-
-    cpdef int64_t timestamp_ns(self) except *:
-        """
-        Return the current Unix time in nanoseconds (ns) from the system clock.
-
-        Returns
-        -------
-        int64
-
-        """
-        return unix_timestamp_ns()
 
     cdef Timer _create_timer(
         self,

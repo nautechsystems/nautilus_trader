@@ -20,16 +20,20 @@ cdef class AssetClassParser:
         if value == 1:
             return "FX"
         elif value == 2:
-            return "STOCK"
+            return "EQUITY"
         elif value == 3:
             return "COMMODITY"
         elif value == 4:
-            return "BOND"
+            return "METAL"
         elif value == 5:
-            return "INDEX"
+            return "ENERGY"
         elif value == 6:
-            return "CRYPTO"
+            return "BOND"
         elif value == 7:
+            return "INDEX"
+        elif value == 8:
+            return "CRYPTO"
+        elif value == 9:
             return "BETTING"
         else:
             raise ValueError(f"value was invalid, was {value}")
@@ -38,10 +42,14 @@ cdef class AssetClassParser:
     cdef AssetClass from_str(str value) except *:
         if value == "FX":
             return AssetClass.FX
-        elif value == "STOCK":
-            return AssetClass.STOCK
+        elif value == "EQUITY":
+            return AssetClass.EQUITY
         elif value == "COMMODITY":
             return AssetClass.COMMODITY
+        elif value == "METAL":
+            return AssetClass.METAL
+        elif value == "ENERGY":
+            return AssetClass.ENERGY
         elif value == "BOND":
             return AssetClass.BOND
         elif value == "INDEX":

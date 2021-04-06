@@ -30,10 +30,10 @@ from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -72,7 +72,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Cached indexes
         self._index_venue_account = {}        # type: dict[Venue, AccountId]
-        self._index_order_ids = {}            # type: dict[OrderId, ClientOrderId]
+        self._index_venue_order_ids = {}      # type: dict[VenueOrderId, ClientOrderId]
         self._index_order_position = {}       # type: dict[ClientOrderId, PositionId]
         self._index_order_strategy = {}       # type: dict[ClientOrderId, StrategyId]
         self._index_position_strategy = {}    # type: dict[PositionId, StrategyId]
@@ -170,12 +170,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef Venue venue
         cdef AccountId account_id
         cdef Account account
-        cdef ClientOrderId cl_ord_id
+        cdef ClientOrderId client_order_id
         cdef Order order
         cdef PositionId position_id
         cdef Position position
         cdef StrategyId strategy_id
-        cdef set cl_ord_ids
+        cdef set client_order_ids
         cdef set position_ids
         cdef set strategy_ids
 
@@ -196,22 +196,22 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(account_id)} not found in self._index_venue_account")
                 error_count += 1
 
-        for cl_ord_id, order in self._cached_orders.items():
-            if cl_ord_id not in self._index_order_strategy:
+        for client_order_id, order in self._cached_orders.items():
+            if client_order_id not in self._index_order_strategy:
                 self._log.error(f"{failure} in _cached_orders: "
-                                f"{repr(cl_ord_id)} not found in self._index_order_strategy")
+                                f"{repr(client_order_id)} not found in self._index_order_strategy")
                 error_count += 1
-            if cl_ord_id not in self._index_orders:
+            if client_order_id not in self._index_orders:
                 self._log.error(f"{failure} in _cached_orders: "
-                                f"{repr(cl_ord_id)} not found in self._index_orders")
+                                f"{repr(client_order_id)} not found in self._index_orders")
                 error_count += 1
-            if order.is_working_c() and cl_ord_id not in self._index_orders_working:
+            if order.is_working_c() and client_order_id not in self._index_orders_working:
                 self._log.error(f"{failure} in _cached_orders: "
-                                f"{repr(cl_ord_id)} not found in self._index_orders_working")
+                                f"{repr(client_order_id)} not found in self._index_orders_working")
                 error_count += 1
-            if order.is_completed_c() and cl_ord_id not in self._index_orders_completed:
+            if order.is_completed_c() and client_order_id not in self._index_orders_completed:
                 self._log.error(f"{failure} in _cached_orders "
-                                f"{repr(cl_ord_id)} not found in self._index_orders_completed")
+                                f"{repr(client_order_id)} not found in self._index_orders_completed")
                 error_count += 1
 
         for position_id, position in self._cached_positions.items():
@@ -244,22 +244,22 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(account_id)} not found in self._cached_accounts")
                 error_count += 1
 
-        for order_id, cl_ord_id in self._index_order_ids.items():
-            if cl_ord_id not in self._cached_orders:
-                self._log.error(f"{failure} in _index_order_ids: "
-                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+        for venue_order_id, client_order_id in self._index_venue_order_ids.items():
+            if client_order_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_venue_order_ids: "
+                                f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
-        for cl_ord_id, position_id in self._index_order_position.items():
-            if cl_ord_id not in self._cached_orders:
+        for client_order_id, position_id in self._index_order_position.items():
+            if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_order_position: "
-                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                                f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
-        for cl_ord_id, strategy_id in self._index_order_strategy.items():
-            if cl_ord_id not in self._cached_orders:
+        for client_order_id, strategy_id in self._index_order_strategy.items():
+            if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_order_strategy: "
-                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                                f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for position_id, strategy_id in self._index_position_strategy.items():
@@ -268,15 +268,15 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
-        for position_id, cl_ord_ids in self._index_position_orders.items():
+        for position_id, client_order_ids in self._index_position_orders.items():
             if position_id not in self._cached_positions:
                 self._log.error(f"{failure} in _index_position_orders: "
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
-        for instrument_id, cl_ord_ids in self._index_instrument_orders.items():
-            for cl_ord_id in cl_ord_ids:
-                if cl_ord_id not in self._cached_orders:
+        for instrument_id, client_order_ids in self._index_instrument_orders.items():
+            for client_order_id in client_order_ids:
+                if client_order_id not in self._cached_orders:
                     self._log.error(f"{failure} in _index_instrument_orders: "
                                     f"{repr(instrument_id)} not found in self._cached_orders")
                     error_count += 1
@@ -287,11 +287,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(instrument_id)} not found in self._index_instrument_orders")
                 error_count += 1
 
-        for strategy_id, cl_ord_ids in self._index_strategy_orders.items():
-            for cl_ord_id in cl_ord_ids:
-                if cl_ord_id not in self._cached_orders:
+        for strategy_id, client_order_ids in self._index_strategy_orders.items():
+            for client_order_id in client_order_ids:
+                if client_order_id not in self._cached_orders:
                     self._log.error(f"{failure} in _index_strategy_orders: "
-                                    f"{repr(cl_ord_id)} not found in self._cached_orders")
+                                    f"{repr(client_order_id)} not found in self._cached_orders")
                     error_count += 1
 
         for strategy_id, position_ids in self._index_strategy_positions.items():
@@ -301,22 +301,22 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                     f"{repr(position_id)} not found in self._caches_positions")
                     error_count += 1
 
-        for cl_ord_id in self._index_orders:
-            if cl_ord_id not in self._cached_orders:
+        for client_order_id in self._index_orders:
+            if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_orders: "
-                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                                f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
-        for cl_ord_id in self._index_orders_working:
-            if cl_ord_id not in self._cached_orders:
+        for client_order_id in self._index_orders_working:
+            if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_orders_working: "
-                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                                f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
-        for cl_ord_id in self._index_orders_completed:
-            if cl_ord_id not in self._cached_orders:
+        for client_order_id in self._index_orders_completed:
+            if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_orders_completed: "
-                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                                f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for position_id in self._index_positions:
@@ -415,7 +415,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Clearing index...")
 
         self._index_venue_account.clear()
-        self._index_order_ids.clear()
+        self._index_venue_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
@@ -458,47 +458,47 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_venue_account[account_id.issuer_as_venue()] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
-        cdef ClientOrderId cl_ord_id
+        cdef ClientOrderId client_order_id
         cdef Order order
-        for cl_ord_id, order in self._cached_orders.items():
-            # 1: Build _index_order_ids -> {OrderId, ClientOrderId}
-            if order.id.not_null():
-                self._index_order_ids[order.id] = order.cl_ord_id
+        for client_order_id, order in self._cached_orders.items():
+            # 1: Build _index_venue_order_ids -> {VenueOrderId, ClientOrderId}
+            if order.venue_order_id.not_null():
+                self._index_venue_order_ids[order.venue_order_id] = order.client_order_id
 
             # 2: Build _index_order_position -> {ClientOrderId, PositionId}
             if order.position_id.not_null():
-                self._index_order_position[cl_ord_id] = order.position_id
+                self._index_order_position[client_order_id] = order.position_id
 
             # 3: Build _index_order_strategy -> {ClientOrderId, StrategyId}
             if order.strategy_id.not_null():
-                self._index_order_strategy[cl_ord_id] = order.strategy_id
+                self._index_order_strategy[client_order_id] = order.strategy_id
 
             # 4: Build _index_instrument_orders -> {InstrumentId, {ClientOrderId}}
             if order.instrument_id not in self._index_instrument_orders:
                 self._index_instrument_orders[order.instrument_id] = set()
-            self._index_instrument_orders[order.instrument_id].add(cl_ord_id)
+            self._index_instrument_orders[order.instrument_id].add(client_order_id)
 
             # 5: Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
             if order.strategy_id not in self._index_strategy_orders:
                 self._index_strategy_orders[order.strategy_id] = set()
-            self._index_strategy_orders[order.strategy_id].add(cl_ord_id)
+            self._index_strategy_orders[order.strategy_id].add(client_order_id)
 
             # 6: Build _index_orders -> {ClientOrderId}
-            self._index_orders.add(cl_ord_id)
+            self._index_orders.add(client_order_id)
 
             # 7: Build _index_orders_working -> {ClientOrderId}
             if order.is_working_c():
-                self._index_orders_working.add(cl_ord_id)
+                self._index_orders_working.add(client_order_id)
 
             # 8: Build _index_orders_completed -> {ClientOrderId}
             if order.is_completed_c():
-                self._index_orders_completed.add(cl_ord_id)
+                self._index_orders_completed.add(client_order_id)
 
             # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
-        cdef ClientOrderId cl_ord_id
+        cdef ClientOrderId client_order_id
         cdef PositionId position_id
         cdef Position position
         for position_id, position in self._cached_positions.items():
@@ -511,8 +511,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
 
-            for cl_ord_id in position.cl_ord_ids_c():
-                index_position_orders.add(cl_ord_id)
+            for client_order_id in position.client_order_ids_c():
+                index_position_orders.add(client_order_id)
 
             # 3: Build _index_instrument_positions -> {InstrumentId, {PositionId}}
             if position.instrument_id not in self._index_instrument_positions:
@@ -575,13 +575,13 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._cached_accounts.get(account_id)
 
-    cpdef Order load_order(self, ClientOrderId cl_ord_id):
+    cpdef Order load_order(self, ClientOrderId client_order_id):
         """
         Load the order associated with the given identifier (if found).
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier to load.
 
         Returns
@@ -589,9 +589,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Order or None
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        return self._cached_orders.get(cl_ord_id)
+        return self._cached_orders.get(client_order_id)
 
     cpdef Position load_position(self, PositionId position_id):
         """
@@ -653,49 +653,49 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Raises
         ------
         ValueError
-            If order.id is already contained in the cached_orders.
+            If order.client_order_id is already contained in the cached_orders.
         ValueError
-            If order.id is already contained in the index_orders.
+            If order.client_order_id is already contained in the index_orders.
         ValueError
-            If order.id is already contained in the index_order_position.
+            If order.client_order_id is already contained in the index_order_position.
         ValueError
-            If order.id is already contained in the index_order_strategy.
+            If order.client_order_id is already contained in the index_order_strategy.
 
         """
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
-        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.cl_ord_id", "cached_orders")
-        Condition.not_in(order.cl_ord_id, self._index_orders, "order.cl_ord_id", "index_orders")
-        Condition.not_in(order.cl_ord_id, self._index_order_position, "order.cl_ord_id", "index_order_position")
-        Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.cl_ord_id", "index_order_strategy")
+        Condition.not_in(order.client_order_id, self._cached_orders, "order.client_order_id", "cached_orders")
+        Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "index_orders")
+        Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "index_order_position")
+        Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "index_order_strategy")
 
-        self._cached_orders[order.cl_ord_id] = order
-        self._index_orders.add(order.cl_ord_id)
-        self._index_order_strategy[order.cl_ord_id] = order.strategy_id
+        self._cached_orders[order.client_order_id] = order
+        self._index_orders.add(order.client_order_id)
+        self._index_order_strategy[order.client_order_id] = order.strategy_id
 
         # Index: InstrumentId -> Set[ClientOrderId]
         if order.instrument_id not in self._index_instrument_orders:
-            self._index_instrument_orders[order.instrument_id] = {order.cl_ord_id}
+            self._index_instrument_orders[order.instrument_id] = {order.client_order_id}
         else:
-            self._index_instrument_orders[order.instrument_id].add(order.cl_ord_id)
+            self._index_instrument_orders[order.instrument_id].add(order.client_order_id)
 
         # Index: StrategyId -> Set[ClientOrderId]
         if order.strategy_id not in self._index_strategy_orders:
-            self._index_strategy_orders[order.strategy_id] = {order.cl_ord_id}
+            self._index_strategy_orders[order.strategy_id] = {order.client_order_id}
         else:
-            self._index_strategy_orders[order.strategy_id].add(order.cl_ord_id)
+            self._index_strategy_orders[order.strategy_id].add(order.client_order_id)
 
         cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
-        self._log.debug(f"Added Order(id={order.cl_ord_id.value}{position_id_str}).")
+        self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
 
         # Update database
         self._database.add_order(order)  # Logs
 
         if position_id.is_null():
             return  # Do not index the NULL id
-        self.add_position_id(position_id, order.cl_ord_id, order.strategy_id)
+        self.add_position_id(position_id, order.client_order_id, order.strategy_id)
 
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId client_order_id, StrategyId strategy_id) except *:
         """
         Index the given position identifier with the other given identifiers.
 
@@ -703,21 +703,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         ----------
         position_id : PositionId
             The position identifier to index.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier to index.
         strategy_id : StrategyId
             The strategy identifier to index.
 
         """
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
         Condition.not_none(strategy_id, "strategy_id")
 
         # Index: ClientOrderId -> PositionId
-        if cl_ord_id not in self._index_order_position:
-            self._index_order_position[cl_ord_id] = position_id
+        if client_order_id not in self._index_order_position:
+            self._index_order_position[client_order_id] = position_id
         else:
-            if not position_id == self._index_order_position[cl_ord_id]:
+            if not position_id == self._index_order_position[client_order_id]:
                 self._log.error(f"Order indexing invalid for {position_id}.")
 
         # Index: PositionId -> StrategyId
@@ -729,9 +729,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Index: PositionId -> Set[ClientOrderId]
         if position_id not in self._index_position_orders:
-            self._index_position_orders[position_id] = {cl_ord_id}
+            self._index_position_orders[position_id] = {client_order_id}
         else:
-            self._index_position_orders[position_id].add(cl_ord_id)
+            self._index_position_orders[position_id].add(client_order_id)
 
         # Index: StrategyId -> Set[PositionId]
         if strategy_id not in self._index_strategy_positions:
@@ -740,7 +740,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             self._index_strategy_positions[strategy_id].add(position_id)
 
         self._log.debug(f"Indexed {repr(position_id)}, "
-                        f"cl_ord_id={cl_ord_id}, "
+                        f"client_order_id={client_order_id}, "
                         f"strategy_id={strategy_id}).")
 
     cpdef void add_position(self, Position position) except *:
@@ -810,17 +810,17 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(order, "order")
 
-        if order.id.not_null():
+        if order.venue_order_id.not_null():
             # Assumes order_id does not change
-            self._index_order_ids[order.id] = order.cl_ord_id
+            self._index_venue_order_ids[order.venue_order_id] = order.client_order_id
 
         if order.is_completed_c():
-            self._index_orders_completed.add(order.cl_ord_id)
-            self._index_orders_working.discard(order.cl_ord_id)
+            self._index_orders_completed.add(order.client_order_id)
+            self._index_orders_working.discard(order.client_order_id)
         else:
             if order.is_working_c():
-                self._index_orders_working.add(order.cl_ord_id)
-            self._index_orders_completed.discard(order.cl_ord_id)
+                self._index_orders_working.add(order.client_order_id)
+            self._index_orders_completed.discard(order.client_order_id)
 
         # Update database
         self._database.update_order(order)
@@ -992,7 +992,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cpdef set order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all client order identifiers with the given query filters.
 
@@ -1015,7 +1015,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         else:
             return self._index_orders.intersection(query)
 
-    cpdef set order_working_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all working client order identifiers with the given query
         filters.
@@ -1039,7 +1039,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         else:
             return self._index_orders_working.intersection(query)
 
-    cpdef set order_completed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
         Return all completed client order identifiers with the given query
         filters.
@@ -1145,7 +1145,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
 # -- ORDER QUERIES ---------------------------------------------------------------------------------
 
-    cpdef Order order(self, ClientOrderId cl_ord_id):
+    cpdef Order order(self, ClientOrderId client_order_id):
         """
         Return the order matching the given client order identifier (if found).
 
@@ -1154,40 +1154,45 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Order or None
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        return self._cached_orders.get(cl_ord_id)
+        return self._cached_orders.get(client_order_id)
 
-    cpdef ClientOrderId cl_ord_id(self, OrderId order_id):
+    cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id):
         """
         Return the client order identifier matching the given order identifier
         (if found).
+
+        Parameters
+        ----------
+        venue_order_id : VenueOrderId
+            The venue assigned order identifier.
 
         Returns
         -------
         ClientOrderId or None
 
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(venue_order_id, "venue_order_id")
 
-        return self._index_order_ids.get(order_id)
+        return self._index_venue_order_ids.get(venue_order_id)
 
-    cpdef OrderId order_id(self, ClientOrderId cl_ord_id):
+    cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """
         Return the order identifier matching the given client order identifier
         (if found).
 
         Returns
         -------
-        OrderId or None
+        VenueOrderId or None
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        cdef Order order = self._cached_orders.get(cl_ord_id)
+        cdef Order order = self._cached_orders.get(client_order_id)
         if order is None:
             return None
-        return order.id
+        return order.venue_order_id
 
     cpdef list orders(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
@@ -1205,12 +1210,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_ids(instrument_id, strategy_id)
+        cdef set client_order_ids = self.client_order_ids(instrument_id, strategy_id)
 
-        cdef ClientOrderId cl_ord_id
+        cdef ClientOrderId client_order_id
         cdef list orders
         try:
-            orders = [self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids]
+            orders = [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
 
@@ -1232,12 +1237,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_working_ids(instrument_id, strategy_id)
+        cdef set client_order_ids = self.client_order_ids_working(instrument_id, strategy_id)
 
-        cdef ClientOrderId cl_ord_id
+        cdef ClientOrderId client_order_id
         cdef list orders_working
         try:
-            orders_working = [self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids]
+            orders_working = [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
@@ -1259,12 +1264,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set cl_ord_ids = self.order_completed_ids(instrument_id, strategy_id)
+        cdef set client_order_ids = self.client_order_ids_completed(instrument_id, strategy_id)
 
-        cdef ClientOrderId cl_ord_id
+        cdef ClientOrderId client_order_id
         cdef list orders_completed
         try:
-            orders_completed = [self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids]
+            orders_completed = [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
@@ -1290,14 +1295,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._cached_positions.get(position_id)
 
-    cpdef PositionId position_id(self, ClientOrderId cl_ord_id):
+    cpdef PositionId position_id(self, ClientOrderId client_order_id):
         """
         Return the position identifier associated with the given client order
         identifier (if found).
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier associated with the position.
 
         Returns
@@ -1305,9 +1310,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         PositionId or None
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        return self._index_order_position.get(cl_ord_id)
+        return self._index_order_position.get(client_order_id)
 
     cpdef list positions(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
@@ -1390,14 +1395,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return positions
 
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *:
+    cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """
         Return a value indicating whether an order with the given identifier
         exists.
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier to check.
 
         Returns
@@ -1405,18 +1410,18 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         bool
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        return cl_ord_id in self._index_orders
+        return client_order_id in self._index_orders
 
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *:
+    cpdef bint is_order_working(self, ClientOrderId client_order_id) except *:
         """
         Return a value indicating whether an order with the given identifier is
         working.
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier to check.
 
         Returns
@@ -1424,18 +1429,18 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         bool
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        return cl_ord_id in self._index_orders_working
+        return client_order_id in self._index_orders_working
 
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *:
+    cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *:
         """
         Return a value indicating whether an order with the given identifier is
         completed.
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier to check.
 
         Returns
@@ -1443,9 +1448,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         bool
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        return cl_ord_id in self._index_orders_completed
+        return client_order_id in self._index_orders_completed
 
     cpdef int orders_total_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
@@ -1463,7 +1468,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.order_ids(instrument_id, strategy_id))
+        return len(self.client_order_ids(instrument_id, strategy_id))
 
     cpdef int orders_working_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
@@ -1481,7 +1486,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.order_working_ids(instrument_id, strategy_id))
+        return len(self.client_order_ids_working(instrument_id, strategy_id))
 
     cpdef int orders_completed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """
@@ -1499,7 +1504,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.order_completed_ids(instrument_id, strategy_id))
+        return len(self.client_order_ids_completed(instrument_id, strategy_id))
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
@@ -1614,14 +1619,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 
-    cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id):
+    cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """
         Return the strategy identifier associated with the given identifier
         (if found).
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier associated with the strategy.
 
         Returns
@@ -1629,9 +1634,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         StrategyId or None
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        return self._index_order_strategy.get(cl_ord_id)
+        return self._index_order_strategy.get(client_order_id)
 
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """

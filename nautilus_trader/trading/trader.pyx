@@ -232,7 +232,7 @@ cdef class Trader(Component):
             # Wire execution engine into strategy
             self._exec_engine.register_strategy(strategy)
 
-            order_ids = self._exec_engine.cache.order_ids(
+            client_order_ids = self._exec_engine.cache.client_order_ids(
                 instrument_id=None,
                 strategy_id=strategy.id,
             )
@@ -242,7 +242,7 @@ cdef class Trader(Component):
                 self.id,
                 self._clock.__class__(),  # Clock per strategy
                 self._log.get_logger(),
-                order_id_count=len(order_ids),
+                order_id_count=len(client_order_ids),
             )
 
             # Add to internal strategies

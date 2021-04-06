@@ -52,7 +52,7 @@ cdef class BracketOrder:
             The take-profit (TP) 'child' order.
 
         """
-        self.id = BracketOrderId(f"B{entry.cl_ord_id.value}")
+        self.id = BracketOrderId(f"B{entry.client_order_id.value}")
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit

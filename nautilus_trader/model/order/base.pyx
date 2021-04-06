@@ -118,8 +118,8 @@ cdef class Order:
             state_parser=OrderStateParser.to_str,
         )
 
-        self.cl_ord_id = init.cl_ord_id
-        self.id = OrderId.null_c()
+        self.client_order_id = init.client_order_id
+        self.venue_order_id = VenueOrderId.null_c()
         self.position_id = PositionId.null_c()
         self.strategy_id = init.strategy_id
         self.account_id = None    # Can be None
@@ -137,20 +137,20 @@ cdef class Order:
         self.init_id = init.id
 
     def __eq__(self, Order other) -> bool:
-        return self.cl_ord_id.value == other.cl_ord_id.value
+        return self.client_order_id.value == other.client_order_id.value
 
     def __ne__(self, Order other) -> bool:
-        return self.cl_ord_id.value != other.cl_ord_id.value
+        return self.client_order_id.value != other.client_order_id.value
 
     def __hash__(self) -> int:
-        return hash(self.cl_ord_id.value)
+        return hash(self.client_order_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f", id={self.id.value})" if self.id.not_null() else ")"
+        cdef str id_string = f", venue_order_id={self.venue_order_id.value})" if self.venue_order_id.not_null() else ")"
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
-                f"cl_ord_id={self.cl_ord_id.value}"
+                f"client_order_id={self.client_order_id.value}"
                 f"{id_string}")
 
     cdef OrderState state_c(self) except *:
@@ -353,7 +353,7 @@ cdef class Order:
     @property
     def is_working(self):
         """
-        If the order is open/working at the venue.
+        If the order is open/working at the trading venue.
 
         An order is considered working when its state is either `ACCEPTED`,
         `TRIGGERED` or `PARTIALLY_FILLED`.
@@ -457,7 +457,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If self.id and event.order_id are both not 'NULL', and are not equal.
+            If self.venue_order_id and event.venue_order_id are both not 'NULL', and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
         KeyError
@@ -465,9 +465,9 @@ cdef class Order:
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
-        if self.id.not_null() and event.order_id.not_null():
-            Condition.equal(event.order_id, self.id, "event.order_id", "self.id")
+        Condition.equal(event.client_order_id, self.client_order_id, "event.client_order_id", "self.client_order_id")
+        if self.venue_order_id.not_null() and event.venue_order_id.not_null():
+            Condition.equal(event.venue_order_id, self.venue_order_id, "event.venue_order_id", "self.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInvalid):
@@ -499,10 +499,10 @@ cdef class Order:
             self._fsm.trigger(OrderState.TRIGGERED)
             self._triggered(event)
         elif isinstance(event, OrderFilled):
-            if self.id.not_null():
+            if self.venue_order_id.not_null():
                 Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
             else:
-                self.id = event.order_id
+                self.venue_order_id = event.venue_order_id
             if self.filled_qty + event.last_qty < self.quantity:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
@@ -525,7 +525,7 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _accepted(self, OrderAccepted event) except *:
-        self.id = event.order_id
+        self.venue_order_id = event.venue_order_id
 
     cdef void _updated(self, OrderUpdated event) except *:
         """Abstract method (implement in subclass)."""
@@ -561,7 +561,7 @@ cdef class PassiveOrder(Order):
     """
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
@@ -579,7 +579,7 @@ cdef class PassiveOrder(Order):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
@@ -625,7 +625,7 @@ cdef class PassiveOrder(Order):
             options[EXPIRE_TIME] = expire_time
 
         cdef OrderInitialized init = OrderInitialized(
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             order_side=order_side,
@@ -652,12 +652,12 @@ cdef class PassiveOrder(Order):
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
     cdef void _updated(self, OrderUpdated event) except *:
-        self.id = event.order_id
+        self.venue_order_id = event.venue_order_id
         self.quantity = event.quantity
         self.price = event.price
 
     cdef void _filled(self, OrderFilled fill) except *:
-        self.id = fill.order_id
+        self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id
         self._execution_ids.append(fill.execution_id)

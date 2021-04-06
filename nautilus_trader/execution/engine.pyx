@@ -507,9 +507,9 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         # Validate command
-        if self.cache.order_exists(command.order.cl_ord_id):
+        if self.cache.order_exists(command.order.client_order_id):
             self._log.error(f"Cannot submit order: "
-                            f"{repr(command.order.cl_ord_id)} already exists.")
+                            f"{repr(command.order.client_order_id)} already exists.")
             return  # Invalid command
 
         # Cache order
@@ -517,7 +517,7 @@ cdef class ExecutionEngine(Component):
 
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._invalidate_order(
-                command.order.cl_ord_id,
+                command.order.client_order_id,
                 f"{repr(command.position_id)} does not exist",
             )
             return  # Invalid command
@@ -530,14 +530,14 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Validate command
-        if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
+        if self.cache.order_exists(command.bracket_order.entry.client_order_id):
             self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
-        if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
+        if self.cache.order_exists(command.bracket_order.stop_loss.client_order_id):
             self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
         if command.bracket_order.take_profit is not None \
-                and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
+                and self.cache.order_exists(command.bracket_order.take_profit.client_order_id):
             self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
 
@@ -555,9 +555,9 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
         # Validate command
-        if not self.cache.is_order_working(command.cl_ord_id):
+        if not self.cache.is_order_working(command.client_order_id):
             self._log.warning(f"Cannot update order: "
-                              f"{repr(command.cl_ord_id)} already completed.")
+                              f"{repr(command.client_order_id)} already completed.")
             return  # Invalid command
 
         # Amend order
@@ -568,9 +568,9 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command
-        if self.cache.is_order_completed(command.cl_ord_id):
+        if self.cache.is_order_completed(command.client_order_id):
             self._log.warning(f"Cannot cancel order: "
-                              f"{repr(command.cl_ord_id)} already completed.")
+                              f"{repr(command.client_order_id)} already completed.")
             return  # Invalid command
 
         # Cancel order
@@ -579,10 +579,10 @@ cdef class ExecutionEngine(Component):
         else:
             client.cancel_order(command)
 
-    cdef inline void _invalidate_order(self, ClientOrderId cl_ord_id, str reason) except *:
+    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
-            cl_ord_id,
+            client_order_id,
             reason,
             self._uuid_factory.generate(),
             self._clock.timestamp_ns(),
@@ -591,11 +591,11 @@ cdef class ExecutionEngine(Component):
         self._handle_event(invalid)
 
     cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *:
-        cdef ClientOrderId entry_id = bracket_order.entry.cl_ord_id
-        cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.cl_ord_id
+        cdef ClientOrderId entry_id = bracket_order.entry.client_order_id
+        cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.client_order_id
         cdef ClientOrderId take_profit_id
         if bracket_order.take_profit:
-            take_profit_id = bracket_order.take_profit.cl_ord_id
+            take_profit_id = bracket_order.take_profit.client_order_id
 
         cdef list error_msgs = []
 
@@ -606,7 +606,7 @@ cdef class ExecutionEngine(Component):
             # Add to cache to be able to invalidate
             self.cache.add_order(bracket_order.entry, PositionId.null_c())
             self._invalidate_order(
-                bracket_order.entry.cl_ord_id,
+                bracket_order.entry.client_order_id,
                 "Duplicate ClientOrderId in bracket.",
             )
         # Check stop-loss ------------------------------------------------------
@@ -616,7 +616,7 @@ cdef class ExecutionEngine(Component):
             # Add to cache to be able to invalidate
             self.cache.add_order(bracket_order.stop_loss, PositionId.null_c())
             self._invalidate_order(
-                bracket_order.stop_loss.cl_ord_id,
+                bracket_order.stop_loss.client_order_id,
                 "Duplicate ClientOrderId in bracket.",
             )
         # Check take-profit ----------------------------------------------------
@@ -626,7 +626,7 @@ cdef class ExecutionEngine(Component):
             # Add to cache to be able to invalidate
             self.cache.add_order(bracket_order.take_profit, PositionId.null_c())
             self._invalidate_order(
-                bracket_order.take_profit.cl_ord_id,
+                bracket_order.take_profit.client_order_id,
                 "Duplicate ClientOrderId in bracket.",
             )
 
@@ -671,33 +671,33 @@ cdef class ExecutionEngine(Component):
             return  # Event will be sent to strategy
 
         # Fetch Order from cache
-        cdef ClientOrderId cl_ord_id = event.cl_ord_id
-        cdef Order order = self.cache.order(event.cl_ord_id)
+        cdef ClientOrderId client_order_id = event.client_order_id
+        cdef Order order = self.cache.order(event.client_order_id)
         cdef str event_str
         if order is None:
-            self._log.warning(f"{repr(event.cl_ord_id)} was not found in cache "
-                              f"for {repr(event.order_id)} to apply {event}.")
+            self._log.warning(f"{repr(event.client_order_id)} was not found in cache "
+                              f"for {repr(event.venue_order_id)} to apply {event}.")
 
-            # Search cache for ClientOrderId matching the OrderId
-            cl_ord_id = self.cache.cl_ord_id(event.order_id)
-            if cl_ord_id is None:
+            # Search cache for ClientOrderId matching the VenueOrderId
+            client_order_id = self.cache.client_order_id(event.venue_order_id)
+            if client_order_id is None:
                 self._log.error(f"Cannot apply event to any order: "
-                                f"{repr(event.cl_ord_id)} and {repr(event.order_id)} "
+                                f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
                                 f"not found in cache.")
                 return  # Cannot process event further
 
             # Search cache for Order matching the found ClientOrderId
-            order = self.cache.order(cl_ord_id)
+            order = self.cache.order(client_order_id)
             if order is None:
                 self._log.error(f"Cannot apply event to any order: "
-                                f"order for {repr(cl_ord_id)} not found in cache.")
+                                f"order for {repr(client_order_id)} not found in cache.")
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
-            event.cl_ord_id = cl_ord_id
+            event.client_order_id = client_order_id
             self._log.info(
-                f"{repr(cl_ord_id)} was found in cache and "
-                f"applying event to order with {repr(order.id)}.",
+                f"{repr(client_order_id)} was found in cache and "
+                f"applying event to order with {repr(order.venue_order_id)}.",
                 color=LogColor.GREEN,
             )
 
@@ -725,14 +725,14 @@ cdef class ExecutionEngine(Component):
             self._handle_order_fill(event)
             return  # Event will be sent to strategy
 
-        self._send_to_strategy(event, self.cache.strategy_id_for_order(cl_ord_id))
+        self._send_to_strategy(event, self.cache.strategy_id_for_order(client_order_id))
 
     cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *:
         if fill.strategy_id.not_null():
             return  # Already assigned to fill
 
         # Fetch identifier from cache
-        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
+        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.client_order_id)
         if strategy_id is not None:
             # Assign identifier to fill
             fill.strategy_id = strategy_id
@@ -743,7 +743,7 @@ cdef class ExecutionEngine(Component):
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot find StrategyId for "
-                            f"{repr(fill.cl_ord_id)} and "
+                            f"{repr(fill.client_order_id)} and "
                             f"{repr(fill.position_id)} not found for {fill}.")
 
     cdef inline void _confirm_position_id(self, OrderFilled fill) except *:
@@ -751,7 +751,7 @@ cdef class ExecutionEngine(Component):
             return  # Already assigned to fill
 
         # Fetch identifier from cache
-        cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
+        cdef PositionId position_id = self.cache.position_id(fill.client_order_id)
         if position_id is not None:
             # Assign identifier to fill
             fill.position_id = position_id
@@ -770,7 +770,7 @@ cdef class ExecutionEngine(Component):
                             f"{len(positions_open)} open positions")
 
     cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
-        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
+        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.client_order_id))
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
         cdef Position position = self.cache.position(fill.position_id)
@@ -824,8 +824,8 @@ cdef class ExecutionEngine(Component):
         # Split fill to close original position
         cdef OrderFilled fill_split1 = OrderFilled(
             fill.account_id,
-            fill.cl_ord_id,
-            fill.order_id,
+            fill.client_order_id,
+            fill.venue_order_id,
             fill.execution_id,
             fill.position_id,
             fill.strategy_id,
@@ -860,8 +860,8 @@ cdef class ExecutionEngine(Component):
         # Split fill to open flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
             fill.account_id,
-            ClientOrderId(f"{fill.cl_ord_id.value}F"),
-            fill.order_id,
+            ClientOrderId(f"{fill.client_order_id.value}F"),
+            fill.venue_order_id,
             fill.execution_id,
             position_id_flip,
             fill.strategy_id,
@@ -920,7 +920,7 @@ cdef class ExecutionEngine(Component):
                             f"{repr(strategy_id)} not registered for {event}.")
             return  # Cannot send to strategy
 
-        strategy.handle_event_c(event)
+        strategy.handle_event(event)
 
     cdef inline void _send_to_risk_engine(self, Event event) except *:
         # If a `RiskEngine` is registered then send the event there

@@ -36,10 +36,10 @@ from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -193,7 +193,9 @@ class OrderTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), order2.cl_ord_id)
+        self.assertEqual(
+            ClientOrderId("O-19700101-000000-000-001-1"), order2.client_order_id
+        )
 
     def test_limit_order_can_create_expected_decimal_price(self):
         # Arrange
@@ -291,12 +293,12 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
-            "cl_ord_id=O-19700101-000000-000-001-1)",
+            "client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
             "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
-            "cl_ord_id=O-19700101-000000-000-001-1)",
+            "client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
 
@@ -320,12 +322,12 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertEqual(
             "LimitOrder(BUY 100,000 AUD/USD.SIM LIMIT @ 1.00000 GTC, "
-            "state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1)",
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
             "LimitOrder(BUY 100,000 AUD/USD.SIM LIMIT @ 1.00000 GTC, "
-            "state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1)",
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
 
@@ -371,12 +373,12 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertEqual(
             "StopMarketOrder(BUY 100,000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, "
-            "state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1)",
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
             "StopMarketOrder(BUY 100,000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, "
-            "state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1)",
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
 
@@ -401,12 +403,12 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertEqual(
             "StopLimitOrder(BUY 100,000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, "
-            "trigger=1.10010, state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1)",
+            "trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
             "StopLimitOrder(BUY 100,000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, "
-            "trigger=1.10010, state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1)",
+            "trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
 
@@ -459,15 +461,16 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(bracket_order.take_profit is not None)
         self.assertEqual(AUDUSD_SIM.id, bracket_order.take_profit.instrument_id)
         self.assertEqual(
-            ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id
+            ClientOrderId("O-19700101-000000-000-001-1"),
+            bracket_order.entry.client_order_id,
         )
         self.assertEqual(
             ClientOrderId("O-19700101-000000-000-001-2"),
-            bracket_order.stop_loss.cl_ord_id,
+            bracket_order.stop_loss.client_order_id,
         )
         self.assertEqual(
             ClientOrderId("O-19700101-000000-000-001-3"),
-            bracket_order.take_profit.cl_ord_id,
+            bracket_order.take_profit.client_order_id,
         )
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(OrderSide.SELL, bracket_order.take_profit.side)
@@ -504,14 +507,14 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, "
-            "state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1), "
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1), "
             "SL=0.99990, TP=1.00010)",
             str(bracket_order),
         )  # noqa
         self.assertEqual(
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, "
-            "state=INITIALIZED, cl_ord_id=O-19700101-000000-000-001-1), "
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1), "
             "SL=0.99990, TP=1.00010)",
             repr(bracket_order),
         )  # noqa
@@ -525,7 +528,7 @@ class OrderTests(unittest.TestCase):
         )
 
         invalid = OrderInvalid(
-            order.cl_ord_id,
+            order.client_order_id,
             "SOME_REASON",
             uuid4(),
             0,
@@ -549,7 +552,7 @@ class OrderTests(unittest.TestCase):
         )
 
         denied = OrderDenied(
-            order.cl_ord_id,
+            order.client_order_id,
             "SOME_REASON",
             uuid4(),
             0,
@@ -603,12 +606,12 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertEqual(
             "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
-            "cl_ord_id=O-19700101-000000-000-001-1, id=1)",
+            "client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)",
             str(order),
         )
         self.assertEqual(
             "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
-            "cl_ord_id=O-19700101-000000-000-001-1, id=1)",
+            "client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)",
             repr(order),
         )
 
@@ -708,8 +711,8 @@ class OrderTests(unittest.TestCase):
 
         updated = OrderUpdated(
             self.account_id,
-            order.cl_ord_id,
-            OrderId("1"),
+            order.client_order_id,
+            VenueOrderId("1"),
             Quantity(120000),
             Price("1.00001"),
             0,
@@ -722,7 +725,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
-        self.assertEqual(OrderId("1"), order.id)
+        self.assertEqual(VenueOrderId("1"), order.venue_order_id)
         self.assertEqual(Quantity(120000), order.quantity)
         self.assertEqual(Price("1.00001"), order.price)
         self.assertTrue(order.is_working)
@@ -906,8 +909,8 @@ class OrderTests(unittest.TestCase):
 
         filled = OrderFilled(
             self.account_id,
-            order.cl_ord_id,
-            OrderId("1"),
+            order.client_order_id,
+            VenueOrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
             StrategyId.null(),
@@ -953,8 +956,8 @@ class OrderTests(unittest.TestCase):
 
         partially = OrderFilled(
             self.account_id,
-            order.cl_ord_id,
-            OrderId("1"),
+            order.client_order_id,
+            VenueOrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
             StrategyId.null(),

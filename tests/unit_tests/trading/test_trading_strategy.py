@@ -1763,9 +1763,9 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIn(order, strategy.execution.orders())
         self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
-        self.assertNotIn(order.cl_ord_id, strategy.execution.orders_working())
-        self.assertFalse(strategy.execution.is_order_working(order.cl_ord_id))
-        self.assertTrue(strategy.execution.is_order_completed(order.cl_ord_id))
+        self.assertNotIn(order.client_order_id, strategy.execution.orders_working())
+        self.assertFalse(strategy.execution.is_order_working(order.client_order_id))
+        self.assertTrue(strategy.execution.is_order_completed(order.client_order_id))
 
     def test_submit_bracket_order_with_valid_order_successfully_submits(self):
         # Arrange
@@ -1798,8 +1798,8 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertIn(entry, strategy.execution.orders())
         self.assertEqual(OrderState.ACCEPTED, entry.state)
         self.assertIn(entry, strategy.execution.orders_working())
-        self.assertTrue(strategy.execution.is_order_working(entry.cl_ord_id))
-        self.assertFalse(strategy.execution.is_order_completed(entry.cl_ord_id))
+        self.assertTrue(strategy.execution.is_order_working(entry.client_order_id))
+        self.assertFalse(strategy.execution.is_order_completed(entry.client_order_id))
 
     def test_cancel_order(self):
         # Arrange
@@ -1828,12 +1828,13 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertIn(order, strategy.execution.orders())
         self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
         self.assertEqual(
-            order.cl_ord_id, strategy.execution.orders_completed()[0].cl_ord_id
+            order.client_order_id,
+            strategy.execution.orders_completed()[0].client_order_id,
         )
-        self.assertNotIn(order.cl_ord_id, strategy.execution.orders_working())
-        self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
-        self.assertFalse(strategy.execution.is_order_working(order.cl_ord_id))
-        self.assertTrue(strategy.execution.is_order_completed(order.cl_ord_id))
+        self.assertNotIn(order.client_order_id, strategy.execution.orders_working())
+        self.assertTrue(strategy.execution.order_exists(order.client_order_id))
+        self.assertFalse(strategy.execution.is_order_working(order.client_order_id))
+        self.assertTrue(strategy.execution.is_order_completed(order.client_order_id))
 
     def test_update_order_when_no_changes_does_not_submit_command(self):
         # Arrange
@@ -1889,9 +1890,9 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, strategy.execution.orders()[0].state)
         self.assertEqual(Quantity(110000), strategy.execution.orders()[0].quantity)
         self.assertEqual(Price("90.001"), strategy.execution.orders()[0].price)
-        self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
-        self.assertTrue(strategy.execution.is_order_working(order.cl_ord_id))
-        self.assertFalse(strategy.execution.is_order_completed(order.cl_ord_id))
+        self.assertTrue(strategy.execution.order_exists(order.client_order_id))
+        self.assertTrue(strategy.execution.is_order_working(order.client_order_id))
+        self.assertFalse(strategy.execution.is_order_completed(order.client_order_id))
         self.assertTrue(strategy.portfolio.is_flat(order.instrument_id))
 
     def test_cancel_all_orders(self):

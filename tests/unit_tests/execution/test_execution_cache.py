@@ -29,11 +29,11 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -152,7 +152,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_get_order_ids_with_no_ids_returns_empty_set(self):
         # Arrange
         # Act
-        result = self.cache.order_ids()
+        result = self.cache.client_order_ids()
 
         # Assert
         self.assertEqual(set(), result)
@@ -219,25 +219,30 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_order(order, position_id)
 
         # Assert
-        self.assertIn(order.cl_ord_id, self.cache.order_ids())
+        self.assertIn(order.client_order_id, self.cache.client_order_ids())
         self.assertIn(
-            order.cl_ord_id, self.cache.order_ids(instrument_id=order.instrument_id)
+            order.client_order_id,
+            self.cache.client_order_ids(instrument_id=order.instrument_id),
         )
         self.assertIn(
-            order.cl_ord_id, self.cache.order_ids(strategy_id=self.strategy.id)
+            order.client_order_id,
+            self.cache.client_order_ids(strategy_id=self.strategy.id),
         )
         self.assertNotIn(
-            order.cl_ord_id, self.cache.order_ids(strategy_id=StrategyId("S", "ZX1"))
+            order.client_order_id,
+            self.cache.client_order_ids(strategy_id=StrategyId("S", "ZX1")),
         )
         self.assertIn(
-            order.cl_ord_id,
-            self.cache.order_ids(
+            order.client_order_id,
+            self.cache.client_order_ids(
                 instrument_id=order.instrument_id, strategy_id=self.strategy.id
             ),
         )
         self.assertIn(order, self.cache.orders())
-        self.assertEqual(OrderId.null(), self.cache.order_id(order.cl_ord_id))
-        self.assertIsNone(self.cache.cl_ord_id(order.id))
+        self.assertEqual(
+            VenueOrderId.null(), self.cache.venue_order_id(order.client_order_id)
+        )
+        self.assertIsNone(self.cache.client_order_id(order.venue_order_id))
 
     def test_load_order(self):
         # Arrange
@@ -251,7 +256,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_order(order, position_id)
 
         # Act
-        result = self.cache.load_order(order.cl_ord_id)
+        result = self.cache.load_order(order.client_order_id)
 
         # Assert
         self.assertEqual(order, result)
@@ -356,8 +361,8 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order)
 
         # Assert
-        self.assertTrue(self.cache.order_exists(order.cl_ord_id))
-        self.assertIn(order.cl_ord_id, self.cache.order_ids())
+        self.assertTrue(self.cache.order_exists(order.client_order_id))
+        self.assertIn(order.client_order_id, self.cache.client_order_ids())
         self.assertIn(order, self.cache.orders())
         self.assertIn(order, self.cache.orders_working())
         self.assertIn(
@@ -413,8 +418,8 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order)
 
         # Assert
-        self.assertTrue(self.cache.order_exists(order.cl_ord_id))
-        self.assertIn(order.cl_ord_id, self.cache.order_ids())
+        self.assertTrue(self.cache.order_exists(order.client_order_id))
+        self.assertIn(order.client_order_id, self.cache.client_order_ids())
         self.assertIn(order, self.cache.orders())
         self.assertIn(order, self.cache.orders_completed())
         self.assertIn(
@@ -438,7 +443,9 @@ class ExecutionCacheTests(unittest.TestCase):
                 instrument_id=order.instrument_id, strategy_id=self.strategy.id
             ),
         )
-        self.assertEqual(order.id, self.cache.order_id(order.cl_ord_id))
+        self.assertEqual(
+            order.venue_order_id, self.cache.venue_order_id(order.client_order_id)
+        )
         self.assertEqual(0, self.cache.orders_working_count())
         self.assertEqual(1, self.cache.orders_completed_count())
         self.assertEqual(1, self.cache.orders_total_count())

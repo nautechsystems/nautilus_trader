@@ -104,8 +104,10 @@ class TestAssetClass:
         "enum, expected",
         [
             [AssetClass.FX, "FX"],
-            [AssetClass.STOCK, "STOCK"],
+            [AssetClass.EQUITY, "EQUITY"],
             [AssetClass.COMMODITY, "COMMODITY"],
+            [AssetClass.METAL, "METAL"],
+            [AssetClass.ENERGY, "ENERGY"],
             [AssetClass.BOND, "BOND"],
             [AssetClass.INDEX, "INDEX"],
             [AssetClass.CRYPTO, "CRYPTO"],
@@ -124,8 +126,10 @@ class TestAssetClass:
         "string, expected",
         [
             ["FX", AssetClass.FX],
-            ["STOCK", AssetClass.STOCK],
+            ["EQUITY", AssetClass.EQUITY],
             ["COMMODITY", AssetClass.COMMODITY],
+            ["METAL", AssetClass.METAL],
+            ["ENERGY", AssetClass.ENERGY],
             ["BOND", AssetClass.BOND],
             ["INDEX", AssetClass.INDEX],
             ["CRYPTO", AssetClass.CRYPTO],
