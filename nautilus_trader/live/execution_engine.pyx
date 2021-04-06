@@ -140,7 +140,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         # TODO: Refactor pass on this, plus above docs
         cdef dict active_orders = {
-            order.cl_ord_id: order for order in self.cache.orders() if not order.is_completed_c()
+            order.client_order_id: order for order in self.cache.orders() if not order.is_completed_c()
         }  # type: dict[ClientOrderId, Order]
 
         if not active_orders:
@@ -181,7 +181,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef OrderStatusReport order_state_report
         for name, mass_status in client_mass_status.items():
             for order_state_report in mass_status.order_reports().values():
-                order = active_orders.get(order_state_report.cl_ord_id)
+                order = active_orders.get(order_state_report.client_order_id)
                 exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
                 await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
 

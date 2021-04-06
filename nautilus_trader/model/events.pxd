@@ -48,7 +48,7 @@ cdef class AccountState(Event):
 
 
 cdef class OrderEvent(Event):
-    cdef readonly ClientOrderId cl_ord_id
+    cdef readonly ClientOrderId client_order_id
     """The client order identifier associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order identifier associated with the event.\n\n:returns: `VenueOrderId`"""

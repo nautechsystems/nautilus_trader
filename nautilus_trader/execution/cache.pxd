@@ -73,7 +73,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id) except *
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId client_order_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position) except *
 
     cpdef void update_account(self, Account account) except *

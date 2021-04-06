@@ -52,7 +52,7 @@ cdef class Order:
     cdef list _execution_ids
     cdef FiniteStateMachine _fsm
 
-    cdef readonly ClientOrderId cl_ord_id
+    cdef readonly ClientOrderId client_order_id
     """The client order identifier.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue assigned order identifier.\n\n:returns: `VenueOrderId`"""

@@ -54,7 +54,7 @@ cdef class MarketOrder(Order):
     """
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
@@ -68,7 +68,7 @@ cdef class MarketOrder(Order):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
@@ -95,7 +95,7 @@ cdef class MarketOrder(Order):
         Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force was != GTC, IOC or FOK")
 
         cdef OrderInitialized init = OrderInitialized(
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             order_side=order_side,
@@ -133,7 +133,7 @@ cdef class MarketOrder(Order):
         Condition.equal(init.order_type, OrderType.MARKET, "init.order_type", "OrderType")
 
         return MarketOrder(
-            cl_ord_id=init.cl_ord_id,
+            client_order_id=init.client_order_id,
             strategy_id=init.strategy_id,
             instrument_id=init.instrument_id,
             order_side=init.order_side,

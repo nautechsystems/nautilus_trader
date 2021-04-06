@@ -58,7 +58,7 @@ cdef class ReportProvider:
 
         cdef list orders_all = [self._order_to_dict(o) for o in orders]
 
-        return pd.DataFrame(data=orders_all).set_index("cl_ord_id").sort_index()
+        return pd.DataFrame(data=orders_all).set_index("client_order_id").sort_index()
 
     cpdef object generate_order_fills_report(self, list orders):
         """
@@ -86,7 +86,7 @@ cdef class ReportProvider:
         if not filled_orders:
             return pd.DataFrame()
 
-        return pd.DataFrame(data=filled_orders).set_index("cl_ord_id").sort_index()
+        return pd.DataFrame(data=filled_orders).set_index("client_order_id").sort_index()
 
     cpdef object generate_positions_report(self, list positions):
         """
@@ -146,7 +146,7 @@ cdef class ReportProvider:
 
     cdef dict _order_to_dict(self, Order order):
         return {
-            "cl_ord_id": order.cl_ord_id.value,
+            "client_order_id": order.client_order_id.value,
             "venue_order_id": order.venue_order_id.value,
             "instrument_id": order.instrument_id.value,
             "side": OrderSideParser.to_str(order.side),

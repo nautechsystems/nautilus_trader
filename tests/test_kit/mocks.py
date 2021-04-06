@@ -153,7 +153,7 @@ class MockStrategy(TradingStrategy):
             )
 
             self.submit_order(buy_order)
-            self.position_id = buy_order.cl_ord_id
+            self.position_id = buy_order.client_order_id
         elif self.ema1.value < self.ema2.value:
             sell_order = self.order_factory.market(
                 self.bar_type.instrument_id,
@@ -162,7 +162,7 @@ class MockStrategy(TradingStrategy):
             )
 
             self.submit_order(sell_order)
-            self.position_id = sell_order.cl_ord_id
+            self.position_id = sell_order.client_order_id
 
     def on_data(self, data) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -620,8 +620,8 @@ class MockExecutionDatabase(ExecutionDatabase):
     def load_account(self, account_id: AccountId) -> Account:
         return self.accounts.get(account_id)
 
-    def load_order(self, cl_ord_id: ClientOrderId) -> Order:
-        return self.orders.get(cl_ord_id)
+    def load_order(self, client_order_id: ClientOrderId) -> Order:
+        return self.orders.get(client_order_id)
 
     def load_position(self, position_id: PositionId) -> Position:
         return self.positions.get(position_id)
@@ -636,7 +636,7 @@ class MockExecutionDatabase(ExecutionDatabase):
         self.accounts[account.id] = account
 
     def add_order(self, order: Order) -> None:
-        self.orders[order.cl_ord_id] = order
+        self.orders[order.client_order_id] = order
 
     def add_position(self, position: Position) -> None:
         self.positions[position.id] = position

@@ -256,7 +256,7 @@ cdef class RiskEngine(Component):
     cdef void _deny_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderDenied denied = OrderDenied(
-            cl_ord_id=order.cl_ord_id,
+            client_order_id=order.client_order_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),

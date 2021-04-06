@@ -224,7 +224,7 @@ class TestStubs:
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             0,
             uuid4(),
             0,
@@ -236,7 +236,7 @@ class TestStubs:
             venue_order_id = VenueOrderId("1")
         return OrderAccepted(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             venue_order_id,
             0,
             uuid4(),
@@ -247,7 +247,7 @@ class TestStubs:
     def event_order_rejected(order) -> OrderRejected:
         return OrderRejected(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             0,
             "ORDER_REJECTED",
             uuid4(),
@@ -270,7 +270,7 @@ class TestStubs:
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
         if execution_id is None:
-            execution_id = ExecutionId(order.cl_ord_id.value.replace("O", "E"))
+            execution_id = ExecutionId(order.client_order_id.value.replace("O", "E"))
         if position_id is None:
             position_id = order.position_id
         if strategy_id is None:
@@ -288,7 +288,7 @@ class TestStubs:
 
         return OrderFilled(
             account_id=TestStubs.account_id(),
-            cl_ord_id=order.cl_ord_id,
+            client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=position_id,
@@ -312,7 +312,7 @@ class TestStubs:
     def event_order_cancelled(order) -> OrderCancelled:
         return OrderCancelled(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             order.venue_order_id,
             0,
             uuid4(),
@@ -323,7 +323,7 @@ class TestStubs:
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             order.venue_order_id,
             0,
             uuid4(),
@@ -334,7 +334,7 @@ class TestStubs:
     def event_order_triggered(order) -> OrderTriggered:
         return OrderTriggered(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             order.venue_order_id,
             0,
             uuid4(),

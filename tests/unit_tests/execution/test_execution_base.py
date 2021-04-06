@@ -75,7 +75,9 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         )
 
     def test_cld_ord_id_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.cl_ord_id, VenueOrderId("1"))
+        self.assertRaises(
+            NotImplementedError, self.facade.client_order_id, VenueOrderId("1")
+        )
 
     def test_order_id_when_not_implemented_raises_exception(self):
         self.assertRaises(
