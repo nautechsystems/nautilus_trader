@@ -27,7 +27,9 @@ from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data import DataType
@@ -652,3 +654,50 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def update_strategy(self, strategy: TradingStrategy) -> None:
         pass  # Would persist the user state dict
+
+
+class MockLiveExecutionEngine(LiveExecutionEngine):
+    def __init__(
+        self,
+        loop,
+        database,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(loop, database, portfolio, clock, logger, config)
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)
+
+
+class MockLiveDataEngine(LiveDataEngine):
+    def __init__(
+        self,
+        loop,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(
+            loop=loop, portfolio=portfolio, clock=clock, logger=logger, config=config
+        )
+        self.commands = []
+        self.events = []
+        self.responses = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)
+
+    def receive(self, response):
+        self.responses.append(response)
