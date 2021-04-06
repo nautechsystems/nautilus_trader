@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import betfairlightweight
 from betfairlightweight import APIClient
 import orjson
