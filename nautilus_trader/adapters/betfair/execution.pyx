@@ -36,7 +36,7 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -116,7 +116,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             client=self._client, logger=logger, message_handler=self.handle_order_stream_update,
         )
         self.is_connected = False
-        self.order_id_to_cl_ord_id = {}  # type: Dict[str, ClientOrderId]
+        self.order_id_to_client_order_id = {}  # type: Dict[str, ClientOrderId]
 
     cpdef void connect(self) except *:
         self._loop.create_task(self._connect())
@@ -169,13 +169,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"SubmitOrder received {command}")
 
         self._generate_order_submitted(
-            cl_ord_id=command.order.cl_ord_id, timestamp_ns=self._clock.timestamp_ns(),
+            client_order_id=command.order.client_order_id, timestamp_ns=self._clock.timestamp_ns(),
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
         f = self._loop.run_in_executor(None, self._submit_order, command) # type: asyncio.Future
         self._log.debug(f"future: {f}")
-        f.add_done_callback(partial(self._post_submit_order, client_order_id=command.order.cl_ord_id))
+        f.add_done_callback(partial(self._post_submit_order, client_order_id=command.order.client_order_id))
 
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider.find(command.instrument_id)
@@ -198,33 +198,33 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
             self._log.error(f"Submit failed - {reason}")
             self._generate_order_rejected(
-                cl_ord_id=client_order_id,
+                client_order_id=client_order_id,
                 reason=reason,
                 timestamp_ns=self._clock.timestamp_ns(),
             )
             return
         bet_id = resp['instructionReports'][0]['betId']
-        self.order_id_to_cl_ord_id[bet_id] = client_order_id
+        self.order_id_to_client_order_id[bet_id] = client_order_id
         self._generate_order_accepted(
-            cl_ord_id=client_order_id,
-            order_id=OrderId(bet_id),
+            client_order_id=client_order_id,
+            venue_order_id=VenueOrderId(bet_id),
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
     cpdef void update_order(self, UpdateOrder command) except *:
         self._log.debug("Received update order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
-        existing_order = self._engine.cache.order(command.cl_ord_id) # type: Order
+        existing_order = self._engine.cache.order(command.client_order_id) # type: Order
         if existing_order is None:
             self._log.warning(f"Attempting to update order that does not exist in the cache: {command}")
             return
-        if existing_order.id == OrderId("NULL"):
+        if existing_order.id == VenueOrderId("NULL"):
             self._log.warning(f"Order found does not have `id` set: {existing_order}")
             return
         self._log.debug(f"existing_order: {existing_order}")
         kw = order_update_to_betfair(
             command=command,
-            order_id=existing_order.id,
+            venue_order_id=existing_order.id,
             side=existing_order.side,
             instrument=instrument
         )
@@ -285,16 +285,16 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 )
                 for order in selection.get("uo", []):
                     await self._wait_for_order(order['id'], timeout_seconds=5.0)
-                    cl_ord_id = self.order_id_to_cl_ord_id[order['id']]
-                    order_id = OrderId(order["id"])
+                    client_order_id = self.order_id_to_client_order_id[order['id']]
+                    order_id = VenueOrderId(order["id"])
                     execution_id = ExecutionId(str(order["id"]))
                     if (
                             order["status"] == "EC" and order["sm"] != 0
                     ):
                         # Execution complete, The entire order has traded or been cancelled
                         self._generate_order_filled(
-                            cl_ord_id=cl_ord_id,
-                            order_id=order_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=order_id,
                             execution_id=execution_id,
                             instrument_id=instrument.id,
                             order_side=B2N_ORDER_STREAM_SIDE[order['side']],
@@ -310,22 +310,22 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                         )
                     elif order["sm"] == 0 and any([order[x] != 0 for x in ("sc", "sl", "sv")]):
                         self._generate_order_cancelled(
-                            cl_ord_id=cl_ord_id,
-                            order_id=order_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=order_id,
                             timestamp_ns=millis_to_nanos(order['cd']),
                         )
                     # This is a full order, none has traded yet (size_remaining = original placed size)
                     elif order['status'] == "E" and order["sr"] == order["s"]:
                         self._generate_order_accepted(
-                            cl_ord_id=cl_ord_id,
-                            order_id=order_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=order_id,
                             timestamp_ns=millis_to_nanos(order['pd']),
                         )
                     # A portion of this order has been filled, size_remaining < placed size, send a fill and an order accept
                     elif order['status'] == "E" and order["sr"] != 0 and order["sr"] < order["s"]:
                         self._generate_order_filled(
-                            cl_ord_id=cl_ord_id,
-                            order_id=order_id,
+                            client_order_id=client_order_id,
+                            venue_order_id=order_id,
                             execution_id=execution_id,
                             instrument_id=instrument.id,
                             order_side=B2N_ORDER_STREAM_SIDE[order['side']],
@@ -354,20 +354,20 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 if selection.get("fullImage", False):
                     pass
 
-    async def _wait_for_order(self, order_id, timeout_seconds=1.0):
+    async def _wait_for_order(self, venue_order_id, timeout_seconds=1.0):
         """
         We may get an order update from the socket before our submit_order response has come back (with our betId).
-        As a precaution, wait up to `timeout_seconds` for the betId to be added to `self.order_id_to_cl_ord_id`
+        As a precaution, wait up to `timeout_seconds` for the betId to be added to `self.order_id_to_client_order_id`
         """
         start = self._clock.timestamp_ns()
         now = start
         while (now - start) < secs_to_nanos(timeout_seconds):
-            if order_id in self.order_id_to_cl_ord_id:
+            if venue_order_id in self.order_id_to_client_order_id:
                 self._log.debug(f"Found order in {nanos_to_secs(now - start)} sec ")
                 return
             now = self._clock.timestamp_ns()
             await asyncio.sleep(0)
-        raise TimeoutError(f"Failed to find order_id: {order_id} after {timeout_seconds} seconds")
+        raise TimeoutError(f"Failed to find venue_order_id: {venue_order_id} after {timeout_seconds} seconds")
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
@@ -375,9 +375,14 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"generate_order_status_report: {order}")
         return await generate_order_status_report(self, order)
 
-    async def generate_exec_reports(self, order_id: OrderId, symbol: Symbol,  since: Optional[datetime]=None) -> List[ExecutionReport]:
-        self._log.debug(f"generate_exec_reports: {order_id}, {symbol}, {since}")
-        return await generate_trades_list(self, order_id,  symbol,  since)
+    async def generate_exec_reports(
+            self,
+            venue_order_id: VenueOrderId,
+            symbol: Symbol,
+            since: Optional[datetime]=None
+    ) -> List[ExecutionReport]:
+        self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
+        return await generate_trades_list(self, venue_order_id,  symbol,  since)
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

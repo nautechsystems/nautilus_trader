@@ -149,7 +149,7 @@ def test_get_account_currency(execution_client):
     assert currency == "AUD"
 
 
-def _prefill_order_id_to_cl_ord_id(raw):
+def _prefill_order_id_to_client_order_id(raw):
     order_ids = [
         update["id"]
         for market in raw["oc"]
@@ -165,8 +165,8 @@ async def test_order_stream_full_image(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_FULL_IMAGE()
     mocker.patch.object(
         execution_client,
-        "order_id_to_cl_ord_id",
-        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
+        "order_id_to_client_order_id",
+        _prefill_order_id_to_client_order_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
@@ -186,8 +186,8 @@ async def test_order_stream_new_full_image(mocker, execution_client, exec_engine
     raw = BetfairTestStubs.streaming_ocm_NEW_FULL_IMAGE()
     mocker.patch.object(
         execution_client,
-        "order_id_to_cl_ord_id",
-        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
+        "order_id_to_client_order_id",
+        _prefill_order_id_to_client_order_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
@@ -199,8 +199,8 @@ async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
     raw = BetfairTestStubs.streaming_ocm_SUB_IMAGE()
     mocker.patch.object(
         execution_client,
-        "order_id_to_cl_ord_id",
-        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
+        "order_id_to_client_order_id",
+        _prefill_order_id_to_client_order_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
@@ -215,8 +215,8 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
 
     mocker.patch.object(
         execution_client,
-        "order_id_to_cl_ord_id",
-        _prefill_order_id_to_cl_ord_id(orjson.loads(raw)),
+        "order_id_to_client_order_id",
+        _prefill_order_id_to_client_order_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
@@ -267,7 +267,7 @@ async def test_generate_trades_list(mocker, execution_client):
     )
     mocker.patch.object(
         execution_client,
-        "order_id_to_cl_ord_id",
+        "order_id_to_client_order_id",
         {"226125004209": ClientOrderId("1")},
     )
 

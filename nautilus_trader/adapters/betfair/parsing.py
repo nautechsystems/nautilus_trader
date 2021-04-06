@@ -37,9 +37,9 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -65,7 +65,7 @@ def order_submit_to_betfair(
     return {
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
-        "customer_ref": order.cl_ord_id.value,
+        "customer_ref": order.client_order_id.value,
         "customer_strategy_ref": customer_ref,
         "instructions": [
             place_instruction(
@@ -84,7 +84,7 @@ def order_submit_to_betfair(
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
                 ),
-                customer_order_ref=order.cl_ord_id.value,
+                customer_order_ref=order.client_order_id.value,
             )
         ],
     }
@@ -92,14 +92,14 @@ def order_submit_to_betfair(
 
 def order_update_to_betfair(
     command: UpdateOrder,
-    order_id: OrderId,
+    order_id: VenueOrderId,
     side: OrderSide,
     instrument: BettingInstrument,
 ):
     """ Convert an UpdateOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.cl_ord_id.value,
+        "customer_ref": command.client_order_id.value,
         "instructions": [
             replace_instruction(
                 bet_id=order_id.value,
@@ -116,7 +116,7 @@ def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument)
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value,
-        "instructions": [cancel_instruction(bet_id=command.cl_ord_id.value)],
+        "instructions": [cancel_instruction(bet_id=command.client_order_id.value)],
     }
 
 
@@ -318,8 +318,8 @@ def on_market_update(update: dict, instrument_provider: BetfairInstrumentProvide
 async def generate_order_status_report(self, order) -> Optional[OrderStatusReport]:
     return [
         OrderStatusReport(
-            cl_ord_id=ClientOrderId(),
-            order_id=OrderId(),
+            client_order_id=ClientOrderId(),
+            order_id=VenueOrderId(),
             order_state=OrderState(),
             filled_qty=Quantity(),
             timestamp_ns=millis_to_nanos(),
@@ -329,7 +329,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
 
 
 async def generate_trades_list(
-    self, order_id: OrderId, symbol: Symbol, since: datetime = None
+    self, order_id: VenueOrderId, symbol: Symbol, since: datetime = None
 ) -> List[ExecutionReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[order_id],
@@ -341,8 +341,8 @@ async def generate_trades_list(
     timestamp_ns = millis_to_nanos(pd.Timestamp(fill["lastMatchedDate"]).timestamp())
     return [
         ExecutionReport(
-            cl_ord_id=self.order_id_to_cl_ord_id[order_id],
-            order_id=OrderId(fill["betId"]),
+            client_order_id=self.order_id_to_client_order_id[order_id],
+            venue_order_id=VenueOrderId(fill["betId"]),
             execution_id=ExecutionId(fill["lastMatchedDate"]),
             last_qty=Decimal(fill["sizeSettled"]),
             last_px=Decimal(fill["priceMatched"]),

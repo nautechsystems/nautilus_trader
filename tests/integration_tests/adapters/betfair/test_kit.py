@@ -23,8 +23,8 @@ from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -378,7 +378,7 @@ class BetfairTestStubs(TestStubs):
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
-                cl_ord_id=ClientOrderId("1"),
+                client_order_id=ClientOrderId("1"),
                 strategy_id=BetfairTestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,
@@ -394,12 +394,12 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def update_order_command(instrument_id=None, cl_ord_id=None):
+    def update_order_command(instrument_id=None, client_order_id=None):
         return UpdateOrder(
             instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            cl_ord_id=cl_ord_id or ClientOrderId("1"),
+            client_order_id=client_order_id or ClientOrderId("1"),
             quantity=Quantity(50),
             price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),
@@ -412,8 +412,8 @@ class BetfairTestStubs(TestStubs):
             instrument_id=BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            cl_ord_id=ClientOrderId("1"),
-            order_id=OrderId("1"),
+            client_order_id=ClientOrderId("1"),
+            venue_order_id=VenueOrderId("1"),
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
