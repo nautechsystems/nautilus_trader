@@ -1342,15 +1342,15 @@ cdef class TradingStrategy(Component):
         if trigger is not None:
             Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
 
-        cdef bint amending = False  # Set validation flag (must become true)
+        cdef bint updating = False  # Set validation flag (must become true)
 
         if quantity is not None and quantity != order.quantity:
-            amending = True
+            updating = True
         else:
             quantity = order.quantity
 
         if price is not None and price != order.price:
-            amending = True
+            updating = True
         else:
             price = order.price
 
@@ -1359,9 +1359,9 @@ cdef class TradingStrategy(Component):
                 self.log.warning(f"Cannot update order for {repr(order.cl_ord_id)}: already triggered.")
                 return
             if trigger != order.trigger:
-                amending = True
+                updating = True
 
-        if not amending:
+        if not updating:
             self.log.error(
                 "Cannot create command UpdateOrder "
                 "(both quantity and price were None)."
@@ -1823,9 +1823,6 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
-        self.handle_event_c(event)
-
-    cdef void handle_event_c(self, Event event) except *:
         Condition.not_none(event, "event")
 
         if isinstance(event, _WARNING_EVENTS):

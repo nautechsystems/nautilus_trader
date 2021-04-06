@@ -195,8 +195,6 @@ cdef class TradingStrategy(Component):
     cpdef void handle_data(self, GenericData data) except *
     cpdef void handle_event(self, Event event) except *
 
-    cdef void handle_event_c(self, Event event) except *
-
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _send_data_cmd(self, DataCommand command) except *
