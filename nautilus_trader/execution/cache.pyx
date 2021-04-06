@@ -66,28 +66,28 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._database = database
 
         # Cached objects
-        self._cached_accounts = {}            # type: dict[AccountId, Account]
-        self._cached_orders = {}              # type: dict[ClientOrderId, Order]
-        self._cached_positions = {}           # type: dict[PositionId, Position]
+        self._cached_accounts = {}             # type: dict[AccountId, Account]
+        self._cached_orders = {}               # type: dict[ClientOrderId, Order]
+        self._cached_positions = {}            # type: dict[PositionId, Position]
 
         # Cached indexes
-        self._index_venue_account = {}        # type: dict[Venue, AccountId]
-        self._index_venue_order_ids = {}      # type: dict[VenueOrderId, ClientOrderId]
-        self._index_order_position = {}       # type: dict[ClientOrderId, PositionId]
-        self._index_order_strategy = {}       # type: dict[ClientOrderId, StrategyId]
-        self._index_position_strategy = {}    # type: dict[PositionId, StrategyId]
-        self._index_position_orders = {}      # type: dict[PositionId, set[ClientOrderId]]
-        self._index_instrument_orders = {}      # type: dict[InstrumentId, set[ClientOrderId]]
-        self._index_instrument_positions = {}   # type: dict[InstrumentId, set[PositionId]]
-        self._index_strategy_orders = {}      # type: dict[StrategyId, set[ClientOrderId]]
-        self._index_strategy_positions = {}   # type: dict[StrategyId, set[PositionId]]
-        self._index_orders = set()            # type: set[ClientOrderId]
-        self._index_orders_working = set()    # type: set[ClientOrderId]
-        self._index_orders_completed = set()  # type: set[ClientOrderId]
-        self._index_positions = set()         # type: set[PositionId]
-        self._index_positions_open = set()    # type: set[PositionId]
-        self._index_positions_closed = set()  # type: set[PositionId]
-        self._index_strategies = set()        # type: set[StrategyId]
+        self._index_venue_account = {}         # type: dict[Venue, AccountId]
+        self._index_venue_order_ids = {}       # type: dict[VenueOrderId, ClientOrderId]
+        self._index_order_position = {}        # type: dict[ClientOrderId, PositionId]
+        self._index_order_strategy = {}        # type: dict[ClientOrderId, StrategyId]
+        self._index_position_strategy = {}     # type: dict[PositionId, StrategyId]
+        self._index_position_orders = {}       # type: dict[PositionId, set[ClientOrderId]]
+        self._index_instrument_orders = {}     # type: dict[InstrumentId, set[ClientOrderId]]
+        self._index_instrument_positions = {}  # type: dict[InstrumentId, set[PositionId]]
+        self._index_strategy_orders = {}       # type: dict[StrategyId, set[ClientOrderId]]
+        self._index_strategy_positions = {}    # type: dict[StrategyId, set[PositionId]]
+        self._index_orders = set()             # type: set[ClientOrderId]
+        self._index_orders_working = set()     # type: set[ClientOrderId]
+        self._index_orders_completed = set()   # type: set[ClientOrderId]
+        self._index_positions = set()          # type: set[PositionId]
+        self._index_positions_open = set()     # type: set[PositionId]
+        self._index_positions_closed = set()   # type: set[PositionId]
+        self._index_strategies = set()         # type: set[StrategyId]
 
         self._log.info("Initialized.")
 

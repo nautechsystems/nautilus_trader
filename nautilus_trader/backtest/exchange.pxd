@@ -83,6 +83,7 @@ cdef class SimulatedExchange:
     cdef dict _market_asks
     cdef dict _slippages
 
+    cdef dict _instrument_orders
     cdef dict _working_orders
     cdef dict _position_index
     cdef dict _child_orders
@@ -145,6 +146,8 @@ cdef class SimulatedExchange:
     cdef inline void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price, Price bid, Price ask) except *
     cdef inline void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
     cdef inline void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef inline void _add_order(self, PassiveOrder order) except *
+    cdef inline void _delete_order(self, Order order) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
