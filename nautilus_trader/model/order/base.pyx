@@ -118,7 +118,7 @@ cdef class Order:
             state_parser=OrderStateParser.to_str,
         )
 
-        self.cl_ord_id = init.cl_ord_id
+        self.client_order_id = init.client_order_id
         self.venue_order_id = VenueOrderId.null_c()
         self.position_id = PositionId.null_c()
         self.strategy_id = init.strategy_id
@@ -137,20 +137,20 @@ cdef class Order:
         self.init_id = init.id
 
     def __eq__(self, Order other) -> bool:
-        return self.cl_ord_id.value == other.cl_ord_id.value
+        return self.client_order_id.value == other.client_order_id.value
 
     def __ne__(self, Order other) -> bool:
-        return self.cl_ord_id.value != other.cl_ord_id.value
+        return self.client_order_id.value != other.client_order_id.value
 
     def __hash__(self) -> int:
-        return hash(self.cl_ord_id.value)
+        return hash(self.client_order_id.value)
 
     def __repr__(self) -> str:
         cdef str id_string = f", venue_order_id={self.venue_order_id.value})" if self.venue_order_id.not_null() else ")"
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
-                f"cl_ord_id={self.cl_ord_id.value}"
+                f"client_order_id={self.client_order_id.value}"
                 f"{id_string}")
 
     cdef OrderState state_c(self) except *:
@@ -465,7 +465,7 @@ cdef class Order:
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
+        Condition.equal(event.client_order_id, self.client_order_id, "event.client_order_id", "self.client_order_id")
         if self.venue_order_id.not_null() and event.venue_order_id.not_null():
             Condition.equal(event.venue_order_id, self.venue_order_id, "event.venue_order_id", "self.venue_order_id")
 
@@ -561,7 +561,7 @@ cdef class PassiveOrder(Order):
     """
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
@@ -579,7 +579,7 @@ cdef class PassiveOrder(Order):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
@@ -625,7 +625,7 @@ cdef class PassiveOrder(Order):
             options[EXPIRE_TIME] = expire_time
 
         cdef OrderInitialized init = OrderInitialized(
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             order_side=order_side,

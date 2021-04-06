@@ -159,11 +159,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef ClientOrderId order_id
         cdef Order order
         for key_bytes in order_keys:
-            cl_ord_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
-            order = self.load_order(cl_ord_id)
+            client_order_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            order = self.load_order(client_order_id)
 
             if order is not None:
-                orders[order.cl_ord_id] = order
+                orders[order.client_order_id] = order
 
         return orders
 
@@ -221,13 +221,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return account
 
-    cpdef Order load_order(self, ClientOrderId cl_ord_id):
+    cpdef Order load_order(self, ClientOrderId client_order_id):
         """
         Load the order associated with the given identifier (if found).
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier to load.
 
         Returns
@@ -235,9 +235,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Order or None
 
         """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(client_order_id, "client_order_id")
 
-        cdef list events = self._redis.lrange(name=self._key_orders + cl_ord_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(name=self._key_orders + client_order_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
         if not events:
@@ -367,11 +367,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(order, "order")
 
         cdef bytes last_event = self._event_serializer.serialize(order.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_orders + order.cl_ord_id.value, last_event)
+        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.value, last_event)
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {order.cl_ord_id} already existed in the orders and was appended to.")
+            self._log.error(f"The {order.client_order_id} already existed in the orders and was appended to.")
 
     cpdef void add_position(self, Position position) except *:
         """
@@ -446,13 +446,13 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(order, "order")
 
         cdef bytes serialized_event = self._event_serializer.serialize(order.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_orders + order.cl_ord_id.value, serialized_event)
+        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.value, serialized_event)
 
         # Check data integrity of reply
         if reply == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Order(id={order.cl_ord_id.value}) did not already exist.")
+            self._log.error(f"The updated Order(id={order.client_order_id.value}) did not already exist.")
 
-        self._log.debug(f"Updated Order(id={order.cl_ord_id.value}).")
+        self._log.debug(f"Updated Order(id={order.client_order_id.value}).")
 
     cpdef void update_position(self, Position position) except *:
         """

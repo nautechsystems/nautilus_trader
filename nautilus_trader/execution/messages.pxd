@@ -27,7 +27,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class OrderStatusReport:
-    cdef readonly ClientOrderId cl_ord_id
+    cdef readonly ClientOrderId client_order_id
     """The reported client order identifier.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The reported order identifier.\n\n:returns: `VenueOrderId`"""
@@ -52,7 +52,7 @@ cdef class PositionStatusReport:
 
 cdef class ExecutionReport:
     # TODO: Docs
-    cdef readonly ClientOrderId cl_ord_id
+    cdef readonly ClientOrderId client_order_id
     cdef readonly VenueOrderId venue_order_id
     cdef readonly ExecutionId id
     cdef readonly object last_qty

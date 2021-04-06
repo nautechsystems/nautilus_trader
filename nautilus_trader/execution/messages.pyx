@@ -35,7 +35,7 @@ cdef class OrderStatusReport:
     """
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         OrderState order_state,
         Quantity filled_qty not None,
@@ -46,7 +46,7 @@ cdef class OrderStatusReport:
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The reported client order identifier.
         venue_order_id : VenueOrderId
             The reported order identifier.
@@ -58,7 +58,7 @@ cdef class OrderStatusReport:
             The Unix timestamp (nanos) of the report.
 
         """
-        self.cl_ord_id = cl_ord_id
+        self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
         self.order_state = order_state
         self.filled_qty = filled_qty
@@ -104,7 +104,7 @@ cdef class ExecutionReport:
 
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
         last_qty not None: Decimal,
@@ -120,7 +120,7 @@ cdef class ExecutionReport:
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -144,7 +144,7 @@ cdef class ExecutionReport:
         Condition.type(last_px, Decimal, "last_qty")
         Condition.type_or_none(commission_amount, Decimal, "commission_amount")
 
-        self.cl_ord_id = cl_ord_id
+        self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
         self.id = execution_id
         self.last_qty = last_qty

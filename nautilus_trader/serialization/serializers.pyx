@@ -150,7 +150,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return MsgPackSerializer.serialize({})  # Null order
 
         cdef dict package = {
-            ID: order.cl_ord_id.value,
+            ID: order.client_order_id.value,
             STRATEGY_ID: order.strategy_id.value,
             INSTRUMENT_ID: order.instrument_id.value,
             ORDER_SIDE: self.convert_snake_to_camel(OrderSideParser.to_str(order.side)),
@@ -205,7 +205,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if not unpacked:
             return None  # Null order
 
-        cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID])
+        cdef ClientOrderId client_order_id = ClientOrderId(unpacked[ID])
         cdef StrategyId strategy_id = StrategyId.from_str_c(unpacked[STRATEGY_ID])
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[INSTRUMENT_ID])
         cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
@@ -217,7 +217,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.MARKET:
             return MarketOrder(
-                cl_ord_id=cl_ord_id,
+                client_order_id=client_order_id,
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
                 order_side=order_side,
@@ -229,7 +229,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.LIMIT:
             return LimitOrder(
-                cl_ord_id=cl_ord_id,
+                client_order_id=client_order_id,
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
                 order_side=order_side,
@@ -246,7 +246,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.STOP_MARKET:
             return StopMarketOrder(
-                cl_ord_id=cl_ord_id,
+                client_order_id=client_order_id,
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
                 order_side=order_side,
@@ -261,7 +261,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if order_type == OrderType.STOP_LIMIT:
             return StopLimitOrder(
-                cl_ord_id=cl_ord_id,
+                client_order_id=client_order_id,
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
                 order_side=order_side,
@@ -342,13 +342,13 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         elif isinstance(command, UpdateOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
-            package[CLIENT_ORDER_ID] = command.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = command.client_order_id.value
             package[QUANTITY] = str(command.quantity)
             package[PRICE] = str(command.price)
         elif isinstance(command, CancelOrder):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
-            package[CLIENT_ORDER_ID] = command.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = command.client_order_id.value
             package[VENUE_ORDER_ID] = command.venue_order_id.value
         else:
             raise RuntimeError(f"Cannot serialize command: unrecognized command {command}")
@@ -482,7 +482,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[BALANCES_LOCKED] = {b.currency.code: str(b) for b in event.balances_locked}
             package[INFO] = event.info
         elif isinstance(event, OrderInitialized):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[STRATEGY_ID] = event.strategy_id.value
             package[INSTRUMENT_ID] = event.instrument_id.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
@@ -509,59 +509,59 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 package[HIDDEN] = event.options[HIDDEN]
 
         elif isinstance(event, OrderSubmitted):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[SUBMITTED_TIMESTAMP] = event.submitted_ns
         elif isinstance(event, OrderInvalid):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[REASON] = event.reason
         elif isinstance(event, OrderDenied):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[REASON] = event.reason
         elif isinstance(event, OrderAccepted):
             package[ACCOUNT_ID] = event.account_id.value
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCEPTED_TIMESTAMP] = event.accepted_ns
         elif isinstance(event, OrderRejected):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIMESTAMP] = event.rejected_ns
             package[REASON] = event.reason
         elif isinstance(event, OrderUpdateRejected):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIMESTAMP] = event.rejected_ns
             package[RESPONSE_TO] = event.response_to
             package[REASON] = event.reason
         elif isinstance(event, OrderCancelRejected):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIMESTAMP] = event.rejected_ns
             package[RESPONSE_TO] = event.response_to
             package[REASON] = event.reason
         elif isinstance(event, OrderCancelled):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[CANCELLED_TIMESTAMP] = event.cancelled_ns
         elif isinstance(event, OrderUpdated):
             package[ACCOUNT_ID] = event.account_id.value
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[UPDATED_TIMESTAMP] = event.updated_ns
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
         elif isinstance(event, OrderExpired):
             package[ACCOUNT_ID] = event.account_id.value
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[EXPIRED_TIMESTAMP] = event.expired_ns
         elif isinstance(event, OrderFilled):
             package[ACCOUNT_ID] = event.account_id.value
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[EXECUTION_ID] = event.execution_id.value
             package[POSITION_ID] = event.position_id.value

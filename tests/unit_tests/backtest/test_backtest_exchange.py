@@ -417,7 +417,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
-        self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
+        self.assertIn(order.client_order_id, self.exchange.get_working_orders())
 
     def test_submit_limit_order_when_marketable_then_fills(self):
         # Arrange: Prepare market
@@ -492,7 +492,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
-        self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
+        self.assertIn(order.client_order_id, self.exchange.get_working_orders())
 
     def test_submit_stop_limit_order_when_inside_market_rejects(self):
         # Arrange: Prepare market
@@ -543,7 +543,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
-        self.assertIn(order.cl_ord_id, self.exchange.get_working_orders())
+        self.assertIn(order.client_order_id, self.exchange.get_working_orders())
 
     def test_submit_bracket_market_order(self):
         # Arrange: Prepare market
@@ -620,7 +620,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.SUBMITTED, stop_loss_order.state)
         self.assertEqual(OrderState.SUBMITTED, take_profit_order.state)
         self.assertEqual(1, len(self.exchange.get_working_orders()))
-        self.assertIn(entry_order.cl_ord_id, self.exchange.get_working_orders())
+        self.assertIn(entry_order.client_order_id, self.exchange.get_working_orders())
 
     def test_cancel_stop_order(self):
         # Arrange: Prepare market
@@ -654,7 +654,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             instrument_id=USDJPY_SIM.id,
             trader_id=self.trader_id,
             account_id=self.account_id,
-            cl_ord_id=ClientOrderId("O-123456"),
+            client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
             command_id=self.uuid_factory.generate(),
             timestamp_ns=0,
@@ -672,7 +672,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             instrument_id=USDJPY_SIM.id,
             trader_id=self.trader_id,
             account_id=self.account_id,
-            cl_ord_id=ClientOrderId("O-123456"),
+            client_order_id=ClientOrderId("O-123456"),
             quantity=Quantity(100000),
             price=Price("1.00000"),
             command_id=self.uuid_factory.generate(),

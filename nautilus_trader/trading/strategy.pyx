@@ -1356,7 +1356,7 @@ cdef class TradingStrategy(Component):
 
         if trigger is not None:
             if order.is_triggered:
-                self.log.warning(f"Cannot update order for {repr(order.cl_ord_id)}: already triggered.")
+                self.log.warning(f"Cannot update order for {repr(order.client_order_id)}: already triggered.")
                 return
             if trigger != order.trigger:
                 updating = True
@@ -1376,7 +1376,7 @@ cdef class TradingStrategy(Component):
             order.instrument_id,
             self.trader_id,
             order.account_id,
-            order.cl_ord_id,
+            order.client_order_id,
             quantity,
             price,
             self.uuid_factory.generate(),
@@ -1414,7 +1414,7 @@ cdef class TradingStrategy(Component):
             order.instrument_id,
             self.trader_id,
             order.account_id,
-            order.cl_ord_id,
+            order.client_order_id,
             order.venue_order_id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

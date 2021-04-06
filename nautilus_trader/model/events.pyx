@@ -97,7 +97,7 @@ cdef class OrderEvent(Event):
 
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -107,7 +107,7 @@ cdef class OrderEvent(Event):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -119,7 +119,7 @@ cdef class OrderEvent(Event):
         """
         super().__init__(event_id, timestamp_ns)
 
-        self.cl_ord_id = cl_ord_id
+        self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
 
 
@@ -135,7 +135,7 @@ cdef class OrderInitialized(OrderEvent):
 
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
@@ -151,7 +151,7 @@ cdef class OrderInitialized(OrderEvent):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
@@ -175,13 +175,13 @@ cdef class OrderInitialized(OrderEvent):
 
         """
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             VenueOrderId.null_c(),  # Pending assignment by venue
             event_id,
             timestamp_ns,
         )
 
-        self.cl_ord_id = cl_ord_id
+        self.client_order_id = client_order_id
         self.strategy_id = strategy_id
         self.instrument_id = instrument_id
         self.order_side = order_side
@@ -192,7 +192,7 @@ cdef class OrderInitialized(OrderEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"strategy_id={self.strategy_id}, "
                 f"event_id={self.id})")
 
@@ -209,7 +209,7 @@ cdef class OrderInvalid(OrderEvent):
 
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         str reason not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -219,7 +219,7 @@ cdef class OrderInvalid(OrderEvent):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         reason : str
             The order invalid reason.
@@ -236,7 +236,7 @@ cdef class OrderInvalid(OrderEvent):
         """
         Condition.valid_string(reason, "invalid_reason")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             VenueOrderId.null_c(),  # Never assigned
             event_id,
             timestamp_ns,
@@ -246,7 +246,7 @@ cdef class OrderInvalid(OrderEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
 
@@ -261,7 +261,7 @@ cdef class OrderDenied(OrderEvent):
 
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         str reason not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -271,7 +271,7 @@ cdef class OrderDenied(OrderEvent):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         reason : str
             The order denied reason.
@@ -288,7 +288,7 @@ cdef class OrderDenied(OrderEvent):
         """
         Condition.valid_string(reason, "denied_reason")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             VenueOrderId.null_c(),  # Never assigned
             event_id,
             timestamp_ns,
@@ -298,7 +298,7 @@ cdef class OrderDenied(OrderEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
 
@@ -312,7 +312,7 @@ cdef class OrderSubmitted(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         int64_t submitted_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -324,7 +324,7 @@ cdef class OrderSubmitted(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         submitted_ns : int64
             The Unix timestamp (nanos) when the order was submitted.
@@ -335,7 +335,7 @@ cdef class OrderSubmitted(OrderEvent):
 
         """
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             VenueOrderId.null_c(),  # Pending accepted
             event_id,
             timestamp_ns,
@@ -347,7 +347,7 @@ cdef class OrderSubmitted(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"event_id={self.id})")
 
 
@@ -359,7 +359,7 @@ cdef class OrderRejected(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         int64_t rejected_ns,
         str reason not None,
         UUID event_id not None,
@@ -372,7 +372,7 @@ cdef class OrderRejected(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         rejected_ns : int64
             The order rejected time.
@@ -391,7 +391,7 @@ cdef class OrderRejected(OrderEvent):
         """
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             VenueOrderId.null_c(),  # Not assigned on rejection
             event_id,
             timestamp_ns,
@@ -404,7 +404,7 @@ cdef class OrderRejected(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
 
@@ -425,7 +425,7 @@ cdef class OrderAccepted(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         int64_t accepted_ns,
         UUID event_id not None,
@@ -438,7 +438,7 @@ cdef class OrderAccepted(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -457,7 +457,7 @@ cdef class OrderAccepted(OrderEvent):
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -469,7 +469,7 @@ cdef class OrderAccepted(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
@@ -483,7 +483,7 @@ cdef class OrderUpdateRejected(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         int64_t rejected_ns,
         str response_to not None,
@@ -498,7 +498,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -526,7 +526,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         Condition.valid_string(response_to, "rejected_response_to")
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -540,7 +540,7 @@ cdef class OrderUpdateRejected(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"response_to={self.response_to}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
@@ -555,7 +555,7 @@ cdef class OrderCancelRejected(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         int64_t rejected_ns,
         str response_to not None,
@@ -570,7 +570,7 @@ cdef class OrderCancelRejected(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -598,7 +598,7 @@ cdef class OrderCancelRejected(OrderEvent):
         Condition.valid_string(response_to, "rejected_response_to")
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -612,7 +612,7 @@ cdef class OrderCancelRejected(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"response_to={self.response_to}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
@@ -626,7 +626,7 @@ cdef class OrderCancelled(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         int64_t cancelled_ns,
         UUID event_id not None,
@@ -639,7 +639,7 @@ cdef class OrderCancelled(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -658,7 +658,7 @@ cdef class OrderCancelled(OrderEvent):
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -670,7 +670,7 @@ cdef class OrderCancelled(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
@@ -683,7 +683,7 @@ cdef class OrderUpdated(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
         Price price not None,
@@ -698,7 +698,7 @@ cdef class OrderUpdated(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -721,7 +721,7 @@ cdef class OrderUpdated(OrderEvent):
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -735,7 +735,7 @@ cdef class OrderUpdated(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_order_id={self.cl_ord_id}, "
+                f"cl_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"qty={self.quantity.to_str()}, "
                 f"price={self.price}, "
@@ -750,7 +750,7 @@ cdef class OrderExpired(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         int64_t expired_ns,
         UUID event_id not None,
@@ -763,7 +763,7 @@ cdef class OrderExpired(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -782,7 +782,7 @@ cdef class OrderExpired(OrderEvent):
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -794,7 +794,7 @@ cdef class OrderExpired(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
@@ -807,7 +807,7 @@ cdef class OrderTriggered(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         int64_t triggered_ns,
         UUID event_id not None,
@@ -820,7 +820,7 @@ cdef class OrderTriggered(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -839,7 +839,7 @@ cdef class OrderTriggered(OrderEvent):
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -851,7 +851,7 @@ cdef class OrderTriggered(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
@@ -864,7 +864,7 @@ cdef class OrderFilled(OrderEvent):
     def __init__(
         self,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
         PositionId position_id not None,
@@ -891,7 +891,7 @@ cdef class OrderFilled(OrderEvent):
         ----------
         account_id : AccountId
             The account identifier.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
@@ -940,7 +940,7 @@ cdef class OrderFilled(OrderEvent):
         if info is None:
             info = {}
         super().__init__(
-            cl_ord_id,
+            client_order_id,
             venue_order_id,
             event_id,
             timestamp_ns,
@@ -966,7 +966,7 @@ cdef class OrderFilled(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
+                f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"position_id={self.position_id}, "
                 f"strategy_id={self.strategy_id}, "

@@ -115,7 +115,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0, position.open_duration_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
-        self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual([order.client_order_id], position.client_order_ids)
         self.assertEqual([VenueOrderId("1")], position.venue_order_ids)
         self.assertEqual(
             [ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids
@@ -313,7 +313,7 @@ class PositionTests(unittest.TestCase):
 
         fill2 = OrderFilled(
             self.account_id,
-            order.cl_ord_id,
+            order.client_order_id,
             VenueOrderId("2"),
             ExecutionId("E2"),
             PositionId("T123456"),
@@ -418,7 +418,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_open)
         self.assertEqual(3, position.event_count)
-        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual(
+            [order1.client_order_id, order2.client_order_id], position.client_order_ids
+        )
         self.assertEqual(0, position.closed_timestamp_ns)
         self.assertEqual(Decimal("1.00002"), position.avg_px_close)
         self.assertFalse(position.is_long)
@@ -475,7 +477,9 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0, position.opened_timestamp_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_open)
         self.assertEqual(2, position.event_count)
-        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual(
+            [order1.client_order_id, order2.client_order_id], position.client_order_ids
+        )
         self.assertEqual(
             [
                 ExecutionId("E-19700101-000000-000-001-1"),
@@ -559,7 +563,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.000005"), position.avg_px_open)
         self.assertEqual(3, position.event_count)
         self.assertEqual(
-            [order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.cl_ord_ids
+            [order1.client_order_id, order2.client_order_id, order3.client_order_id],
+            position.client_order_ids,
         )
         self.assertEqual(0, position.closed_timestamp_ns)
         self.assertEqual(Decimal("1.0001"), position.avg_px_close)

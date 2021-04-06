@@ -295,7 +295,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.process(random)
 
-    def test_submit_order_with_duplicate_cl_ord_id_logs(self):
+    def test_submit_order_with_duplicate_client_order_id_logs(self):
         # Arrange
         self.exec_engine.start()
 
@@ -450,7 +450,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert (does not send to strategy)
         self.assertEqual(OrderState.FILLED, order.state)
 
-    def test_submit_bracket_order_with_all_duplicate_cl_ord_id_logs_does_not_submit(
+    def test_submit_bracket_order_with_all_duplicate_client_order_id_logs_does_not_submit(
         self,
     ):
         # Arrange
@@ -510,7 +510,7 @@ class ExecutionEngineTests(unittest.TestCase):
             OrderState.INITIALIZED, take_profit.state
         )  # Did not invalidate originals
 
-    def test_submit_bracket_order_with_duplicate_take_profit_cl_ord_id_logs_does_not_submit(
+    def test_submit_bracket_order_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
         self,
     ):
         # Arrange
@@ -599,7 +599,7 @@ class ExecutionEngineTests(unittest.TestCase):
             OrderState.ACCEPTED, take_profit1.state
         )  # Did not invalidate original
 
-    def test_submit_bracket_order_with_duplicate_stop_loss_cl_ord_id_logs_does_not_submit(
+    def test_submit_bracket_order_with_duplicate_stop_loss_client_order_id_logs_does_not_submit(
         self,
     ):
         # Arrange
@@ -728,7 +728,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         self.assertIn(submit_order, self.exec_client.commands)
-        self.assertTrue(self.cache.order_exists(order.cl_ord_id))
+        self.assertTrue(self.cache.order_exists(order.client_order_id))
 
     def test_submit_order_with_cleared_cache_logs_error(self):
         # Arrange
@@ -871,7 +871,7 @@ class ExecutionEngineTests(unittest.TestCase):
             order.instrument_id,
             self.trader_id,
             self.account_id,
-            order.cl_ord_id,
+            order.client_order_id,
             VenueOrderId("1"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -924,7 +924,7 @@ class ExecutionEngineTests(unittest.TestCase):
             order.instrument_id,
             self.trader_id,
             self.account_id,
-            order.cl_ord_id,
+            order.client_order_id,
             Quantity(200000),
             order.price,
             self.uuid_factory.generate(),
@@ -938,7 +938,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.quantity)
 
-    def test_handle_order_event_with_random_cl_ord_id_and_order_id_cached(self):
+    def test_handle_order_event_with_random_client_order_id_and_order_id_cached(self):
         # Arrange
         self.exec_engine.start()
 
@@ -987,7 +987,9 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert (order was found and OrderCancelled event was applied)
         self.assertEqual(OrderState.CANCELLED, order.state)
 
-    def test_handle_order_event_with_random_cl_ord_id_and_order_id_not_cached(self):
+    def test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
+        self,
+    ):
         # Arrange
         self.exec_engine.start()
 
@@ -1897,9 +1899,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(150000, position_flipped.last_event.cum_qty)
         self.assertEqual(0, position_flipped.last_event.leaves_qty)
         self.assertEqual(
-            Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty
+            Quantity(100000),
+            self.cache.order(order1.client_order_id).last_event.cum_qty,
         )
-        self.assertEqual(0, self.cache.order(order1.cl_ord_id).last_event.leaves_qty)
+        self.assertEqual(
+            0, self.cache.order(order1.client_order_id).last_event.leaves_qty
+        )
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))
@@ -1987,9 +1992,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(150000, position_flipped.last_event.cum_qty)
         self.assertEqual(0, position_flipped.last_event.leaves_qty)
         self.assertEqual(
-            Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty
+            Quantity(100000),
+            self.cache.order(order1.client_order_id).last_event.cum_qty,
         )
-        self.assertEqual(0, self.cache.order(order1.cl_ord_id).last_event.leaves_qty)
+        self.assertEqual(
+            0, self.cache.order(order1.client_order_id).last_event.leaves_qty
+        )
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))

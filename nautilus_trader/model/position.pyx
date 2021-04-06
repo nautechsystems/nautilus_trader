@@ -58,7 +58,7 @@ cdef class Position:
         # Identifiers
         self.id = fill.position_id
         self.account_id = fill.account_id
-        self.from_order = fill.cl_ord_id
+        self.from_order = fill.client_order_id
         self.strategy_id = fill.strategy_id
         self.instrument_id = fill.instrument_id
 
@@ -96,9 +96,9 @@ cdef class Position:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.status_string_c()}, id={self.id.value})"
 
-    cdef list cl_ord_ids_c(self):
+    cdef list client_order_ids_c(self):
         cdef OrderFilled fill
-        return sorted(list({fill.cl_ord_id for fill in self._events}))
+        return sorted(list({fill.client_order_id for fill in self._events}))
 
     cdef list venue_order_ids_c(self):
         cdef OrderFilled fill
@@ -161,7 +161,7 @@ cdef class Position:
         return self.instrument_id.venue
 
     @property
-    def cl_ord_ids(self):
+    def client_order_ids(self):
         """
         The client order identifiers associated with the position.
 
@@ -174,7 +174,7 @@ cdef class Position:
         Guaranteed not to contain duplicate identifiers.
 
         """
-        return self.cl_ord_ids_c()
+        return self.client_order_ids_c()
 
     @property
     def venue_order_ids(self):

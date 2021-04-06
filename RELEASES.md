@@ -2,10 +2,20 @@
 
 **This release includes substantial breaking changes.**
 
-Further standardization of naming conventions along with internal refinements
-and fixes.
+Due to recent feedback and much further thought, a major renaming as been carried
+out involving order identifiers. The `Order` is the only domain object in the
+model which is identified with more than one ID. Due to this, more explicitness
+helps to ensure correct logic. Previously the `OrderId` was
+implicitly assumed to be the one assigned by the trading venue. This has been
+clarified by renaming the identifier to `VenueOrderId`. Following this, it no
+longer made sense to refer to it through `Order.id`, and so this was changed to
+its full name `Order.venue_order_id`. This naturally resulted in `ClientOrderId`(s)
+being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 
 ## Breaking Changes
+- Rename `OrderId` to `VenueOrderId`.
+- Rename `Order.id` to `Order.venue_order_id`.
+- Rename `Order.cl_ord_id` to `Order.client_order_id`.
 - Rename `AssetClass.STOCK` to `AssetClass.EQUITY`.
 
 ## Enhancements

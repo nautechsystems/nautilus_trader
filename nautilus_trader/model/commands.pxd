@@ -53,7 +53,7 @@ cdef class SubmitBracketOrder(TradingCommand):
 
 
 cdef class UpdateOrder(TradingCommand):
-    cdef readonly ClientOrderId cl_ord_id
+    cdef readonly ClientOrderId client_order_id
     """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly Quantity quantity
     """The quantity for the command.\n\n:returns: `Quantity`"""
@@ -62,7 +62,7 @@ cdef class UpdateOrder(TradingCommand):
 
 
 cdef class CancelOrder(TradingCommand):
-    cdef readonly ClientOrderId cl_ord_id
+    cdef readonly ClientOrderId client_order_id
     """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order identifier associated with the command.\n\n:returns: `VenueOrderId`"""

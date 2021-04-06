@@ -107,7 +107,7 @@ class TestLiveExecutionClient:
         async def run_test():
             # Arrange
             report = OrderStatusReport(
-                cl_ord_id=ClientOrderId("O-123456"),
+                client_order_id=ClientOrderId("O-123456"),
                 venue_order_id=VenueOrderId("1"),
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
@@ -165,7 +165,7 @@ class TestLiveExecutionClient:
             await asyncio.sleep(0)  # Process queue
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELLED,
                 filled_qty=Quantity(0),
@@ -221,7 +221,7 @@ class TestLiveExecutionClient:
             await asyncio.sleep(0)  # Process queue
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
@@ -277,7 +277,7 @@ class TestLiveExecutionClient:
             await asyncio.sleep(0)  # Process queue
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),

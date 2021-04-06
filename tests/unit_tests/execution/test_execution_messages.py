@@ -57,7 +57,7 @@ class TestExecutionStateReport:
 
         venue_order_id = VenueOrderId("1")
         order_report = OrderStatusReport(
-            cl_ord_id=ClientOrderId("O-123456"),
+            client_order_id=ClientOrderId("O-123456"),
             venue_order_id=venue_order_id,
             order_state=OrderState.REJECTED,
             filled_qty=Quantity(0),

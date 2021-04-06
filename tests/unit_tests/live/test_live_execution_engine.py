@@ -404,7 +404,7 @@ class TestLiveExecutionEngine:
             self.engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.ACCEPTED,
                 filled_qty=Quantity(0),
@@ -461,7 +461,7 @@ class TestLiveExecutionEngine:
             self.engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELLED,
                 filled_qty=Quantity(0),
@@ -518,7 +518,7 @@ class TestLiveExecutionEngine:
             self.engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.EXPIRED,
                 filled_qty=Quantity(0),
@@ -575,7 +575,7 @@ class TestLiveExecutionEngine:
             self.engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.PARTIALLY_FILLED,
                 filled_qty=Quantity(70000),
@@ -584,7 +584,7 @@ class TestLiveExecutionEngine:
 
             trade1 = ExecutionReport(
                 execution_id=ExecutionId("1"),
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(50000),
                 last_px=Decimal("1.00000"),
@@ -597,7 +597,7 @@ class TestLiveExecutionEngine:
 
             trade2 = ExecutionReport(
                 execution_id=ExecutionId("2"),
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(20000),
                 last_px=Decimal("1.00000"),
@@ -659,7 +659,7 @@ class TestLiveExecutionEngine:
             self.engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
@@ -668,7 +668,7 @@ class TestLiveExecutionEngine:
 
             trade1 = ExecutionReport(
                 execution_id=ExecutionId("1"),
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(50000),
                 last_px=Decimal("1.00000"),
@@ -681,7 +681,7 @@ class TestLiveExecutionEngine:
 
             trade2 = ExecutionReport(
                 execution_id=ExecutionId("2"),
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(50000),
                 last_px=Decimal("1.00000"),
