@@ -18,9 +18,9 @@ import unittest
 from nautilus_trader.execution.base import ExecutionCacheFacade
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from tests.test_kit.providers import TestInstrumentProvider
 
 
@@ -48,14 +48,14 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
     def test_accounts_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.accounts)
 
-    def test_order_ids_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.order_ids)
+    def test_client_order_ids_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.client_order_ids)
 
-    def test_order_working_ids_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.order_working_ids)
+    def test_client_order_ids_working_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.client_order_ids_working)
 
-    def test_order_completed_ids_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.order_completed_ids)
+    def test_client_order_ids_completed_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.client_order_ids_completed)
 
     def test_position_ids_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.position_ids)
@@ -75,11 +75,11 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         )
 
     def test_cld_ord_id_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.cl_ord_id, OrderId("1"))
+        self.assertRaises(NotImplementedError, self.facade.cl_ord_id, VenueOrderId("1"))
 
     def test_order_id_when_not_implemented_raises_exception(self):
         self.assertRaises(
-            NotImplementedError, self.facade.order_id, ClientOrderId("O-123456")
+            NotImplementedError, self.facade.venue_order_id, ClientOrderId("O-123456")
         )
 
     def test_orders_when_not_implemented_raises_exception(self):

@@ -35,7 +35,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef dict _cached_positions
 
     cdef dict _index_venue_account
-    cdef dict _index_order_ids
+    cdef dict _index_venue_order_ids
     cdef dict _index_order_position
     cdef dict _index_order_strategy
     cdef dict _index_position_strategy

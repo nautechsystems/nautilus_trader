@@ -325,7 +325,7 @@ class TestRiskEngine:
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

@@ -182,7 +182,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         for name, mass_status in client_mass_status.items():
             for order_state_report in mass_status.order_reports().values():
                 order = active_orders.get(order_state_report.cl_ord_id)
-                exec_reports = mass_status.exec_reports().get(order.id, [])
+                exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
                 await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
 
         # Wait for state resolution until timeout...
@@ -198,7 +198,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             resolved = True
             for order in active_orders.values():
                 name = order.instrument_id.venue.first()
-                report = client_mass_status[name].order_reports().get(order.id)
+                report = client_mass_status[name].order_reports().get(order.venue_order_id)
                 if report is None:
                     return False  # Will never resolve
                 if order.state_c() != report.order_state:

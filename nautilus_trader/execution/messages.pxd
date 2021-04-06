@@ -22,15 +22,15 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class OrderStatusReport:
     cdef readonly ClientOrderId cl_ord_id
     """The reported client order identifier.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderId order_id
-    """The reported order identifier.\n\n:returns: `OrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The reported order identifier.\n\n:returns: `VenueOrderId`"""
     cdef readonly OrderState order_state
     """The reported order state at the exchange.\n\n:returns: `OrderState`"""
     cdef readonly Quantity filled_qty
@@ -53,7 +53,7 @@ cdef class PositionStatusReport:
 cdef class ExecutionReport:
     # TODO: Docs
     cdef readonly ClientOrderId cl_ord_id
-    cdef readonly OrderId order_id
+    cdef readonly VenueOrderId venue_order_id
     cdef readonly ExecutionId id
     cdef readonly object last_qty
     cdef readonly object cum_qty
@@ -84,5 +84,5 @@ cdef class ExecutionMassStatus:
     cpdef dict position_reports(self)
 
     cpdef void add_order_report(self, OrderStatusReport report) except *
-    cpdef void add_exec_reports(self, OrderId order_id, list reports) except *
+    cpdef void add_exec_reports(self, VenueOrderId venue_order_id, list reports) except *
     cpdef void add_position_report(self, PositionStatusReport report) except *

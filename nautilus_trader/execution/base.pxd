@@ -16,10 +16,10 @@
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -36,9 +36,9 @@ cdef class ExecutionCacheFacade:
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cpdef set order_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set order_working_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set order_completed_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids_working(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids_completed(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_open_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_closed_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -47,8 +47,8 @@ cdef class ExecutionCacheFacade:
 # -- ORDER QUERIES ---------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId cl_ord_id)
-    cpdef ClientOrderId cl_ord_id(self, OrderId order_id)
-    cpdef OrderId order_id(self, ClientOrderId cl_ord_id)
+    cpdef ClientOrderId cl_ord_id(self, VenueOrderId venue_order_id)
+    cpdef VenueOrderId venue_order_id(self, ClientOrderId cl_ord_id)
     cpdef list orders(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_completed(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)

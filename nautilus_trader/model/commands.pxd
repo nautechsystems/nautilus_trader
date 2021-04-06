@@ -17,10 +17,10 @@ from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
@@ -64,5 +64,5 @@ cdef class UpdateOrder(TradingCommand):
 cdef class CancelOrder(TradingCommand):
     cdef readonly ClientOrderId cl_ord_id
     """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the command.\n\n:returns: `OrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order identifier associated with the command.\n\n:returns: `VenueOrderId`"""

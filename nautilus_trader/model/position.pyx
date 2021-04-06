@@ -100,9 +100,9 @@ cdef class Position:
         cdef OrderFilled fill
         return sorted(list({fill.cl_ord_id for fill in self._events}))
 
-    cdef list order_ids_c(self):
+    cdef list venue_order_ids_c(self):
         cdef OrderFilled fill
-        return sorted(list({fill.order_id for fill in self._events}))
+        return sorted(list({fill.venue_order_id for fill in self._events}))
 
     cdef list execution_ids_c(self):
         cdef OrderFilled fill
@@ -167,7 +167,7 @@ cdef class Position:
 
         Returns
         -------
-        list[OrderId]
+        list[VenueOrderId]
 
         Notes
         -----
@@ -177,20 +177,20 @@ cdef class Position:
         return self.cl_ord_ids_c()
 
     @property
-    def order_ids(self):
+    def venue_order_ids(self):
         """
-        The order identifiers associated with the position.
+        The venue order identifiers associated with the position.
 
         Returns
         -------
-        list[OrderId]
+        list[VenueOrderId]
 
         Notes
         -----
         Guaranteed not to contain duplicate identifiers.
 
         """
-        return self.order_ids_c()
+        return self.venue_order_ids_c()
 
     @property
     def execution_ids(self):

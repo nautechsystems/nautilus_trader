@@ -29,10 +29,10 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -116,7 +116,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
-        self.assertEqual([OrderId("1")], position.order_ids)
+        self.assertEqual([VenueOrderId("1")], position.venue_order_ids)
         self.assertEqual(
             [ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids
         )
@@ -314,7 +314,7 @@ class PositionTests(unittest.TestCase):
         fill2 = OrderFilled(
             self.account_id,
             order.cl_ord_id,
-            OrderId("2"),
+            VenueOrderId("2"),
             ExecutionId("E2"),
             PositionId("T123456"),
             StrategyId("S", "001"),

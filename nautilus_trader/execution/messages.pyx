@@ -25,7 +25,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -36,7 +36,7 @@ cdef class OrderStatusReport:
     def __init__(
         self,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         OrderState order_state,
         Quantity filled_qty not None,
         int64_t timestamp_ns,
@@ -48,7 +48,7 @@ cdef class OrderStatusReport:
         ----------
         cl_ord_id : ClientOrderId
             The reported client order identifier.
-        order_id : OrderId
+        venue_order_id : VenueOrderId
             The reported order identifier.
         order_state : OrderState
             The reported order state at the exchange.
@@ -59,7 +59,7 @@ cdef class OrderStatusReport:
 
         """
         self.cl_ord_id = cl_ord_id
-        self.order_id = order_id
+        self.venue_order_id = venue_order_id
         self.order_state = order_state
         self.filled_qty = filled_qty
         self.timestamp_ns = timestamp_ns
@@ -105,7 +105,7 @@ cdef class ExecutionReport:
     def __init__(
         self,
         ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
         last_qty not None: Decimal,
         last_px not None: Decimal,
@@ -122,8 +122,8 @@ cdef class ExecutionReport:
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
-        order_id : OrderId
-            The order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
         execution_id : ExecutionId
             The execution identifier for the trade.
         last_qty : Decimal
@@ -145,7 +145,7 @@ cdef class ExecutionReport:
         Condition.type_or_none(commission_amount, Decimal, "commission_amount")
 
         self.cl_ord_id = cl_ord_id
-        self.order_id = order_id
+        self.venue_order_id = venue_order_id
         self.id = execution_id
         self.last_qty = last_qty
         self.last_px = last_px
@@ -191,8 +191,8 @@ cdef class ExecutionMassStatus:
         self.account_id = account_id
         self.timestamp_ns = timestamp_ns
 
-        self._order_reports = {}    # type: dict[OrderId, OrderStatusReport]
-        self._exec_reports = {}     # type: dict[OrderId, list[ExecutionReport]]
+        self._order_reports = {}    # type: dict[VenueOrderId, OrderStatusReport]
+        self._exec_reports = {}     # type: dict[VenueOrderId, list[ExecutionReport]]
         self._position_reports = {}  # type: dict[InstrumentId, PositionStatusReport]
 
     cpdef dict order_reports(self):
@@ -201,7 +201,7 @@ cdef class ExecutionMassStatus:
 
         Returns
         -------
-        dict[OrderId, OrderStatusReport]
+        dict[VenueOrderId, OrderStatusReport]
 
         """
         return self._order_reports.copy()
@@ -212,7 +212,7 @@ cdef class ExecutionMassStatus:
 
         Returns
         -------
-        dict[OrderId, list[ExecutionReport]
+        dict[VenueOrderId, list[ExecutionReport]
 
         """
         return self._exec_reports.copy()
@@ -240,16 +240,16 @@ cdef class ExecutionMassStatus:
         """
         Condition.not_none(report, "report")
 
-        self._order_reports[report.order_id] = report
+        self._order_reports[report.venue_order_id] = report
 
-    cpdef void add_exec_reports(self, OrderId order_id, list reports) except *:
+    cpdef void add_exec_reports(self, VenueOrderId venue_order_id, list reports) except *:
         """
         Add the list of trades for the given order identifier.
 
         Parameters
         ----------
-        order_id : OrderId
-            The order identifier for the reports.
+        venue_order_id : VenueOrderId
+            The venue order identifier for the reports.
         reports : list[ExecutionReport]
             The list of execution reports to add.
 
@@ -259,10 +259,10 @@ cdef class ExecutionMassStatus:
             If trades contains a type other than `ExecutionReport`.
 
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(venue_order_id, "venue_order_id")
         Condition.list_type(reports, ExecutionReport, "reports")
 
-        self._exec_reports[order_id] = reports
+        self._exec_reports[venue_order_id] = reports
 
     cpdef void add_position_report(self, PositionStatusReport report) except *:
         """

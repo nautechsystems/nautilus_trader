@@ -140,7 +140,7 @@ cdef class StopLimitOrder(PassiveOrder):
         self.is_hidden = hidden
 
     def __repr__(self) -> str:
-        cdef str id_string = f", id={self.id.value})" if self.id.not_null() else ")"
+        cdef str id_string = f", id={self.venue_order_id.value})" if self.venue_order_id.not_null() else ")"
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"trigger={self.trigger}, "
@@ -189,7 +189,7 @@ cdef class StopLimitOrder(PassiveOrder):
         )
 
     cdef void _updated(self, OrderUpdated event) except *:
-        self.id = event.order_id
+        self.venue_order_id = event.venue_order_id
         self.quantity = event.quantity
         if self.is_triggered:
             self.price = event.price

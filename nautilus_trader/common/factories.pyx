@@ -54,9 +54,9 @@ cdef class OrderFactory:
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier (only numerical tag sent to exchange/broker).
+            The trader identifier (only numerical tag sent to venue).
         strategy_id : StrategyId
-            The strategy identifier (only numerical tag sent to exchange/broker).
+            The strategy identifier (only numerical tag sent to venue).
         clock : Clock
             The clock for the component.
         initial_count : int, optional

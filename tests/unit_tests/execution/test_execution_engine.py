@@ -37,12 +37,12 @@ from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -872,7 +872,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
-            OrderId("1"),
+            VenueOrderId("1"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -975,7 +975,7 @@ class ExecutionEngineTests(unittest.TestCase):
         cancelled = OrderCancelled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
-            order.id,
+            order.venue_order_id,
             self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1024,7 +1024,7 @@ class ExecutionEngineTests(unittest.TestCase):
         cancelled = OrderCancelled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
-            OrderId("RANDOM_001"),  # Also a random order id the engine won't find
+            VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
             self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1073,7 +1073,7 @@ class ExecutionEngineTests(unittest.TestCase):
         cancelled = OrderCancelled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
-            order.id,
+            order.venue_order_id,
             self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

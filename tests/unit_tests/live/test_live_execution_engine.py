@@ -33,11 +33,11 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
@@ -405,7 +405,7 @@ class TestLiveExecutionEngine:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.ACCEPTED,
                 filled_qty=Quantity(0),
                 timestamp_ns=0,
@@ -462,7 +462,7 @@ class TestLiveExecutionEngine:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELLED,
                 filled_qty=Quantity(0),
                 timestamp_ns=0,
@@ -519,7 +519,7 @@ class TestLiveExecutionEngine:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.EXPIRED,
                 filled_qty=Quantity(0),
                 timestamp_ns=0,
@@ -576,7 +576,7 @@ class TestLiveExecutionEngine:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.PARTIALLY_FILLED,
                 filled_qty=Quantity(70000),
                 timestamp_ns=0,
@@ -585,7 +585,7 @@ class TestLiveExecutionEngine:
             trade1 = ExecutionReport(
                 execution_id=ExecutionId("1"),
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),
+                venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(50000),
                 last_px=Decimal("1.00000"),
                 commission_amount=Decimal("5.0"),
@@ -598,7 +598,7 @@ class TestLiveExecutionEngine:
             trade2 = ExecutionReport(
                 execution_id=ExecutionId("2"),
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),
+                venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(20000),
                 last_px=Decimal("1.00000"),
                 commission_amount=Decimal("2.0"),
@@ -609,7 +609,7 @@ class TestLiveExecutionEngine:
             )
 
             self.client.add_order_status_report(report)
-            self.client.add_trades_list(OrderId("1"), [trade1, trade2])
+            self.client.add_trades_list(VenueOrderId("1"), [trade1, trade2])
 
             await asyncio.sleep(0.01)
 
@@ -660,7 +660,7 @@ class TestLiveExecutionEngine:
 
             report = OrderStatusReport(
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),  # <-- from stub event
+                venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
                 filled_qty=Quantity(100000),
                 timestamp_ns=0,
@@ -669,7 +669,7 @@ class TestLiveExecutionEngine:
             trade1 = ExecutionReport(
                 execution_id=ExecutionId("1"),
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),
+                venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(50000),
                 last_px=Decimal("1.00000"),
                 commission_amount=Decimal("5.0"),
@@ -682,7 +682,7 @@ class TestLiveExecutionEngine:
             trade2 = ExecutionReport(
                 execution_id=ExecutionId("2"),
                 cl_ord_id=order.cl_ord_id,
-                order_id=OrderId("1"),
+                venue_order_id=VenueOrderId("1"),
                 last_qty=Decimal(50000),
                 last_px=Decimal("1.00000"),
                 commission_amount=Decimal("2.0"),
@@ -693,7 +693,7 @@ class TestLiveExecutionEngine:
             )
 
             self.client.add_order_status_report(report)
-            self.client.add_trades_list(OrderId("1"), [trade1, trade2])
+            self.client.add_trades_list(VenueOrderId("1"), [trade1, trade2])
 
             await asyncio.sleep(0.01)
 

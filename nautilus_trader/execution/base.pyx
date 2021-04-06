@@ -47,15 +47,15 @@ cdef class ExecutionCacheFacade:
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cpdef set order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set order_working_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set order_completed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -81,11 +81,11 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef ClientOrderId cl_ord_id(self, OrderId order_id):
+    cpdef ClientOrderId cl_ord_id(self, VenueOrderId venue_order_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef OrderId order_id(self, ClientOrderId cl_ord_id):
+    cpdef VenueOrderId venue_order_id(self, ClientOrderId cl_ord_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

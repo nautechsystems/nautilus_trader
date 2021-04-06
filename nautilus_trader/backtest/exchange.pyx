@@ -49,9 +49,9 @@ from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -167,7 +167,7 @@ cdef class SimulatedExchange:
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
 
-        # InstrumentId indexer for order_ids
+        # InstrumentId indexer for venue_order_ids
         self._instrument_indexer = {}  # type: dict[InstrumentId, int]
 
         # Load instruments
@@ -511,11 +511,11 @@ cdef class SimulatedExchange:
         self._symbol_pos_count[instrument_id] = pos_count
         return PositionId(f"{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
 
-    cdef inline OrderId _generate_order_id(self, InstrumentId instrument_id):
+    cdef inline VenueOrderId _generate_order_id(self, InstrumentId instrument_id):
         cdef int ord_count = self._symbol_ord_count.get(instrument_id, 0)
         ord_count += 1
         self._symbol_ord_count[instrument_id] = ord_count
-        return OrderId(f"{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
+        return VenueOrderId(f"{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
 
     cdef inline ExecutionId _generate_execution_id(self):
         self._executions_count += 1
@@ -623,7 +623,7 @@ cdef class SimulatedExchange:
         cdef OrderCancelled cancelled = OrderCancelled(
             order.account_id,
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
             self._clock.timestamp_ns(),
@@ -640,15 +640,15 @@ cdef class SimulatedExchange:
     ) except *:
         cdef Order order = self.exec_cache.order(cl_ord_id)
         if order is not None:
-            order_id = order.id
+            venue_order_id = order.venue_order_id
         else:
-            order_id = OrderId.null_c()
+            venue_order_id = VenueOrderId.null_c()
 
         # Generate event
         cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
             self.exec_client.account_id,
             cl_ord_id,
-            order_id,
+            venue_order_id,
             self._clock.timestamp_ns(),
             response,
             reason,
@@ -666,15 +666,15 @@ cdef class SimulatedExchange:
     ) except *:
         cdef Order order = self.exec_cache.order(cl_ord_id)
         if order is not None:
-            order_id = order.id
+            venue_order_id = order.venue_order_id
         else:
-            order_id = OrderId.null_c()
+            venue_order_id = VenueOrderId.null_c()
 
         # Generate event
         cdef OrderUpdateRejected update_rejected = OrderUpdateRejected(
             self.exec_client.account_id,
             cl_ord_id,
-            order_id,
+            venue_order_id,
             self._clock.timestamp_ns(),
             response,
             reason,
@@ -689,7 +689,7 @@ cdef class SimulatedExchange:
         cdef OrderExpired expired = OrderExpired(
             self.exec_client.account_id,
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             order.expire_time_ns,
             self._uuid_factory.generate(),
             self._clock.timestamp_ns(),
@@ -715,7 +715,7 @@ cdef class SimulatedExchange:
         cdef OrderTriggered triggered = OrderTriggered(
             self.exec_client.account_id,
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
             self._clock.timestamp_ns(),
@@ -724,7 +724,7 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(triggered)
 
     cdef inline void _process_order(self, Order order) except *:
-        Condition.not_in(order.cl_ord_id, self._working_orders, "order.id", "working_orders")
+        Condition.not_in(order.cl_ord_id, self._working_orders, "order.client_order_id", "working_orders")
 
         cdef Instrument instrument = self.instruments[order.instrument_id]
 
@@ -928,7 +928,7 @@ cdef class SimulatedExchange:
         cdef OrderUpdated updated = OrderUpdated(
             order.account_id,
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             qty,
             price,
             self._clock.timestamp_ns(),
@@ -1121,7 +1121,7 @@ cdef class SimulatedExchange:
         cdef OrderFilled fill = OrderFilled(
             account_id=self.exec_client.account_id,
             cl_ord_id=order.cl_ord_id,
-            order_id=order.id if order.id is not None else self._generate_order_id(order.instrument_id),
+            venue_order_id=order.venue_order_id if order.venue_order_id is not None else self._generate_order_id(order.instrument_id),
             execution_id=self._generate_execution_id(),
             position_id=position_id,
             strategy_id=order.strategy_id,
@@ -1261,7 +1261,7 @@ cdef class SimulatedExchange:
         cdef OrderCancelled cancelled = OrderCancelled(
             self.exec_client.account_id,
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             self._clock.timestamp_ns(),
             self._uuid_factory.generate(),
             self._clock.timestamp_ns(),

@@ -58,7 +58,7 @@ and fixes.
 - Introduce `OrderUpdateRejected`, event separated for clarity.
 - Refined LiveLogger: Now runs on event loop with high-performance `Queue`.
 - Improved flexibility of when strategies are added to a `BacktestEngine`.
-- Improved checks for `OrderId` equality when applying order events.
+- Improved checks for `VenueOrderId` equality when applying order events.
 
 ## Fixes
 - Removed `UNDEFINED` enum values. Do not allow invalid values to be represented

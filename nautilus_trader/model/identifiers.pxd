@@ -97,10 +97,10 @@ cdef class ClientOrderLinkId(Identifier):
     pass
 
 
-cdef class OrderId(Identifier):
+cdef class VenueOrderId(Identifier):
 
     @staticmethod
-    cdef OrderId null_c()
+    cdef VenueOrderId null_c()
     cdef inline bint is_null(self) except *
     cdef inline bint not_null(self) except *
 

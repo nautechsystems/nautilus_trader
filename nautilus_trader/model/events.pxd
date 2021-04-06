@@ -25,9 +25,9 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -50,8 +50,8 @@ cdef class AccountState(Event):
 cdef class OrderEvent(Event):
     cdef readonly ClientOrderId cl_ord_id
     """The client order identifier associated with the event.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order identifier associated with the event.\n\n:returns: `VenueOrderId`"""
 
 
 cdef class OrderInitialized(OrderEvent):

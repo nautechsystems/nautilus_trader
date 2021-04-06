@@ -40,11 +40,11 @@ from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -231,13 +231,13 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_accepted(order, order_id=None) -> OrderAccepted:
-        if order_id is None:
-            order_id = OrderId("1")
+    def event_order_accepted(order, venue_order_id=None) -> OrderAccepted:
+        if venue_order_id is None:
+            venue_order_id = VenueOrderId("1")
         return OrderAccepted(
             TestStubs.account_id(),
             order.cl_ord_id,
-            order_id,
+            venue_order_id,
             0,
             uuid4(),
             0,
@@ -258,7 +258,7 @@ class TestStubs:
     def event_order_filled(
         order,
         instrument,
-        order_id=None,
+        venue_order_id=None,
         execution_id=None,
         position_id=None,
         strategy_id=None,
@@ -267,8 +267,8 @@ class TestStubs:
         liquidity_side=LiquiditySide.TAKER,
         execution_ns=0,
     ) -> OrderFilled:
-        if order_id is None:
-            order_id = OrderId("1")
+        if venue_order_id is None:
+            venue_order_id = VenueOrderId("1")
         if execution_id is None:
             execution_id = ExecutionId(order.cl_ord_id.value.replace("O", "E"))
         if position_id is None:
@@ -289,7 +289,7 @@ class TestStubs:
         return OrderFilled(
             account_id=TestStubs.account_id(),
             cl_ord_id=order.cl_ord_id,
-            order_id=order_id,
+            venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=position_id,
             strategy_id=strategy_id,
@@ -313,7 +313,7 @@ class TestStubs:
         return OrderCancelled(
             TestStubs.account_id(),
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             0,
             uuid4(),
             0,
@@ -324,7 +324,7 @@ class TestStubs:
         return OrderExpired(
             TestStubs.account_id(),
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             0,
             uuid4(),
             0,
@@ -335,7 +335,7 @@ class TestStubs:
         return OrderTriggered(
             TestStubs.account_id(),
             order.cl_ord_id,
-            order.id,
+            order.venue_order_id,
             0,
             uuid4(),
             0,
