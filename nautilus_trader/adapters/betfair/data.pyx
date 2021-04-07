@@ -42,6 +42,7 @@ from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
+
 class InstrumentSearch:
     def __init__(self, instruments):
         self.instruments = instruments
@@ -226,7 +227,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         cdef BettingInstrument instrument = self._instrument_provider.find(instrument_id)  # type: BettingInstrument
 
-        if instrument.market_id  in self._subscribed_market_ids:
+        if instrument.market_id in self._subscribed_market_ids:
             self._log.warning(f"Already subscribed to market_id: {instrument.market_id} [Instrument: {instrument_id.symbol}] <OrderBook> data.")
             return
 

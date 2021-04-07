@@ -711,7 +711,7 @@ cdef class ExecutionEngine(Component):
         try:
             # Protected against duplicate OrderFilled
             order.apply(event)
-        except (KeyError, InvalidStateTrigger)  as ex:
+        except (KeyError, InvalidStateTrigger) as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 

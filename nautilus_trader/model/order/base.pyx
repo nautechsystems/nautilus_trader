@@ -82,7 +82,7 @@ cdef dict _ORDER_STATE_TABLE = {
 }
 
 # Valid states to update an order in
-cdef (int, int) _UPDATABLE_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)
+cdef (int, int) _UPDATABLE_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)  # noqa
 
 
 cdef class Order:

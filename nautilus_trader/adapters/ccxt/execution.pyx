@@ -555,8 +555,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef dict event_total = event["total"]
 
         if event_free == self._account_last_free \
-            and event_used == self._account_last_used \
-            and event_total == self._account_last_used:
+                and event_used == self._account_last_used \
+                and event_total == self._account_last_used:
             return  # No updates
 
         self._account_last_free = event_free

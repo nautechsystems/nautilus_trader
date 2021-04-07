@@ -129,11 +129,15 @@ def depth_for_volume(ladder, value, depth_type="volume"):
 
     >>> bids = Ladder([Order(price, volume, BID) for price, volume in orders], side=BID)
     >>> bids.depth_for_volume(15)
-    [<Order(price=100, side=OrderSide.BID, volume=6)>, <Order(price=90, side=OrderSide.BID, volume=3)>, <Order(price=85, side=OrderSide.BID, volume=6)>]
+    [<Order(price=100, side=OrderSide.BID, volume=6)>,
+     <Order(price=90, side=OrderSide.BID, volume=3)>,
+     <Order(price=85, side=OrderSide.BID, volume=6)>]
 
     >>> asks = Ladder([Order(price, volume, ASK) for price, volume in orders], side=ASK)
     >>> asks.depth_for_volume(15)
-    [<Order(price=70, side=OrderSide.ASK, volume=1)>, <Order(price=80, side=OrderSide.ASK, volume=10)>, <Order(price=85, side=OrderSide.ASK, volume=4)>]
+    [<Order(price=70, side=OrderSide.ASK, volume=1)>,
+     <Order(price=80, side=OrderSide.ASK, volume=10)>,
+     <Order(price=85, side=OrderSide.ASK, volume=4)>]
     """
     depth = tuple(ladder.cumulative(depth_type))
     levels = ladder.levels
@@ -197,7 +201,7 @@ def auction_match(ladder1, ladder2, on="volume"):
     >>> l1 = Ladder(levels=[Order(103, 5, BID), Order(102, 10, BID), Order(100, 5, BID), Order(90, 5, BID)], side=BID)
     >>> l2 = Ladder(levels=[Order(100, 10, ASK), Order(101, 10, ASK), Order(105, 5, ASK), Order(110, 5, ASK)], side=ASK)
     >>> l1.auction_match(l2, on='volume')
-    (101.125, [<Order(price=103, side=OrderSide.BID, volume=5)>, <Order(price=102, side=OrderSide.BID, volume=10)>, <Order(price=100, side=OrderSide.BID, volume=5)>], [<Order(price=100, side=OrderSide.ASK, volume=10)>, <Order(price=101, side=OrderSide.ASK, volume=10)>])
+    (101.125, [<Order(price=103, side=OrderSide.BID, volume=5)>, <Order(price=102, side=OrderSide.BID, volume=10)>, <Order(price=100, side=OrderSide.BID, volume=5)>], [<Order(price=100, side=OrderSide.ASK, volume=10)>, <Order(price=101, side=OrderSide.ASK, volume=10)>])  # noqa
     """
     default = [], []
     assert ladder1.side != ladder2.side
