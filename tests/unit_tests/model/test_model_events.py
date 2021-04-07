@@ -13,13 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from model.events import VenueStatusEvent
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import CloseReason
+from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelRejected
@@ -369,7 +373,11 @@ class TestEvents:
         )
 
     def test_venue_status(self):
-        pass
+        uuid = uuid4()
+        event = VenueStatusEvent(status=VenueStatus)
 
     def test_instrument_status(self):
+        pass
+
+    def test_instrument_close_price(self):
         pass

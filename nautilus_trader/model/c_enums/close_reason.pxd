@@ -14,15 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum CloseReason:
+cpdef enum InstrumentCloseReason:
     END_OF_SESSION = 1,
     EXPIRED = 2,
 
 
-cdef class CloseReasonParser:
+cdef class InstrumentCloseReasonParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef CloseReason from_str(str value) except *
+    cdef InstrumentCloseReason from_str(str value) except *

@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.close_reason cimport CloseReason
+from nautilus_trader.model.c_enums.close_reason cimport InstrumentCloseReason
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
@@ -1252,7 +1252,7 @@ cdef class InstrumentClosePrice(Event):
     def __init__(
         self,
         Price close_price not None,
-        CloseReason reason,
+        InstrumentCloseReason reason,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):

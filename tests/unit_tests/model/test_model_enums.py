@@ -23,8 +23,8 @@ from nautilus_trader.model.c_enums.asset_type import AssetType
 from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.close_reason import CloseReason
-from nautilus_trader.model.c_enums.close_reason import CloseReasonParser
+from nautilus_trader.model.c_enums.close_reason import InstrumentCloseReason
+from nautilus_trader.model.c_enums.close_reason import InstrumentCloseReasonParser
 from nautilus_trader.model.c_enums.currency_type import CurrencyType
 from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
@@ -874,28 +874,28 @@ class TestInstrumentStatus:
         assert expected == result
 
 
-class TestCloseReason:
+class TestInstrumentCloseReason:
     def test_venue_status_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            CloseReasonParser.to_str_py(0)
+            InstrumentCloseReasonParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            CloseReasonParser.from_str_py("")
+            InstrumentCloseReasonParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [CloseReason.END_OF_SESSION, "END_OF_SESSION"],
-            [CloseReason.EXPIRED, "EXPIRED"],
+            [InstrumentCloseReason.END_OF_SESSION, "END_OF_SESSION"],
+            [InstrumentCloseReason.EXPIRED, "EXPIRED"],
         ],
     )
     def test_venue_status_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = CloseReasonParser.to_str_py(enum)
+        result = InstrumentCloseReasonParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -903,14 +903,14 @@ class TestCloseReason:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["END_OF_SESSION", CloseReason.END_OF_SESSION],
-            ["EXPIRED", CloseReason.EXPIRED],
+            ["END_OF_SESSION", InstrumentCloseReason.END_OF_SESSION],
+            ["EXPIRED", InstrumentCloseReason.EXPIRED],
         ],
     )
     def test_venue_status_from_str(self, string, expected):
         # Arrange
         # Act
-        result = CloseReasonParser.from_str_py(string)
+        result = InstrumentCloseReasonParser.from_str_py(string)
 
         # Assert
         assert expected == result

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-cdef class CloseReasonParser:
+cdef class InstrumentCloseReasonParser:
 
     @staticmethod
     cdef str to_str(int value):
@@ -25,18 +25,18 @@ cdef class CloseReasonParser:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef CloseReason from_str(str value) except *:
+    cdef InstrumentCloseReason from_str(str value) except *:
         if value == "END_OF_SESSION":
-            return CloseReason.END_OF_SESSION
+            return InstrumentCloseReason.END_OF_SESSION
         elif value == "EXPIRED":
-            return CloseReason.EXPIRED
+            return InstrumentCloseReason.EXPIRED
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return CloseReasonParser.to_str(value)
+        return InstrumentCloseReasonParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return CloseReasonParser.from_str(value)
+        return InstrumentCloseReasonParser.from_str(value)
