@@ -58,7 +58,7 @@ def _build_extensions() -> List[Extension]:
     # Profiling requires special macro directives
     define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
     if PROFILING_MODE or ANNOTATION_MODE:
-        define_macros.append("CYTHON_TRACE", "1")
+        define_macros.append(("CYTHON_TRACE", "1"))
 
     return [
         Extension(
