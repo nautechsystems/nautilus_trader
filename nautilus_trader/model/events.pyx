@@ -18,12 +18,15 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.close_reason cimport CloseReason
+from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -1160,3 +1163,112 @@ cdef class PositionClosed(PositionEvent):
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
                 f"event_id={self.id})")
+
+
+cdef class StatusEvent(Event):
+    """
+    The abstract base class for all status events.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+    def __init__(
+        self,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `StatusEvent` base class.
+
+        Parameters
+        ----------
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+
+
+cdef class VenueStatusEvent(StatusEvent):
+    """
+    Represents an event that indicates a change in a Venue status
+    """
+    def __init__(
+        self,
+        VenueStatus status,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `VenueStatusEvent` base class.
+
+        Parameters
+        ----------
+        status : VenueStatus
+            The venue status.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+        self.status = status
+
+
+cdef class InstrumentStatusEvent(StatusEvent):
+    """
+    Represents an event that indicates a change in an instrument status
+    """
+    def __init__(
+        self,
+        InstrumentStatus status,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `InstrumentStatusEvent` base class.
+
+        Parameters
+        ----------
+        status : InstrumentStatus
+            The instrument status.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+        self.status = status
+
+
+cdef class InstrumentClosePrice(Event):
+    """
+    Represents an event that indicates a change in an instrument status
+    """
+
+    def __init__(
+        self,
+        Price close_price not None,
+        CloseReason reason,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `InstrumentStatusEvent` base class.
+
+        Parameters
+        ----------
+        status : InstrumentStatus
+            The instrument status.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+        self.close_price = close_price
+        self.reason = reason

@@ -367,3 +367,9 @@ class TestEvents:
             f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
             f"commission=12.20000000 USDT, event_id={uuid})" == repr(event)
         )
+
+    def test_venue_status(self):
+        pass
+
+    def test_instrument_status(self):
+        pass
