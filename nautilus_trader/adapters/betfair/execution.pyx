@@ -92,7 +92,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             The logger for the client.
 
         """
-        self._client = client # type: betfairlightweight.APIClient
+        self._client = client  # type: betfairlightweight.APIClient
         self._client.login()
 
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
@@ -176,7 +176,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
-        f = self._loop.run_in_executor(None, self._submit_order, command) # type: asyncio.Future
+        f = self._loop.run_in_executor(None, self._submit_order, command)  # type: asyncio.Future
         self._log.debug(f"future: {f}")
         f.add_done_callback(partial(self._post_submit_order, client_order_id=command.order.client_order_id))
 
@@ -217,7 +217,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef void update_order(self, UpdateOrder command) except *:
         self._log.debug("Received update order")
         instrument = self._instrument_provider._instruments[command.instrument_id]
-        existing_order = self._engine.cache.order(command.client_order_id) # type: Order
+        existing_order: Order = self._engine.cache.order(command.client_order_id)
         if existing_order is None:
             self._log.warning(f"Attempting to update order that does not exist in the cache: {command}")
             return
@@ -274,7 +274,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     cpdef void handle_order_stream_update(self, bytes raw) except *:
         """ Handle an update from the order stream socket """
-        cdef dict update = orjson.loads(raw) # type: dict
+        cdef dict update = orjson.loads(raw)  # type: dict
         self._loop.create_task(self._handle_order_stream_update(update=update))
 
     async def _handle_order_stream_update(self, update):
@@ -385,7 +385,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             since: Optional[datetime]=None
     ) -> List[ExecutionReport]:
         self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
-        return await generate_trades_list(self, venue_order_id,  symbol,  since)
+        return await generate_trades_list(self, venue_order_id, symbol, since)
 
     # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

@@ -33,7 +33,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 
 
-ctypedef int64_t (* round_func_type)(double x) nogil
+ctypedef int64_t (* round_func_type)(double x) nogil  # noqa E211 whitespace before '('
 
 cdef round_func_type _get_round_func() nogil:
     if sizeof(long) == 8:

@@ -395,18 +395,18 @@ cdef class OrderBook:
         data = [
             {
                 "bids": [
-                            getattr(order, show)
-                            for order in level.orders
-                            if level.price() in self.bids.prices()
-                        ]
-                        or None,
+                    getattr(order, show)
+                    for order in level.orders
+                    if level.price() in self.bids.prices()
+                ]
+                or None,
                 "price": level.price(),
                 "asks": [
-                            getattr(order, show)
-                            for order in level.orders
-                            if level.price() in self.asks.prices()
-                        ]
-                        or None,
+                    getattr(order, show)
+                    for order in level.orders
+                    if level.price() in self.asks.prices()
+                ]
+                or None,
             }
             for _, level in levels
         ]
@@ -723,9 +723,9 @@ cdef class OrderBookOperations(OrderBookData):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-               f"'{self.instrument_id}', "
-               f"{self.ops}, "
-               f"timestamp_ns={self.timestamp_ns})")
+                f"'{self.instrument_id}', "
+                f"{self.ops}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
 
 cdef class OrderBookOperation:

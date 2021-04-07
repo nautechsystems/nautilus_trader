@@ -34,7 +34,6 @@ from nautilus_trader.model.instrument import BettingInstrument
 logger = logging.getLogger(__name__)
 
 
-
 cdef class BetfairInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `BettingInstruments` from the Betfair APIClient.

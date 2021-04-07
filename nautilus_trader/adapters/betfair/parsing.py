@@ -209,7 +209,7 @@ def build_market_snapshot_messages(
     return updates
 
 
-def build_market_update_messages(
+def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
     raw, instrument_provider: BetfairInstrumentProvider
 ) -> List[Union[OrderBookOperation, TradeTick]]:
     updates = []

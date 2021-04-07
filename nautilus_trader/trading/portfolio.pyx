@@ -256,7 +256,6 @@ cdef class Portfolio(PortfolioFacade):
             for instrument_id in self._instruments_open_for_venue(venue):
                 self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
 
-
         self._log.info(
             f"Initialized {open_count} open position{'' if open_count == 1 else 's'}.",
             color=LogColor.BLUE if open_count else LogColor.NORMAL,

@@ -111,7 +111,7 @@ cdef class Level:
 
         self.orders.remove(order)
 
-    cpdef double volume(self)  except *:
+    cpdef double volume(self) except *:
         """
         Return the volume at this level.
 

@@ -597,7 +597,7 @@ cdef class BettingInstrument(Instrument):
             is_inverse=False,
             price_precision=5,
             size_precision=1,
-            tick_size = Decimal(1),
+            tick_size=Decimal(1),
             multiplier=Decimal(1),
             lot_size=Quantity(1),
             max_quantity=None,  # Can be None
@@ -606,8 +606,8 @@ cdef class BettingInstrument(Instrument):
             min_notional=None,     # Can be None
             max_price=None,        # Can be None
             min_price=None,        # Can be None
-            margin_init=Decimal(0) ,
-            margin_maint=Decimal(0) ,
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
             financing=dict(),
