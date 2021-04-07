@@ -104,7 +104,7 @@ The documentation for the latest version of the package can be found at:
 | [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | ccxt-`exchange_id` | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
 | [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | binance | ![status](https://img.shields.io/badge/Integration-planned-gray) |
 | [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | bitmex | ![status](https://img.shields.io/badge/Integration-planned-gray) |
-| [![betfair](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/betfair-logo.png?raw=true)](https://www.betfair.com/) | betfair | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![betfair](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/betfair-logo.png?raw=true)](https://www.betfair.com/) | betfair | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
 
 CCXT Pro is an algorithmic crypto-trading library which currently includes
 integrations to 27 crypto exchanges https://github.com/ccxt/ccxt.
