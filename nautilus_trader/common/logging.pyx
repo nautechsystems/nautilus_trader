@@ -247,7 +247,12 @@ cdef class LoggerAdapter:
         """
         return self._logger
 
-    cpdef void debug(self, str msg, dict annotations=None) except *:
+    cpdef void debug(
+        self,
+        str msg,
+        LogColor color=LogColor.NORMAL,
+        dict annotations=None,
+    ) except *:
         """
         Log the given debug message with the logger.
 
@@ -255,6 +260,8 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
+        color : LogColor (Enum), optional
+            The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
@@ -266,7 +273,7 @@ cdef class LoggerAdapter:
 
         cdef dict record = self._logger.create_record(
             level=LogLevel.DEBUG,
-            color=LogColor.NORMAL,
+            color=color,
             component=self.component,
             msg=msg,
             annotations=annotations,
@@ -287,7 +294,7 @@ cdef class LoggerAdapter:
         msg : str
             The message to log.
         color : LogColor (Enum), optional
-            The custom log color for the message.
+            The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
@@ -307,7 +314,12 @@ cdef class LoggerAdapter:
 
         self._logger.log_c(record)
 
-    cpdef void warning(self, str msg, dict annotations=None) except *:
+    cpdef void warning(
+        self,
+        str msg,
+        LogColor color=LogColor.YELLOW,
+        dict annotations=None,
+    ) except *:
         """
         Log the given warning message with the logger.
 
@@ -315,6 +327,8 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
+        color : LogColor (Enum), optional
+            The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
@@ -326,7 +340,7 @@ cdef class LoggerAdapter:
 
         cdef dict record = self._logger.create_record(
             level=LogLevel.WARNING,
-            color=LogColor.YELLOW,
+            color=color,
             component=self.component,
             msg=msg,
             annotations=annotations,
@@ -334,7 +348,12 @@ cdef class LoggerAdapter:
 
         self._logger.log_c(record)
 
-    cpdef void error(self, str msg, dict annotations=None) except *:
+    cpdef void error(
+        self,
+        str msg,
+        LogColor color=LogColor.RED,
+        dict annotations=None,
+    ) except *:
         """
         Log the given error message with the logger.
 
@@ -342,6 +361,8 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
+        color : LogColor (Enum), optional
+            The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
@@ -353,7 +374,7 @@ cdef class LoggerAdapter:
 
         cdef dict record = self._logger.create_record(
             level=LogLevel.ERROR,
-            color=LogColor.RED,
+            color=color,
             component=self.component,
             msg=msg,
             annotations=annotations,
@@ -361,7 +382,12 @@ cdef class LoggerAdapter:
 
         self._logger.log_c(record)
 
-    cpdef void critical(self, str msg, dict annotations=None) except *:
+    cpdef void critical(
+        self,
+        str msg,
+        LogColor color=LogColor.RED,
+        dict annotations=None,
+    ) except *:
         """
         Log the given critical message with the logger.
 
@@ -369,6 +395,8 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
+        color : LogColor (Enum), optional
+            The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
 
@@ -380,7 +408,7 @@ cdef class LoggerAdapter:
 
         cdef dict record = self._logger.create_record(
             level=LogLevel.CRITICAL,
-            color=LogColor.RED,
+            color=color,
             component=self.component,
             msg=msg,
             annotations=annotations,
@@ -411,7 +439,7 @@ cdef class LoggerAdapter:
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(f"{ex_string} {stack_trace_lines}", annotations)
+        self.error(f"{ex_string} {stack_trace_lines}", annotations=annotations)
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:

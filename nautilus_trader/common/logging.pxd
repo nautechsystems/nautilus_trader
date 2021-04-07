@@ -81,11 +81,11 @@ cdef class LoggerAdapter:
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void debug(self, str msg, dict annotations=*) except *
+    cpdef void debug(self, str msg, LogColor color=*, dict annotations=*) except *
     cpdef void info(self, str msg, LogColor color=*, dict annotations=*) except *
-    cpdef void warning(self, str msg, dict annotations=*) except *
-    cpdef void error(self, str msg, dict annotations=*) except *
-    cpdef void critical(self, str msg, dict annotations=*) except *
+    cpdef void warning(self, str msg, LogColor color=*, dict annotations=*) except *
+    cpdef void error(self, str msg, LogColor color=*, dict annotations=*) except *
+    cpdef void critical(self, str msg, LogColor color=*, dict annotations=*) except *
     cpdef void exception(self, ex, dict annotations=*) except *
 
 
