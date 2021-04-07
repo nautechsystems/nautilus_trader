@@ -293,7 +293,7 @@ cdef class PerformanceAnalyzer:
         if not winners:
             return 0.
 
-        return fast_mean(winners)
+        return fast_mean(np.asarray(winners))
 
     cpdef double avg_loser(self, Currency currency=None) except *:
         """
@@ -312,7 +312,7 @@ cdef class PerformanceAnalyzer:
         if not losers:
             return 0.
 
-        return fast_mean(losers)
+        return fast_mean(np.asarray(losers))
 
     cpdef double win_rate(self, Currency currency=None) except *:
         """

@@ -15,6 +15,8 @@
 
 from collections import deque
 
+import numpy as np
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -85,7 +87,7 @@ cdef class SpreadAnalyzer(Indicator):
 
         # Update average spread
         self.average = fast_mean_iterated(
-            values=list(self._spreads),
+            values=np.asarray(self._spreads),
             next_value=spread,
             current_value=self.average,
             expected_length=self.capacity,
