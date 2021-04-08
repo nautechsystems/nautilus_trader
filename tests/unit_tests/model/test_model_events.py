@@ -16,11 +16,16 @@
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import InstrumentCloseType
+from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import InstrumentClosePrice
+from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderCancelled
@@ -33,6 +38,7 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdateRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events import VenueStatusEvent
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -366,4 +372,35 @@ class TestEvents:
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
             f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
             f"commission=12.20000000 USDT, event_id={uuid})" == repr(event)
+        )
+
+    def test_venue_status(self):
+        uuid = uuid4()
+        event = VenueStatusEvent(
+            status=VenueStatus.OPEN,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+        assert f"VenueStatusEvent(status=OPEN, event_id={uuid})" == repr(event)
+
+    def test_instrument_status(self):
+        uuid = uuid4()
+        event = InstrumentStatusEvent(
+            status=InstrumentStatus.PAUSE,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+        assert f"InstrumentStatusEvent(status=PAUSE, event_id={uuid})" == repr(event)
+
+    def test_instrument_close_price(self):
+        uuid = uuid4()
+        event = InstrumentClosePrice(
+            close_price=Price(100.0, precision=0),
+            close_type=InstrumentCloseType.EXPIRED,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+        assert (
+            f"InstrumentClosePrice(close_price=100, close_type=EXPIRED, event_id={uuid})"
+            == repr(event)
         )
