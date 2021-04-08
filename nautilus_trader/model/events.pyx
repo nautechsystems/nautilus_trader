@@ -18,12 +18,16 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
+from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
+from nautilus_trader.model.c_enums.venue_status cimport VenueStatusParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -34,6 +38,12 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
+
+
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType  # isort:skip
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser  # isort:skip
+
+
 
 
 cdef class AccountState(Event):
@@ -1159,4 +1169,130 @@ cdef class PositionClosed(PositionEvent):
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
+                f"event_id={self.id})")
+
+
+cdef class StatusEvent(Event):
+    """
+    The abstract base class for all status events.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+    def __init__(
+        self,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `StatusEvent` base class.
+
+        Parameters
+        ----------
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+
+
+cdef class VenueStatusEvent(StatusEvent):
+    """
+    Represents an event that indicates a change in a Venue status
+    """
+    def __init__(
+        self,
+        VenueStatus status,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `VenueStatusEvent` base class.
+
+        Parameters
+        ----------
+        status : VenueStatus
+            The venue status.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+        self.status = status
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"status={VenueStatusParser.to_str(self.status)}, "
+                f"event_id={self.id})")
+
+cdef class InstrumentStatusEvent(StatusEvent):
+    """
+    Represents an event that indicates a change in an instrument status
+    """
+    def __init__(
+        self,
+        InstrumentStatus status,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `InstrumentStatusEvent` base class.
+
+        Parameters
+        ----------
+        status : InstrumentStatus
+            The instrument status.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+        self.status = status
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"status={InstrumentStatusParser.to_str(self.status)}, "
+                f"event_id={self.id})")
+
+
+cdef class InstrumentClosePrice(Event):
+    """
+    Represents an event that indicates a change in an instrument status
+    """
+
+    def __init__(
+        self,
+        Price close_price not None,
+        InstrumentCloseType close_type,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `InstrumentStatusEvent` base class.
+
+        Parameters
+        ----------
+        close_price : Price
+            The closing price for the instrument.
+        close_type : InstrumentCloseType
+            The type of closing price
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        """
+        super().__init__(event_id, timestamp_ns)
+        self.close_price = close_price
+        self.close_type = close_type
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"close_price={self.close_price}, "
+                f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)}, "
                 f"event_id={self.id})")
