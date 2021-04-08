@@ -23,10 +23,12 @@ from nautilus_trader.model.c_enums.asset_type import AssetType
 from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.close_reason import InstrumentCloseReason
-from nautilus_trader.model.c_enums.close_reason import InstrumentCloseReasonParser
 from nautilus_trader.model.c_enums.currency_type import CurrencyType
 from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser
+from nautilus_trader.model.c_enums.instrument_close_type import (
+    InstrumentCloseTypeParser,
+)
+from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
@@ -874,28 +876,28 @@ class TestInstrumentStatus:
         assert expected == result
 
 
-class TestInstrumentCloseReason:
+class TestInstrumentCloseType:
     def test_venue_status_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            InstrumentCloseReasonParser.to_str_py(0)
+            InstrumentCloseTypeParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            InstrumentCloseReasonParser.from_str_py("")
+            InstrumentCloseTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [InstrumentCloseReason.END_OF_SESSION, "END_OF_SESSION"],
-            [InstrumentCloseReason.EXPIRED, "EXPIRED"],
+            [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
+            [InstrumentCloseType.EXPIRED, "EXPIRED"],
         ],
     )
     def test_venue_status_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = InstrumentCloseReasonParser.to_str_py(enum)
+        result = InstrumentCloseTypeParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -903,14 +905,14 @@ class TestInstrumentCloseReason:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["END_OF_SESSION", InstrumentCloseReason.END_OF_SESSION],
-            ["EXPIRED", InstrumentCloseReason.EXPIRED],
+            ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
+            ["EXPIRED", InstrumentCloseType.EXPIRED],
         ],
     )
     def test_venue_status_from_str(self, string, expected):
         # Arrange
         # Act
-        result = InstrumentCloseReasonParser.from_str_py(string)
+        result = InstrumentCloseTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result
