@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from model.events import InstrumentClosePrice
-from model.events import InstrumentStatusEvent
-from model.events import VenueStatusEvent
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -27,6 +24,8 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import InstrumentClosePrice
+from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderCancelled
@@ -39,6 +38,7 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdateRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events import VenueStatusEvent
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
