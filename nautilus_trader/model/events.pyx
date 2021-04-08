@@ -18,9 +18,8 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums. cimport InstrumentCloseTypeParser
-from nautilus_trader.model.c_enums. cimport instrument_close_type
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -32,7 +31,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatusParser
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport AccountId    
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
