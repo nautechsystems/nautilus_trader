@@ -13,11 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from model.events import InstrumentClosePrice
+from model.events import InstrumentStatusEvent
 from model.events import VenueStatusEvent
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import CloseReason
+from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -374,10 +376,31 @@ class TestEvents:
 
     def test_venue_status(self):
         uuid = uuid4()
-        event = VenueStatusEvent(status=VenueStatus)
+        event = VenueStatusEvent(
+            status=VenueStatus.OPEN,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+        assert f"VenueStatusEvent(status=OPEN, event_id={uuid})" == repr(event)
 
     def test_instrument_status(self):
-        pass
+        uuid = uuid4()
+        event = InstrumentStatusEvent(
+            status=InstrumentStatus.PAUSE,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+        assert f"InstrumentStatusEvent(status=PAUSE, event_id={uuid})" == repr(event)
 
     def test_instrument_close_price(self):
-        pass
+        uuid = uuid4()
+        event = InstrumentClosePrice(
+            close_price=Price(100.0, precision=0),
+            close_type=InstrumentCloseType.EXPIRED,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+        assert (
+            f"InstrumentClosePrice(close_price=100, close_type=EXPIRED, event_id={uuid})"
+            == repr(event)
+        )

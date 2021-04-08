@@ -18,8 +18,11 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.close_reason cimport InstrumentCloseReason
+from nautilus_trader.model.c_enums. cimport InstrumentCloseTypeParser
+from nautilus_trader.model.c_enums. cimport instrument_close_type
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
+from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -27,6 +30,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
+from nautilus_trader.model.c_enums.venue_status cimport VenueStatusParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -1216,6 +1220,10 @@ cdef class VenueStatusEvent(StatusEvent):
         super().__init__(event_id, timestamp_ns)
         self.status = status
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"status={VenueStatusParser.to_str(self.status)}, "
+                f"event_id={self.id})")
 
 cdef class InstrumentStatusEvent(StatusEvent):
     """
@@ -1243,6 +1251,11 @@ cdef class InstrumentStatusEvent(StatusEvent):
         super().__init__(event_id, timestamp_ns)
         self.status = status
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"status={InstrumentStatusParser.to_str(self.status)}, "
+                f"event_id={self.id})")
+
 
 cdef class InstrumentClosePrice(Event):
     """
@@ -1252,7 +1265,7 @@ cdef class InstrumentClosePrice(Event):
     def __init__(
         self,
         Price close_price not None,
-        InstrumentCloseReason reason,
+        InstrumentCloseType close_type,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -1261,8 +1274,10 @@ cdef class InstrumentClosePrice(Event):
 
         Parameters
         ----------
-        status : InstrumentStatus
-            The instrument status.
+        close_price : Price
+            The closing price for the instrument.
+        close_type : InstrumentCloseType
+            The type of closing price
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -1271,4 +1286,10 @@ cdef class InstrumentClosePrice(Event):
         """
         super().__init__(event_id, timestamp_ns)
         self.close_price = close_price
-        self.reason = reason
+        self.close_type = close_type
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"close_price={self.close_price}, "
+                f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)}, "
+                f"event_id={self.id})")

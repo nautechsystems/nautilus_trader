@@ -13,30 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-cdef class InstrumentCloseReasonParser:
+
+cpdef enum InstrumentCloseType:
+    END_OF_SESSION = 1,
+    EXPIRED = 2,
+
+
+cdef class InstrumentCloseTypeParser:
 
     @staticmethod
-    cdef str to_str(int value):
-        if value == 1:
-            return "END_OF_SESSION"
-        elif value == 2:
-            return "EXPIRED"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef InstrumentCloseReason from_str(str value) except *:
-        if value == "END_OF_SESSION":
-            return InstrumentCloseReason.END_OF_SESSION
-        elif value == "EXPIRED":
-            return InstrumentCloseReason.EXPIRED
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return InstrumentCloseReasonParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return InstrumentCloseReasonParser.from_str(value)
+    cdef InstrumentCloseType from_str(str value) except *

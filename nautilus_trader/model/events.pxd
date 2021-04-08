@@ -16,10 +16,13 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
+from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -210,3 +213,20 @@ cdef class PositionChanged(PositionEvent):
 
 cdef class PositionClosed(PositionEvent):
     pass
+
+
+cdef class StatusEvent(Event):
+    pass
+
+
+cdef class VenueStatusEvent(StatusEvent):
+    cdef readonly VenueStatus status
+
+
+cdef class InstrumentStatusEvent(StatusEvent):
+    cdef readonly InstrumentStatus status
+
+
+cdef class InstrumentClosePrice(Event):
+    cdef readonly Price close_price
+    cdef readonly InstrumentCloseType close_type
