@@ -15,7 +15,7 @@
 
 import os
 
-import betfairlightweight
+from betfairlightweight import APIClient
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
@@ -57,16 +57,14 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
-        client: betfairlightweight.APIClient = betfairlightweight.APIClient(
-            username=os.getenv(config.get("username", ""), ""),
-            password=os.getenv(config.get("password", ""), ""),
-            app_key=os.getenv(config.get("app_key", ""), ""),
-            certs=os.getenv(config.get("cert_dir", ""), ""),
-            lightweight=True,
-        )
-
         data_client = BetfairDataClient(
-            client=client,
+            client=APIClient(
+                username=os.getenv(config.get("username", ""), ""),
+                password=os.getenv(config.get("password", ""), ""),
+                app_key=os.getenv(config.get("app_key", ""), ""),
+                certs=os.getenv(config.get("cert_dir", ""), ""),
+                lightweight=True,
+            ),
             engine=engine,
             clock=clock,
             logger=logger,
@@ -109,7 +107,7 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         # Create client
-        client: betfairlightweight.APIClient = betfairlightweight.APIClient(
+        client = APIClient(
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),

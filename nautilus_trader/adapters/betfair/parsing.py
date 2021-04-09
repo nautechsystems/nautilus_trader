@@ -15,7 +15,6 @@
 
 import datetime
 from decimal import Decimal
-import hashlib
 import itertools
 from typing import List, Optional, Union
 
@@ -67,10 +66,6 @@ from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.tick import TradeTick
 
 
-# TODO - Investigate more order types
-sha256 = hashlib.sha256()
-
-
 def order_submit_to_betfair(
     command: SubmitOrder, instrument: BettingInstrument, customer_ref="1"
 ):
@@ -107,7 +102,7 @@ def order_submit_to_betfair(
 
 def order_update_to_betfair(
     command: UpdateOrder,
-    order_id: VenueOrderId,
+    venue_order_id: VenueOrderId,
     side: OrderSide,
     instrument: BettingInstrument,
 ):
@@ -117,7 +112,7 @@ def order_update_to_betfair(
         "customer_ref": command.client_order_id.value,
         "instructions": [
             replace_instruction(
-                bet_id=order_id.value,
+                bet_id=venue_order_id.value,
                 new_price=float(
                     probability_to_price(probability=command.price, side=side)
                 ),
@@ -130,8 +125,8 @@ def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument)
     """ Convert a SubmitOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.id.value,
-        "instructions": [cancel_instruction(bet_id=command.client_order_id.value)],
+        "customer_ref": command.client_order_id.value,
+        "instructions": [cancel_instruction(bet_id=command.venue_order_id.value)],
     }
 
 
@@ -181,7 +176,7 @@ def build_market_snapshot_messages(
                     instrument = instrument_provider.get_betting_instrument(**kw)
                     # Check we only have one of [best bets / depth bets / all bets]
                     bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
-                    ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atb"]
+                    ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atl"]
                     assert len(bid_keys) <= 1
                     assert len(ask_keys) <= 1
                     # TODO Clean this crap up
@@ -224,7 +219,6 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
             instrument = instrument_provider.get_betting_instrument(**kw)
             if not instrument:
                 continue
-            # assert instrument
             operations = []
             for side in B_SIDE_KINDS:
                 for upd in runner.get(side, []):
@@ -305,7 +299,9 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
                 kw = dict(
                     market_id=market_id,
                     selection_id=str(selection["id"]),
-                    handicap=str(selection.get("hc") or "0.0"),
+                    handicap=str(
+                        selection.get("hc", selection.get("handicap")) or "0.0"
+                    ),
                 )
                 instrument = instrument_provider.get_betting_instrument(**kw)
                 assert instrument
@@ -334,7 +330,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
     return [
         OrderStatusReport(
             client_order_id=ClientOrderId(),
-            order_id=VenueOrderId(),
+            venue_order_id=VenueOrderId(),
             order_state=OrderState(),
             filled_qty=Quantity(),
             timestamp_ns=millis_to_nanos(),
@@ -344,19 +340,19 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
 
 
 async def generate_trades_list(
-    self, order_id: VenueOrderId, symbol: Symbol, since: datetime = None
+    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None
 ) -> List[ExecutionReport]:
     filled = self.client().betting.list_cleared_orders(
-        bet_ids=[order_id],
+        bet_ids=[venue_order_id],
     )
     if not filled["clearedOrders"]:
-        self._log.warn(f"Found no existing order for {order_id}")
+        self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled["clearedOrders"][0]
     timestamp_ns = millis_to_nanos(pd.Timestamp(fill["lastMatchedDate"]).timestamp())
     return [
         ExecutionReport(
-            client_order_id=self.order_id_to_client_order_id[order_id],
+            client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
             venue_order_id=VenueOrderId(fill["betId"]),
             execution_id=ExecutionId(fill["lastMatchedDate"]),
             last_qty=Decimal(fill["sizeSettled"]),

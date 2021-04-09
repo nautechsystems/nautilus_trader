@@ -77,6 +77,10 @@ def invert_price(p):
     return parse_price(1 / (1 - (1 / p))) / 100
 
 
+def invert_probability(p):
+    return 1 - p
+
+
 # -- A bunch of structures for dealing with prices and probabilities.
 price_increments = [
     (1.01, 2, 0.01),
