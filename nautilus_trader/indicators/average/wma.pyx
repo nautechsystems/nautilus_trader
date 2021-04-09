@@ -56,7 +56,18 @@ cdef class WeightedMovingAverage(MovingAverage):
         """
         Condition.positive_int(period, "period")
         if weights is not None:
+            if not isinstance(weights, np.ndarray):
+                # convert weights to the np.ndarray if it's possible
+                weights = np.asarray(weights, dtype=np.float64)
+                # to avoid the case when weights = [[1.0, 2.0, 3,0], [1.0, 2.0, 3,0]] ...
+            if weights.ndim != 1:
+                raise ValueError("weights must be iterable with ndim == 1.")
+            else:
+                Condition.true(weights.dtype == np.float64, "weights ndarray.dtype must be 'float64'")
+                Condition.true(weights.ndim == 1, "weights ndarray.ndim must be 1")
             Condition.equal(len(weights), period, "len(weights)", "period")
+            eps = np.finfo(np.float64).eps
+            Condition.true(eps < weights.sum(), f"sum of weights must be positive > {eps}")
         super().__init__(period, params=[period, weights], price_type=price_type)
 
         self._inputs = deque(maxlen=period)

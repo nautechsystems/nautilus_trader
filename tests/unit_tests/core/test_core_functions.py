@@ -135,7 +135,7 @@ class TestFunctions:
 
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange
-        values = np.ndarray(0)
+        values = np.asarray([], dtype=np.float64)
 
         # Act
         result = fast_mean(values)
@@ -145,7 +145,7 @@ class TestFunctions:
 
     def test_fast_mean_with_values(self):
         # Arrange
-        values = np.asarray([0.0, 1.1, 2.2, 3.3, 4.4, 5.5])
+        values = np.asarray([0.0, 1.1, 2.2, 3.3, 4.4, 5.5], dtype=np.float64)
 
         # Act
         result = fast_mean(values)
@@ -156,7 +156,7 @@ class TestFunctions:
 
     def test_fast_mean_iterated_with_empty_list_returns_zero(self):
         # Arrange
-        values = np.ndarray(0)
+        values = np.asarray([], dtype=np.float64)
 
         # Act
         result = fast_mean_iterated(values, 0.0, 0.0, 6)
@@ -166,8 +166,8 @@ class TestFunctions:
 
     def test_fast_mean_iterated_with_values(self):
         # Arrange
-        values1 = np.asarray([0.0, 1.1, 2.2])
-        values2 = np.asarray([0.0, 1.1, 2.2, 3.3, 4.4])
+        values1 = np.asarray([0.0, 1.1, 2.2], dtype=np.float64)
+        values2 = np.asarray([0.0, 1.1, 2.2, 3.3, 4.4], dtype=np.float64)
 
         # Act
         result1 = fast_mean_iterated(values1, 0.0, fast_mean(values1), 5)
@@ -179,7 +179,7 @@ class TestFunctions:
 
     def test_std_dev_with_mean(self):
         # Arrange
-        values = np.asarray([0.0, 1.1, 2.2, 3.3, 4.4, 8.1, 9.9, -3.0])
+        values = np.asarray([0.0, 1.1, 2.2, 3.3, 4.4, 8.1, 9.9, -3.0], dtype=np.float64)
         mean = fast_mean(values)
 
         # Act

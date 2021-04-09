@@ -87,7 +87,7 @@ cdef class SpreadAnalyzer(Indicator):
 
         # Update average spread
         self.average = fast_mean_iterated(
-            values=np.asarray(self._spreads),
+            values=np.asarray(self._spreads, dtype=np.float64),
             next_value=spread,
             current_value=self.average,
             expected_length=self.capacity,

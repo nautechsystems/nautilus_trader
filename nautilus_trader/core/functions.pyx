@@ -176,14 +176,19 @@ cpdef inline double fast_mean_iterated(
     > 10x faster than `np.mean`.
 
     """
-    cdef int length = values.size
+    if values is None or values.ndim != 1:
+        raise ValueError(f"values must be valid ndarray with ndim == 1.")
+
+    cdef double[:] mv = values
+    cdef int length = len(mv)
+
     if length < expected_length:
         return fast_mean(values)
 
     assert length == expected_length
 
-    cdef double value_to_drop = values[0] if drop_left else values[length - 1]
-    return current_value + ((next_value - value_to_drop) / length)
+    cdef double value_to_drop = mv[0] if drop_left else mv[length - 1]
+    return current_value + (next_value - value_to_drop) / length
 
 
 cpdef inline double fast_std(np.ndarray values) except *:

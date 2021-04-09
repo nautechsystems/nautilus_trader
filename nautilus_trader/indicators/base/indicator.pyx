@@ -63,7 +63,7 @@ cdef class Indicator:
         self.initialized = False
 
     cdef str _params_str(self):
-        return str(self._params)[1:-1].replace("'", '').strip('()') if self._params else ''
+        return str(self._params)[1:-1].replace("'", '') if self._params else ''
 
     cdef void _set_has_inputs(self, bint setting) except *:
         self.has_inputs = setting

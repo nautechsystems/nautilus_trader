@@ -19,6 +19,8 @@ from collections import deque
 
 import numpy as np
 
+cimport numpy as np
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.core.functions cimport fast_std_with_mean
@@ -209,16 +211,21 @@ cdef class FuzzyCandlesticks(Indicator):
             self._upper_wick_percents.append((high_price - max(open_price, close_price)) / self._lengths[0])
             self._lower_wick_percents.append((min(open_price, close_price) - low_price) / self._lengths[0])
 
-        # Calculate statistics for bars
-        cdef double mean_length = fast_mean(np.asarray(self._lengths))
-        cdef double mean_body_percent = fast_mean(np.asarray(self._body_percents))
-        cdef double mean_upper_wick = fast_mean(np.asarray(self._upper_wick_percents))
-        cdef double mean_lower_wick = fast_mean(np.asarray(self._lower_wick_percents))
+        cdef np.ndarray lengths = np.asarray(self._lengths, dtype=np.float64)
+        cdef np.ndarray body_percents = np.asarray(self._body_percents, dtype=np.float64)
+        cdef np.ndarray upper_wick_percents = np.asarray(self._upper_wick_percents, dtype=np.float64)
+        cdef np.ndarray lower_wick_percents = np.asarray(self._lower_wick_percents, dtype=np.float64)
 
-        cdef double sd_lengths = fast_std_with_mean(np.asarray(self._lengths), mean_length)
-        cdef double sd_body_percents = fast_std_with_mean(np.asarray(self._body_percents), mean_body_percent)
-        cdef double sd_upper_wick_percents = fast_std_with_mean(np.asarray(self._upper_wick_percents), mean_upper_wick)
-        cdef double sd_lower_wick_percents = fast_std_with_mean(np.asarray(self._lower_wick_percents), mean_lower_wick)
+        # Calculate statistics for bars
+        cdef double mean_length = fast_mean(lengths)
+        cdef double mean_body_percent = fast_mean(body_percents)
+        cdef double mean_upper_wick = fast_mean(upper_wick_percents)
+        cdef double mean_lower_wick = fast_mean(lower_wick_percents)
+
+        cdef double sd_lengths = fast_std_with_mean(lengths, mean_length)
+        cdef double sd_body_percents = fast_std_with_mean(body_percents, mean_body_percent)
+        cdef double sd_upper_wick_percents = fast_std_with_mean(upper_wick_percents, mean_upper_wick)
+        cdef double sd_lower_wick_percents = fast_std_with_mean(lower_wick_percents, mean_lower_wick)
 
         # Create fuzzy candle
         self.value = FuzzyCandle(
