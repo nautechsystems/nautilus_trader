@@ -103,7 +103,7 @@ if __name__ == "__main__":
     # Add starting balances for single-asset or multi-asset accounts
     engine.add_exchange(
         venue=Venue("SIM"),
-        oms_type=OMSType.HEDGING,
+        oms_type=OMSType.HEDGING,  # Exchange will generate position_ids
         starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],

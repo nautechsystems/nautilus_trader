@@ -108,7 +108,6 @@ class TradingStrategyTests(unittest.TestCase):
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
             exec_cache=self.exec_engine.cache,

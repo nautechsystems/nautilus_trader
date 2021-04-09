@@ -59,7 +59,6 @@ class TestBacktestEngine:
         self.engine.add_exchange(
             venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )

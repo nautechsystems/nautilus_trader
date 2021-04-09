@@ -82,7 +82,6 @@ class TestBacktestExecClientTests:
         self.exchange = SimulatedExchange(
             venue=Venue("BINANCE"),
             oms_type=OMSType.NETTING,
-            generate_position_ids=True,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
             instruments=[ETHUSDT_BINANCE],

@@ -308,7 +308,6 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.engine.add_exchange(
             venue=self.venue,
             oms_type=OMSType.NETTING,
-            generate_position_ids=False,
             starting_balances=[Money(1_000_000, USDT)],
         )
 
@@ -332,7 +331,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.assertEqual(279, strategy.fast_ema.count)
         self.assertEqual(69806, self.engine.iteration)
         self.assertEqual(
-            Money("998873.43110000", USDT),
+            Money("999872.43110000", USDT),
             self.engine.portfolio.account(self.venue).balance(),
         )
 
@@ -356,7 +355,6 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.engine.add_exchange(
             venue=self.venue,
             oms_type=OMSType.NETTING,
-            generate_position_ids=False,
             starting_balances=[Money(1_000_000, USDT)],
         )
 
@@ -380,6 +378,6 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.assertEqual(39, strategy.fast_ema.count)
         self.assertEqual(19998, self.engine.iteration)
         self.assertEqual(
-            Money("995991.41500000", USDT),
+            Money("996128.41500000", USDT),
             self.engine.portfolio.account(self.venue).balance(),
         )

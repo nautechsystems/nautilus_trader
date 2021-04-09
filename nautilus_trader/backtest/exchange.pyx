@@ -27,6 +27,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -80,7 +81,6 @@ cdef class SimulatedExchange:
         self,
         Venue venue not None,
         OMSType oms_type,
-        bint generate_position_ids,
         bint is_frozen_account,
         list starting_balances not None,
         list instruments not None,
@@ -98,9 +98,7 @@ cdef class SimulatedExchange:
         venue : Venue
             The venue to simulate for the backtest.
         oms_type : OMSType (Enum)
-            The order management system type used by the exchange.
-        generate_position_ids : bool
-            If the exchange should generate position identifiers.
+            The order management system type used by the exchange (HEDGING or NETTING).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         starting_balances : list[Money]
@@ -143,7 +141,7 @@ cdef class SimulatedExchange:
 
         self.id = venue
         self.oms_type = oms_type
-        self.generate_position_ids = generate_position_ids
+        self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
 
         self.exec_cache = exec_cache
         self.exec_client = None  # Initialized when execution client registered
@@ -1108,31 +1106,21 @@ cdef class SimulatedExchange:
     ) except *:
         self._delete_order(order)  # Remove order from working orders (if found)
 
-        # Query if there is an existing position for this order
-        cdef PositionId position_id = self._position_index.get(order.client_order_id)
-        # *** position_id could be None here ***
-
-        cdef PositionId new_position_id
-        cdef Position position = None
-        if position_id is None:
-            # Generate a new position identifier
-            new_position_id = self._generate_position_id(order.instrument_id)
-            self._position_index[order.client_order_id] = new_position_id
-            if self.generate_position_ids:
+        cdef PositionId position_id
+        if self.oms_type == OMSType.NETTING:
+            position_id = PositionId.null_c()
+        elif self.oms_type == OMSType.HEDGING:
+            position_id = self.exec_cache.position_id(order.client_order_id)
+            if position_id is None:
                 # Set the filled position identifier
-                position_id = new_position_id
-            else:
-                # Only use the position identifier internally to the exchange
-                position_id = PositionId.null_c()
-        else:
+                position_id = self._generate_position_id(order.instrument_id)
+
+        cdef Position position = None
+        if position_id.not_null():
             position = self.exec_cache.position(position_id)
-            position_id = position.id
 
         # Calculate commission
-        cdef Instrument instrument = self.instruments.get(order.instrument_id)
-        if instrument is None:
-            raise RuntimeError(f"Cannot run backtest: no instrument data for {order.instrument_id}")
-
+        cdef Instrument instrument = self.instruments[order.instrument_id]
         cdef Money commission = instrument.calculate_commission(
             last_qty=order.quantity,
             last_px=fill_px,
@@ -1164,7 +1152,7 @@ cdef class SimulatedExchange:
 
         # Calculate potential PnL
         cdef Money pnl = None
-        if position is not None and position.entry != order.side:
+        if position and position.entry != order.side:
             # Calculate PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
@@ -1173,14 +1161,14 @@ cdef class SimulatedExchange:
             )
 
         cdef Currency currency  # Settlement currency
-        if self.default_currency is not None:  # Single-asset account
+        if self.default_currency:  # Single-asset account
             currency = self.default_currency
             if pnl is None:
                 pnl = Money(0, currency)
 
             if commission.currency != currency:
                 # Calculate exchange rate to account currency
-                xrate = self.get_xrate(
+                xrate: Decimal = self.get_xrate(
                     from_currency=commission.currency,
                     to_currency=currency,
                     price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
@@ -1190,9 +1178,6 @@ cdef class SimulatedExchange:
                 commission = Money(commission * xrate, currency)
                 pnl = Money(pnl * xrate, currency)
 
-            total_commissions = self.total_commissions.get(currency, Decimal()) + commission
-            self.total_commissions[currency] = Money(total_commissions, currency)
-
             # Final PnL
             pnl = Money(pnl - commission, self.default_currency)
         else:
@@ -1200,9 +1185,11 @@ cdef class SimulatedExchange:
             if pnl is None:
                 pnl = commission
 
-            total_commissions = self.total_commissions.get(currency, Decimal()) + commission
-            self.total_commissions[currency] = Money(total_commissions, currency)
+        # Increment total commissions
+        total_commissions: Decimal = self.total_commissions.get(currency, Decimal()) + commission
+        self.total_commissions[currency] = Money(total_commissions, currency)
 
+        # Send event to ExecutionEngine
         self.exec_client.handle_event(fill)
         self._check_oco_order(order.client_order_id)
 
@@ -1213,6 +1200,7 @@ cdef class SimulatedExchange:
                     self._process_order(child_order)
             del self._child_orders[order.client_order_id]
 
+        # Cancel any linked OCO orders
         if position and position.is_closed_c():
             oco_orders = self._position_oco_orders.get(position.id)
             if oco_orders:
