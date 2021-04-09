@@ -12,12 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 from datetime import datetime
 
 import pytz
 
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import ExecutionDatabase
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
@@ -51,6 +56,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.mocks import MockLiveDataEngine
+from tests.test_kit.mocks import MockLiveExecutionEngine
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -371,4 +379,41 @@ class TestStubs:
             position.last_event,
             uuid4(),
             0,
+        )
+
+    @staticmethod
+    def clock() -> LiveClock:
+        return LiveClock()
+
+    @staticmethod
+    def logger():
+        return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
+
+    @staticmethod
+    def portfolio():
+        return Portfolio(
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def mock_live_data_engine():
+        return MockLiveDataEngine(
+            loop=asyncio.get_event_loop(),
+            portfolio=TestStubs.portfolio(),
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def mock_live_exec_engine():
+        database = BypassExecutionDatabase(
+            trader_id=TestStubs.trader_id(), logger=TestStubs.logger()
+        )
+        return MockLiveExecutionEngine(
+            loop=asyncio.get_event_loop(),
+            database=database,
+            portfolio=TestStubs.portfolio(),
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
         )

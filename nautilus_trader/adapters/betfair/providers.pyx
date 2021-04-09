@@ -71,18 +71,19 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._load_instruments()
 
     cdef void _load_instruments(self, market_filter=None) except *:
-        markets = load_markets(self._client, market_filter=market_filter or self.market_filter)
+        market_filter = market_filter or self.market_filter
+        markets = load_markets(self._client, market_filter=market_filter)
         self._log.info(f"Found {len(markets)} markets with filter: {market_filter}")
         self._log.info(f"Loading metadata for {len(markets)} markets..")
         market_metadata = load_markets_metadata(client=self._client, markets=markets)
-        self._log.info(f"Creating {len(market_metadata)} instruments")
+        self._log.info(f"Creating instruments..")
 
         cdef list instruments = [
             instrument
             for metadata in market_metadata.values()
             for instrument in make_instrument(metadata, currency=self.get_account_currency())
         ]
-        self._log.info(f"Instruments created")
+        self._log.info(f"{len(instruments)} Instruments created")
 
         for ins in instruments:
             self._instruments[ins.id] = ins
@@ -138,33 +139,101 @@ def _parse_date(s, tz):
     return pd.Timestamp(s, tz=tz).to_pydatetime()
 
 
-cpdef list make_instrument(dict market_definition, str currency):
+def parse_market_definition(market_definition):
+    if "marketDefinition" in market_definition:
+        market_id = market_definition["id"]
+        market_definition = market_definition["marketDefinition"]
+        market_definition["marketId"] = market_id
+
+    def _parse_grouped():
+        """ Parse a market where data is grouped by type (ie keys are {'competition': {'id': 1, 'name': 'NBA') """
+        return {
+            "event_type_id": market_definition["eventType"]["id"],
+            "event_type_name": market_definition["eventType"]["name"],
+            "competition_name": market_definition.get("competition", {}).get("name", ""),
+            "competition_id": market_definition.get("competition", {}).get("id", ""),
+            "event_id": market_definition["event"]["id"],
+            "event_name": market_definition["event"]["name"].strip(),
+            "country_code": market_definition["event"].get("countryCode"),
+            "event_open_date": pd.Timestamp(
+                market_definition["event"]["openDate"], tz=market_definition["event"]["timezone"]
+            ),
+            "betting_type": market_definition["description"]["bettingType"],
+            "market_type": market_definition["description"]["marketType"],
+            "market_name": market_definition.get("marketName", ""),
+            "market_start_time": pd.Timestamp(market_definition["description"]["marketTime"]),
+            "market_id": market_definition["marketId"],
+            "runners": [
+                {
+                    "name": r.get("runnerName") or "NO_NAME",
+                    "selection_id": r["selectionId"],
+                    "handicap": str(r.get("hc", r.get("handicap")) or "0.0"),
+                    "sort_priority": r.get("sortPriority"),
+                    "runner_id": r.get("metadata", {}).get("runnerId")
+                    if str(r.get("metadata", {}).get("runnerId")) != str(r["selectionId"])
+                    else None,
+                }
+                for r in market_definition["runners"]
+            ],
+        }
+
+    def _parse_top_level():
+        """ Parse a market where all data is contained at the top level (ie keys are eventTypeId, competitionId) """
+        return {
+            "event_type_id": market_definition["eventTypeId"],
+            "event_type_name": market_definition["eventTypeName"],
+            "event_id": market_definition["eventId"],
+            "event_name": market_definition.get("eventName"),
+            "event_open_date": pd.Timestamp(market_definition["openDate"], tz=market_definition["timezone"]),
+            "betting_type": market_definition["bettingType"],
+            "country_code": market_definition.get("countryCode"),
+            "market_type": market_definition.get("marketType"),
+            "market_name": market_definition.get("name"),
+            "market_start_time": pd.Timestamp(market_definition["marketTime"], tz=market_definition["timezone"]),
+            "market_id": market_definition["marketId"],
+            "runners": [
+                {
+                    "name": r.get("name") or "NO_NAME",
+                    "selection_id": r["id"],
+                    "handicap": r.get("hc", "0.0"),
+                    "sort_priority": r.get("sortPriority"),
+                }
+                for r in market_definition["runners"]
+            ],
+        }
+
+    if all(k in market_definition for k in ("eventType", "event")):
+        return _parse_grouped()
+    else:
+        return _parse_top_level()
+
+
+#TODO - handle short hand markety def
+def make_instrument(market_definition, currency):
     cdef list instruments = []
+
+    market_definition = parse_market_definition(market_definition)
 
     # assert market_definition['event']['openDate'] == 'GMT'
     for runner in market_definition["runners"]:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=market_definition["eventType"]["id"],
-            event_type_name=market_definition["eventType"]["name"],
-            competition_id=market_definition.get("competition", {}).get("id", ""),
-            competition_name=market_definition.get("competition", {}).get("name", ""),
-            event_id=market_definition["event"]["id"],
-            event_name=market_definition["event"]["name"].strip(),
-            event_country_code=market_definition["event"].get("countryCode", ""),
-            event_open_date=_parse_date(
-                market_definition["event"]["openDate"], tz=market_definition["event"]["timezone"]
-            ),
-            betting_type=market_definition["description"]["bettingType"],
-            market_id=market_definition["marketId"],
-            market_name=market_definition["marketName"],
-            market_start_time=_parse_date(
-                market_definition["description"]["marketTime"], tz=market_definition["event"]["timezone"]
-            ),
-            market_type=market_definition["description"]["marketType"],
-            selection_id=str(runner["selectionId"]),
-            selection_name=runner.get("runnerName"),
-            selection_handicap=str(runner.get("hc", runner.get("handicap", ""))),
+            event_type_id=market_definition["event_type_id"],
+            event_type_name=market_definition["event_type_name"],
+            competition_id=market_definition.get("competition_id", ""),
+            competition_name=market_definition.get("competition_name", ""),
+            event_id=market_definition["event_id"],
+            event_name=market_definition["event_name"].strip(),
+            event_country_code=market_definition.get("country_code") or "",
+            event_open_date=market_definition["event_open_date"],
+            betting_type=market_definition["betting_type"],
+            market_id=market_definition["market_id"],
+            market_name=market_definition["market_name"],
+            market_start_time=market_definition["market_start_time"],
+            market_type=market_definition["market_type"],
+            selection_id=str(runner["selection_id"]),
+            selection_name=runner["name"],
+            selection_handicap=str(runner.get("hc", runner.get("handicap")) or "0.0"),
             currency=currency,
             # TODO - Add the provider, use clock
             timestamp_ns=unix_timestamp_ns()

@@ -31,36 +31,25 @@ from nautilus_trader.live.node import TradingNode
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
-market_id = "1.181300531"
+market_id = "1.181245757"
 config = {
     "trader": {
         "name": "TESTER",  # Not sent beyond system boundary
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
-        "connection_timeout": 20.0,  # Timeout for successful connections for all engine clients
-        "disconnection_timeout": 15.0,  # Timeout for successful disconnection for all engine clients
+        "connection_timeout": 30.0,  # Timeout for successful connections for all engine clients
+        "disconnection_timeout": 30.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 15.0,  # How long to wait after stopping for residual events (secs)
     },
     "logging": {
-        "log_level_console": "DBG",
-        "log_level_file": "DBG",
-        "log_level_store": "WRN",
-        "log_thread_id": False,
-        "log_to_file": True,
-        "log_file_dir": f"{os.environ['HOME']}/data/logs/",
-        "run_in_process": False,
+        "level_stdout": "DBG",
     },
     "exec_database": {
-        "type": "redis",
-        "host": "localhost",
-        "port": 6379,
+        "type": "memory",
     },
     "risk": {},
-    "strategy": {
-        "load_state": True,  # Strategy state is loaded from the database on start
-        "save_state": True,  # Strategy state is saved to the database on shutdown
-    },
+    "strategy": {},
     "data_clients": {
         "BETFAIR": {
             "username": "BETFAIR_USERNAME",  # value is the environment variable key

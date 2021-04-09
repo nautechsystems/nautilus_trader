@@ -72,6 +72,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         LiveClock clock not None,
         Logger logger not None,
         dict market_filter not None,
+        bint load_instruments = True,
     ):
         """
         Initialize a new instance of the `BetfairDataClient` class.
@@ -97,7 +98,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
             logger=logger,
-            load_all=True,
+            load_all=load_instruments,
             market_filter=market_filter
         )
         super().__init__(
@@ -115,9 +116,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         # Subscriptions
         self._subscribed_market_ids = set()      # type: set[InstrumentId]
 
-        # Scheduled tasks
-        self._update_instruments_task = None
-
     cpdef void connect(self) except *:
         """
         Connect the client.
@@ -127,28 +125,34 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     async def _connect(self):
         self._log.info("Connecting to Betfair APIClient...")
-        resp = self._client.login()
+        self._client.login()
         self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
 
         # Connect market data socket
         await self._stream.connect()
 
+        # Pass any preloaded instruments into the engine
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_data(instrument)
+
+        self._log.debug(f"DataEngine has {len(self._engine.cache.instruments())} instruments")
+
         self.is_connected = True
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+        """ Disconnect the client """
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
         self._log.info("Disconnecting...")
 
-        stop_tasks = []
+        # Close socket
+        self._log.info("Closing streaming socket...")
+        await self._stream.disconnect()
 
         # Ensure client closed
-        self._log.info("Closing APICClient(s)...")
+        self._log.info("Closing APIClient...")
         self._client.client_logout()
 
         self.is_connected = False
@@ -259,7 +263,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
 
-    cpdef void handle_data(self, Data data):
+    cpdef void handle_data(self, Data data) except *:
         self._handle_data(data=data)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
@@ -268,7 +272,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         cdef dict update = orjson.loads(raw)  # type: dict
         updates = on_market_update(update=update, instrument_provider=self.instrument_provider())
         if not updates:
-            self._log.warning(f"Received message but parsed no updates: {raw}")
+            self._log.warning(f"Received message but parsed no updates: {update}")
+            if update.get("statusCode") == 'FAILURE' and update.get('connectionClosed'):
+                #TODO - self._loop.create_task(self._stream.reconnect())
+                self._log.error(str(update))
+                raise RuntimeError()
         for upd in updates:
             self._log.debug(str(upd))
             self.handle_data(data=upd)

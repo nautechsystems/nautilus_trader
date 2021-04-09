@@ -43,6 +43,7 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -56,6 +57,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.order.base cimport PassiveOrder
 
 
 cdef class LiveExecutionClientFactory:
@@ -540,3 +542,28 @@ cdef class LiveExecutionClient(ExecutionClient):
         )
 
         self._handle_event(expired)
+
+    cdef inline void _generate_order_updated(
+        self,
+        Price price,
+        Quantity quantity,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        bint venue_order_id_modified=False,
+    ) except *:
+        # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
+        if not venue_order_id_modified:
+            existing = self._engine.cache.order(client_order_id)
+            Condition.equal(existing.venue_order_id, venue_order_id, "existing.venue_order_id", "order.venue_order_id")
+        # Generate event
+        cdef OrderUpdated updated = OrderUpdated(
+            account_id=self.account_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            quantity=quantity,
+            price=price,
+            updated_ns=self._clock.timestamp_ns(),
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
+        )
+        self._handle_event(updated)
