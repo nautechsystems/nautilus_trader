@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.providers cimport InstrumentProvider
@@ -24,6 +25,8 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class LiveExecutionClientFactory:
@@ -61,3 +64,11 @@ cdef class LiveExecutionClient(ExecutionClient):
     ) except *
     cdef inline void _generate_order_cancelled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
     cdef inline void _generate_order_expired(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cdef inline void _generate_order_updated(
+            self,
+            Price price,
+            Quantity quantity,
+            ClientOrderId client_order_id,
+            VenueOrderId venue_order_id,
+            bint venue_order_id_modified=*
+    ) except *
