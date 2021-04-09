@@ -1199,7 +1199,7 @@ cdef class StatusEvent(Event):
 
 cdef class VenueStatusEvent(StatusEvent):
     """
-    Represents an event that indicates a change in a Venue status
+    Represents an event that indicates a change in a Venue status.
     """
     def __init__(
         self,
@@ -1228,9 +1228,10 @@ cdef class VenueStatusEvent(StatusEvent):
                 f"status={VenueStatusParser.to_str(self.status)}, "
                 f"event_id={self.id})")
 
+
 cdef class InstrumentStatusEvent(StatusEvent):
     """
-    Represents an event that indicates a change in an instrument status
+    Represents an event that indicates a change in an instrument status.
     """
     def __init__(
         self,
@@ -1262,7 +1263,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
 
 cdef class InstrumentClosePrice(Event):
     """
-    Represents an event that indicates a change in an instrument status
+    Represents an event that indicates a change in an instrument status.
     """
 
     def __init__(
@@ -1273,14 +1274,14 @@ cdef class InstrumentClosePrice(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `InstrumentStatusEvent` base class.
+        Initialize a new instance of the `InstrumentClosePrice` base class.
 
         Parameters
         ----------
         close_price : Price
             The closing price for the instrument.
         close_type : InstrumentCloseType
-            The type of closing price
+            The type of closing price.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64

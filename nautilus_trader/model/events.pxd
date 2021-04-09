@@ -221,12 +221,16 @@ cdef class StatusEvent(Event):
 
 cdef class VenueStatusEvent(StatusEvent):
     cdef readonly VenueStatus status
+    """The events venue status.\n\n:returns: `VenueStatus`"""
 
 
 cdef class InstrumentStatusEvent(StatusEvent):
     cdef readonly InstrumentStatus status
+    """The events instrument status.\n\n:returns: `InstrumentStatus`"""
 
 
 cdef class InstrumentClosePrice(Event):
     cdef readonly Price close_price
+    """The events close price.\n\n:returns: `Price`"""
     cdef readonly InstrumentCloseType close_type
+    """The events close type.\n\n:returns: `InstrumentCloseType`"""
