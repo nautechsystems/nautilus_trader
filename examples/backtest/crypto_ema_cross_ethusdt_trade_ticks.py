@@ -92,7 +92,6 @@ if __name__ == "__main__":
     engine.add_exchange(
         venue=BINANCE,
         oms_type=OMSType.NETTING,
-        generate_position_ids=False,
         starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
         fill_model=fill_model,
     )

@@ -17,6 +17,7 @@ being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 - Rename `Order.id` to `Order.venue_order_id`.
 - Rename `Order.cl_ord_id` to `Order.client_order_id`.
 - Rename `AssetClass.STOCK` to `AssetClass.EQUITY`.
+- Remove redundant flag `generate_position_ids` (handled by `OMSType`).
 
 ## Enhancements
 - Add `AssetClass.METAL` and `AssetClass.ENERGY`.

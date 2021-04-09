@@ -58,7 +58,6 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     cdef readonly OMSType oms_type
-    cdef readonly bint generate_position_ids
 
     cdef readonly ExecutionCache exec_cache
     cdef readonly BacktestExecClient exec_client
