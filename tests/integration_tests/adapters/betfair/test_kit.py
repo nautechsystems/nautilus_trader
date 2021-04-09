@@ -24,12 +24,14 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.trading.strategy import TradingStrategy
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.stubs import TestStubs
@@ -302,6 +304,18 @@ class BetfairTestStubs(TestStubs):
         return (TEST_PATH / "streaming_ocm_UPDATE.json").read_bytes()
 
     @staticmethod
+    def streaming_ocm_order_update():
+        return (TEST_PATH / "streaming_ocm_order_update.json").read_bytes()
+
+    @staticmethod
+    def streaming_ocm_FILLED():
+        return (TEST_PATH / "streaming_ocm_FILLED.json").read_bytes()
+
+    @staticmethod
+    def streaming_ocm_MIXED():
+        return (TEST_PATH / "streaming_ocm_MIXED.json").read_bytes()
+
+    @staticmethod
     def streaming_mcm_HEARTBEAT():
         return (TEST_PATH / "streaming_mcm_HEARTBEAT.json").read_bytes()
 
@@ -354,9 +368,15 @@ class BetfairTestStubs(TestStubs):
         return orjson.loads((TEST_PATH / "betting_place_order_error.json").read_bytes())
 
     @staticmethod
-    def update_orders_success():
+    def replace_orders_success():
         return orjson.loads(
             (TEST_PATH / "betting_replace_orders_success.json").read_bytes()
+        )
+
+    @staticmethod
+    def replace_orders_resp_success():
+        return orjson.loads(
+            (TEST_PATH / "betting_post_replace_order_success.json").read_bytes()
         )
 
     @staticmethod
@@ -368,6 +388,25 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def raw_orderbook_updates():
         return bz2.open(TEST_PATH / "1.133262888.json.bz2").readlines()
+
+    @staticmethod
+    def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            BetfairTestStubs.clock(),
+            BetfairTestStubs.logger(),
+        )
+
+        engine.register_strategy(strategy)
+
+        order = strategy.order_factory.limit(
+            BetfairTestStubs.instrument_id(),
+            OrderSide.BUY,
+            Quantity(10),
+            Price("0.50"),
+        )
+        return order
 
     @staticmethod
     def submit_order_command():

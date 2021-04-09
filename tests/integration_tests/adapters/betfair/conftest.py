@@ -10,14 +10,11 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.mocks import MockLiveDataEngine
-from tests.test_kit.mocks import MockLiveExecutionEngine
 
 
 @pytest.fixture(autouse=True)
@@ -54,7 +51,7 @@ def betfairlightweight_mocks(mocker):
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairTestStubs.update_orders_success(),
+        return_value=BetfairTestStubs.replace_orders_success(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",
@@ -128,24 +125,12 @@ def uuid():
 
 @pytest.fixture()
 def data_engine(event_loop, clock, live_logger, portfolio):
-    return MockLiveDataEngine(
-        loop=event_loop,
-        portfolio=portfolio,
-        clock=clock,
-        logger=live_logger,
-    )
+    return BetfairTestStubs.mock_live_data_engine()
 
 
 @pytest.fixture()
 def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
-    database = BypassExecutionDatabase(trader_id=trader_id, logger=live_logger)
-    return MockLiveExecutionEngine(
-        loop=event_loop,
-        database=database,
-        portfolio=portfolio,
-        clock=clock,
-        logger=live_logger,
-    )
+    return BetfairTestStubs.mock_live_exec_engine()
 
 
 @pytest.fixture()
@@ -178,6 +163,7 @@ async def execution_client(
         clock=clock,
         logger=live_logger,
         market_filter={},
+        load_instruments=False,
     )
     client.instrument_provider().load_all()
     exec_engine.register_client(client)
@@ -192,6 +178,7 @@ def betfair_data_client(betfair_client, data_engine, clock, live_logger):
         clock=clock,
         logger=live_logger,
         market_filter={},
+        load_instruments=False,
     )
     client.instrument_provider().load_all()
     data_engine.register_client(client)

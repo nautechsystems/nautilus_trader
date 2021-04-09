@@ -42,7 +42,7 @@ def test_order_update_to_betfair(betting_instrument):
     result = order_update_to_betfair(
         command=BetfairTestStubs.update_order_command(),
         side=OrderSide.BUY,
-        order_id=VenueOrderId("1"),
+        venue_order_id=VenueOrderId("1"),
         instrument=betting_instrument,
     )
     expected = {
