@@ -2,7 +2,7 @@
 
 **This release includes substantial breaking changes.**
 
-Due to recent feedback and much further thought, a major renaming as been carried
+Due to recent feedback and much further thought - a major renaming as been carried
 out involving order identifiers. The `Order` is the only domain object in the
 model which is identified with more than one ID. Due to this, more explicitness
 helps to ensure correct logic. Previously the `OrderId` was
@@ -20,6 +20,8 @@ being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 
 ## Enhancements
 - Add `AssetClass.METAL` and `AssetClass.ENERGY`.
+- Add `VenueStatusEvent`, `InstrumentStatusEvent` and `InstrumentClosePrice`.
+- Usage of `np.ndarray` to improve function and indicator performance.
 
 ## Fixes
 - LiveLogger log message when blocking.
