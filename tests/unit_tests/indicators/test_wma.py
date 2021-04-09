@@ -46,12 +46,13 @@ class WeightedMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
+        weights_repr = repr(self.wma.weights)
         self.assertEqual(
-            "WeightedMovingAverage(10, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])",
+            f"WeightedMovingAverage(10, {weights_repr})",
             str(self.wma),
         )
         self.assertEqual(
-            "WeightedMovingAverage(10, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])",
+            f"WeightedMovingAverage(10, {weights_repr})",
             repr(self.wma),
         )
 
@@ -59,7 +60,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(self.w, self.wma.weights)
+        self.assertEqual(self.w, list(self.wma.weights))
 
     def test_wma_factory_update_raw(self):
         # Arrange
@@ -69,7 +70,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(8.0, self.wma_factory.value)
-        self.assertEqual(self.w, self.wma_factory.weights)
+        self.assertEqual(list(self.w), list(self.wma_factory.weights))
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange

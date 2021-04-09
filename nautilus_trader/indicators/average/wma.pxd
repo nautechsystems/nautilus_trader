@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+cimport numpy as np
+
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 
 
 cdef class WeightedMovingAverage(MovingAverage):
     cdef object _inputs
 
-    cdef readonly object weights
-    """The weights for the moving average calculation.\n\n:returns: `list[double]`"""
+    cdef readonly np.ndarray weights
+    """The weights for the moving average calculation.\n\n:returns: `np.ndarray[float64]`"""
 
     cpdef void update_raw(self, double value) except *
