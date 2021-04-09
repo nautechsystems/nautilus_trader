@@ -60,15 +60,15 @@ cdef class LiveExecutionClient(ExecutionClient):
         commission_amount: Decimal,
         str commission_currency,
         LiquiditySide liquidity_side,
-        int64_t timestamp_ns
+        int64_t timestamp_ns,
     ) except *
     cdef inline void _generate_order_cancelled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
     cdef inline void _generate_order_expired(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
     cdef inline void _generate_order_updated(
-            self,
-            Price price,
-            Quantity quantity,
-            ClientOrderId client_order_id,
-            VenueOrderId venue_order_id,
-            bint venue_order_id_modified=*
+        self,
+        Price price,
+        Quantity quantity,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        bint venue_order_id_modified=*,
     ) except *

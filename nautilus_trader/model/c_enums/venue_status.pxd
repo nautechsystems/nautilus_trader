@@ -19,8 +19,7 @@ cpdef enum VenueStatus:
     PRE_OPEN = 2,
     OPEN = 3,
     PAUSE = 4,
-    PRE_CLOSE = 5 # Auction
-
+    PRE_CLOSE = 5  # Auction
 
 
 cdef class VenueStatusParser:

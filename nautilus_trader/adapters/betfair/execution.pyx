@@ -77,7 +77,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         LiveClock clock not None,
         Logger logger not None,
         dict market_filter not None,
-        bint load_instruments = True,
+        bint load_instruments=True,
     ):
         """
         Initialize a new instance of the `BetfairExecutionClient` class.
@@ -158,7 +158,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         self.is_connected = False
         self._log.info("Disconnected.")
-
 
 # -- ACCOUNT HANDLERS ------------------------------------------------------------------------------
 
@@ -241,7 +240,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         f.add_done_callback(partial(self._post_update_order, client_order_id=command.client_order_id))
 
     def _update_order(self, UpdateOrder command):
-        existing_order = self._engine.cache.order(command.client_order_id) # type: Order
+        existing_order = self._engine.cache.order(command.client_order_id)  # type: Order
         if existing_order is None:
             self._log.warning(f"Attempting to update order that does not exist in the cache: {command}")
             return
@@ -316,12 +315,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     # betfair allows up to 60 cancels per request
     #     raise NotImplementedError
 
-    # -- Account information ---------------------------------------------------------
+# -- ACCOUNT ---------------------------------------------------------------------------------------
 
     cpdef str get_account_currency(self):
         return self._instrument_provider.get_account_currency()
 
-    # -- Debugging ---------------------------------------------------------
+# -- DEBUGGING -------------------------------------------------------------------------------------
 
     cpdef object client(self):
         return self._client
@@ -332,7 +331,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef LiveExecutionEngine engine(self):
         return self._engine
 
-    # -- Order stream API ---------------------------------------------------------
+# -- ORDER STREAM API ------------------------------------------------------------------------------
 
     cpdef void handle_order_stream_update(self, bytes raw) except *:
         """ Handle an update from the order stream socket """
@@ -425,19 +424,24 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
                 # these values?
                 for trade in selection.get("mb", []):
-                    # TODO - we can get a matched back without full details. Need to match ourselves??
+                    # TODO - we can get a matched back without full details.
+                    #  Need to match ourselves??
                     pass
                 for trade in selection.get("ml", []):
                     pass
 
-                # TODO - Should be no difference for fullImage at this stage. We just send all updates individually
+                # TODO - Should be no difference for fullImage at this stage.
+                #  We just send all updates individually.
                 if selection.get("fullImage", False):
                     pass
 
     async def wait_for_order(self, venue_order_id, timeout_seconds=10.0):
         """
-        We may get an order update from the socket before our submit_order response has come back (with our betId).
-        As a precaution, wait up to `timeout_seconds` for the betId to be added to `self.order_id_to_client_order_id`
+        We may get an order update from the socket before our submit_order
+        response has come back (with our betId).
+
+        As a precaution, wait up to `timeout_seconds` for the betId to be added
+        to `self.order_id_to_client_order_id`.
         """
         start = self._clock.timestamp_ns()
         now = start
@@ -447,9 +451,11 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 return self.venue_order_id_to_client_order_id[venue_order_id]
             now = self._clock.timestamp_ns()
             await asyncio.sleep(0)
-        self._log.warning(f"Failed to find venue_order_id: {venue_order_id} after {timeout_seconds} seconds\nexisting: {self.venue_order_id_to_client_order_id})")
+        self._log.warning(f"Failed to find venue_order_id: {venue_order_id} "
+                          f"after {timeout_seconds} seconds"
+                          f"\nexisting: {self.venue_order_id_to_client_order_id})")
 
-    # -- RECONCILIATION -------------------------------------------------------------------------------
+# -- RECONCILIATION -------------------------------------------------------------------------------
 
     async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
         self._log.debug(f"generate_order_status_report: {order}")
@@ -464,12 +470,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
         return await generate_trades_list(self, venue_order_id, symbol, since)
 
-    # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
     def _handle_event_py(self, event: Event):
         self._engine.process(event)
 
-    # -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *:
         self._engine.process(event)

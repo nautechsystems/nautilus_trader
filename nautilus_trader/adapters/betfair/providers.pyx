@@ -208,7 +208,7 @@ def parse_market_definition(market_definition):
         return _parse_top_level()
 
 
-#TODO - handle short hand markety def
+# TODO: handle short hand market def
 def make_instrument(market_definition, currency):
     cdef list instruments = []
 

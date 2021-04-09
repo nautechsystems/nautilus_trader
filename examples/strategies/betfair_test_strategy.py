@@ -128,7 +128,7 @@ class BetfairTestStrategy(TradingStrategy):
             self.log.info("Sending orders")
             self.send_orders(midpoint=self.midpoint)
         elif self._state == "UPDATE" and not self._in_flight:
-            self.log.info(f"Sending order update")
+            self.log.info("Sending order update...")
             for client_order_id in self.execution.client_order_ids_working():
                 order = self.execution.order(client_order_id)
                 new_price = (
@@ -139,7 +139,7 @@ class BetfairTestStrategy(TradingStrategy):
                 self._in_flight.add(order.client_order_id)
                 self.update_order(order=order, price=Price(new_price, precision=5))
             self._state = "CANCEL"
-            self.log.debug(f"trigger cancel {self._in_flight}")
+            self.log.debug(f"Trigger cancel {self._in_flight}")
         elif self._state == "CANCEL" and not self._in_flight:
             orders = self.execution.orders()
             self.log.debug(f"Sending cancel for orders: {orders}")
@@ -152,7 +152,9 @@ class BetfairTestStrategy(TradingStrategy):
             self.stop()
 
     def update_midpoint(self, order_book: OrderBook):
-        """ Check if midpoint has moved more than threshold, if so , update quotes """
+        """
+        Check if midpoint has moved more than threshold, if so , update quotes.
+        """
         midpoint = Decimal(
             order_book.best_ask_price() + order_book.best_bid_price()
         ) / Decimal(2.0)
