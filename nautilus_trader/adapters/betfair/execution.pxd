@@ -22,7 +22,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef object _stream
     cdef str _account_currency
-    cpdef public dict order_id_to_client_order_id
+    cpdef public dict venue_order_id_to_client_order_id
+    cpdef public set pending_update_order_client_ids
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
