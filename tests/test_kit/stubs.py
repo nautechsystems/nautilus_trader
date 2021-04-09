@@ -21,8 +21,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.execution.database import ExecutionDatabase
-from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType

@@ -44,8 +44,6 @@ from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentClose
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser  # isort:skip
 
 
-
-
 cdef class AccountState(Event):
     """
     Represents an event which includes information on the state of the account.

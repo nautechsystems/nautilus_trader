@@ -72,7 +72,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         LiveClock clock not None,
         Logger logger not None,
         dict market_filter not None,
-        bint load_instruments = True,
+        bint load_instruments=True,
     ):
         """
         Initialize a new instance of the `BetfairDataClient` class.
@@ -88,8 +88,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         logger : Logger
             The logger for the client.
 
-        Raises
-        ------
         """
 
         self._client = client  # type: APIClient
@@ -274,7 +272,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         if not updates:
             self._log.warning(f"Received message but parsed no updates: {update}")
             if update.get("statusCode") == 'FAILURE' and update.get('connectionClosed'):
-                #TODO - self._loop.create_task(self._stream.reconnect())
+                # TODO - self._loop.create_task(self._stream.reconnect())
                 self._log.error(str(update))
                 raise RuntimeError()
         for upd in updates:

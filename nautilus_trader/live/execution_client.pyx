@@ -57,7 +57,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
 
 
 cdef class LiveExecutionClientFactory:
@@ -90,7 +89,8 @@ cdef class LiveExecutionClientFactory:
         logger : LiveLogger
             The client logger.
         client_cls : class, optional
-            The internal client constructor.
+            The internal client constructor. This allows external library and
+            testing dependency injection.
 
         Returns
         -------
@@ -332,7 +332,6 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         if report.order_state == OrderState.REJECTED:
             # No VenueOrderId would have been assigned from the exchange
-            # TODO: Investigate if exchanges record rejected orders?
             self._log.info("Generating OrderRejected event...", color=LogColor.GREEN)
             self._generate_order_rejected(report.client_order_id, "unknown", report.timestamp_ns)
             return True
@@ -566,4 +565,5 @@ cdef class LiveExecutionClient(ExecutionClient):
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
+
         self._handle_event(updated)

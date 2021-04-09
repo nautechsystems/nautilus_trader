@@ -20,6 +20,7 @@ being renamed in properties and variables from `cl_ord_id` to `client_order_id`.
 - Remove redundant flag `generate_position_ids` (handled by `OMSType`).
 
 ## Enhancements
+- Introduce integration for Betfair.
 - Add `AssetClass.METAL` and `AssetClass.ENERGY`.
 - Add `VenueStatusEvent`, `InstrumentStatusEvent` and `InstrumentClosePrice`.
 - Usage of `np.ndarray` to improve function and indicator performance.
