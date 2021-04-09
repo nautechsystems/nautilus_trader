@@ -1,4 +1,3 @@
-exclude: ^(.github)/
 repos:
   - repo: https://github.com/pycqa/isort
     rev: 5.8.0
