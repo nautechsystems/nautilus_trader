@@ -85,7 +85,6 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 # Events for WRN log level
-
 cdef tuple _WARNING_EVENTS = (
     OrderInvalid,
     OrderDenied,
