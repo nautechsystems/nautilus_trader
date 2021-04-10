@@ -176,6 +176,10 @@ def test_orderbook_operations(empty_book):
     assert empty_book.best_ask_price() == 0.5814
 
 
+def test_orderbook_midpoint(sample_book):
+    assert sample_book.midpoint() == 0.858
+
+
 # def test_auction_match_match_orders():
 #     l1 = Ladder.from_orders(
 #         [

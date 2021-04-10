@@ -1467,6 +1467,46 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, self.data_engine.command_count)
 
+    def test_subscribe_order_book_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        # Act
+        strategy.subscribe_order_book_deltas(AUDUSD_SIM.id, level=2)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
+    def test_unsubscribe_order_book_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        strategy.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
+
+        # Act
+        strategy.unsubscribe_order_book(AUDUSD_SIM.id)
+
+        # Assert
+        self.assertEqual(2, self.data_engine.command_count)
+
     def test_subscribe_instrument(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()

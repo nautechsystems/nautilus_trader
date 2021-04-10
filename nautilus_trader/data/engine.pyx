@@ -190,6 +190,18 @@ cdef class DataEngine(Component):
         return sorted(list(self._order_book_handlers.keys()) + interval_instruments)
 
     @property
+    def subscribed_order_book_data(self):
+        """
+        The order books data (diffs) subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._order_book_delta_handlers.keys()))
+
+    @property
     def subscribed_quote_ticks(self):
         """
         The quote tick instruments subscribed to.
