@@ -1,5 +1,5 @@
 import asyncio
-from asyncio.exceptions import IncompleteReadError
+from asyncio import IncompleteReadError
 import json
 from typing import Optional
 
