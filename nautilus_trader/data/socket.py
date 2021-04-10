@@ -56,7 +56,7 @@ class SocketClient:
             self.connected = True
 
     async def disconnect(self):
-        self._stop = True
+        self.stop()
         while not self._stopped:
             await asyncio.sleep(0.01)
         self.writer.close()
@@ -64,6 +64,9 @@ class SocketClient:
         self.reader = None
         self.writer = None
         self.connected = False
+
+    def stop(self):
+        self._stop = True
 
     async def reconnect(self):
         await self.disconnect()

@@ -108,7 +108,6 @@ cdef class ExecutionEngine(Component):
     cdef inline void _confirm_position_id(self, OrderFilled fill) except *
     cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *
-    cdef inline void _handle_order_updated(self, OrderUpdated updated) except *
     cdef inline void _open_position(self, OrderFilled fill) except *
     cdef inline void _update_position(self, Position position, OrderFilled fill) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *

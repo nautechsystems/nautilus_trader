@@ -11,7 +11,7 @@ async def test_socket_base(socket_server, logger, event_loop):
     def handler(raw):
         messages.append(raw)
         if len(messages) > 5:
-            client.stop = True
+            client.stop()
 
     host, port = socket_server.server_address
     client = SocketClient(

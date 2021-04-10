@@ -2065,5 +2065,7 @@ class ExecutionEngineTests(unittest.TestCase):
             timestamp_ns=self.clock.timestamp_ns(),
         )
         self.exec_engine.process(order_updated)
+
+        # Order should have new venue_order_id
         cached_order = self.cache.order(order.client_order_id)
         self.assertTrue(cached_order.venue_order_id == new_venue_id)

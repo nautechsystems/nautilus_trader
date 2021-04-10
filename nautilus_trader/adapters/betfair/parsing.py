@@ -66,17 +66,15 @@ from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.tick import TradeTick
 
 
-def order_submit_to_betfair(
-    command: SubmitOrder, instrument: BettingInstrument, customer_ref="1"
-):
+def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
     """ Convert a SubmitOrder command into the data required by betfairlightweight """
 
     order = command.order  # type: LimitOrder
     return {
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
-        "customer_ref": order.client_order_id.value,
-        "customer_strategy_ref": customer_ref,
+        "customer_ref": command.id.value,
+        "customer_strategy_ref": command.strategy_id.value,
         "instructions": [
             place_instruction(
                 order_type="LIMIT",
@@ -109,7 +107,7 @@ def order_update_to_betfair(
     """ Convert an UpdateOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.client_order_id.value,
+        "customer_ref": str(command.id),
         "instructions": [
             replace_instruction(
                 bet_id=venue_order_id.value,
@@ -125,7 +123,7 @@ def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument)
     """ Convert a SubmitOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
-        "customer_ref": command.client_order_id.value,
+        "customer_ref": command.id.value,
         "instructions": [cancel_instruction(bet_id=command.venue_order_id.value)],
     }
 
