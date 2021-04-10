@@ -92,7 +92,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
                 ),
-                customer_order_ref=order.client_order_id.value,
+                customer_order_ref=order.client_order_id.value.replace("-", ""),
             )
         ],
     }
