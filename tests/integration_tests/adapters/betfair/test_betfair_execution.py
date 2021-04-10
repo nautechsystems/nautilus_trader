@@ -126,8 +126,7 @@ async def test_update_order(mocker, execution_client, exec_engine):
 
     # Actual test
     update = BetfairTestStubs.update_order_command(
-        instrument_id=order.instrument_id,
-        client_order_id=order.client_order_id,
+        instrument_id=order.instrument_id, client_order_id=order.client_order_id
     )
     execution_client.update_order(update)
     await asyncio.sleep(0.1)
@@ -183,7 +182,7 @@ async def test_cancel_order(mocker, execution_client, exec_engine):
     await asyncio.sleep(0.1)
     expected = {
         "customer_ref": command.id.value,
-        "instructions": [{"betId": "1"}],
+        "instructions": [{"betId": "229597791245"}],
         "market_id": "1.179082386",
     }
 

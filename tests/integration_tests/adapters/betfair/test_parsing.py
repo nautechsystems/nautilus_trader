@@ -12,15 +12,14 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 def test_order_submit_to_betfair(betting_instrument):
-    result = order_submit_to_betfair(
-        command=BetfairTestStubs.submit_order_command(), instrument=betting_instrument
-    )
+    command = BetfairTestStubs.submit_order_command()
+    result = order_submit_to_betfair(command=command, instrument=betting_instrument)
     expected = {
-        "customer_ref": "1",
-        "customer_strategy_ref": "1",
+        "customer_ref": command.id.value,
+        "customer_strategy_ref": command.strategy_id.value,
         "instructions": [
             {
-                "customerOrderRef": "1",
+                "customerOrderRef": command.order.client_order_id.value,
                 "handicap": "0",
                 "limitOrder": {
                     "minFillSize": 0,
@@ -63,7 +62,7 @@ def test_order_cancel_to_betfair(betting_instrument):
         "customer_ref": result["customer_ref"],
         "instructions": [
             {
-                "betId": "1",
+                "betId": "229597791245",
             }
         ],
     }

@@ -417,7 +417,7 @@ class BetfairTestStubs(TestStubs):
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
-                client_order_id=ClientOrderId("1"),
+                client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
                 strategy_id=BetfairTestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,
@@ -438,7 +438,8 @@ class BetfairTestStubs(TestStubs):
             instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            client_order_id=client_order_id or ClientOrderId("1"),
+            client_order_id=client_order_id
+            or ClientOrderId("O-20210410-022422-001-001-1"),
             quantity=Quantity(50),
             price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),
@@ -451,8 +452,8 @@ class BetfairTestStubs(TestStubs):
             instrument_id=BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            client_order_id=ClientOrderId("1"),
-            venue_order_id=VenueOrderId("1"),
+            client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
+            venue_order_id=VenueOrderId("229597791245"),
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
