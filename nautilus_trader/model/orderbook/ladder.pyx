@@ -173,6 +173,3 @@ cdef class Ladder:
             return top[0]
         else:
             return None
-
-    cpdef list iter_orders(self):
-        return [order for level in self.levels for order in level.iter_orders()]

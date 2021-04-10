@@ -32,4 +32,3 @@ cdef class Ladder:
     cpdef list prices(self)
     cpdef list volumes(self)
     cpdef Level top(self)
-    cpdef list iter_orders(self)

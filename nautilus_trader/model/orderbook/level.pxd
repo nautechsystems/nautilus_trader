@@ -31,7 +31,6 @@ cdef class Level:
 
     cpdef double volume(self) except *
     cpdef price(self)
-    cpdef list iter_orders(self)
 
     # cdef double volume_c(self) except *
     # cdef MaybeDouble price_c(self) except *

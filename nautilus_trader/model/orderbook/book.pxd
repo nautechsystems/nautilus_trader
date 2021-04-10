@@ -48,7 +48,6 @@ cdef class OrderBook:
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
     cpdef void check_integrity(self) except *
-    cpdef list iter_orders(self)
     cdef inline void _apply_operation(self, OrderBookOperation op) except *
     cdef inline void _add(self, Order order) except *
     cdef inline void _update(self, Order order) except *
