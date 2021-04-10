@@ -1342,26 +1342,26 @@ cdef class TradingStrategy(Component):
         if trigger is not None:
             Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
 
-        cdef bint amending = False  # Set validation flag (must become true)
+        cdef bint updating = False  # Set validation flag (must become true)
 
         if quantity is not None and quantity != order.quantity:
-            amending = True
+            updating = True
         else:
             quantity = order.quantity
 
         if price is not None and price != order.price:
-            amending = True
+            updating = True
         else:
             price = order.price
 
         if trigger is not None:
             if order.is_triggered:
-                self.log.warning(f"Cannot update order for {repr(order.cl_ord_id)}: already triggered.")
+                self.log.warning(f"Cannot update order for {repr(order.client_order_id)}: already triggered.")
                 return
             if trigger != order.trigger:
-                amending = True
+                updating = True
 
-        if not amending:
+        if not updating:
             self.log.error(
                 "Cannot create command UpdateOrder "
                 "(both quantity and price were None)."
@@ -1376,7 +1376,7 @@ cdef class TradingStrategy(Component):
             order.instrument_id,
             self.trader_id,
             order.account_id,
-            order.cl_ord_id,
+            order.client_order_id,
             quantity,
             price,
             self.uuid_factory.generate(),
@@ -1406,16 +1406,16 @@ cdef class TradingStrategy(Component):
             self.log.error(f"Cannot cancel order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
-        if order.id.is_null():
-            self.log.error(f"Cannot cancel order (no order_id assigned yet), {order}.")
+        if order.venue_order_id.is_null():
+            self.log.error(f"Cannot cancel order (no venue_order_id assigned yet), {order}.")
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
             order.instrument_id,
             self.trader_id,
             order.account_id,
-            order.cl_ord_id,
-            order.id,
+            order.client_order_id,
+            order.venue_order_id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -1823,9 +1823,6 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
-        self.handle_event_c(event)
-
-    cdef void handle_event_c(self, Event event) except *:
         Condition.not_none(event, "event")
 
         if isinstance(event, _WARNING_EVENTS):

@@ -105,7 +105,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order)
 
         # Assert
-        self.assertEqual(order, self.database.load_order(order.cl_ord_id))
+        self.assertEqual(order, self.database.load_order(order.client_order_id))
 
     def test_add_position(self):
         # Arrange
@@ -165,7 +165,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order)
 
         # Assert
-        self.assertEqual(order, self.database.load_order(order.cl_ord_id))
+        self.assertEqual(order, self.database.load_order(order.client_order_id))
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -195,7 +195,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order)
 
         # Assert
-        self.assertEqual(order, self.database.load_order(order.cl_ord_id))
+        self.assertEqual(order, self.database.load_order(order.client_order_id))
 
     def test_update_position_for_closed_position(self):
         # Arrange
@@ -304,7 +304,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         )
 
         # Act
-        result = self.database.load_order(order.cl_ord_id)
+        result = self.database.load_order(order.client_order_id)
 
         # Assert
         self.assertIsNone(result)
@@ -320,7 +320,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order)
 
         # Act
-        result = self.database.load_order(order.cl_ord_id)
+        result = self.database.load_order(order.client_order_id)
 
         # Assert
         self.assertEqual(order, result)
@@ -337,7 +337,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order)
 
         # Act
-        result = self.database.load_order(order.cl_ord_id)
+        result = self.database.load_order(order.client_order_id)
 
         # Assert
         self.assertEqual(order, result)
@@ -354,7 +354,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order)
 
         # Act
-        result = self.database.load_order(order.cl_ord_id)
+        result = self.database.load_order(order.client_order_id)
 
         # Assert
         self.assertEqual(order, result)
@@ -372,7 +372,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order)
 
         # Act
-        result = self.database.load_order(order.cl_ord_id)
+        result = self.database.load_order(order.client_order_id)
 
         # Assert
         self.assertEqual(order, result)
@@ -456,7 +456,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_orders()
 
         # Assert
-        self.assertEqual({order.cl_ord_id: order}, result)
+        self.assertEqual({order.client_order_id: order}, result)
 
     def test_load_positions_cache_when_no_positions(self):
         # Arrange
@@ -547,8 +547,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.flush()
 
         # Assert
-        self.assertIsNone(self.database.load_order(order1.cl_ord_id))
-        self.assertIsNone(self.database.load_order(order2.cl_ord_id))
+        self.assertIsNone(self.database.load_order(order1.client_order_id))
+        self.assertIsNone(self.database.load_order(order2.client_order_id))
         self.assertIsNone(self.database.load_position(position1.id))
 
 

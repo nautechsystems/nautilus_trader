@@ -25,6 +25,12 @@ from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.c_enums.currency_type import CurrencyType
 from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser
+from nautilus_trader.model.c_enums.instrument_close_type import (
+    InstrumentCloseTypeParser,
+)
+from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
+from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
+from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySideParser
 from nautilus_trader.model.c_enums.oms_type import OMSType
@@ -45,6 +51,8 @@ from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
+from nautilus_trader.model.c_enums.venue_status import VenueStatus
+from nautilus_trader.model.c_enums.venue_status import VenueStatusParser
 
 
 class TestAggressorSide:
@@ -104,8 +112,10 @@ class TestAssetClass:
         "enum, expected",
         [
             [AssetClass.FX, "FX"],
-            [AssetClass.STOCK, "STOCK"],
+            [AssetClass.EQUITY, "EQUITY"],
             [AssetClass.COMMODITY, "COMMODITY"],
+            [AssetClass.METAL, "METAL"],
+            [AssetClass.ENERGY, "ENERGY"],
             [AssetClass.BOND, "BOND"],
             [AssetClass.INDEX, "INDEX"],
             [AssetClass.CRYPTO, "CRYPTO"],
@@ -124,8 +134,10 @@ class TestAssetClass:
         "string, expected",
         [
             ["FX", AssetClass.FX],
-            ["STOCK", AssetClass.STOCK],
+            ["EQUITY", AssetClass.EQUITY],
             ["COMMODITY", AssetClass.COMMODITY],
+            ["METAL", AssetClass.METAL],
+            ["ENERGY", AssetClass.ENERGY],
             ["BOND", AssetClass.BOND],
             ["INDEX", AssetClass.INDEX],
             ["CRYPTO", AssetClass.CRYPTO],
@@ -763,6 +775,144 @@ class TestTimeInForce:
         # Arrange
         # Act
         result = TimeInForceParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestVenueStatus:
+    def test_venue_status_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            VenueStatusParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            VenueStatusParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [VenueStatus.CLOSED, "CLOSED"],
+            [VenueStatus.PRE_OPEN, "PRE_OPEN"],
+            [VenueStatus.OPEN, "OPEN"],
+            [VenueStatus.PAUSE, "PAUSE"],
+            [VenueStatus.PRE_CLOSE, "PRE_CLOSE"],
+        ],
+    )
+    def test_venue_status_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = VenueStatusParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CLOSED", VenueStatus.CLOSED],
+            ["PRE_OPEN", VenueStatus.PRE_OPEN],
+            ["OPEN", VenueStatus.OPEN],
+            ["PAUSE", VenueStatus.PAUSE],
+            ["PRE_CLOSE", VenueStatus.PRE_CLOSE],
+        ],
+    )
+    def test_venue_status_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = VenueStatusParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestInstrumentStatus:
+    def test_venue_status_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            InstrumentStatusParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            InstrumentStatusParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [InstrumentStatus.CLOSED, "CLOSED"],
+            [InstrumentStatus.PRE_OPEN, "PRE_OPEN"],
+            [InstrumentStatus.OPEN, "OPEN"],
+            [InstrumentStatus.PAUSE, "PAUSE"],
+            [InstrumentStatus.PRE_CLOSE, "PRE_CLOSE"],
+        ],
+    )
+    def test_venue_status_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = InstrumentStatusParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CLOSED", InstrumentStatus.CLOSED],
+            ["PRE_OPEN", InstrumentStatus.PRE_OPEN],
+            ["OPEN", InstrumentStatus.OPEN],
+            ["PAUSE", InstrumentStatus.PAUSE],
+            ["PRE_CLOSE", InstrumentStatus.PRE_CLOSE],
+        ],
+    )
+    def test_venue_status_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = InstrumentStatusParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestInstrumentCloseType:
+    def test_venue_status_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            InstrumentCloseTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            InstrumentCloseTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
+            [InstrumentCloseType.EXPIRED, "EXPIRED"],
+        ],
+    )
+    def test_venue_status_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = InstrumentCloseTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
+            ["EXPIRED", InstrumentCloseType.EXPIRED],
+        ],
+    )
+    def test_venue_status_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = InstrumentCloseTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result

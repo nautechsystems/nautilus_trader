@@ -43,14 +43,15 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -88,7 +89,8 @@ cdef class LiveExecutionClientFactory:
         logger : LiveLogger
             The client logger.
         client_cls : class, optional
-            The internal client constructor.
+            The internal client constructor. This allows external library and
+            testing dependency injection.
 
         Returns
         -------
@@ -207,7 +209,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
-    async def generate_exec_reports(self, OrderId order_id, Symbol symbol, datetime since=None):
+    async def generate_exec_reports(self, VenueOrderId venue_order_id, Symbol symbol, datetime since=None):
         """
         Generate a list of execution reports.
 
@@ -215,8 +217,8 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order identifier for the trades.
+        venue_order_id : VenueOrderId
+            The venue order identifier for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -268,11 +270,11 @@ cdef class LiveExecutionClient(ExecutionClient):
 
             if order_report.order_state in (OrderState.PARTIALLY_FILLED, OrderState.FILLED):
                 exec_reports = await self.generate_exec_reports(
-                    order_id=order.id,
+                    venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
                     since=nanos_to_millis(nanos=order.timestamp_ns),
                 )
-                mass_status.add_exec_reports(order.id, exec_reports)
+                mass_status.add_exec_reports(order.venue_order_id, exec_reports)
 
         return mass_status
 
@@ -299,9 +301,9 @@ cdef class LiveExecutionClient(ExecutionClient):
         Raises
         ------
         ValueError
-            If report.cl_ord_id is not equal to order.cl_ord_id.
+            If report.client_order_id is not equal to order.client_order_id.
         ValueError
-            If report.order_id is not equal to order.id.
+            If report.venue_order_id is not equal to order.venue_order_id.
 
         Returns
         -------
@@ -311,13 +313,13 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         Condition.not_none(report, "report")
         if order:
-            Condition.equal(report.cl_ord_id, order.cl_ord_id, "report.cl_ord_id", "order.cl_ord_id")
-            Condition.equal(report.order_id, order.id, "report.order_id", "order.id")
+            Condition.equal(report.client_order_id, order.client_order_id, "report.client_order_id", "order.client_order_id")
+            Condition.equal(report.venue_order_id, order.venue_order_id, "report.venue_order_id", "order.venue_order_id")
         else:
-            order = self._engine.cache.order(report.cl_ord_id)
+            order = self._engine.cache.order(report.client_order_id)
             if order is None:
                 self._log.error(
-                    f"Cannot reconcile state for {repr(report.order_id)}, "
+                    f"Cannot reconcile state for {repr(report.venue_order_id)}, "
                     f"cannot find order in cache.")
                 return False  # Cannot reconcile state
 
@@ -326,33 +328,32 @@ cdef class LiveExecutionClient(ExecutionClient):
                 f"No reconciliation required for completed order {order}.")
             return True
 
-        self._log.info(f"Reconciling state for {repr(order.id)}...", color=LogColor.BLUE)
+        self._log.info(f"Reconciling state for {repr(order.venue_order_id)}...", color=LogColor.BLUE)
 
         if report.order_state == OrderState.REJECTED:
-            # No OrderId would have been assigned from the exchange
-            # TODO: Investigate if exchanges record rejected orders?
+            # No VenueOrderId would have been assigned from the exchange
             self._log.info("Generating OrderRejected event...", color=LogColor.GREEN)
-            self._generate_order_rejected(report.cl_ord_id, "unknown", report.timestamp_ns)
+            self._generate_order_rejected(report.client_order_id, "unknown", report.timestamp_ns)
             return True
         elif report.order_state == OrderState.EXPIRED:
             self._log.info("Generating OrderExpired event...", color=LogColor.GREEN)
-            self._generate_order_expired(report.cl_ord_id, report.order_id, report.timestamp_ns)
+            self._generate_order_expired(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
         elif report.order_state == OrderState.CANCELLED:
             self._log.info("Generating OrderCancelled event...", color=LogColor.GREEN)
-            self._generate_order_cancelled(report.cl_ord_id, report.order_id, report.timestamp_ns)
+            self._generate_order_cancelled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
         elif report.order_state == OrderState.ACCEPTED:
             if order.state_c() == OrderState.SUBMITTED:
                 self._log.info("Generating OrderAccepted event...", color=LogColor.GREEN)
-                self._generate_order_accepted(report.cl_ord_id, report.order_id, report.timestamp_ns)
+                self._generate_order_accepted(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
             # TODO: Consider other scenarios
 
         # OrderState.PARTIALLY_FILLED or FILLED
         if exec_reports is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(report.order_id)}, "
+                f"Cannot reconcile state for {repr(report.venue_order_id)}, "
                 f"no trades given for {OrderStateParser.to_str(report.order_state)} order.")
             return False  # Cannot reconcile state
 
@@ -365,8 +366,8 @@ cdef class LiveExecutionClient(ExecutionClient):
                 color=LogColor.GREEN,
             )
             self._generate_order_filled(
-                cl_ord_id=order.cl_ord_id,
-                order_id=order.id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
                 execution_id=exec_report.id,
                 instrument_id=order.instrument_id,
                 order_side=order.side,
@@ -384,12 +385,12 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     cdef inline void _generate_order_invalid(
         self,
-        ClientOrderId cl_ord_id,
+        ClientOrderId client_order_id,
         str reason,
     ) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
@@ -397,13 +398,13 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._handle_event(invalid)
 
     cdef inline void _generate_order_submitted(
-        self, ClientOrderId cl_ord_id,
+        self, ClientOrderId client_order_id,
         int64_t submitted_ns,
     ) except *:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             self.account_id,
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             submitted_ns=submitted_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
@@ -412,14 +413,14 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     cdef inline void _generate_order_rejected(
         self,
-        ClientOrderId cl_ord_id,
+        ClientOrderId client_order_id,
         str reason,
         int64_t timestamp_ns,
     ) except *:
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
             self.account_id,
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             rejected_ns=timestamp_ns,
             reason=reason,
             event_id=self._uuid_factory.generate(),
@@ -429,15 +430,15 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     cdef inline void _generate_order_accepted(
         self,
-        ClientOrderId cl_ord_id,
-        OrderId order_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         int64_t timestamp_ns,
     ) except *:
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
             self.account_id,
-            cl_ord_id=cl_ord_id,
-            order_id=order_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
             accepted_ns=timestamp_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
@@ -446,8 +447,8 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     cdef inline void _generate_order_filled(
         self,
-        ClientOrderId cl_ord_id,
-        OrderId order_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         ExecutionId execution_id,
         InstrumentId instrument_id,
         OrderSide order_side,
@@ -462,7 +463,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     ) except *:
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot fill order with {repr(order_id)}, "
+            self._log.error(f"Cannot fill order with {repr(venue_order_id)}, "
                             f"instrument for {instrument_id} not found.")
             return  # Cannot fill order
 
@@ -474,7 +475,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         else:
             currency = self._instrument_provider.currency(commission_currency)
             if currency is None:
-                self._log.error(f"Cannot determine commission for {repr(order_id)}, "
+                self._log.error(f"Cannot determine commission for {repr(venue_order_id)}, "
                                 f"currency for {commission_currency} not found.")
                 commission = Money(0, instrument.quote_currency)
             else:
@@ -483,8 +484,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Generate event
         cdef OrderFilled fill = OrderFilled(
             self.account_id,
-            cl_ord_id=cl_ord_id,
-            order_id=order_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=PositionId.null_c(),  # Assigned in engine
             strategy_id=StrategyId.null_c(),  # Assigned in engine
@@ -507,15 +508,15 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     cdef inline void _generate_order_cancelled(
         self,
-        ClientOrderId cl_ord_id,
-        OrderId order_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         int64_t timestamp_ns,
     ) except *:
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
             account_id=self.account_id,
-            cl_ord_id=cl_ord_id,
-            order_id=order_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
             cancelled_ns=timestamp_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
@@ -525,18 +526,44 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     cdef inline void _generate_order_expired(
         self,
-        ClientOrderId cl_ord_id,
-        OrderId order_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         int64_t timestamp_ns,
     ) except *:
         # Generate event
         cdef OrderExpired expired = OrderExpired(
             account_id=self.account_id,
-            cl_ord_id=cl_ord_id,
-            order_id=order_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
             expired_ns=timestamp_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
         self._handle_event(expired)
+
+    cdef inline void _generate_order_updated(
+        self,
+        Price price,
+        Quantity quantity,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        bint venue_order_id_modified=False,
+    ) except *:
+        # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
+        if not venue_order_id_modified:
+            existing = self._engine.cache.order(client_order_id)
+            Condition.equal(existing.venue_order_id, venue_order_id, "existing.venue_order_id", "order.venue_order_id")
+        # Generate event
+        cdef OrderUpdated updated = OrderUpdated(
+            account_id=self.account_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            quantity=quantity,
+            price=price,
+            updated_ns=self._clock.timestamp_ns(),
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
+        )
+
+        self._handle_event(updated)

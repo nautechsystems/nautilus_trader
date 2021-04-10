@@ -35,4 +35,5 @@ logs/
 venv*/
 
 Cargo.lock
-.DS_Store # Mac
+.DS_Store
+!tests/integration_tests/adapters/betfair/responses/*.log

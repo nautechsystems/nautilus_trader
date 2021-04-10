@@ -25,7 +25,7 @@ from tests.test_kit.performance import PerformanceHarness
 class FunctionPerformanceTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.values = list(np.random.rand(10))
+        self.values = np.random.rand(10)
 
     def np_mean(self):
         np.mean(self.values)
@@ -49,8 +49,8 @@ class FunctionPerformanceTests(unittest.TestCase):
 
     def test_fast_mean(self):
         PerformanceHarness.profile_function(self.fast_mean, 100000, 1)
-        # ~0ms / ~1μs / 945ns minimum of 100000 runs @ 1 iterations each run.
+        # ~0.0ms / ~0.4μs / 440ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_fast_std(self):
         PerformanceHarness.profile_function(self.fast_std, 100000, 1)
-        # ~0ms / ~3μs / 2015ns minimum of 100000 runs @ 1 iterations each run.
+        # ~0.0ms / ~1.0μs / 968ns minimum of 100,000 runs @ 1 iteration each run.

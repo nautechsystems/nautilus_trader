@@ -13,17 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+cimport numpy as np
+
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 
 
 cdef class HullMovingAverage(MovingAverage):
     cdef int _period_sqrt
-    cdef list _w1
-    cdef list _w2
-    cdef list _w3
+    cdef np.ndarray _w1
+    cdef np.ndarray _w2
+    cdef np.ndarray _w3
     cdef MovingAverage _ma1
     cdef MovingAverage _ma2
     cdef MovingAverage _ma3
 
-    cdef list _get_weights(self, int size)
+    cdef np.ndarray _get_weights(self, int size)
     cpdef void update_raw(self, double value) except *

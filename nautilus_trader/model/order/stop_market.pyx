@@ -46,7 +46,7 @@ cdef class StopMarketOrder(PassiveOrder):
     """
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
@@ -63,7 +63,7 @@ cdef class StopMarketOrder(PassiveOrder):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
@@ -95,7 +95,7 @@ cdef class StopMarketOrder(PassiveOrder):
 
         """
         super().__init__(
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             order_side=order_side,
@@ -135,7 +135,7 @@ cdef class StopMarketOrder(PassiveOrder):
         Condition.equal(init.order_type, OrderType.STOP_MARKET, "init.order_type", "OrderType")
 
         return StopMarketOrder(
-            cl_ord_id=init.cl_ord_id,
+            client_order_id=init.client_order_id,
             strategy_id=init.strategy_id,
             instrument_id=init.instrument_id,
             order_side=init.order_side,

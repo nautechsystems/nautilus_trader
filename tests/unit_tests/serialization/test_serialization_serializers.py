@@ -44,11 +44,11 @@ from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -392,7 +392,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("001"),
+            VenueOrderId("001"),
             uuid4(),
             0,
         )
@@ -561,7 +561,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Arrange
         event = OrderInvalid(
             ClientOrderId("O-123456"),
-            "OrderId already exists",
+            "VenueOrderId already exists",
             uuid4(),
             0,
         )
@@ -594,7 +594,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderAccepted(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("B-123456"),
+            VenueOrderId("B-123456"),
             0,
             uuid4(),
             0,
@@ -630,7 +630,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderCancelled(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("1"),
+            VenueOrderId("1"),
             0,
             uuid4(),
             0,
@@ -648,7 +648,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderUpdateRejected(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("1"),
+            VenueOrderId("1"),
             0,
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
@@ -668,7 +668,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderCancelRejected(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("1"),
+            VenueOrderId("1"),
             0,
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
@@ -688,7 +688,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderUpdated(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("1"),
+            VenueOrderId("1"),
             Quantity(100000),
             Price("0.80010"),
             0,
@@ -708,7 +708,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderExpired(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("1"),
+            VenueOrderId("1"),
             0,
             uuid4(),
             0,
@@ -726,7 +726,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderFilled(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("1"),
+            VenueOrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
             StrategyId("S", "001"),
@@ -757,7 +757,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderFilled(
             self.account_id,
             ClientOrderId("O-123456"),
-            OrderId("1"),
+            VenueOrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
             StrategyId("S", "001"),

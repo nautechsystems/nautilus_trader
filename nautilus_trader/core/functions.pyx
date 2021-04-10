@@ -18,6 +18,7 @@ import sys
 
 import cython
 
+cimport numpy as np
 from libc.math cimport pow
 from libc.math cimport sqrt
 from libc.stdint cimport uint64_t
@@ -101,14 +102,14 @@ cpdef inline int bisect_double_right(list a, double x, int lo=0, hi=None) except
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef inline double fast_mean(list values) except *:
+cpdef double fast_mean(np.ndarray values) except *:
     """
-    Return the average value of the iterable.
+    Return the average value for numpy.ndarray values
 
     Parameters
     ----------
-    values : list
-        The iterable to evaluate.
+    values : numpy.ndarray
+        The array to evaluate.
 
     Returns
     -------
@@ -116,25 +117,34 @@ cpdef inline double fast_mean(list values) except *:
 
     Notes
     -----
-    > 10x faster than `np.mean`.
+    > 10x faster than `np.mean` if the array length < ~200.
 
     """
-    cdef int length = len(values)
+    cdef double[:] mv
+    cdef int length
+    cdef double total = 0.0
+    cdef int i
+
+    if values is None or values.ndim != 1:
+        raise ValueError(f"values must be valid numpy.ndarray with ndim == 1.")
+
+    mv = values
+    length = len(mv)
 
     if length == 0:
-        return 0
+        return 0.0
 
-    cdef double total = 0
-    cdef int i
-    for i in range(length):
-        total += values[i]
+    with nogil:
+        for i in range(length):
+            total += mv[i]
+
     return total / length
 
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef inline double fast_mean_iterated(
-    list values,
+    np.ndarray values,
     double next_value,
     double current_value,
     int expected_length,
@@ -154,7 +164,8 @@ cpdef inline double fast_mean_iterated(
     expected_length : int
         The expected length of the inputs.
     drop_left : bool
-        If the value to be dropped should be from the left side of the inputs (index 0).
+        If the value to be dropped should be from the left side of the inputs
+        (index 0).
 
     Returns
     -------
@@ -165,24 +176,29 @@ cpdef inline double fast_mean_iterated(
     > 10x faster than `np.mean`.
 
     """
-    cdef int length = len(values)
+    if values is None or values.ndim != 1:
+        raise ValueError(f"values must be valid ndarray with ndim == 1.")
+
+    cdef double[:] mv = values
+    cdef int length = len(mv)
+
     if length < expected_length:
         return fast_mean(values)
 
     assert length == expected_length
 
-    cdef double value_to_drop = values[0] if drop_left else values[length - 1]
-    return current_value + ((next_value - value_to_drop) / length)
+    cdef double value_to_drop = mv[0] if drop_left else mv[length - 1]
+    return current_value + (next_value - value_to_drop) / length
 
 
-cpdef inline double fast_std(list values) except *:
+cpdef inline double fast_std(np.ndarray values) except *:
     """
     Return the standard deviation from the given values.
 
     Parameters
     ----------
-    values : list
-        The values for the calculation.
+    values : numpy.ndarray
+        The array for the calculation.
 
     Returns
     -------
@@ -198,14 +214,14 @@ cpdef inline double fast_std(list values) except *:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef inline double fast_std_with_mean(list values, double mean) except *:
+cpdef double fast_std_with_mean(np.ndarray values, double mean) except *:
     """
     Return the standard deviation from the given values and mean.
 
     Parameters
     ----------
-    values : list[double]
-        The iterable of values to evaluate.
+    values : numpy.ndarray
+        The array for the calculation.
     mean : double
         The pre-calculated mean of the given values.
 
@@ -213,22 +229,30 @@ cpdef inline double fast_std_with_mean(list values, double mean) except *:
     -------
     double
 
-    Warnings
-    --------
-    Garbage in garbage out for given mean.
-
     Notes
     -----
-    > 10x faster than `np.std`.
+    > 25x faster than `np.std` if the array length < ~200.
 
     """
-    cdef int length = len(values)
-    cdef double std_dev = 0
+    cdef double[:] mv
+    cdef int length
+    cdef double std_dev = 0.0
+    cdef double v
     cdef int i
-    for i in range(length):
-        # noinspection: -
-        # noinspection PyUnresolvedReferences
-        std_dev += pow(values[i] - mean, 2)
+
+    if values is None or values.ndim != 1:
+        raise ValueError(f"values must be valid ndarray with ndim == 1.")
+
+    mv = values
+    length = len(mv)
+
+    if length == 0:
+        return 0.0
+
+    with nogil:
+        for i in range(length):
+            v = mv[i] - mean
+            std_dev += v * v
 
     return sqrt(std_dev / length)
 

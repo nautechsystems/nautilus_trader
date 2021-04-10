@@ -105,10 +105,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
         # Merge data stream
         cdef Data x
         self._stream = sorted(
-            data.generic_data +
-            data.order_book_data,
+            data.generic_data + data.order_book_data,
             key=lambda x: x.timestamp_ns,
-            )
+        )
 
         # Prepare tick data
         self._quote_tick_data = pd.DataFrame()

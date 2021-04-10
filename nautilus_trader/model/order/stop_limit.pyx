@@ -51,7 +51,7 @@ cdef class StopLimitOrder(PassiveOrder):
     """
     def __init__(
         self,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         OrderSide order_side,
@@ -71,7 +71,7 @@ cdef class StopLimitOrder(PassiveOrder):
 
         Parameters
         ----------
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
@@ -114,7 +114,7 @@ cdef class StopLimitOrder(PassiveOrder):
         if hidden:
             Condition.false(post_only, "A hidden order is not post-only")
         super().__init__(
-            cl_ord_id=cl_ord_id,
+            client_order_id=client_order_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             order_side=order_side,
@@ -140,12 +140,12 @@ cdef class StopLimitOrder(PassiveOrder):
         self.is_hidden = hidden
 
     def __repr__(self) -> str:
-        cdef str id_string = f", id={self.id.value})" if self.id.not_null() else ")"
+        cdef str id_string = f", id={self.venue_order_id.value})" if self.venue_order_id.not_null() else ")"
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"trigger={self.trigger}, "
                 f"state={self._fsm.state_string_c()}, "
-                f"cl_ord_id={self.cl_ord_id.value}"
+                f"client_order_id={self.client_order_id.value}"
                 f"{id_string}")
 
     @staticmethod
@@ -172,7 +172,7 @@ cdef class StopLimitOrder(PassiveOrder):
         Condition.equal(init.order_type, OrderType.STOP_LIMIT, "init.order_type", "OrderType")
 
         return StopLimitOrder(
-            cl_ord_id=init.cl_ord_id,
+            client_order_id=init.client_order_id,
             strategy_id=init.strategy_id,
             instrument_id=init.instrument_id,
             order_side=init.order_side,
@@ -189,7 +189,7 @@ cdef class StopLimitOrder(PassiveOrder):
         )
 
     cdef void _updated(self, OrderUpdated event) except *:
-        self.id = event.order_id
+        self.venue_order_id = event.venue_order_id
         self.quantity = event.quantity
         if self.is_triggered:
             self.price = event.price

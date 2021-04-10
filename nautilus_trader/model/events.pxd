@@ -16,18 +16,21 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
+from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -48,10 +51,10 @@ cdef class AccountState(Event):
 
 
 cdef class OrderEvent(Event):
-    cdef readonly ClientOrderId cl_ord_id
+    cdef readonly ClientOrderId client_order_id
     """The client order identifier associated with the event.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order identifier associated with the event.\n\n:returns: `VenueOrderId`"""
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -210,3 +213,24 @@ cdef class PositionChanged(PositionEvent):
 
 cdef class PositionClosed(PositionEvent):
     pass
+
+
+cdef class StatusEvent(Event):
+    pass
+
+
+cdef class VenueStatusEvent(StatusEvent):
+    cdef readonly VenueStatus status
+    """The events venue status.\n\n:returns: `VenueStatus`"""
+
+
+cdef class InstrumentStatusEvent(StatusEvent):
+    cdef readonly InstrumentStatus status
+    """The events instrument status.\n\n:returns: `InstrumentStatus`"""
+
+
+cdef class InstrumentClosePrice(Event):
+    cdef readonly Price close_price
+    """The events close price.\n\n:returns: `Price`"""
+    cdef readonly InstrumentCloseType close_type
+    """The events close type.\n\n:returns: `InstrumentCloseType`"""

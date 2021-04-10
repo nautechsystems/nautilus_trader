@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.order.base cimport Order
 
 
@@ -38,8 +38,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef inline void _on_account_state(self, dict event) except *
     cdef inline void _on_order_status(self, dict event) except *
     cdef inline void _on_exec_report(self, dict event) except *
-    cdef inline void _cache_order(self, OrderId order_id, Order order) except *
-    cdef inline void _decache_order(self, OrderId order_id) except *
+    cdef inline void _cache_order(self, VenueOrderId venue_order_id, Order order) except *
+    cdef inline void _decache_order(self, VenueOrderId venue_order_id) except *
 
 
 cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):

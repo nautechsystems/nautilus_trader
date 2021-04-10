@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
+
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
@@ -25,6 +26,8 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -535,7 +538,7 @@ cdef class Future(Instrument):
         self.last_trade_time = last_trade_time
 
 
-cdef class BettingInstrument:
+cdef class BettingInstrument(Instrument):
     def __init__(
         self,
         str venue_name not None,
@@ -555,6 +558,8 @@ cdef class BettingInstrument:
         str selection_id not None,
         str selection_name not None,
         str selection_handicap not None,
+        str currency not None,
+        int64_t timestamp_ns,
     ):
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
@@ -581,7 +586,34 @@ cdef class BettingInstrument:
         self.selection_id = selection_id
         self.selection_name = selection_name
         self.selection_handicap = selection_handicap
-        self.id = InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name))
+
+        super().__init__(
+            instrument_id=InstrumentId(symbol=self.make_symbol(), venue=Venue(venue_name)),
+            asset_class=AssetClass.BETTING,
+            asset_type=AssetType.SPOT,
+            base_currency=Currency.from_str_c(currency),
+            quote_currency=Currency.from_str_c(currency),
+            settlement_currency=Currency.from_str_c(currency),
+            is_inverse=False,
+            price_precision=5,
+            size_precision=1,
+            tick_size=Decimal(1),
+            multiplier=Decimal(1),
+            lot_size=Quantity(1),
+            max_quantity=None,  # Can be None
+            min_quantity=None,  # Can be None
+            max_notional=None,     # Can be None
+            min_notional=None,     # Can be None
+            max_price=None,        # Can be None
+            min_price=None,        # Can be None
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
+            maker_fee=Decimal(0),
+            taker_fee=Decimal(0),
+            financing=dict(),
+            timestamp_ns=timestamp_ns,
+            info=dict(),  # TODO - Add raw response?
+        )
 
     def make_symbol(self):
         cdef tuple keys = (

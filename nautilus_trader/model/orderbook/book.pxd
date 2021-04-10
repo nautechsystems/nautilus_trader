@@ -41,6 +41,7 @@ cdef class OrderBook:
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
+    cpdef void apply_operation(self, OrderBookOperation operation) except *
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *
     cpdef void apply_operations(self, OrderBookOperations operations) except *
     cpdef void clear_bids(self) except *
@@ -60,7 +61,7 @@ cdef class OrderBook:
     cpdef best_bid_qty(self)
     cpdef best_ask_qty(self)
     cpdef spread(self)
-    cpdef str pprint(self, int num_levels=*)
+    cpdef str pprint(self, int num_levels=*, show=*)
 
 
 cdef class L3OrderBook(OrderBook):

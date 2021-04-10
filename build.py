@@ -56,10 +56,9 @@ CYTHON_COMPILER_DIRECTIVES = {
 def _build_extensions() -> List[Extension]:
     # Build Extensions to feed into cythonize()
     # Profiling requires special macro directives
+    define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
     if PROFILING_MODE or ANNOTATION_MODE:
-        define_macros = [("CYTHON_TRACE", "1")]
-    else:
-        define_macros = None
+        define_macros.append(("CYTHON_TRACE", "1"))
 
     return [
         Extension(

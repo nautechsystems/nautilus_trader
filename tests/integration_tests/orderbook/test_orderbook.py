@@ -25,9 +25,8 @@ def test_l3_feed():
     # Updates that cause the book to fail integrity checks will be deleted
     # immediately, but we may get also delete later.
     skip_deletes = []
-
+    i = 0
     for i, m in enumerate(TestDataProvider.l3_feed()):
-        # print(f"[{i}]", m, ob, "\n") # Print ob summary
         if m["op"] == "update":
             ob.update(order=m["order"])
             try:
@@ -37,7 +36,7 @@ def test_l3_feed():
                 skip_deletes.append(m["order"].id)
         elif m["op"] == "delete" and m["order"].id not in skip_deletes:
             ob.delete(order=m["order"])
-        ob.check_integrity(), f"Failed integrity check on {i}"
+        ob.check_integrity()
     assert i == 100_047
     assert ob.best_ask_level().price() == 61405.27923706
     assert ob.best_ask_level().volume() == 0.12227
@@ -54,17 +53,15 @@ def test_l2_feed():
         (28646, "8101452c-8a80-4ca9-b0d9-c472691cec28"),
         (68431, "8913f4bf-cc49-4e23-b05d-5eeed948a454"),
     ]
-
+    i = 0
     for i, m in enumerate(TestDataProvider.l2_feed()):
         if not m or (i, m["order"].id) in skip:
             continue
-        # print(f"[{i}]", "\n", m, "\n", ob, "\n")
-        # print("")
         if m["op"] == "update":
             ob.update(order=m["order"])
         elif m["op"] == "delete":
             ob.delete(order=m["order"])
-        ob.check_integrity(), f"Failed integrity check on {i}"
+        ob.check_integrity()
     assert i == 68462
 
 
@@ -78,3 +75,4 @@ def test_l1_orderbook():
         else:
             raise KeyError
         ob.check_integrity()
+    assert i == 1999

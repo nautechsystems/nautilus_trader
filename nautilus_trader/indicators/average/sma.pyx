@@ -15,6 +15,8 @@
 
 from collections import deque
 
+import numpy as np
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
@@ -107,7 +109,7 @@ cdef class SimpleMovingAverage(MovingAverage):
         self._increment_count()
         self._inputs.append(value)
 
-        self.value = fast_mean(list(self._inputs))
+        self.value = fast_mean(np.asarray(self._inputs, dtype=np.float64))
 
     cdef void _reset_ma(self) except *:
         self._inputs.clear()

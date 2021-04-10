@@ -27,18 +27,20 @@ from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.order.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
@@ -153,7 +155,7 @@ class MockStrategy(TradingStrategy):
             )
 
             self.submit_order(buy_order)
-            self.position_id = buy_order.cl_ord_id
+            self.position_id = buy_order.client_order_id
         elif self.ema1.value < self.ema2.value:
             sell_order = self.order_factory.market(
                 self.bar_type.instrument_id,
@@ -162,7 +164,7 @@ class MockStrategy(TradingStrategy):
             )
 
             self.submit_order(sell_order)
-            self.position_id = sell_order.cl_ord_id
+            self.position_id = sell_order.client_order_id
 
     def on_data(self, data) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -513,17 +515,19 @@ class MockLiveExecutionClient(LiveExecutionClient):
             logger,
         )
 
-        self._order_status_reports = {}  # type: dict[OrderId, OrderStatusReport]
-        self._trades_lists = {}  # type: dict[OrderId, list[ExecutionReport]]
+        self._order_status_reports = {}  # type: dict[VenueOrderId, OrderStatusReport]
+        self._trades_lists = {}  # type: dict[VenueOrderId, list[ExecutionReport]]
 
         self.calls = []
         self.commands = []
 
     def add_order_status_report(self, report: OrderStatusReport) -> None:
-        self._order_status_reports[report.order_id] = report
+        self._order_status_reports[report.venue_order_id] = report
 
-    def add_trades_list(self, order_id: OrderId, trades: List[ExecutionReport]) -> None:
-        self._trades_lists[order_id] = trades
+    def add_trades_list(
+        self, venue_order_id: VenueOrderId, trades: List[ExecutionReport]
+    ) -> None:
+        self._trades_lists[venue_order_id] = trades
 
     def connect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -565,16 +569,16 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self, order: Order
     ) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._order_status_reports[order.id]
+        return self._order_status_reports[order.venue_order_id]
 
     async def generate_exec_reports(
         self,
-        order_id: OrderId,
+        venue_order_id: VenueOrderId,
         symbol: Symbol,
         since: datetime = None,
     ) -> List[ExecutionReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return self._trades_lists[order_id]
+        return self._trades_lists[venue_order_id]
 
 
 class MockExecutionDatabase(ExecutionDatabase):
@@ -618,8 +622,8 @@ class MockExecutionDatabase(ExecutionDatabase):
     def load_account(self, account_id: AccountId) -> Account:
         return self.accounts.get(account_id)
 
-    def load_order(self, cl_ord_id: ClientOrderId) -> Order:
-        return self.orders.get(cl_ord_id)
+    def load_order(self, client_order_id: ClientOrderId) -> Order:
+        return self.orders.get(client_order_id)
 
     def load_position(self, position_id: PositionId) -> Position:
         return self.positions.get(position_id)
@@ -634,7 +638,7 @@ class MockExecutionDatabase(ExecutionDatabase):
         self.accounts[account.id] = account
 
     def add_order(self, order: Order) -> None:
-        self.orders[order.cl_ord_id] = order
+        self.orders[order.client_order_id] = order
 
     def add_position(self, position: Position) -> None:
         self.positions[position.id] = position
@@ -650,3 +654,50 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def update_strategy(self, strategy: TradingStrategy) -> None:
         pass  # Would persist the user state dict
+
+
+class MockLiveExecutionEngine(LiveExecutionEngine):
+    def __init__(
+        self,
+        loop,
+        database,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(loop, database, portfolio, clock, logger, config)
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)
+
+
+class MockLiveDataEngine(LiveDataEngine):
+    def __init__(
+        self,
+        loop,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(
+            loop=loop, portfolio=portfolio, clock=clock, logger=logger, config=config
+        )
+        self.commands = []
+        self.events = []
+        self.responses = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)
+
+    def receive(self, response):
+        self.responses.append(response)

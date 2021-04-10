@@ -52,8 +52,8 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -123,8 +123,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._watch_exec_reports_task = None
 
         # Order quantity cache (to handle CCXT not tracking ClOrdID and cumulative qty in trade events)
-        self._cached_orders = {}  # type: {OrderId: Order}
-        self._cached_filled = {}  # type: {OrderId: Decimal}
+        self._cached_orders = {}  # type: {VenueOrderId: Order}
+        self._cached_filled = {}  # type: {VenueOrderId: Decimal}
 
     cdef void _on_reset(self) except *:
         self._cached_orders.clear()
@@ -144,8 +144,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             if order.is_completed_c():
                 continue
             if order.instrument_id.venue.first() == self.name:
-                self._cached_orders[order.id] = order
-                self._cached_filled[order.id] = order.filled_qty.as_decimal()
+                self._cached_orders[order.venue_order_id] = order
+                self._cached_filled[order.venue_order_id] = order.filled_qty.as_decimal()
 
         if self._client.check_required_credentials():
             self._log.info("API credentials validated.", color=LogColor.GREEN)
@@ -193,22 +193,22 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         OrderStatusReport or None
 
         """
-        self._log.info(f"Generating OrderStatusReport for {repr(order.id)}...")
+        self._log.info(f"Generating OrderStatusReport for {repr(order.venue_order_id)}...")
 
-        if order.id.is_null():
-            self._log.error(f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
-                            f"OrderId was 'NULL'.")
+        if order.venue_order_id.is_null():
+            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                            f"VenueOrderId was 'NULL'.")
             return None  # Cannot generate state report
 
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot reconcile state for {repr(order.cl_ord_id)}, "
+            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
                             f"instrument for {order.instrument_id} not found.")
             return None  # Cannot generate state report
 
         try:
             response = await self._client.fetch_order(
-                id=order.id.value,
+                id=order.venue_order_id.value,
                 symbol=order.instrument_id.symbol.value,
             )
             # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
@@ -217,7 +217,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return None
 
         if response is None:
-            self._log.error(f"No order found for {order.id.value}.")
+            self._log.error(f"No order found for {order.venue_order_id.value}.")
             return None
 
         filled_qty = Decimal(f"{response['filled']:.{instrument.price_precision}f}")
@@ -238,14 +238,14 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             state = OrderState.EXPIRED
 
         return OrderStatusReport(
-            cl_ord_id=order.cl_ord_id,
-            order_id=order.id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
             order_state=state,
             filled_qty=Quantity(filled_qty),
             timestamp_ns=millis_to_nanos(millis=response["timestamp"]),
         )
 
-    async def generate_exec_reports(self, OrderId order_id, Symbol symbol, datetime since=None):
+    async def generate_exec_reports(self, VenueOrderId venue_order_id, Symbol symbol, datetime since=None):
         """
         Generate a list of execution reports.
 
@@ -253,8 +253,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         Parameters
         ----------
-        order_id : OrderId
-            The order identifier for the trades.
+        venue_order_id : VenueOrderId
+            The venue order identifier for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -265,10 +265,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         list[ExecutionReport]
 
         """
-        Condition.not_none(order_id, "order_id")
+        Condition.not_none(venue_order_id, "venue_order_id")
         Condition.not_none(symbol, "symbol")
 
-        self._log.info(f"Generating list[ExecutionReport] for {repr(order_id)}...")
+        self._log.info(f"Generating list[ExecutionReport] for {repr(venue_order_id)}...")
 
         cdef list reports = []  # Output
         cdef list response
@@ -284,16 +284,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if response is None:
             return reports  # TODO: Is this necessary??
 
-        cdef list fills = [fill for fill in response if fill["order"] == order_id.value]
+        cdef list fills = [fill for fill in response if fill["order"] == venue_order_id.value]
         self._log.info(str(fills), color=LogColor.GREEN)  # TODO: Development
 
         if not fills:
             return reports
 
-        cdef ClientOrderId cl_ord_id = self._engine.cache.cl_ord_id(order_id)
-        if cl_ord_id is None:
+        cdef ClientOrderId client_order_id = self._engine.cache.client_order_id(venue_order_id)
+        if client_order_id is None:
             self._log.error(f"Cannot generate trades list: "
-                            f"no ClientOrderId found for {repr(order_id)}.")
+                            f"no ClientOrderId found for {repr(venue_order_id)}.")
             return reports
 
         cdef dict fill
@@ -301,8 +301,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for fill in fills:
             report = ExecutionReport(
                 execution_id=ExecutionId(str(fill["id"])),
-                cl_ord_id=cl_ord_id,
-                order_id=order_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
                 last_qty=Decimal(fill["amount"]),
                 last_px=Decimal(fill["price"]),
                 commission_amount=Decimal(fill["fee"]["cost"]),
@@ -410,7 +410,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         """
         Condition.not_none(command, "command")
 
-        self._loop.create_task(self._cancel_order(command.cl_ord_id))
+        self._loop.create_task(self._cancel_order(command.client_order_id))
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -503,7 +503,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
-            cl_ord_id=order.cl_ord_id,
+            client_order_id=order.client_order_id,
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
@@ -515,19 +515,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 side=OrderSideParser.to_str(order.side).lower(),
                 amount=str(order.quantity),
                 price=str(order.price) if isinstance(order, PassiveOrder) else None,
-                params={'clientOrderId': order.cl_ord_id.value},
+                params={'clientOrderId': order.client_order_id.value},
             )
         except CCXTError as ex:
             self._generate_order_rejected(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 reason=str(ex),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
 
-    async def _cancel_order(self, ClientOrderId cl_ord_id):
-        cdef Order order = self._engine.cache.order(cl_ord_id)
+    async def _cancel_order(self, ClientOrderId client_order_id):
+        cdef Order order = self._engine.cache.order(client_order_id)
         if order is None:
-            self._log.error(f"Cannot cancel order, {repr(cl_ord_id)} not found.")
+            self._log.error(f"Cannot cancel order, {repr(client_order_id)} not found.")
             return  # Cannot cancel
 
         if not order.is_working_c():
@@ -536,7 +536,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         try:
             await self._client.cancel_order(
-                id=order.id.value,
+                id=order.venue_order_id.value,
                 symbol=order.instrument_id.symbol.value,
             )
         except CCXTError as ex:
@@ -555,8 +555,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef dict event_total = event["total"]
 
         if event_free == self._account_last_free \
-            and event_used == self._account_last_used \
-            and event_total == self._account_last_used:
+                and event_used == self._account_last_used \
+                and event_total == self._account_last_used:
             return  # No updates
 
         self._account_last_free = event_free
@@ -607,56 +607,56 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._handle_event(account_state)
 
     cdef inline void _on_order_status(self, dict event) except *:
-        cdef OrderId order_id = OrderId(event["id"])
-        cdef ClientOrderId cl_ord_id = ClientOrderId(event["clientOrderId"])
+        cdef VenueOrderId venue_order_id = VenueOrderId(event["id"])
+        cdef ClientOrderId client_order_id = ClientOrderId(event["clientOrderId"])
 
-        if order_id not in self._cached_orders:
-            order = self._engine.cache.order(cl_ord_id)
+        if venue_order_id not in self._cached_orders:
+            order = self._engine.cache.order(client_order_id)
             if order is None:
                 # If state resolution has done its job this should never happen
-                self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
+                self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
                 return
-            self._cache_order(order_id, order)
+            self._cache_order(venue_order_id, order)
 
         cdef int64_t timestamp_ns = <int64_t>(event["timestamp"])
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`
         if status == "open" and event["filled"] == 0:
-            self._generate_order_accepted(cl_ord_id, order_id, timestamp_ns)
+            self._generate_order_accepted(client_order_id, venue_order_id, timestamp_ns)
         elif status == "canceled":
-            self._generate_order_cancelled(cl_ord_id, order_id, timestamp_ns)
-            self._decache_order(order_id)
+            self._generate_order_cancelled(client_order_id, venue_order_id, timestamp_ns)
+            self._decache_order(venue_order_id)
         elif status == "expired":
-            self._generate_order_expired(cl_ord_id, order_id, timestamp_ns)
-            self._decache_order(order_id)
+            self._generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
+            self._decache_order(venue_order_id)
 
     cdef inline void _on_exec_report(self, dict event) except *:
-        cdef OrderId order_id = OrderId(event["order"])
-        cdef Order order = self._cached_orders.get(order_id)
+        cdef VenueOrderId venue_order_id = VenueOrderId(event["order"])
+        cdef Order order = self._cached_orders.get(venue_order_id)
 
         if order is None:
-            cl_ord_id = self._engine.cache.cl_ord_id(order_id)
-            if cl_ord_id is None:
-                self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
+            client_order_id = self._engine.cache.client_order_id(venue_order_id)
+            if client_order_id is None:
+                self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
                 return
-            order = self._engine.cache.order(cl_ord_id)
+            order = self._engine.cache.order(client_order_id)
             if order is None:
                 # If `reconcile_state` has done its job this should never happen
-                self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
+                self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
                 return
-            self._cache_order(order_id, order)
+            self._cache_order(venue_order_id, order)
 
-        prev_cum_qty: Decimal = self._cached_filled.get(order_id, Decimal())
+        prev_cum_qty: Decimal = self._cached_filled.get(venue_order_id, Decimal())
         last_qty: Decimal = Decimal(f"{event['amount']:.{order.quantity.precision_c()}f}")
         cum_qty: Decimal = prev_cum_qty + last_qty
-        self._cached_filled[order.id] = cum_qty
+        self._cached_filled[order.venue_order_id] = cum_qty
         leaves_qty: Decimal = order.quantity - cum_qty
         if leaves_qty == 0:
-            self._decache_order(order_id)
+            self._decache_order(venue_order_id)
 
         self._generate_order_filled(
-            cl_ord_id=order.cl_ord_id,
-            order_id=order_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
             execution_id=ExecutionId(event["id"]),
             instrument_id=order.instrument_id,
             order_side=order.side,
@@ -670,15 +670,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             timestamp_ns=(millis_to_nanos(millis=event["timestamp"])),
         )
 
-    cdef inline void _cache_order(self, OrderId order_id, Order order) except *:
-        self._cached_orders[order_id] = order
-        self._cached_filled[order_id] = order.filled_qty
-        self._log.debug(f"Cached {repr(order_id)} {order}.")
+    cdef inline void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
+        self._cached_orders[venue_order_id] = order
+        self._cached_filled[venue_order_id] = order.filled_qty
+        self._log.debug(f"Cached {repr(venue_order_id)} {order}.")
 
-    cdef inline void _decache_order(self, OrderId order_id) except *:
-        self._cached_orders.pop(order_id, None)
-        self._cached_filled.pop(order_id, None)
-        self._log.debug(f"De-cached {repr(order_id)}.")
+    cdef inline void _decache_order(self, VenueOrderId venue_order_id) except *:
+        self._cached_orders.pop(venue_order_id, None)
+        self._cached_filled.pop(venue_order_id, None)
+        self._log.debug(f"De-cached {repr(venue_order_id)}.")
 
 
 cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
@@ -733,7 +733,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             raise ValueError("Binance does not support TimeInForce.DAY.")
 
         cdef dict params = {
-            "newClientOrderId": order.cl_ord_id.value,
+            "newClientOrderId": order.client_order_id.value,
             "recvWindow": 10000  # TODO: Server time sync issue?
         }
 
@@ -758,7 +758,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
-            cl_ord_id=order.cl_ord_id,
+            client_order_id=order.client_order_id,
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
@@ -774,7 +774,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             )
         except CCXTError as ex:
             self._generate_order_rejected(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 reason=str(ex),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
@@ -827,7 +827,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             raise ValueError("GTD not supported in this version.")
 
         cdef dict params = {
-            "clOrdID": order.cl_ord_id.value,
+            "clOrdID": order.client_order_id.value,
         }
 
         cdef str order_type
@@ -863,7 +863,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
-            cl_ord_id=order.cl_ord_id,
+            client_order_id=order.client_order_id,
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
@@ -879,7 +879,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             )
         except CCXTError as ex:
             self._generate_order_rejected(
-                cl_ord_id=order.cl_ord_id,
+                client_order_id=order.client_order_id,
                 reason=str(ex),
                 timestamp_ns=self._clock.timestamp_ns(),
             )

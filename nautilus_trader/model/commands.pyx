@@ -126,7 +126,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"{self.order.status_string_c()}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.order.cl_ord_id.value}, "
+                f"client_order_id={self.order.client_order_id.value}, "
                 f"{position_id_str}"
                 f"strategy_id={self.strategy_id.value}, "
                 f"command_id={self.id})")
@@ -190,7 +190,7 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
-                f"entry_cl_ord_id={self.bracket_order.entry.cl_ord_id.value}, "
+                f"entry_client_order_id={self.bracket_order.entry.client_order_id.value}, "
                 f"command_id={self.id})")
 
 
@@ -209,7 +209,7 @@ cdef class UpdateOrder(TradingCommand):
         InstrumentId instrument_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
+        ClientOrderId client_order_id not None,
         Quantity quantity not None,
         Price price not None,
         UUID command_id not None,
@@ -226,7 +226,7 @@ cdef class UpdateOrder(TradingCommand):
             The trader identifier for the command.
         account_id : AccountId
             The account identifier for the command.
-        cl_ord_id : OrderId
+        client_order_id : VenueOrderId
             The client order identifier.
         quantity : Quantity
             The quantity for the order (update optional).
@@ -246,7 +246,7 @@ cdef class UpdateOrder(TradingCommand):
             timestamp_ns=timestamp_ns,
         )
 
-        self.cl_ord_id = cl_ord_id
+        self.client_order_id = client_order_id
         self.quantity = quantity
         self.price = price
 
@@ -255,7 +255,7 @@ cdef class UpdateOrder(TradingCommand):
                 f"instrument_id={self.instrument_id}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.cl_ord_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"command_id={self.id})")
@@ -276,8 +276,8 @@ cdef class CancelOrder(TradingCommand):
         InstrumentId instrument_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
-        ClientOrderId cl_ord_id not None,
-        OrderId order_id not None,
+        ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
         UUID command_id not None,
         int64_t timestamp_ns,
     ):
@@ -292,10 +292,10 @@ cdef class CancelOrder(TradingCommand):
             The trader identifier for the command.
         account_id : AccountId
             The account identifier for the command.
-        cl_ord_id : ClientOrderId
+        client_order_id : ClientOrderId
             The client order identifier to cancel.
-        order_id : OrderId
-            The order identifier to cancel.
+        venue_order_id : VenueOrderId
+            The venue order identifier to cancel.
         command_id : UUID
             The command identifier.
         timestamp_ns : int64
@@ -310,14 +310,14 @@ cdef class CancelOrder(TradingCommand):
             timestamp_ns=timestamp_ns,
         )
 
-        self.cl_ord_id = cl_ord_id
-        self.order_id = order_id
+        self.client_order_id = client_order_id
+        self.venue_order_id = venue_order_id
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.cl_ord_id.value}, "
-                f"order_id={self.order_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
                 f"command_id={self.id})")

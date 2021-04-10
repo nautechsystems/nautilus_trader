@@ -70,7 +70,7 @@ cdef class ExecutionDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Order load_order(self, ClientOrderId cl_ord_id):
+    cpdef Order load_order(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -151,7 +151,7 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
     cpdef Account load_account(self, AccountId account_id):
         return None
 
-    cpdef Order load_order(self, ClientOrderId cl_ord_id):
+    cpdef Order load_order(self, ClientOrderId client_order_id):
         return None
 
     cpdef Position load_position(self, PositionId position_id):
