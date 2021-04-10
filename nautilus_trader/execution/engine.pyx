@@ -58,6 +58,7 @@ from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderUpdateRejected
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -670,6 +671,10 @@ cdef class ExecutionEngine(Component):
             self._handle_order_command_rejected(event)
             return  # Event will be sent to strategy
 
+        if isinstance(event, OrderUpdated):
+            self._handle_order_updated(event)
+            return
+
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self.cache.order(event.client_order_id)
@@ -778,6 +783,11 @@ cdef class ExecutionEngine(Component):
             self._open_position(fill)
         else:
             self._update_position(position, fill)
+
+    cdef inline void _handle_order_updated(self, OrderUpdated updated) except *:
+        cdef Order order = self.cache.order(updated.client_order_id)
+        order.apply(updated)
+        self.cache.update_order(order)
 
     cdef inline void _open_position(self, OrderFilled fill) except *:
         cdef Position position = Position(fill=fill)

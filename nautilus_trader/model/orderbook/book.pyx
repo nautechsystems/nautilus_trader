@@ -287,6 +287,9 @@ cdef class OrderBook:
             return
         assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
 
+    cpdef list iter_orders(self):
+        return self.bids.iter_orders() + self.asks.iter_orders()
+
     cpdef Level best_bid_level(self):
         """
         Return the best bid level.
@@ -385,6 +388,14 @@ cdef class OrderBook:
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level and top_ask_level:
             return top_ask_level.price() - top_bid_level.price()
+        else:
+            return None
+
+    cpdef midpoint(self):
+        cdef Level top_bid_level = self.bids.top()
+        cdef Level top_ask_level = self.asks.top()
+        if top_bid_level and top_ask_level:
+            return (top_ask_level.price() + top_bid_level.price()) / 2.0
         else:
             return None
 

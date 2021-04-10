@@ -48,6 +48,7 @@ cdef class OrderBook:
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
     cpdef void check_integrity(self) except *
+    cpdef list iter_orders(self)
     cdef inline void _apply_operation(self, OrderBookOperation op) except *
     cdef inline void _add(self, Order order) except *
     cdef inline void _update(self, Order order) except *
@@ -61,6 +62,7 @@ cdef class OrderBook:
     cpdef best_bid_qty(self)
     cpdef best_ask_qty(self)
     cpdef spread(self)
+    cpdef midpoint(self)
     cpdef str pprint(self, int num_levels=*, show=*)
 
 

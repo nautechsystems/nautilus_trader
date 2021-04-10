@@ -466,7 +466,7 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(event.client_order_id, self.client_order_id, "event.client_order_id", "self.client_order_id")
-        if self.venue_order_id.not_null() and event.venue_order_id.not_null():
+        if self.venue_order_id.not_null() and event.venue_order_id.not_null() and not isinstance(event, OrderUpdated):
             Condition.equal(event.venue_order_id, self.venue_order_id, "event.venue_order_id", "self.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
@@ -644,6 +644,7 @@ cdef class PassiveOrder(Order):
         self.expire_time = expire_time
         self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
         self.slippage = Decimal()
+        self._venue_order_ids = []  # type: list[VenueOrderId]
 
     cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
@@ -652,6 +653,8 @@ cdef class PassiveOrder(Order):
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
     cdef void _updated(self, OrderUpdated event) except *:
+        if self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
         self.venue_order_id = event.venue_order_id
         self.quantity = event.quantity
         self.price = event.price
@@ -673,3 +676,6 @@ cdef class PassiveOrder(Order):
             self.slippage = self.avg_px - self.price
         else:  # self.side == OrderSide.SELL:
             self.slippage = self.price - self.avg_px
+
+    cpdef list venue_order_ids(self):
+        return self._venue_order_ids
