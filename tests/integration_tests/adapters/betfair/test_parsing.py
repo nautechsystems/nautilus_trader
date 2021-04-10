@@ -19,7 +19,9 @@ def test_order_submit_to_betfair(betting_instrument):
         "customer_strategy_ref": command.strategy_id.value,
         "instructions": [
             {
-                "customerOrderRef": command.order.client_order_id.value,
+                "customerOrderRef": command.order.client_order_id.value.replace(
+                    "-", ""
+                ),
                 "handicap": "0",
                 "limitOrder": {
                     "minFillSize": 0,
