@@ -83,6 +83,7 @@ cdef class BacktestEngine:
         dict risk_config=None,
         bint bypass_logging=False,
         int level_stdout=LogLevel.INFO,
+        bint calculate_data_size=True
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -280,7 +281,8 @@ cdef class BacktestEngine:
         self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
         log_memory(self._log)
-        self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
+        if calculate_data_size:
+            self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
 
     cpdef ExecutionEngine get_exec_engine(self):
         """
