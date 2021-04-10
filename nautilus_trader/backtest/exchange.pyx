@@ -275,8 +275,6 @@ cdef class SimulatedExchange:
             if order_book is None:
                 order_book = L2OrderBook(instrument_id=instrument_id)
                 self._books[instrument_id] = order_book
-            # self._log.debug(str(order_book))
-            # self._log.debug(str(data))
             order_book.apply_operations(data)
             if order_book.best_bid_price():
                 bid = Price(order_book.best_bid_price(), instrument.price_precision)
