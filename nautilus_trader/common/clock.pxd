@@ -44,10 +44,10 @@ cdef class Clock:
     cdef readonly str next_event_name
     """The name of the next time event.\n\n:returns: `str`"""
 
-    cpdef datetime utc_now(self)
     cpdef double timestamp(self) except *
     cpdef int64_t timestamp_ns(self) except *
-    cpdef datetime local_now(self, tzinfo tz)
+    cpdef datetime utc_now(self)
+    cpdef datetime local_now(self, tzinfo tz=*)
     cpdef timedelta delta(self, datetime time)
     cpdef list timer_names(self)
     cpdef Timer timer(self, str name)

@@ -144,8 +144,8 @@ class ReportProviderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, len(report))
-        self.assertEqual("cl_ord_id", report.index.name)
-        self.assertEqual(order1.cl_ord_id.value, report.index[0])
+        self.assertEqual("client_order_id", report.index.name)
+        self.assertEqual(order1.client_order_id.value, report.index[0])
         self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
@@ -195,8 +195,8 @@ class ReportProviderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(report))
-        self.assertEqual("cl_ord_id", report.index.name)
-        self.assertEqual(order1.cl_ord_id.value, report.index[0])
+        self.assertEqual("client_order_id", report.index.name)
+        self.assertEqual(order1.client_order_id.value, report.index[0])
         self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])

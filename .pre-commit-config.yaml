@@ -1,7 +1,6 @@
-exclude: ^(.github)/
 repos:
-  - repo: https://github.com/timothycrosley/isort
-    rev: 5.6.4
+  - repo: https://github.com/pycqa/isort
+    rev: 5.8.0
     hooks:
       - id: isort
         name: isort (python)
@@ -34,10 +33,19 @@ repos:
       - id: detect-private-key
       - id: fix-encoding-pragma
         args: [--remove]
+      - id: forbid-new-submodules # Check for git submodules
       - id: end-of-file-fixer
       - id: trailing-whitespace
 
-  - repo: https://github.com/life4/flakehell
-    rev: v.0.8.0
+  - repo: https://gitlab.com/pycqa/flake8
+    rev: 3.9.0
     hooks:
-      - id: flakehell
+      - id: flake8
+        additional_dependencies:
+          - flake8-bandit==2.1.2
+          - flake8-bugbear==20.1.4
+          - flake8-docstrings
+          - flake8-rst-docstrings==0.0.14
+          - flake8-typing-imports==1.9.0
+          - pep8-naming==0.11.1
+        types: [python, cython]

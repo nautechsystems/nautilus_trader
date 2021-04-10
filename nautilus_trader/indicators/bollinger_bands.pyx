@@ -15,6 +15,8 @@
 
 from collections import deque
 
+import numpy as np
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
@@ -151,7 +153,10 @@ cdef class BollingerBands(Indicator):
                 self._set_initialized(True)
 
         # Calculate values
-        cdef double std = fast_std_with_mean(values=list(self._prices), mean=self._ma.value)
+        cdef double std = fast_std_with_mean(
+            values=np.asarray(self._prices, dtype=np.float64),
+            mean=self._ma.value,
+        )
 
         # Set values
         self.upper = self._ma.value + (self.k * std)

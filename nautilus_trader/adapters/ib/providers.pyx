@@ -16,9 +16,6 @@
 from decimal import Decimal
 
 import ib_insync
-
-from cpython.datetime cimport datetime
-
 from ib_insync.contract import ContractDetails
 
 from nautilus_trader.common.providers cimport InstrumentProvider

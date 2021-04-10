@@ -299,7 +299,6 @@ cdef class BacktestEngine:
         OMSType oms_type,
         list starting_balances,
         bint is_frozen_account=False,
-        bint generate_position_ids=True,
         list modules=None,
         FillModel fill_model=None,
     ) except *:
@@ -311,14 +310,12 @@ cdef class BacktestEngine:
         venue : Venue
             The venue for the exchange.
         oms_type : OMSType (Enum)
-            The order management system type for the exchange.
+            The order management system type for the exchange. If HEDGING and
+            no position_id for an order then will generate a new position_id.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
         is_frozen_account : bool, optional
             If the account for this exchange is frozen (balances will not change).
-        generate_position_ids : bool
-            If the exchange should generate position identifiers. If oms_type
-            is HEDGING then will always generate position identifiers.
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
@@ -353,7 +350,6 @@ cdef class BacktestEngine:
         exchange = SimulatedExchange(
             venue=venue,
             oms_type=oms_type,
-            generate_position_ids=generate_position_ids,
             is_frozen_account=is_frozen_account,
             starting_balances=starting_balances,
             instruments=instruments,

@@ -33,7 +33,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 
 
-ctypedef int64_t (* round_func_type)(double x) nogil
+ctypedef int64_t (* round_func_type)(double x) nogil  # noqa E211 whitespace before '('
 
 cdef round_func_type _get_round_func() nogil:
     if sizeof(long) == 8:
@@ -49,6 +49,7 @@ if lround == NULL:
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+# https://en.wikipedia.org/wiki/Unix_time
 cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 # Time unit conversion constants

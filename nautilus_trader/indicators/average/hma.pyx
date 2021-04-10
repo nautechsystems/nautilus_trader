@@ -64,9 +64,10 @@ cdef class HullMovingAverage(MovingAverage):
 
         self.value = 0
 
-    cdef list _get_weights(self, int size):
-        w = np.arange(1, size + 1)
-        return list(w / sum(w))
+    cdef np.ndarray _get_weights(self, int size):
+        cdef np.ndarray w = np.arange(1, size + 1, dtype=np.float64)
+        w /= w.sum()
+        return w
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """

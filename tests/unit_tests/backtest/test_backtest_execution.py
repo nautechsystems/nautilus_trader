@@ -82,7 +82,6 @@ class TestBacktestExecClientTests:
         self.exchange = SimulatedExchange(
             venue=Venue("BINANCE"),
             oms_type=OMSType.NETTING,
-            generate_position_ids=True,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
             instruments=[ETHUSDT_BINANCE],
@@ -217,8 +216,8 @@ class TestBacktestExecClientTests:
             order.instrument_id,
             self.trader_id,
             self.account_id,
-            order.cl_ord_id,
-            order.id,
+            order.client_order_id,
+            order.venue_order_id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -242,7 +241,7 @@ class TestBacktestExecClientTests:
             order.instrument_id,
             self.trader_id,
             self.account_id,
-            order.cl_ord_id,
+            order.client_order_id,
             Quantity(100),
             Price("1010.00"),
             self.uuid_factory.generate(),

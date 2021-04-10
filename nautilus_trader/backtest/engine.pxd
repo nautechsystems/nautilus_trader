@@ -64,7 +64,6 @@ cdef class BacktestEngine:
         OMSType oms_type,
         list starting_balances,
         bint is_frozen_account=*,
-        bint generate_position_ids=*,
         list modules=*,
         FillModel fill_model=*,
     ) except *

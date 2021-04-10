@@ -21,12 +21,12 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Issuer
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class TestIdentifiers:
@@ -216,7 +216,7 @@ class TestIdentifiers:
     def test_order_identifier(self):
         # Arrange
         # Act
-        order_id = OrderId.null()
+        order_id = VenueOrderId.null()
 
         # Assert
         assert "NULL" == order_id.value

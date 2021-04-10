@@ -93,7 +93,6 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
 
         client = client_cls(internal_config)
 
-
         # Check required CCXT methods are available
         if not client.has.get("fetchTrades", False):
             raise RuntimeError(f"CCXT `fetch_trades` not available for {client.name}")

@@ -16,10 +16,10 @@
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -36,9 +36,9 @@ cdef class ExecutionCacheFacade:
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cpdef set order_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set order_working_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef set order_completed_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids_working(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids_completed(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_open_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_closed_ids(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -46,15 +46,15 @@ cdef class ExecutionCacheFacade:
 
 # -- ORDER QUERIES ---------------------------------------------------------------------------------
 
-    cpdef Order order(self, ClientOrderId cl_ord_id)
-    cpdef ClientOrderId cl_ord_id(self, OrderId order_id)
-    cpdef OrderId order_id(self, ClientOrderId cl_ord_id)
+    cpdef Order order(self, ClientOrderId client_order_id)
+    cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
+    cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id)
     cpdef list orders(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_completed(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
-    cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *
+    cpdef bint order_exists(self, ClientOrderId client_order_id) except *
+    cpdef bint is_order_working(self, ClientOrderId client_order_id) except *
+    cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *
     cpdef int orders_total_count(self, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_working_count(self, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_completed_count(self, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
@@ -62,7 +62,7 @@ cdef class ExecutionCacheFacade:
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id)
-    cpdef PositionId position_id(self, ClientOrderId cl_ord_id)
+    cpdef PositionId position_id(self, ClientOrderId client_order_id)
     cpdef list positions(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list positions_open(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list positions_closed(self, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -75,5 +75,5 @@ cdef class ExecutionCacheFacade:
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 
-    cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id)
+    cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id)
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id)

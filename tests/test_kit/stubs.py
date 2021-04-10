@@ -12,12 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 from datetime import datetime
 
 import pytz
 
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
@@ -40,19 +43,24 @@ from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.mocks import MockLiveDataEngine
+from tests.test_kit.mocks import MockLiveExecutionEngine
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+# https://en.wikipedia.org/wiki/Unix_time
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
@@ -205,6 +213,10 @@ class TestStubs:
         return AccountId("SIM", "000")
 
     @staticmethod
+    def strategy_id() -> StrategyId:
+        return StrategyId(name="Test", tag="1")
+
+    @staticmethod
     def event_account_state(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
@@ -223,20 +235,20 @@ class TestStubs:
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             0,
             uuid4(),
             0,
         )
 
     @staticmethod
-    def event_order_accepted(order, order_id=None) -> OrderAccepted:
-        if order_id is None:
-            order_id = OrderId("1")
+    def event_order_accepted(order, venue_order_id=None) -> OrderAccepted:
+        if venue_order_id is None:
+            venue_order_id = VenueOrderId("1")
         return OrderAccepted(
             TestStubs.account_id(),
-            order.cl_ord_id,
-            order_id,
+            order.client_order_id,
+            venue_order_id,
             0,
             uuid4(),
             0,
@@ -246,7 +258,7 @@ class TestStubs:
     def event_order_rejected(order) -> OrderRejected:
         return OrderRejected(
             TestStubs.account_id(),
-            order.cl_ord_id,
+            order.client_order_id,
             0,
             "ORDER_REJECTED",
             uuid4(),
@@ -257,7 +269,7 @@ class TestStubs:
     def event_order_filled(
         order,
         instrument,
-        order_id=None,
+        venue_order_id=None,
         execution_id=None,
         position_id=None,
         strategy_id=None,
@@ -266,10 +278,10 @@ class TestStubs:
         liquidity_side=LiquiditySide.TAKER,
         execution_ns=0,
     ) -> OrderFilled:
-        if order_id is None:
-            order_id = OrderId("1")
+        if venue_order_id is None:
+            venue_order_id = VenueOrderId("1")
         if execution_id is None:
-            execution_id = ExecutionId(order.cl_ord_id.value.replace("O", "E"))
+            execution_id = ExecutionId(order.client_order_id.value.replace("O", "E"))
         if position_id is None:
             position_id = order.position_id
         if strategy_id is None:
@@ -287,8 +299,8 @@ class TestStubs:
 
         return OrderFilled(
             account_id=TestStubs.account_id(),
-            cl_ord_id=order.cl_ord_id,
-            order_id=order_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=position_id,
             strategy_id=strategy_id,
@@ -311,8 +323,8 @@ class TestStubs:
     def event_order_cancelled(order) -> OrderCancelled:
         return OrderCancelled(
             TestStubs.account_id(),
-            order.cl_ord_id,
-            order.id,
+            order.client_order_id,
+            order.venue_order_id,
             0,
             uuid4(),
             0,
@@ -322,8 +334,8 @@ class TestStubs:
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
             TestStubs.account_id(),
-            order.cl_ord_id,
-            order.id,
+            order.client_order_id,
+            order.venue_order_id,
             0,
             uuid4(),
             0,
@@ -333,8 +345,8 @@ class TestStubs:
     def event_order_triggered(order) -> OrderTriggered:
         return OrderTriggered(
             TestStubs.account_id(),
-            order.cl_ord_id,
-            order.id,
+            order.client_order_id,
+            order.venue_order_id,
             0,
             uuid4(),
             0,
@@ -365,4 +377,41 @@ class TestStubs:
             position.last_event,
             uuid4(),
             0,
+        )
+
+    @staticmethod
+    def clock() -> LiveClock:
+        return LiveClock()
+
+    @staticmethod
+    def logger():
+        return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
+
+    @staticmethod
+    def portfolio():
+        return Portfolio(
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def mock_live_data_engine():
+        return MockLiveDataEngine(
+            loop=asyncio.get_event_loop(),
+            portfolio=TestStubs.portfolio(),
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def mock_live_exec_engine():
+        database = BypassExecutionDatabase(
+            trader_id=TestStubs.trader_id(), logger=TestStubs.logger()
+        )
+        return MockLiveExecutionEngine(
+            loop=asyncio.get_event_loop(),
+            database=database,
+            portfolio=TestStubs.portfolio(),
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
         )

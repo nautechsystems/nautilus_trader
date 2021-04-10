@@ -29,11 +29,11 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
@@ -172,7 +172,7 @@ class ExecutionClientTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456789"),
-            OrderId("001"),
+            VenueOrderId("001"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

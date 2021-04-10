@@ -99,7 +99,7 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
             asset_type = AssetType.SPOT
             base_currency = Currency.from_str_c(instrument_id_pieces[0])
         elif oanda_type == "METAL":
-            asset_class = AssetClass.COMMODITY
+            asset_class = AssetClass.METAL
             asset_type = AssetType.SPOT
         else:
             asset_class = AssetClassParser.from_str(values["tags"][0]["name"])

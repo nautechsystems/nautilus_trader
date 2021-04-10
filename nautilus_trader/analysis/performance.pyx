@@ -30,13 +30,13 @@ from empyrical import stability_of_timeseries
 from empyrical import tail_ratio
 import numpy as np
 from numpy import float64
+cimport numpy as np
 import pandas as pd
 from scipy.stats import kurtosis
 from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
@@ -201,7 +201,7 @@ cdef class PerformanceAnalyzer:
 
         if account_balance_starting.as_decimal() == 0:
             # Protect divide by zero
-            return 0
+            return 0.
         current = account_balance
         starting = account_balance_starting
         difference = current - starting
@@ -255,7 +255,7 @@ cdef class PerformanceAnalyzer:
         if realized_pnls is None or not winners:
             return 0.
 
-        return min(winners)
+        return min(np.asarray(winners, dtype=np.float64))
 
     cpdef double min_loser(self, Currency currency=None) except *:
         """
@@ -274,7 +274,7 @@ cdef class PerformanceAnalyzer:
         if not losers:
             return 0.
 
-        return max(losers)  # max is least loser
+        return max(np.asarray(losers, dtype=np.float64))  # max is least loser
 
     cpdef double avg_winner(self, Currency currency=None) except *:
         """
@@ -287,13 +287,14 @@ cdef class PerformanceAnalyzer:
         """
         realized_pnls = self.get_realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
-        cdef list winners = [x for x in realized_pnls if x > 0.]
-        if not winners:
-            return 0.
-
-        return fast_mean(winners)
+        cdef np.ndarray pnls = realized_pnls.to_numpy()
+        cdef np.ndarray winners = pnls[pnls > 0.0]
+        if len(winners) == 0:
+            return 0.0
+        else:
+            return winners.mean()
 
     cpdef double avg_loser(self, Currency currency=None) except *:
         """
@@ -306,13 +307,14 @@ cdef class PerformanceAnalyzer:
         """
         realized_pnls = self.get_realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
-        cdef list losers = [x for x in realized_pnls if x <= 0.]
-        if not losers:
-            return 0.
-
-        return fast_mean(losers)
+        cdef np.ndarray pnls = realized_pnls.to_numpy()
+        cdef np.ndarray losers = pnls[pnls <= 0.0]
+        if len(losers) == 0:
+            return 0.0
+        else:
+            return losers.mean()
 
     cpdef double win_rate(self, Currency currency=None) except *:
         """

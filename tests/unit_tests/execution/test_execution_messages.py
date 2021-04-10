@@ -19,7 +19,7 @@ from nautilus_trader.execution.messages import PositionStatusReport
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 
@@ -55,10 +55,10 @@ class TestExecutionStateReport:
             timestamp_ns=0,
         )
 
-        order_id = OrderId("1")
+        venue_order_id = VenueOrderId("1")
         order_report = OrderStatusReport(
-            cl_ord_id=ClientOrderId("O-123456"),
-            order_id=order_id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=venue_order_id,
             order_state=OrderState.REJECTED,
             filled_qty=Quantity(0),
             timestamp_ns=0,
@@ -68,7 +68,7 @@ class TestExecutionStateReport:
         report.add_order_report(order_report)
 
         # Assert
-        assert report.order_reports()[order_id] == order_report
+        assert report.order_reports()[venue_order_id] == order_report
 
     def test_add_position_state_report(self):
         report = ExecutionMassStatus(

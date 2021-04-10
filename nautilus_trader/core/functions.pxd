@@ -14,20 +14,21 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+cimport numpy as np
 
 
 cpdef int bisect_double_left(list a, double x, int lo=*, hi=*) except *
 cpdef int bisect_double_right(list a, double x, int lo=*, hi=*) except *
-cpdef double fast_mean(list values) except *
+cpdef double fast_mean(np.ndarray values) except *
 cpdef double fast_mean_iterated(
-    list values,
+    np.ndarray values,
     double next_value,
     double current_value,
     int expected_length,
     bint drop_left=*,
 ) except *
-cpdef double fast_std(list values) except *
-cpdef double fast_std_with_mean(list values, double mean) except *
+cpdef double fast_std(np.ndarray values) except *
+cpdef double fast_std_with_mean(np.ndarray values, double mean) except *
 cpdef double basis_points_as_percentage(double basis_points) except *
 cpdef str format_bytes(double size)
 cpdef str pad_string(str string, int final_length, str pad=*)

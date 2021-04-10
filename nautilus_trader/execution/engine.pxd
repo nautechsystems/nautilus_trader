@@ -94,7 +94,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
     cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
-    cdef inline void _invalidate_order(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
     cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
