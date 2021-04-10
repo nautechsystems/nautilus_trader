@@ -81,7 +81,9 @@ async def test_submit_order(mocker, execution_client, exec_engine):
                     "size": 10.0,
                     "minFillSize": 0,
                 },
-                "customerOrderRef": command.order.client_order_id.value,
+                "customerOrderRef": command.order.client_order_id.value.replace(
+                    "-", ""
+                ),
             }
         ],
     }

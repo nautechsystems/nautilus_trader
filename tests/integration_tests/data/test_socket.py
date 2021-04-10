@@ -5,6 +5,7 @@ from nautilus_trader.data.socket import SocketClient
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip  # Flaky
 async def test_socket_base(socket_server, logger, event_loop):
     messages = []
 
