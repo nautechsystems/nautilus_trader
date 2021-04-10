@@ -34,6 +34,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -2011,3 +2012,58 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(2, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(1, self.cache.positions_closed_count())
+
+    def test_handle_updated_order_event(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            price=Price("10.0"),
+            quantity=Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            order.instrument_id,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+
+        # Get order, check venue_order_id
+        cached_order = self.cache.order(order.client_order_id)
+        self.assertTrue(cached_order.venue_order_id == order.venue_order_id)
+
+        # Act
+        new_venue_id = VenueOrderId("UPDATED")
+        order_updated = OrderUpdated(
+            account_id=self.account_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=new_venue_id,
+            quantity=order.quantity,
+            price=order.price,
+            updated_ns=self.clock.timestamp_ns(),
+            event_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+        self.exec_engine.process(order_updated)
+        cached_order = self.cache.order(order.client_order_id)
+        self.assertTrue(cached_order.venue_order_id == new_venue_id)

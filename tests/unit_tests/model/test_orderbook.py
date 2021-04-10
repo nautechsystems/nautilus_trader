@@ -176,6 +176,11 @@ def test_orderbook_operations(empty_book):
     assert empty_book.best_ask_price() == 0.5814
 
 
+def test_iter_orders(sample_book):
+    orders = sample_book.iter_orders()
+    assert len(orders) == 5
+
+
 # def test_auction_match_match_orders():
 #     l1 = Ladder.from_orders(
 #         [
