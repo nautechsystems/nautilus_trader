@@ -1,3 +1,19 @@
+# NautilusTrader 1.116.0 Beta - Release Notes
+
+TODO: Update version to 1.116.0
+TODO: Poetry update
+
+## Breaking Changes
+- Standardize client IDs to upper case.
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.115.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**
