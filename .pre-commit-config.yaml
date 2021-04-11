@@ -1,5 +1,5 @@
 repos:
-  - repo: https://github.com/pycqa/isort
+  - repo: https://github.com/PyCQA/isort
     rev: 5.8.0
     hooks:
       - id: isort
@@ -37,10 +37,21 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
 
-  - repo: https://gitlab.com/pycqa/flake8
+  - repo: https://gitlab.com/PyCQA/flake8
     rev: 3.9.0
     hooks:
       - id: flake8
+        name: flake8 (python)
+        additional_dependencies:
+          - flake8-bandit==2.1.2
+          - flake8-bugbear==20.1.4
+#          - flake8-docstrings
+#          - flake8-rst-docstrings==0.0.14
+          - flake8-typing-imports==1.9.0
+#          - pep8-naming==0.11.1
+        types: [python]
+      - id: flake8
+        name: flake8 (cython)
         additional_dependencies:
           - flake8-bandit==2.1.2
           - flake8-bugbear==20.1.4
@@ -48,4 +59,4 @@ repos:
           - flake8-rst-docstrings==0.0.14
           - flake8-typing-imports==1.9.0
           - pep8-naming==0.11.1
-        types: [python, cython]
+        types: [cython]
