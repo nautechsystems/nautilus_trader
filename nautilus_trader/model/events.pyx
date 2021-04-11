@@ -1221,6 +1221,7 @@ cdef class VenueStatusEvent(StatusEvent):
 
         """
         super().__init__(event_id, timestamp_ns)
+        self.venue = venue
         self.status = status
 
     def __repr__(self) -> str:
@@ -1255,6 +1256,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
 
         """
         super().__init__(event_id, timestamp_ns)
+        self.instrument_id = instrument_id
         self.status = status
 
     def __repr__(self) -> str:
@@ -1293,6 +1295,7 @@ cdef class InstrumentClosePrice(Event):
 
         """
         super().__init__(event_id, timestamp_ns)
+        self.instrument_id = instrument_id
         self.close_price = close_price
         self.close_type = close_type
 
