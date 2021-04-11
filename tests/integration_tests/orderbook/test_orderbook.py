@@ -26,7 +26,7 @@ def test_l3_feed():
     # immediately, but we may get also delete later.
     skip_deletes = []
     i = 0
-    for i, m in enumerate(TestDataProvider.l3_feed()):
+    for i, m in enumerate(TestDataProvider.l3_feed()):  # noqa (B007)
         if m["op"] == "update":
             ob.update(order=m["order"])
             try:
@@ -67,7 +67,7 @@ def test_l2_feed():
 
 def test_l1_orderbook():
     ob = L1OrderBook(TestStubs.audusd_id())
-    for i, m in enumerate(TestDataProvider.l1_feed()):
+    for i, m in enumerate(TestDataProvider.l1_feed()):  # noqa (B007)
         # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         # print("")
         if m["op"] == "update":

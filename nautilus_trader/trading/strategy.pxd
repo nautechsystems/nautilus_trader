@@ -137,12 +137,12 @@ cdef class TradingStrategy(Component):
         dict kwargs=*,
     ) except *
     cpdef void subscribe_order_book_deltas(
-            self,
-            InstrumentId instrument_id,
-            OrderBookLevel level= *,
-            int depth= *,
-            int interval= *,
-            dict kwargs= *,
+        self,
+        InstrumentId instrument_id,
+        OrderBookLevel level=*,
+        int depth=*,
+        int interval=*,
+        dict kwargs=*,
     ) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *

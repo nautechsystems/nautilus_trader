@@ -1,8 +1,24 @@
+# NautilusTrader 1.116.0 Beta - Release Notes
+
+TODO: Update version to 1.116.0
+TODO: Poetry update
+
+## Breaking Changes
+- Standardize client IDs to upper case.
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.115.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**
 
-Due to recent feedback and much further thought - a major renaming as been carried
+Due to recent feedback and much further thought - a major renaming has been carried
 out involving order identifiers. The `Order` is the only domain object in the
 model which is identified with more than one ID. Due to this, more explicitness
 helps to ensure correct logic. Previously the `OrderId` was
@@ -87,7 +103,7 @@ in the system (prefer throwing exceptions).
 The platforms internal timestamping has been standardized to nanoseconds. This
 decision was made to increase the accuracy of backtests to nanosecond precision,
 improve data handling including order book and custom data for backtesting, and
-to future-proof the platform to a more professional standard. The top level user
+to future-proof the platform to a more professional standard. The top-level user
 API still takes `datetime` and `timedelta` objects for usability.
 
 There has also been some standardization of naming conventions to align more
@@ -261,7 +277,7 @@ None
 
 ## Enhancements
 - Refactored `SimulatedExchange` order matching and amendment logic.
-- Add `risk` sub-package to group risk components.
+- Add `risk` subpackage to group risk components.
 
 ## Fixes
 - `StopLimitOrder` triggering behaviour.

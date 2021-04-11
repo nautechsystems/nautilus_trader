@@ -99,12 +99,12 @@ The documentation for the latest version of the package can be found at:
 
 | Logo | ID | Status |
 |:---:|:---:|:---:|
-| [![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true)](https://interactivebrokers.com) | ib | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
-| [![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true)](https://oanda.com/) | oanda | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
-| [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | ccxt-`exchange_id` | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
-| [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | binance | ![status](https://img.shields.io/badge/Integration-planned-gray) |
-| [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | bitmex | ![status](https://img.shields.io/badge/Integration-planned-gray) |
-| [![betfair](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/betfair-logo.png?raw=true)](https://www.betfair.com/) | betfair | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
+| [![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true)](https://interactivebrokers.com) | IB | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true)](https://oanda.com/) | OANDA | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
+| [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | CCXT-`exchange_id` | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
+| [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | BINANCE | ![status](https://img.shields.io/badge/Integration-planned-gray) |
+| [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | BITMEX | ![status](https://img.shields.io/badge/Integration-planned-gray) |
+| [![betfair](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/betfair-logo.png?raw=true)](https://www.betfair.com/) | BETFAIR | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
 
 CCXT Pro is an algorithmic crypto-trading library which currently includes
 integrations to 27 crypto exchanges https://github.com/ccxt/ccxt.
@@ -114,8 +114,8 @@ See https://ccxt.pro for more information.
 
 | CCXT Pro advanced execution clients |
 |:---:|
-| Binance |
-| BitMEX |
+| BINANCE |
+| BITMEX |
 
 Advanced execution clients include additional order management options such as
 `post_only`, `hidden`, `reduce_only`, and all the `TimeInForce` options. These

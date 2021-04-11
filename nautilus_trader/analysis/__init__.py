@@ -14,5 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `analysis` sub-package groups components relating to trading performance statistics and analysis.
+The `analysis` subpackage groups components relating to trading performance statistics and analysis.
 """
