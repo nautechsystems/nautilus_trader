@@ -671,13 +671,9 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
         self.events = []
 
     def execute(self, command, execute=False):
-        if execute:
-            super().execute(command)
         self.commands.append(command)
 
     def process(self, event, process=False):
-        if process:
-            super().process(event)
         self.events.append(event)
 
 

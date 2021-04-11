@@ -190,34 +190,6 @@ class TestDataProvider:
         ]
 
     @staticmethod
-    def flashscore_feed_raw_short():
-        from flashscore.tests.resources import RESOURCES_DIR
-
-        return (
-            RESOURCES_DIR.joinpath("raw_basketball_data.log")
-            .read_text()
-            .strip()
-            .split("\n")
-        )
-
-    @staticmethod
-    def flashscore_feed_raw():
-        from flashscore.tests.resources import RESOURCES_DIR
-
-        return RESOURCES_DIR.joinpath("nba20191229.log").read_text().strip().split("\n")
-
-    @staticmethod
-    def betfair_files():
-        return pathlib.Path(PACKAGE_ROOT + "/data/betfair").glob("*.bz2")
-
-    @staticmethod
-    def betfair_all_feed_raw():
-        return [
-            bz2.open(str(f)).read().strip().split(b"\n")
-            for f in TestDataProvider.betfair_files()
-        ]
-
-    @staticmethod
     def betfair_feed_raw(market_id="1.166810222"):
         return [
             bz2.open(str(f)).read().strip().split(b"\n")

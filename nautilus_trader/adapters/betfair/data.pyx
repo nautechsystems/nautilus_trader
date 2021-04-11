@@ -278,4 +278,4 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             if isinstance(upd, Data):
                 self._handle_data(data=upd)
             elif isinstance(upd, Event):
-                self._engine(upd)
+                self._handle_event(upd)
