@@ -14,5 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `redis` sub-package groups all `Redis` implementations for the platform.
+The `redis` subpackage groups all `Redis` implementations for the platform.
 """

@@ -87,7 +87,7 @@ in the system (prefer throwing exceptions).
 The platforms internal timestamping has been standardized to nanoseconds. This
 decision was made to increase the accuracy of backtests to nanosecond precision,
 improve data handling including order book and custom data for backtesting, and
-to future-proof the platform to a more professional standard. The top level user
+to future-proof the platform to a more professional standard. The top-level user
 API still takes `datetime` and `timedelta` objects for usability.
 
 There has also been some standardization of naming conventions to align more
@@ -261,7 +261,7 @@ None
 
 ## Enhancements
 - Refactored `SimulatedExchange` order matching and amendment logic.
-- Add `risk` sub-package to group risk components.
+- Add `risk` subpackage to group risk components.
 
 ## Fixes
 - `StopLimitOrder` triggering behaviour.

@@ -130,12 +130,12 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         If a cached order does not match the exchanges order status then
         the missing events will be generated. If there is not enough information
-        to resolve a state then errors will be logged.
+        to reconcile a state then errors will be logged.
 
         Returns
         -------
         bool
-            True if states resolve within timeout, else False.
+            True if states reconcile within timeout, else False.
 
         """
         # TODO: Refactor pass on this, plus above docs
@@ -192,7 +192,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         while True:
             if self._clock.utc_now() >= timeout:
                 self._log.error(f"Timed out ({seconds}s) waiting for "
-                                f"execution states to resolve.")
+                                f"execution states to reconcile.")
                 return False
 
             resolved = True
@@ -200,7 +200,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 name = order.instrument_id.venue.first()
                 report = client_mass_status[name].order_reports().get(order.venue_order_id)
                 if report is None:
-                    return False  # Will never resolve
+                    return False  # Will never reconcile
                 if order.state_c() != report.order_state:
                     resolved = False  # Incorrect state on this loop
                 if report.order_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
