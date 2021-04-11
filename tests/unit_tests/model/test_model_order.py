@@ -760,7 +760,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(VenueOrderId("2"), order.venue_order_id)
-        self.assertEqual([VenueOrderId("1")], order.venue_order_ids())
+        self.assertEqual([VenueOrderId("1")], order.venue_order_ids)
 
     def test_apply_order_filled_event_to_order_without_accepted(self):
         # Arrange
