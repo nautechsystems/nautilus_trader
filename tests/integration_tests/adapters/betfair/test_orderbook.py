@@ -13,32 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import orjson
-import pytest
-
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
+from nautilus_trader.model.events import InstrumentClosePrice
+from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookOperation
+from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.tick import TradeTick
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-def _fix_ids(r):
-    return (
-        r.replace(b"1.133262888", b"1.180737206")
-        .replace(b"2501003", b"19248890")
-        .replace(b"1111884", b"38848248")
-        .replace(b"1111887", b"10921178")
-    )
-
-
-@pytest.mark.skip
 def test_betfair_orderbook(betfair_data_client, provider):
-    provider.search_markets(market_filter={"market_id": "1.180737206"})
-
+    provider.load_all()
     book = OrderBook(
         instrument_id=BetfairTestStubs.instrument_id(), level=OrderBookLevel.L2
     )
-    for raw in BetfairTestStubs.raw_orderbook_updates():
-        update = orjson.loads(_fix_ids(raw.strip()))
-        for operation in on_market_update(update, instrument_provider=provider):
-            book.apply_operation(operation)
+    for update in BetfairTestStubs.raw_market_updates():
+        for message in on_market_update(self=betfair_data_client, update=update):
+            if isinstance(message, OrderBookSnapshot):
+                book.apply_snapshot(message)
+            elif isinstance(message, OrderBookOperations):
+                book.apply_operations(message)
+            elif isinstance(message, OrderBookOperation):
+                book.apply_operation(message)
+            elif isinstance(
+                message, (TradeTick, InstrumentStatusEvent, InstrumentClosePrice)
+            ):
+                pass
+            else:
+                raise NotImplementedError(str(type(message)))

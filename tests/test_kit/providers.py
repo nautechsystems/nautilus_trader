@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import bz2
 from decimal import Decimal
 import json
 from typing import List
@@ -185,6 +186,14 @@ class TestDataProvider:
             msg
             for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
+        ]
+
+    @staticmethod
+    def betfair_feed_raw(market_id="1.166810222"):
+        return [
+            bz2.open(str(f)).read().strip().split(b"\n")
+            for f in TestDataProvider.betfair_files()
+            if market_id in str(f)
         ]
 
 

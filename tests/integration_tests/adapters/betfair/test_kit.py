@@ -40,6 +40,7 @@ from tests.test_kit.stubs import TestStubs
 TEST_PATH = pathlib.Path(
     TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
 )
+DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_kit/data/betfair")
 
 
 class BetfairTestStubs(TestStubs):
@@ -386,8 +387,16 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def raw_orderbook_updates():
-        return bz2.open(TEST_PATH / "1.133262888.json.bz2").readlines()
+    def raw_market_updates():
+        def _fix_ids(r):
+            return (
+                r.replace(b"1.166811431", b"1.180737206")
+                .replace(b"60424", b"19248890")
+                .replace(b"237478", b"38848248")
+            )
+
+        lines = bz2.open(DATA_PATH / "1.166811431.bz2").readlines()
+        return [orjson.loads(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
