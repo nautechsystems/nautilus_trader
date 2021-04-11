@@ -273,9 +273,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
                 # TODO - self._loop.create_task(self._stream.reconnect())
                 self._log.error(str(update))
                 raise RuntimeError()
-        for upd in updates:
-            self._log.debug(str(upd))
-            if isinstance(upd, Data):
-                self._handle_data(data=upd)
-            elif isinstance(upd, Event):
-                self._handle_event(upd)
+        for data in updates:
+            self._log.debug(f"{data}")
+            if isinstance(data, Data):
+                self._handle_data(data=data)
+            elif isinstance(data, Event):
+                self._log.warning(f"Received event: {data}, DataEngine not yet setup to send events")

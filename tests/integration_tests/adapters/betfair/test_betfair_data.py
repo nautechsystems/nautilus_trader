@@ -128,7 +128,8 @@ def test_market_update(betfair_data_client, data_engine):
     assert update_op.order.price == 0.21277
 
 
-@pytest.mark.skip  # TODO - waiting for market status implementation
+# TODO - waiting for market status implementation
+@pytest.mark.skip
 def test_market_update_md(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_UPDATE_md())
     result = [type(event).__name__ for event in data_engine.events]
