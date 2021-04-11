@@ -13,7 +13,7 @@ development of performance-critical components.
 Tests can be run using either Pytest or the Nox tool.
 
 If you're using PyCharm then tests should run directly by right clicking on the
-respective folder (or top level tests folder) and clicking 'Run pytest'.
+respective folder (or top-level tests folder) and clicking 'Run pytest'.
 
 Alternatively you can use the ``pytest .`` command from the root level ``tests``
 folder, or the other sub folders.

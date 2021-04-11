@@ -257,7 +257,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         )
 
         if not active_orders:
-            # Nothing to resolve
+            # Nothing to reconcile
             return mass_status
 
         cdef Order order

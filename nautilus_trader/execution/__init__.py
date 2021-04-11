@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `execution` sub-package groups components relating to the execution stack for the platform.
+The `execution` subpackage groups components relating to the execution stack for the platform.
 
 The layered architecture of the execution stack somewhat mirrors the
 data stack with a central engine, cache layer beneath, database layer

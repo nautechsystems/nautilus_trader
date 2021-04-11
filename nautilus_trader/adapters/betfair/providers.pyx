@@ -178,7 +178,7 @@ def parse_market_definition(market_definition):
         }
 
     def _parse_top_level():
-        """ Parse a market where all data is contained at the top level (ie keys are eventTypeId, competitionId) """
+        """ Parse a market where all data is contained at the top-level (ie keys are eventTypeId, competitionId) """
         return {
             "event_type_id": market_definition["eventTypeId"],
             "event_type_name": market_definition["eventTypeName"],
