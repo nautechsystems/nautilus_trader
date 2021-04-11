@@ -50,7 +50,7 @@ class TestClockHarness:
     @staticmethod
     def iteratively_advance_time():
         test_time = 0
-        for i in range(100000):
+        for _ in range(100000):
             test_time += 1
         test_clock.advance_time(to_time_ns=test_time)
 

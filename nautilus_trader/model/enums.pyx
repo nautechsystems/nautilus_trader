@@ -15,9 +15,7 @@
 
 # isort:skip_file
 
-"""
-Provides the C Enums as Python Enums for external use.
-"""
+"""Provides the C Enums as Python Enums for external use."""
 
 from nautilus_trader.model.c_enums.aggressor_side import AggressorSide              # noqa F401 (being used)
 from nautilus_trader.model.c_enums.asset_class import AssetClass                    # noqa F401 (being used)
