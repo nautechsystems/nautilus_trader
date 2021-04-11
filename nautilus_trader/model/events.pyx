@@ -1276,7 +1276,7 @@ cdef class InstrumentClosePrice(Event):
         InstrumentCloseType close_type,
         UUID event_id not None,
         int64_t timestamp_ns,
-    ) -> object:
+    ):
         """
         Initialize a new instance of the `InstrumentClosePrice` base class.
 
