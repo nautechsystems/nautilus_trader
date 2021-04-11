@@ -2,7 +2,7 @@
 
 **This release includes substantial breaking changes.**
 
-Due to recent feedback and much further thought - a major renaming as been carried
+Due to recent feedback and much further thought - a major renaming has been carried
 out involving order identifiers. The `Order` is the only domain object in the
 model which is identified with more than one ID. Due to this, more explicitness
 helps to ensure correct logic. Previously the `OrderId` was
