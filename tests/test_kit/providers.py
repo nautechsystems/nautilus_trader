@@ -15,7 +15,6 @@
 import bz2
 from decimal import Decimal
 import json
-import pathlib
 from typing import List
 
 from pandas import DataFrame
