@@ -30,6 +30,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -220,16 +221,22 @@ cdef class StatusEvent(Event):
 
 
 cdef class VenueStatusEvent(StatusEvent):
+    cdef readonly Venue venue
+    """The event venue.\n\n:returns: `Venue`"""
     cdef readonly VenueStatus status
     """The events venue status.\n\n:returns: `VenueStatus`"""
 
 
 cdef class InstrumentStatusEvent(StatusEvent):
+    cdef readonly InstrumentId instrument_id
+    """The event instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly InstrumentStatus status
     """The events instrument status.\n\n:returns: `InstrumentStatus`"""
 
 
 cdef class InstrumentClosePrice(Event):
+    cdef readonly InstrumentId instrument_id
+    """The event instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly Price close_price
     """The events close price.\n\n:returns: `Price`"""
     cdef readonly InstrumentCloseType close_type

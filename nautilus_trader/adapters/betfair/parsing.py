@@ -33,21 +33,25 @@ from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import hash_json
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
-from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import InstrumentCloseType
+from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import OrderBookOperationType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import InstrumentClosePrice
+from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -64,6 +68,9 @@ from nautilus_trader.model.orderbook.book import OrderBookOperations
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.tick import TradeTick
+
+
+uuid_factory = UUIDFactory()
 
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
@@ -150,9 +157,13 @@ def betfair_account_to_account_state(
     )
 
 
-def build_market_snapshot_messages(
-    raw, instrument_provider: BetfairInstrumentProvider
-) -> List[OrderBookSnapshot]:
+def build_market_snapshot_messages(self, raw) -> List[OrderBookSnapshot]:
+    # TODO
+    from nautilus_trader.adapters.betfair.data import BetfairDataClient
+
+    self = self  # type: BetfairDataClient
+    assert self
+
     updates = []
     for market in raw.get("mc", []):
         # Market status events
@@ -171,7 +182,7 @@ def build_market_snapshot_messages(
                         selection_id=str(selection_id),
                         handicap=str(handicap or "0.0"),
                     )
-                    instrument = instrument_provider.get_betting_instrument(**kw)
+                    instrument = self.instrument_provider().get_betting_instrument(**kw)
                     # Check we only have one of [best bets / depth bets / all bets]
                     bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
                     ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atl"]
@@ -202,124 +213,191 @@ def build_market_snapshot_messages(
     return updates
 
 
+def _handle_market_trades(runner, instrument, timestamp_ns):
+    trade_ticks = []
+    for price, volume in runner.get("trd", []):
+        # Betfair doesn't publish trade ids, so we make our own
+        # TODO - should we use clk here for ID instead of the hash?
+        trade_id = hash_json(
+            data=(
+                timestamp_ns,
+                instrument.market_id,
+                str(runner["id"]),
+                str(runner.get("hc", "0.0")),
+                price,
+                volume,
+            )
+        )
+        tick = TradeTick(
+            instrument_id=instrument.id,
+            price=Price(price_to_probability(price)),
+            size=Quantity(volume, precision=4),
+            side=OrderSide.BUY,
+            match_id=TradeMatchId(trade_id),
+            timestamp_ns=timestamp_ns,
+        )
+        trade_ticks.append(tick)
+    return trade_ticks
+
+
+def _handle_book_updates(runner, instrument, timestamp_ns):
+    operations = []
+    for side in B_SIDE_KINDS:
+        for upd in runner.get(side, []):
+            # TODO - Fix this crap
+            if len(upd) == 3:
+                _, price, volume = upd
+            else:
+                price, volume = upd
+            operations.append(
+                OrderBookOperation(
+                    op_type=OrderBookOperationType.DELETE
+                    if volume == 0
+                    else OrderBookOperationType.UPDATE,
+                    order=Order(
+                        price=price_to_probability(
+                            price, side=B2N_MARKET_STREAM_SIDE[side]
+                        ),
+                        volume=volume,
+                        side=B2N_MARKET_STREAM_SIDE[side],
+                    ),
+                    timestamp_ns=timestamp_ns,
+                )
+            )
+    if operations:
+        ob_update = OrderBookOperations(
+            level=OrderBookLevel.L2,
+            instrument_id=instrument.id,
+            ops=operations,
+            timestamp_ns=timestamp_ns,
+        )
+        return [ob_update]
+    else:
+        return []
+
+
+def _handle_market_close(runner, instrument, timestamp_ns):
+    if runner["status"] == "LOSER":
+        close_price = InstrumentClosePrice(
+            instrument_id=instrument.id,
+            close_price=Price(0.0, precision=4),
+            close_type=InstrumentCloseType.EXPIRED,
+            event_id=uuid_factory.generate(),
+            timestamp_ns=timestamp_ns,
+        )
+    elif runner["status"] == "WINNER":
+        close_price = InstrumentClosePrice(
+            instrument_id=instrument.id,
+            close_price=Price(1.0, precision=4),
+            close_type=InstrumentCloseType.EXPIRED,
+            event_id=uuid_factory.generate(),
+            timestamp_ns=timestamp_ns,
+        )
+    else:
+        raise ValueError("Unknown runner close status")
+    return [close_price]
+
+
+def _handle_market_status(market, instrument, timestamp_ns):
+    market_def = market.get("marketDefinition", {})
+    if "status" not in market_def:
+        return []
+    if market_def["status"] == "OPEN" and not market_def["inPlay"]:
+        status = InstrumentStatusEvent(
+            instrument_id=instrument.id,
+            status=InstrumentStatus.PRE_OPEN,
+            event_id=uuid_factory.generate(),
+            timestamp_ns=timestamp_ns,
+        )
+    elif market_def["status"] == "OPEN" and market_def["inPlay"]:
+        status = InstrumentStatusEvent(
+            instrument_id=instrument.id,
+            status=InstrumentStatus.OPEN,
+            event_id=uuid_factory.generate(),
+            timestamp_ns=timestamp_ns,
+        )
+    elif market_def["status"] == "SUSPENDED":
+        status = InstrumentStatusEvent(
+            instrument_id=instrument.id,
+            status=InstrumentStatus.PAUSE,
+            event_id=uuid_factory.generate(),
+            timestamp_ns=timestamp_ns,
+        )
+    elif market_def["status"] == "CLOSED":
+        status = InstrumentStatusEvent(
+            instrument_id=instrument.id,
+            status=InstrumentStatus.CLOSED,
+            event_id=uuid_factory.generate(),
+            timestamp_ns=timestamp_ns,
+        )
+    else:
+        raise ValueError("Unknown market status")
+    return [status]
+
+
 def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
-    raw, instrument_provider: BetfairInstrumentProvider
+    self, raw
 ) -> List[Union[OrderBookOperation, TradeTick]]:
     updates = []
+    timestamp_ns = millis_to_nanos(raw["pt"])
     for market in raw.get("mc", []):
-        market_id = market["id"]
-        for runner in market.get("rc", []):
+        for runner in market.get("marketDefinition", {}).get("runners", []):
             kw = dict(
-                market_id=market_id,
+                market_id=market["id"],
                 selection_id=str(runner["id"]),
                 handicap=str(runner.get("hc") or "0.0"),
             )
-            instrument = instrument_provider.get_betting_instrument(**kw)
+            instrument = self.instrument_provider().get_betting_instrument(**kw)
             if not instrument:
                 continue
-            operations = []
-            for side in B_SIDE_KINDS:
-                for upd in runner.get(side, []):
-                    # TODO - Fix this crap
-                    if len(upd) == 3:
-                        _, price, volume = upd
-                    else:
-                        price, volume = upd
-                    operations.append(
-                        OrderBookOperation(
-                            op_type=OrderBookOperationType.DELETE
-                            if volume == 0
-                            else OrderBookOperationType.UPDATE,
-                            order=Order(
-                                price=price_to_probability(
-                                    price, side=B2N_MARKET_STREAM_SIDE[side]
-                                ),
-                                volume=volume,
-                                side=B2N_MARKET_STREAM_SIDE[side],
-                            ),
-                            timestamp_ns=millis_to_nanos(raw["pt"]),
-                        )
-                    )
-            ob_update = OrderBookOperations(
-                level=OrderBookLevel.L2,
-                instrument_id=instrument.id,
-                ops=operations,
-                timestamp_ns=millis_to_nanos(raw["pt"]),
+            updates.extend(
+                _handle_market_status(
+                    market=market, instrument=instrument, timestamp_ns=timestamp_ns
+                )
             )
-            updates.append(ob_update)
-
-            for price, volume in runner.get("trd", []):
-                # Betfair doesn't publish trade ids, so we make our own
-                # TODO - should we use clk here?
-                trade_id = hash_json(
-                    data=(
-                        raw["pt"],
-                        market_id,
-                        str(runner["id"]),
-                        str(runner.get("hc", "0.0")),
-                        price,
-                        volume,
+            if market["marketDefinition"].get("status") == "CLOSED":
+                updates.extend(
+                    _handle_market_close(
+                        runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
                     )
                 )
-                trade_tick = TradeTick(
-                    instrument_id=instrument.id,
-                    price=Price(price_to_probability(price)),
-                    size=Quantity(volume, precision=4),
-                    side=OrderSide.BUY,
-                    match_id=TradeMatchId(trade_id),
-                    timestamp_ns=millis_to_nanos(raw["pt"]),
+        for runner in market.get("rc", []):
+            kw = dict(
+                market_id=market["id"],
+                selection_id=str(runner["id"]),
+                handicap=str(runner.get("hc") or "0.0"),
+            )
+            instrument = self.instrument_provider().get_betting_instrument(**kw)
+            if not instrument:
+                continue
+            updates.extend(
+                _handle_book_updates(
+                    runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
                 )
-                updates.append(trade_tick)
+            )
+            updates.extend(
+                _handle_market_trades(
+                    runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                )
+            )
 
-        if market.get("marketDefinition", {}).get("status") == "CLOSED":
-            for runner in market["marketDefinition"]["runners"]:
-                kw = dict(
-                    market_id=market_id,
-                    selection_id=str(runner["id"]),
-                    handicap=str(runner.get("hc") or "0.0"),
-                )
-                instrument = instrument_provider.get_betting_instrument(**kw)
-                assert instrument
-                # TODO - handle market closed
-                # on_market_status()
-
-                if runner["status"] == "LOSER":
-                    # TODO - handle closing valuation = 0
-                    pass
-                elif runner["status"] == "WINNER":
-                    # TODO handle closing valuation = 1
-                    pass
-        if (
-            market.get("marketDefinition", {}).get("inPlay")
-            and not market.get("marketDefinition", {}).get("status") == "CLOSED"
-        ):
-            for selection in market["marketDefinition"]["runners"]:
-                kw = dict(
-                    market_id=market_id,
-                    selection_id=str(selection["id"]),
-                    handicap=str(
-                        selection.get("hc", selection.get("handicap")) or "0.0"
-                    ),
-                )
-                instrument = instrument_provider.get_betting_instrument(**kw)
-                assert instrument
-                # TODO - handle instrument status IN_PLAY
     return updates
 
 
-def on_market_update(update: dict, instrument_provider: BetfairInstrumentProvider):
+def on_market_update(self, update: dict):
+    from nautilus_trader.adapters.betfair.data import BetfairDataClient
+
+    self = self  # type: BetfairDataClient
+    assert self
+
     if update.get("ct") == "HEARTBEAT":
-        # TODO - Do we send out heartbeats
+        # TODO - Should we send out heartbeats
         return []
     for mc in update.get("mc", []):
         if mc.get("img"):
-            return build_market_snapshot_messages(
-                update, instrument_provider=instrument_provider
-            )
+            return build_market_snapshot_messages(self, update)
         else:
-            return build_market_update_messages(
-                update, instrument_provider=instrument_provider
-            )
+            return build_market_update_messages(self, update)
     return []
 
 

@@ -23,6 +23,7 @@ from nautilus_trader.common.enums import LogColor
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message import Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
@@ -268,8 +269,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void _on_market_update(self, bytes raw) except *:
         cdef dict update = orjson.loads(raw)  # type: dict
-        updates = on_market_update(update=update, instrument_provider=self.instrument_provider())
+        updates = on_market_update(self=self, update=update)
         if not updates:
+            if update.get('op') == 'connection' or update.get('connectionsAvailable'):
+                return
             self._log.warning(f"Received message but parsed no updates: {update}")
             if update.get("statusCode") == 'FAILURE' and update.get('connectionClosed'):
                 # TODO - self._loop.create_task(self._stream.reconnect())
@@ -277,4 +280,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
                 raise RuntimeError()
         for upd in updates:
             self._log.debug(str(upd))
-            self.handle_data(data=upd)
+            if isinstance(upd, Data):
+                self._handle_data(data=upd)
+            elif isinstance(upd, Event):
+                self._engine(upd)

@@ -23,8 +23,12 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
+from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
+from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.events import InstrumentClosePrice
+from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook.book import L2OrderBook
@@ -181,7 +185,7 @@ def test_orderbook_updates(betfair_data_client):
     for raw in BetfairTestStubs.streaming_market_updates():
         for update in on_market_update(
             update=orjson.loads(raw),
-            instrument_provider=betfair_data_client.instrument_provider(),
+            self=betfair_data_client,
         ):
             if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                 continue
@@ -207,4 +211,75 @@ def test_orderbook_updates(betfair_data_client):
 [147.79]  0.8403
 [156.74]  0.8333
 [76.38]   0.8265"""
+    )
+
+
+def test_instrument_opening_events(betfair_data_client, data_engine, provider):
+    updates = BetfairTestStubs.raw_market_updates()
+    messages = on_market_update(self=betfair_data_client, update=updates[0])
+    assert len(messages) == 2
+    assert (
+        isinstance(messages[0], InstrumentStatusEvent)
+        and messages[0].status == InstrumentStatus.PRE_OPEN
+    )
+    assert (
+        isinstance(messages[1], InstrumentStatusEvent)
+        and messages[0].status == InstrumentStatus.PRE_OPEN
+    )
+
+
+def test_instrument_in_play_events(betfair_data_client, data_engine, provider):
+    events = [
+        msg
+        for update in BetfairTestStubs.raw_market_updates()
+        for msg in on_market_update(self=betfair_data_client, update=update)
+        if isinstance(msg, InstrumentStatusEvent)
+    ]
+    assert len(events) == 14
+    result = [ev.status for ev in events]
+    expected = [
+        InstrumentStatus.PRE_OPEN.value,
+        InstrumentStatus.PRE_OPEN.value,
+        InstrumentStatus.PRE_OPEN.value,
+        InstrumentStatus.PRE_OPEN.value,
+        InstrumentStatus.PRE_OPEN.value,
+        InstrumentStatus.PRE_OPEN.value,
+        InstrumentStatus.PAUSE.value,
+        InstrumentStatus.PAUSE.value,
+        InstrumentStatus.OPEN.value,
+        InstrumentStatus.OPEN.value,
+        InstrumentStatus.PAUSE.value,
+        InstrumentStatus.PAUSE.value,
+        InstrumentStatus.CLOSED.value,
+        InstrumentStatus.CLOSED.value,
+    ]
+    assert result == expected
+
+
+def test_instrument_closing_events(betfair_data_client, data_engine, provider):
+    updates = BetfairTestStubs.raw_market_updates()
+    messages = on_market_update(self=betfair_data_client, update=updates[-1])
+    assert len(messages) == 4
+    assert (
+        isinstance(messages[0], InstrumentStatusEvent)
+        and messages[0].status == InstrumentStatus.CLOSED
+    )
+    assert (
+        isinstance(messages[1], InstrumentClosePrice)
+        and messages[1].close_price == 1.0000
+    )
+    assert (
+        isinstance(messages[1], InstrumentClosePrice)
+        and messages[1].close_type == InstrumentCloseType.EXPIRED
+    )
+    assert (
+        isinstance(messages[2], InstrumentStatusEvent)
+        and messages[2].status == InstrumentStatus.CLOSED
+    )
+    assert (
+        isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
+    )
+    assert (
+        isinstance(messages[3], InstrumentClosePrice)
+        and messages[3].close_type == InstrumentCloseType.EXPIRED
     )

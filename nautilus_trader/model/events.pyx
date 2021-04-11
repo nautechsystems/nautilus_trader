@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
@@ -1201,6 +1202,7 @@ cdef class VenueStatusEvent(StatusEvent):
     """
     def __init__(
         self,
+        Venue venue,
         VenueStatus status,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -1223,6 +1225,7 @@ cdef class VenueStatusEvent(StatusEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
+                f"venue={self.venue}, "
                 f"status={VenueStatusParser.to_str(self.status)}, "
                 f"event_id={self.id})")
 
@@ -1233,6 +1236,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
     """
     def __init__(
         self,
+        InstrumentId instrument_id,
         InstrumentStatus status,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -1255,6 +1259,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id}, "
                 f"status={InstrumentStatusParser.to_str(self.status)}, "
                 f"event_id={self.id})")
 
@@ -1266,11 +1271,12 @@ cdef class InstrumentClosePrice(Event):
 
     def __init__(
         self,
+        InstrumentId instrument_id not None,
         Price close_price not None,
         InstrumentCloseType close_type,
         UUID event_id not None,
         int64_t timestamp_ns,
-    ):
+    ) -> object:
         """
         Initialize a new instance of the `InstrumentClosePrice` base class.
 
@@ -1292,6 +1298,7 @@ cdef class InstrumentClosePrice(Event):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id}, "
                 f"close_price={self.close_price}, "
                 f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)}, "
                 f"event_id={self.id})")

@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import bz2
 from decimal import Decimal
 import json
+import pathlib
 from typing import List
 
 from pandas import DataFrame
@@ -185,6 +187,42 @@ class TestDataProvider:
             msg
             for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
+        ]
+
+    @staticmethod
+    def flashscore_feed_raw_short():
+        from flashscore.tests.resources import RESOURCES_DIR
+
+        return (
+            RESOURCES_DIR.joinpath("raw_basketball_data.log")
+            .read_text()
+            .strip()
+            .split("\n")
+        )
+
+    @staticmethod
+    def flashscore_feed_raw():
+        from flashscore.tests.resources import RESOURCES_DIR
+
+        return RESOURCES_DIR.joinpath("nba20191229.log").read_text().strip().split("\n")
+
+    @staticmethod
+    def betfair_files():
+        return pathlib.Path(PACKAGE_ROOT + "/data/betfair").glob("*.bz2")
+
+    @staticmethod
+    def betfair_all_feed_raw():
+        return [
+            bz2.open(str(f)).read().strip().split(b"\n")
+            for f in TestDataProvider.betfair_files()
+        ]
+
+    @staticmethod
+    def betfair_feed_raw(market_id="1.166810222"):
+        return [
+            bz2.open(str(f)).read().strip().split(b"\n")
+            for f in TestDataProvider.betfair_files()
+            if market_id in str(f)
         ]
 
 
