@@ -27,8 +27,8 @@
               "sv": 0,
               "rac": "",
               "rc": "REG_GGC",
-              "rfo": "",
-              "rfs": ""
+              "rfo": "O-20210408-062924-001-001-2",
+              "rfs": "BetfairTestStrategy-001"
             },
             {
               "id": "78996704480",
@@ -47,8 +47,8 @@
               "sv": 0,
               "rac": "",
               "rc": "REG_GGC",
-              "rfo": "",
-              "rfs": ""
+              "rfo": "O-20210408-062924-001-001-2",
+              "rfs": "BetfairTestStrategy-001"
             }
           ]
         }

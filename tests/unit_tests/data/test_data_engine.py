@@ -44,6 +44,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orderbook.book import OrderBookOperations
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
@@ -710,6 +711,35 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual([ETHUSDT_BINANCE.id], self.data_engine.subscribed_order_books)
 
+    def test_execute_subscribe_order_book_data_then_adds_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        subscribe = Subscribe(
+            client_name=BINANCE.value,
+            data_type=DataType(
+                OrderBookData,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 10,
+                    "Interval": 0,
+                },
+            ),
+            handler=[].append,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual(
+            [ETHUSDT_BINANCE.id], self.data_engine.subscribed_order_book_data
+        )
+
     def test_execute_subscribe_order_book_intervals_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -765,6 +795,50 @@ class DataEngineTests(unittest.TestCase):
             client_name=BINANCE.value,
             data_type=DataType(
                 OrderBook,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Interval": 0,
+                },
+            ),
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_order_books)
+
+    def test_execute_unsubscribe_order_book_data_then_removes_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            client_name=BINANCE.value,
+            data_type=DataType(
+                OrderBookData,
+                metadata={
+                    "InstrumentId": ETHUSDT_BINANCE.id,
+                    "Level": 2,
+                    "Depth": 25,
+                    "Interval": 0,
+                },
+            ),
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            client_name=BINANCE.value,
+            data_type=DataType(
+                OrderBookData,
                 metadata={
                     "InstrumentId": ETHUSDT_BINANCE.id,
                     "Interval": 0,

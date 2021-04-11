@@ -388,6 +388,14 @@ cdef class OrderBook:
         else:
             return None
 
+    cpdef midpoint(self):
+        cdef Level top_bid_level = self.bids.top()
+        cdef Level top_ask_level = self.asks.top()
+        if top_bid_level and top_ask_level:
+            return (top_ask_level.price() + top_bid_level.price()) / 2.0
+        else:
+            return None
+
     cpdef str pprint(self, int num_levels=3, show='volume'):
         levels = [(lvl.price(), lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]]
         levels = list(reversed(sorted(levels, key=itemgetter(0))))
