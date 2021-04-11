@@ -99,12 +99,13 @@ def skip(app, what, name, obj, would_skip, options):  # noqa
     return would_skip
 
 
-def process_docstring(app, what, name, obj, options, lines):  # noqa
-    # loop through each line in the docstring and remove file reference
-    for i in range(len(lines)):
-        pass  # Nothing to do yet
+# TODO: This is probably redundant now?
+# def process_docstring(app, what, name, obj, options, lines):  # noqa
+#     # loop through each line in the docstring and remove file reference
+#     for i in range(len(lines)):
+#         pass  # Nothing to do yet
 
 
 def setup(app):  # noqa
     app.connect("autodoc-skip-member", skip)
-    app.connect("autodoc-process-docstring", process_docstring)
+    # app.connect("autodoc-process-docstring", process_docstring)

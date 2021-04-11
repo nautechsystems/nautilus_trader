@@ -144,7 +144,7 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def betfair_client():
         mock.patch("betfairlightweight.endpoints.login.Login.__call__")
-        return betfairlightweight.APIClient(
+        return betfairlightweight.APIClient(  # noqa (S106 Possible hardcoded password: 'password')
             username="username",
             password="password",
             app_key="app_key",

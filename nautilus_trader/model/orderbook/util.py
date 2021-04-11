@@ -125,6 +125,7 @@ def depth_for_volume(ladder, value, depth_type="volume"):
     :param value: volume to be filled
     :param depth_type: {'volume', 'exposure'}
     :return:
+
     >>> orders = [(100, 6), (90, 3), (85, 15), (80, 10), (70, 1)]
 
     >>> bids = Ladder([Order(price, volume, BID) for price, volume in orders], side=BID)
