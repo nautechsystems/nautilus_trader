@@ -31,7 +31,7 @@ from nautilus_trader.live.node import TradingNode
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
-market_id = "1.181246697"
+market_id = "1.181245757"
 config = {
     "trader": {
         "name": "TESTER",  # Not sent beyond system boundary
