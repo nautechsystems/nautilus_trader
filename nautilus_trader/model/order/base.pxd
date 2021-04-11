@@ -135,5 +135,6 @@ cdef class PassiveOrder(Order):
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
 
+    cdef list venue_order_ids_c(self)
+
     cdef void _set_slippage(self) except *
-    cpdef list venue_order_ids(self)
