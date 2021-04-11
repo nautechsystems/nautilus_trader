@@ -15,13 +15,11 @@ def test_order_submit_to_betfair(betting_instrument):
     command = BetfairTestStubs.submit_order_command()
     result = order_submit_to_betfair(command=command, instrument=betting_instrument)
     expected = {
-        "customer_ref": command.id.value,
-        "customer_strategy_ref": command.strategy_id.value,
+        "customer_ref": command.id.value.replace("-", ""),
+        "customer_strategy_ref": command.strategy_id.value[:15],
         "instructions": [
             {
-                "customerOrderRef": command.order.client_order_id.value.replace(
-                    "-", ""
-                ),
+                "customerOrderRef": command.order.client_order_id.value,
                 "handicap": "0",
                 "limitOrder": {
                     "minFillSize": 0,
