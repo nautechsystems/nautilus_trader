@@ -158,12 +158,6 @@ def betfair_account_to_account_state(
 
 
 def build_market_snapshot_messages(self, raw) -> List[OrderBookSnapshot]:
-    # TODO
-    from nautilus_trader.adapters.betfair.data import BetfairDataClient
-
-    self = self  # type: BetfairDataClient
-    assert self
-
     updates = []
     for market in raw.get("mc", []):
         # Market status events
@@ -385,11 +379,6 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
 
 
 def on_market_update(self, update: dict):
-    from nautilus_trader.adapters.betfair.data import BetfairDataClient
-
-    self = self  # type: BetfairDataClient
-    assert self
-
     if update.get("ct") == "HEARTBEAT":
         # TODO - Should we send out heartbeats
         return []
