@@ -67,8 +67,8 @@ async def test_submit_order(mocker, execution_client, exec_engine):
     assert isinstance(exec_engine.events[0], OrderSubmitted)
     expected = {
         "market_id": "1.179082386",
-        "customer_ref": command.id.value,
-        "customer_strategy_ref": command.strategy_id.value,
+        "customer_ref": command.id.value.replace("-", ""),
+        "customer_strategy_ref": command.strategy_id.value[:15],
         "instructions": [
             {
                 "orderType": "LIMIT",
@@ -81,9 +81,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
                     "size": 10.0,
                     "minFillSize": 0,
                 },
-                "customerOrderRef": command.order.client_order_id.value.replace(
-                    "-", ""
-                ),
+                "customerOrderRef": command.order.client_order_id.value,
             }
         ],
     }
@@ -133,7 +131,7 @@ async def test_update_order(mocker, execution_client, exec_engine):
     execution_client.update_order(update)
     await asyncio.sleep(0.1)
     expected = {
-        "customer_ref": update.id.value,
+        "customer_ref": update.id.value.replace("-", ""),
         "instructions": [{"betId": "229435133092", "newPrice": 1.35}],
         "market_id": "1.179082386",
     }
@@ -183,7 +181,7 @@ async def test_cancel_order(mocker, execution_client, exec_engine):
     execution_client.cancel_order(command)
     await asyncio.sleep(0.1)
     expected = {
-        "customer_ref": command.id.value,
+        "customer_ref": command.id.value.replace("-", ""),
         "instructions": [{"betId": "229597791245"}],
         "market_id": "1.179082386",
     }

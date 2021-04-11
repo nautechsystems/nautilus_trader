@@ -377,30 +377,38 @@ class TestEvents:
     def test_venue_status(self):
         uuid = uuid4()
         event = VenueStatusEvent(
+            venue=Venue("BINANCE"),
             status=VenueStatus.OPEN,
             event_id=uuid,
             timestamp_ns=0,
         )
-        assert f"VenueStatusEvent(status=OPEN, event_id={uuid})" == repr(event)
+        assert f"VenueStatusEvent(venue=BINANCE, status=OPEN, event_id={uuid})" == repr(
+            event
+        )
 
     def test_instrument_status(self):
         uuid = uuid4()
         event = InstrumentStatusEvent(
+            instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             status=InstrumentStatus.PAUSE,
             event_id=uuid,
             timestamp_ns=0,
         )
-        assert f"InstrumentStatusEvent(status=PAUSE, event_id={uuid})" == repr(event)
+        assert (
+            f"InstrumentStatusEvent(instrument_id=BTC/USDT.BINANCE, status=PAUSE, event_id={uuid})"
+            == repr(event)
+        )
 
     def test_instrument_close_price(self):
         uuid = uuid4()
         event = InstrumentClosePrice(
+            instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             close_price=Price(100.0, precision=0),
             close_type=InstrumentCloseType.EXPIRED,
             event_id=uuid,
             timestamp_ns=0,
         )
         assert (
-            f"InstrumentClosePrice(close_price=100, close_type=EXPIRED, event_id={uuid})"
+            f"InstrumentClosePrice(instrument_id=BTC/USDT.BINANCE, close_price=100, close_type=EXPIRED, event_id={uuid})"
             == repr(event)
         )

@@ -670,10 +670,10 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
         self.commands = []
         self.events = []
 
-    def execute(self, command):
+    def execute(self, command, execute=False):
         self.commands.append(command)
 
-    def process(self, event):
+    def process(self, event, process=False):
         self.events.append(event)
 
 
