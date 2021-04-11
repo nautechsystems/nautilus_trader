@@ -157,53 +157,46 @@ def betfair_account_to_account_state(
     )
 
 
-def build_market_snapshot_messages(self, raw) -> List[OrderBookSnapshot]:
+def _handle_market_snapshot(selection, instrument, timestamp_ns):
     updates = []
-    for market in raw.get("mc", []):
-        # Market status events
-        # market_definition = market.get("marketDefinition", {})
-        # TODO - Need to handle instrument status = CLOSED here
+    # Check we only have one of [best bets / depth bets / all bets]
+    bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
+    ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atl"]
+    assert len(bid_keys) <= 1
+    assert len(ask_keys) <= 1
 
-        # Orderbook snapshots
-        if market.get("img") is True:
-            market_id = market["id"]
-            for (selection_id, handicap), selections in itertools.groupby(
-                market.get("rc", []), lambda x: (x["id"], x.get("hc"))
-            ):
-                for selection in list(selections):
-                    kw = dict(
-                        market_id=market_id,
-                        selection_id=str(selection_id),
-                        handicap=str(handicap or "0.0"),
-                    )
-                    instrument = self.instrument_provider().get_betting_instrument(**kw)
-                    # Check we only have one of [best bets / depth bets / all bets]
-                    bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
-                    ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atl"]
-                    assert len(bid_keys) <= 1
-                    assert len(ask_keys) <= 1
-                    # TODO Clean this crap up
-                    if bid_keys[0] == "atb":
-                        bids = selection.get("atb", [])
-                    else:
-                        bids = [(p, v) for _, p, v in selection.get(bid_keys[0], [])]
-                    if ask_keys[0] == "atl":
-                        asks = selection.get("atl", [])
-                    else:
-                        asks = [(p, v) for _, p, v in selection.get(ask_keys[0], [])]
-                    snapshot = OrderBookSnapshot(
-                        level=OrderBookLevel.L2,
-                        instrument_id=instrument.id,
-                        bids=[
-                            (price_to_probability(p, OrderSide.BUY), v) for p, v in asks
-                        ],
-                        asks=[
-                            (price_to_probability(p, OrderSide.SELL), v)
-                            for p, v in bids
-                        ],
-                        timestamp_ns=millis_to_nanos(raw["pt"]),
-                    )
-                    updates.append(snapshot)
+    # Orderbook Snapshot
+    # TODO Clean this crap up
+    if bid_keys[0] == "atb":
+        bids = selection.get("atb", [])
+    else:
+        bids = [(p, v) for _, p, v in selection.get(bid_keys[0], [])]
+    if ask_keys[0] == "atl":
+        asks = selection.get("atl", [])
+    else:
+        asks = [(p, v) for _, p, v in selection.get(ask_keys[0], [])]
+    snapshot = OrderBookSnapshot(
+        level=OrderBookLevel.L2,
+        instrument_id=instrument.id,
+        bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
+        asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
+        timestamp_ns=timestamp_ns,
+    )
+    updates.append(snapshot)
+
+    # Trade Ticks
+    for price, volume in selection.get("trd", []):
+        trade_id = hash_json((timestamp_ns, price, volume))
+        tick = TradeTick(
+            instrument_id=instrument.id,
+            price=Price(price_to_probability(price)),
+            size=Quantity(volume, precision=4),
+            side=OrderSide.BUY,
+            match_id=TradeMatchId(trade_id),
+            timestamp_ns=timestamp_ns,
+        )
+        updates.append(tick)
+
     return updates
 
 
@@ -271,7 +264,7 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
 
 
 def _handle_market_close(runner, instrument, timestamp_ns):
-    if runner["status"] == "LOSER":
+    if runner["status"] in ("LOSER", "REMOVED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(0.0, precision=4),
@@ -288,11 +281,11 @@ def _handle_market_close(runner, instrument, timestamp_ns):
             timestamp_ns=timestamp_ns,
         )
     else:
-        raise ValueError("Unknown runner close status")
+        raise ValueError(f"Unknown runner close status: {runner['status']}")
     return [close_price]
 
 
-def _handle_market_status(market, instrument, timestamp_ns):
+def _handle_instrument_status(market, instrument, timestamp_ns):
     market_def = market.get("marketDefinition", {})
     if "status" not in market_def:
         return []
@@ -329,32 +322,81 @@ def _handle_market_status(market, instrument, timestamp_ns):
     return [status]
 
 
-def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
+def _handle_market_runners_status(self, market, timestamp_ns):
+    updates = []
+
+    for runner in market.get("marketDefinition", {}).get("runners", []):
+        kw = dict(
+            market_id=market["id"],
+            selection_id=str(runner["id"]),
+            handicap=str(runner.get("hc") or "0.0"),
+        )
+        instrument = self.instrument_provider().get_betting_instrument(**kw)
+        if not instrument:
+            continue
+        updates.extend(
+            _handle_instrument_status(
+                market=market, instrument=instrument, timestamp_ns=timestamp_ns
+            )
+        )
+        if market["marketDefinition"].get("status") == "CLOSED":
+            updates.extend(
+                _handle_market_close(
+                    runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                )
+            )
+    return updates
+
+
+def build_market_snapshot_messages(
     self, raw
-) -> List[Union[OrderBookOperation, TradeTick]]:
+) -> List[Union[OrderBookSnapshot, InstrumentStatusEvent]]:
     updates = []
     timestamp_ns = millis_to_nanos(raw["pt"])
     for market in raw.get("mc", []):
-        for runner in market.get("marketDefinition", {}).get("runners", []):
-            kw = dict(
-                market_id=market["id"],
-                selection_id=str(runner["id"]),
-                handicap=str(runner.get("hc") or "0.0"),
+        # Instrument Status
+        updates.extend(
+            _handle_market_runners_status(
+                self=self, market=market, timestamp_ns=timestamp_ns
             )
-            instrument = self.instrument_provider().get_betting_instrument(**kw)
-            if not instrument:
-                continue
-            updates.extend(
-                _handle_market_status(
-                    market=market, instrument=instrument, timestamp_ns=timestamp_ns
-                )
-            )
-            if market["marketDefinition"].get("status") == "CLOSED":
-                updates.extend(
-                    _handle_market_close(
-                        runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+        )
+
+        # Orderbook snapshots
+        if market.get("img") is True:
+            market_id = market["id"]
+            for (selection_id, handicap), selections in itertools.groupby(
+                market.get("rc", []), lambda x: (x["id"], x.get("hc"))
+            ):
+                for selection in list(selections):
+                    kw = dict(
+                        market_id=market_id,
+                        selection_id=str(selection_id),
+                        handicap=str(handicap or "0.0"),
                     )
-                )
+                    instrument = self.instrument_provider().get_betting_instrument(**kw)
+                    updates.extend(
+                        _handle_market_snapshot(
+                            selection=selection,
+                            instrument=instrument,
+                            timestamp_ns=timestamp_ns,
+                        )
+                    )
+    return updates
+
+
+def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
+    self, raw
+) -> List[
+    Union[OrderBookOperation, TradeTick, InstrumentStatusEvent, InstrumentClosePrice]
+]:
+    updates = []
+    timestamp_ns = millis_to_nanos(raw["pt"])
+    for market in raw.get("mc", []):
+        updates.extend(
+            _handle_market_runners_status(
+                self=self, market=market, timestamp_ns=timestamp_ns
+            )
+        )
         for runner in market.get("rc", []):
             kw = dict(
                 market_id=market["id"],

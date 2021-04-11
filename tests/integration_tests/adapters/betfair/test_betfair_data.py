@@ -148,7 +148,12 @@ def test_market_update_tv(betfair_data_client, data_engine):
 def test_market_update_live_image(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookSnapshot"] * 2
+    expected = (
+        ["OrderBookSnapshot"]
+        + ["TradeTick"] * 13
+        + ["OrderBookSnapshot"]
+        + ["TradeTick"] * 17
+    )
     assert result == expected
 
 
@@ -173,7 +178,7 @@ async def test_request_search_instruments(betfair_data_client, data_engine, uuid
 
 def test_orderbook_repr(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
-    ob_snap = data_engine.events[1]
+    ob_snap = data_engine.events[14]
     ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE))
     ob.apply_snapshot(ob_snap)
     print(ob.pprint())
