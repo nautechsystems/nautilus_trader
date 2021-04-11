@@ -276,9 +276,14 @@ cdef class SimulatedExchange:
                 order_book = L2OrderBook(instrument_id=instrument_id)
                 self._books[instrument_id] = order_book
             order_book.apply_operations(data)
-
-            bid = Price(order_book.best_bid_price(), instrument.price_precision)
-            ask = Price(order_book.best_ask_price(), instrument.price_precision)
+            if order_book.best_bid_price():
+                bid = Price(order_book.best_bid_price(), instrument.price_precision)
+            else:
+                bid = None
+            if order_book.best_ask_price():
+                ask = Price(order_book.best_ask_price(), instrument.price_precision)
+            else:
+                ask = None
 
         self._market_bids[instrument_id] = bid
         self._market_asks[instrument_id] = ask

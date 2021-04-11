@@ -78,6 +78,7 @@ from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.order.bracket cimport BracketOrder
 from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -333,6 +334,23 @@ cdef class TradingStrategy(Component):
         ----------
         order_book : OrderBook
             The order book received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_order_book_delta(self, OrderBookData data) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        order book snapshot.
+
+        Parameters
+        ----------
+        data : OrderBookData
+            The order book snapshot / operations received.
 
         Warnings
         --------
@@ -828,6 +846,66 @@ cdef class TradingStrategy(Component):
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_order_book_deltas(
+        self,
+        InstrumentId instrument_id,
+        OrderBookLevel level=OrderBookLevel.L2,
+        int depth=0,
+        int interval=0,
+        dict kwargs=None,
+    ) except *:
+        """
+        Subscribe to streaming `OrderBook` data for the given instrument identifier.
+
+        The `DataEngine` will only maintain one order book stream for each
+        instrument. Because of this the level, depth and kwargs for the stream will
+        be as per the last subscription request (this will also affect all
+        subscribers).
+
+        If interval is not specified then will receive every order book update.
+        Alternatively specify periodic snapshot intervals in seconds.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument identifier to subscribe to.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
+        interval : int, optional
+            The order book snapshot interval in seconds.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        Raises
+        ------
+        ValueError
+            If depth is negative.
+        ValueError
+            If delay is not None and interval is None.
+
+        """
+        Condition.not_none(self._data_engine, "self._data_engine")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_negative(depth, "depth")
+        Condition.not_negative(interval, "interval")
+
+        cdef Subscribe command = Subscribe(
+            client_name=instrument_id.venue.value,
+            data_type=DataType(OrderBookData, metadata={
+                INSTRUMENT_ID: instrument_id,
+                LEVEL: level,
+                DEPTH: depth,
+                INTERVAL: interval,
+                KWARGS: kwargs,
+            }),
+            handler=self.handle_order_book_delta,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
 
         self._send_data_cmd(command)
 
@@ -969,6 +1047,37 @@ cdef class TradingStrategy(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_name=instrument_id.venue.value,
             data_type=DataType(OrderBook, metadata={
+                INSTRUMENT_ID: instrument_id,
+                INTERVAL: interval,
+            }),
+            handler=self.handle_order_book,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, int interval=0) except *:
+        """
+        Unsubscribe from `OrderBook` data for the given instrument identifier.
+
+        The interval must match the previously defined interval if unsubscribing
+        from snapshots.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+        interval : int, optional
+            The order book snapshot interval in seconds.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(self._data_engine, "self._data_engine")
+
+        cdef Unsubscribe command = Unsubscribe(
+            client_name=instrument_id.venue.value,
+            data_type=DataType(OrderBookData, metadata={
                 INSTRUMENT_ID: instrument_id,
                 INTERVAL: interval,
             }),
@@ -1573,6 +1682,31 @@ cdef class TradingStrategy(Component):
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_order_book(order_book)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise
+
+    cpdef void handle_order_book_delta(self, OrderBookData data) except *:
+        """
+        Handle the given order book snapshot.
+
+        Calls `on_order_book_delta` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        operations : OrderBookOperations
+            The received order book operations.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(data, "data")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_order_book_delta(data)
             except Exception as ex:
                 self.log.exception(ex)
                 raise

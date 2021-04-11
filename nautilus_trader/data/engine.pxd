@@ -49,6 +49,7 @@ cdef class DataEngine(Component):
     cdef dict _correlation_index
     cdef dict _instrument_handlers
     cdef dict _order_book_handlers
+    cdef dict _order_book_delta_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
     cdef dict _bar_handlers
@@ -97,6 +98,7 @@ cdef class DataEngine(Component):
     cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
     cdef inline void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef inline void _handle_subscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, handler: callable) except *  # noqa
+    cdef inline void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, handler: callable) except *  # noqa
     cdef inline void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef inline void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef inline void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type, handler: callable) except *

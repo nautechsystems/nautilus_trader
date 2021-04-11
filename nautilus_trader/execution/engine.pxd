@@ -26,6 +26,7 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent

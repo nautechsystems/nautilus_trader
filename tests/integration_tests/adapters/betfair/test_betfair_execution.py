@@ -61,13 +61,14 @@ async def test_submit_order(mocker, execution_client, exec_engine):
         "betfairlightweight.endpoints.betting.Betting.place_orders",
         return_value=BetfairTestStubs.place_orders_success(),
     )
-    execution_client.submit_order(BetfairTestStubs.submit_order_command())
+    command = BetfairTestStubs.submit_order_command()
+    execution_client.submit_order(command)
     await asyncio.sleep(0.01)
     assert isinstance(exec_engine.events[0], OrderSubmitted)
     expected = {
         "market_id": "1.179082386",
-        "customer_ref": "1",
-        "customer_strategy_ref": "1",
+        "customer_ref": command.id.value,
+        "customer_strategy_ref": command.strategy_id.value,
         "instructions": [
             {
                 "orderType": "LIMIT",
@@ -80,7 +81,9 @@ async def test_submit_order(mocker, execution_client, exec_engine):
                     "size": 10.0,
                     "minFillSize": 0,
                 },
-                "customerOrderRef": "1",
+                "customerOrderRef": command.order.client_order_id.value.replace(
+                    "-", ""
+                ),
             }
         ],
     }
@@ -125,13 +128,12 @@ async def test_update_order(mocker, execution_client, exec_engine):
 
     # Actual test
     update = BetfairTestStubs.update_order_command(
-        instrument_id=order.instrument_id,
-        client_order_id=order.client_order_id,
+        instrument_id=order.instrument_id, client_order_id=order.client_order_id
     )
     execution_client.update_order(update)
     await asyncio.sleep(0.1)
     expected = {
-        "customer_ref": order.client_order_id.value,
+        "customer_ref": update.id.value,
         "instructions": [{"betId": "229435133092", "newPrice": 1.35}],
         "market_id": "1.179082386",
     }
@@ -177,11 +179,12 @@ async def test_cancel_order(mocker, execution_client, exec_engine):
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",
         return_value=BetfairTestStubs.cancel_orders_success(),
     )
-    execution_client.cancel_order(BetfairTestStubs.cancel_order_command())
+    command = BetfairTestStubs.cancel_order_command()
+    execution_client.cancel_order(command)
     await asyncio.sleep(0.1)
     expected = {
-        "customer_ref": "1",
-        "instructions": [{"betId": "1"}],
+        "customer_ref": command.id.value,
+        "instructions": [{"betId": "229597791245"}],
         "market_id": "1.179082386",
     }
 
@@ -268,7 +271,7 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.01)
-    assert len(exec_engine.events) == 0
+    assert len(exec_engine.events) == 1
 
 
 @pytest.mark.asyncio

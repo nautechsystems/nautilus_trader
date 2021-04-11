@@ -318,6 +318,36 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         # Do nothing else for backtest
 
+    cpdef void subscribe_order_book_deltas(
+        self,
+        InstrumentId instrument_id,
+        OrderBookLevel level,
+        int depth=0,
+        dict kwargs=None,
+    ) except *:
+        """
+        Subscribe to `OrderBook` data for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to order book deltas for {instrument_id} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Subscribe to `QuoteTick` data for the given instrument identifier.
