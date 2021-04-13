@@ -38,7 +38,7 @@ class ForexSession(Enum):
 
 cdef class ForexSessionFilter:
     """
-    Provides methods to help filter trading strategy rules dependant on Forex session times.
+    Provides methods to help filter trading strategy rules dependent on Forex session times.
     """
 
     def __init__(self):

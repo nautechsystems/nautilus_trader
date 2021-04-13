@@ -21,7 +21,8 @@ import orjson
 
 def flatten_tree(y: Dict, **filters):
     """
-    Flatten a nested dict into a list of dicts with each nested level combined into a singe dict
+    Flatten a nested dict into a list of dicts with each nested level combined
+    into a single dict.
 
     :param y: Dict
     :param filters: Filter keys
