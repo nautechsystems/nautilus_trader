@@ -42,7 +42,6 @@ ib_insync = "^0.9.65"
 importlib-metadata = { version = "^1.2.0", python = "<3.8" }
 msgpack = "^1.0.2"
 numpy = "^1.20.2"
-numpydoc = { version = "^1.1.0", optional = true }
 oandapyV20 = "^0.6.3"
 pandas = "^1.2.4"
 psutil = "^5.8.0"
@@ -62,6 +61,7 @@ coverage = "^4.5.4"
 flake8 = "^3.9.0"
 isort = "^5.8.0"
 nox = "^2020.12.31"
+numpydoc = "^1.1.0"
 parameterized = "^0.8.1"
 pre-commit = "^2.12.0"
 pytest = "^6.2.3"
@@ -70,12 +70,8 @@ pytest-benchmark = "^3.2.3"
 pytest-cov = "^2.10.1"
 pytest-mock = "^3.5.1"
 pytest-xdist = { version = "^2.2.0", extras = ["psutil"] }
-sphinx = { version = "^3.4.3", optional = true }
-sphinx-rtd-theme = { version = "^0.5.1", optional = true }
-
-[tool.poetry.extras]
-docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
-
+sphinx = "^3.4.3"
+sphinx-rtd-theme =  "^0.5.2"
 
 #################
 # Test configs #
