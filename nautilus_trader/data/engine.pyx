@@ -69,7 +69,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBookData
-from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -669,8 +669,7 @@ cdef class DataEngine(Component):
         # Always re-subscribe to override previous settings
         client.subscribe_order_book_deltas(
             instrument_id=instrument_id,
-            level=metadata.get(LEVEL),
-            depth=metadata.get(DEPTH),
+            level=metadata[LEVEL],
             kwargs=metadata.get(KWARGS),
         )
 
@@ -1036,8 +1035,8 @@ cdef class DataEngine(Component):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
-        elif isinstance(data, OrderBookOperations):
-            self._handle_order_book_operations(data)
+        elif isinstance(data, OrderBookDeltas):
+            self._handle_order_book_deltas(data)
         elif isinstance(data, OrderBookSnapshot):
             self._handle_order_book_snapshot(data)
         elif isinstance(data, Bar):
@@ -1075,15 +1074,15 @@ cdef class DataEngine(Component):
         for handler in tick_handlers:
             handler(tick)
 
-    cdef inline void _handle_order_book_operations(self, OrderBookOperations operations) except *:
-        cdef InstrumentId instrument_id = operations.instrument_id
+    cdef inline void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
+        cdef InstrumentId instrument_id = deltas.instrument_id
         cdef OrderBook order_book = self.cache.order_book(instrument_id)
         if order_book is None:
-            self._log.error(f"Cannot apply `OrderBookOperations`: "
-                            f"no book found for {operations.instrument_id}.")
+            self._log.error(f"Cannot apply `OrderBookDeltas`: "
+                            f"no book found for {deltas.instrument_id}.")
             return
 
-        order_book.apply_operations(operations)
+        order_book.apply_deltas(deltas)
 
         # Send to all registered order book handlers for that instrument_id
         cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])
@@ -1093,7 +1092,7 @@ cdef class DataEngine(Component):
         # Send to all registered order book delta handlers for that instrument_id
         cdef list order_book_delta_handlers = self._order_book_delta_handlers.get(instrument_id, [])
         for orderbook_delta_handler in order_book_delta_handlers:
-            orderbook_delta_handler(operations)
+            orderbook_delta_handler(deltas)
 
     cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
         cdef InstrumentId instrument_id = snapshot.instrument_id

@@ -18,8 +18,8 @@ from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookOperation
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import TradeTick
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -34,10 +34,10 @@ def test_betfair_orderbook(betfair_data_client, provider):
         for message in on_market_update(self=betfair_data_client, update=update):
             if isinstance(message, OrderBookSnapshot):
                 book.apply_snapshot(message)
-            elif isinstance(message, OrderBookOperations):
-                book.apply_operations(message)
-            elif isinstance(message, OrderBookOperation):
-                book.apply_operation(message)
+            elif isinstance(message, OrderBookDeltas):
+                book.apply_deltas(message)
+            elif isinstance(message, OrderBookDelta):
+                book.apply_delta(message)
             elif isinstance(
                 message, (TradeTick, InstrumentStatusEvent, InstrumentClosePrice)
             ):
