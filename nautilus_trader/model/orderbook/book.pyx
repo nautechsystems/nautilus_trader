@@ -19,9 +19,9 @@ from tabulate import tabulate
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaType
+from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaTypeParser
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.c_enums.orderbook_op cimport OrderBookOperationType
-from nautilus_trader.model.c_enums.orderbook_op cimport OrderBookOperationTypeParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -100,6 +100,8 @@ cdef class OrderBook:
             The order to add.
 
         """
+        Condition.not_none(order, "order")
+
         self._add(order=order)
 
     cpdef void update(self, Order order) except *:
@@ -112,6 +114,8 @@ cdef class OrderBook:
             The order to update.
 
         """
+        Condition.not_none(order, "order")
+
         self._update(order=order)
 
     cpdef void delete(self, Order order) except *:
@@ -124,15 +128,47 @@ cdef class OrderBook:
             The order to delete.
 
         """
+        Condition.not_none(order, "order")
+
         self._delete(order=order)
 
-    cpdef void apply_operation(self, OrderBookOperation operation) except *:
-        if operation.type == OrderBookOperationType.ADD:
-            self.add(order=operation.order)
-        elif operation.type == OrderBookOperationType.UPDATE:
-            self.update(order=operation.order)
-        elif operation.type == OrderBookOperationType.DELETE:
-            self.delete(order=operation.order)
+    cpdef void apply_delta(self, OrderBookDelta delta) except *:
+        """
+        Apply the order book delta.
+
+        Parameters
+        ----------
+        delta : OrderBookDelta
+            The delta to apply.
+
+        """
+        Condition.not_none(delta, "delta")
+
+        self._apply_delta(delta)
+
+    cpdef void apply_deltas(self, OrderBookDeltas deltas) except *:
+        """
+        Apply the bulk deltas to the order book.
+
+        Parameters
+        ----------
+        deltas : OrderBookDeltas
+            The deltas to apply.
+
+        Raises
+        ------
+        ValueError
+            If snapshot.level is not equal to self.level.
+
+        """
+        Condition.not_none(deltas, "deltas")
+        Condition.equal(deltas.level, self.level, "deltas.level", "self.level")
+
+        cdef OrderBookDelta delta
+        for delta in deltas.deltas:
+            self._apply_delta(delta)
+
+        self.last_update_timestamp_ns = deltas.timestamp_ns
 
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
         """
@@ -149,6 +185,7 @@ cdef class OrderBook:
             If snapshot.level is not equal to self.level.
 
         """
+        Condition.not_none(snapshot, "snapshot")
         Condition.equal(snapshot.level, self.level, "snapshot.level", "self.level")
 
         self.clear()
@@ -158,29 +195,6 @@ cdef class OrderBook:
             self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
 
         self.last_update_timestamp_ns = snapshot.timestamp_ns
-
-    cpdef void apply_operations(self, OrderBookOperations operations) except *:
-        """
-        Apply the bulk operations to the order book.
-
-        Parameters
-        ----------
-        operations : OrderBookOperations
-            The operations to apply.
-
-        Raises
-        ------
-        ValueError
-            If snapshot.level is not equal to self.level.
-
-        """
-        Condition.equal(operations.level, self.level, "operations.level", "self.level")
-
-        cdef OrderBookOperation op
-        for op in operations.ops:
-            self._apply_operation(op)
-
-        self.last_update_timestamp_ns = operations.timestamp_ns
 
     cpdef void check_integrity(self) except *:
         """
@@ -213,13 +227,13 @@ cdef class OrderBook:
         self.clear_bids()
         self.clear_asks()
 
-    cdef inline void _apply_operation(self, OrderBookOperation op) except *:
-        if op.type == OrderBookOperationType.ADD:
-            self.add(order=op.order)
-        elif op.type == OrderBookOperationType.UPDATE:
-            self.update(order=op.order)
-        elif op.type == OrderBookOperationType.DELETE:
-            self.delete(order=op.order)
+    cdef inline void _apply_delta(self, OrderBookDelta delta) except *:
+        if delta.type == OrderBookDeltaType.ADD:
+            self.add(order=delta.order)
+        elif delta.type == OrderBookDeltaType.UPDATE:
+            self.update(order=delta.order)
+        elif delta.type == OrderBookDeltaType.DELETE:
+            self.delete(order=delta.order)
 
     cdef inline void _add(self, Order order) except *:
         """
@@ -472,6 +486,8 @@ cdef class L2OrderBook(OrderBook):
             The order to add.
 
         """
+        Condition.not_none(order, "order")
+
         self._process_order(order=order)
         self._add(order=order)
 
@@ -485,6 +501,8 @@ cdef class L2OrderBook(OrderBook):
             The order to update.
 
         """
+        Condition.not_none(order, "order")
+
         self._process_order(order=order)
         self._remove_if_exists(order)
         self._update(order=order)
@@ -499,6 +517,8 @@ cdef class L2OrderBook(OrderBook):
             The order to delete.
 
         """
+        Condition.not_none(order, "order")
+
         self._process_order(order=order)
         self._delete(order=order)
 
@@ -571,6 +591,8 @@ cdef class L1OrderBook(OrderBook):
             The order to update.
 
         """
+        Condition.not_none(order, "order")
+
         # Because of the way we typically get updates from a L1 order book (bid
         # and ask updates at the same time), its quite probable that the last
         # bid is now the ask price we are trying to insert (or vice versa). We
@@ -600,6 +622,8 @@ cdef class L1OrderBook(OrderBook):
             The order to delete.
 
         """
+        Condition.not_none(order, "order")
+
         self._delete(order=self._process_order(order=order))
 
     cpdef void check_integrity(self) except *:
@@ -698,20 +722,20 @@ cdef class OrderBookSnapshot(OrderBookData):
                 f"timestamp_ns={self.timestamp_ns})")
 
 
-cdef class OrderBookOperations(OrderBookData):
+cdef class OrderBookDeltas(OrderBookData):
     """
-    Represents bulk operations for an `OrderBook`.
+    Represents bulk changes for an `OrderBook`.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
         OrderBookLevel level,
-        list ops not None,
+        list deltas not None,
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookOperations` class.
+        Initialize a new instance of the `OrderBookDeltas` class.
 
         Parameters
         ----------
@@ -719,53 +743,53 @@ cdef class OrderBookOperations(OrderBookData):
             The instrument identifier for the book.
         level : OrderBookLevel (Enum)
             The order book level (L1, L2, L3).
-        ops : list
-            The list of order book operations.
+        deltas : list[OrderBookDelta]
+            The list of order book changes.
         timestamp_ns : int64
             The Unix timestamp (nanos) of the operations.
 
         """
         super().__init__(instrument_id, timestamp_ns)
         self.level = level
-        self.ops = ops
+        self.deltas = deltas
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
-                f"{self.ops}, "
+                f"{self.deltas}, "
                 f"timestamp_ns={self.timestamp_ns})")
 
 
-cdef class OrderBookOperation:
+cdef class OrderBookDelta:
     """
-    Represents a single operation on an `OrderBook`.
+    Represents a single difference on an `OrderBook`.
     """
 
     def __init__(
         self,
-        OrderBookOperationType op_type,
+        OrderBookDeltaType delta_type,
         Order order not None,
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookOperation` class.
+        Initialize a new instance of the `OrderBookDelta` class.
 
         Parameters
         ----------
-        op_type : OrderBookOperationType
-            The type of operation (ADD, UPDATED, DELETE).
+        delta_type : OrderBookDeltaType
+            The type of change (ADD, UPDATED, DELETE).
         order : Order
             The order to apply.
         timestamp_ns : int64
             The Unix timestamp (nanos) of the operation.
 
         """
-        self.type = op_type
+        self.type = delta_type
         self.order = order
         self.timestamp_ns = timestamp_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"{OrderBookOperationTypeParser.to_str(self.type)}, "
+                f"{OrderBookDeltaTypeParser.to_str(self.type)}, "
                 f"{self.order}, "
                 f"timestamp_ns={self.timestamp_ns})")

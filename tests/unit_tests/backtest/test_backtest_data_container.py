@@ -19,12 +19,12 @@ from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import OrderBookOperationType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.orderbook.book import OrderBookOperation
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.providers import TestDataProvider
@@ -113,50 +113,50 @@ class TestBacktestDataContainer:
         # Arrange
         data = BacktestDataContainer()
 
-        ops = [
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+        deltas = [
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(13.0, 40, OrderSide.SELL),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(12.0, 30, OrderSide.SELL),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(11.0, 20, OrderSide.SELL),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(10.0, 20, OrderSide.BUY),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(9.0, 30, OrderSide.BUY),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(0.0, 40, OrderSide.BUY),
                 timestamp_ns=0,
             ),
         ]
 
-        operations1 = OrderBookOperations(
+        operations1 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
-            ops=ops,
+            deltas=deltas,
             timestamp_ns=0,
         )
 
-        operations2 = OrderBookOperations(
+        operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
-            ops=ops,
+            deltas=deltas,
             timestamp_ns=1000,
         )
 

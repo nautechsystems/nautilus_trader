@@ -45,7 +45,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookData
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -965,15 +965,15 @@ class DataEngineTests(unittest.TestCase):
 
         self.data_engine.execute(subscribe)
 
-        ops = OrderBookOperations(
+        deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
-            ops=[],
+            deltas=[],
             timestamp_ns=0,
         )
 
         # Act
-        self.data_engine.process(ops)
+        self.data_engine.process(deltas)
 
         # Assert
         assert self.data_engine.subscribed_order_books == [ETHUSDT_BINANCE.id]

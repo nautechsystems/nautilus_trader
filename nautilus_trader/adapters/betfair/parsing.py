@@ -45,8 +45,8 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import OrderBookOperationType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
@@ -63,8 +63,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
-from nautilus_trader.model.orderbook.book import OrderBookOperation
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.tick import TradeTick
@@ -228,7 +228,7 @@ def _handle_market_trades(runner, instrument, timestamp_ns):
 
 
 def _handle_book_updates(runner, instrument, timestamp_ns):
-    operations = []
+    deltas = []
     for side in B_SIDE_KINDS:
         for upd in runner.get(side, []):
             # TODO - Fix this crap
@@ -236,11 +236,11 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                 _, price, volume = upd
             else:
                 price, volume = upd
-            operations.append(
-                OrderBookOperation(
-                    op_type=OrderBookOperationType.DELETE
+            deltas.append(
+                OrderBookDelta(
+                    delta_type=OrderBookDeltaType.DELETE
                     if volume == 0
-                    else OrderBookOperationType.UPDATE,
+                    else OrderBookDeltaType.UPDATE,
                     order=Order(
                         price=price_to_probability(
                             price, side=B2N_MARKET_STREAM_SIDE[side]
@@ -251,11 +251,11 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                     timestamp_ns=timestamp_ns,
                 )
             )
-    if operations:
-        ob_update = OrderBookOperations(
+    if deltas:
+        ob_update = OrderBookDeltas(
             level=OrderBookLevel.L2,
             instrument_id=instrument.id,
-            ops=operations,
+            deltas=deltas,
             timestamp_ns=timestamp_ns,
         )
         return [ob_update]
@@ -387,7 +387,7 @@ def build_market_snapshot_messages(
 def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
     self, raw
 ) -> List[
-    Union[OrderBookOperation, TradeTick, InstrumentStatusEvent, InstrumentClosePrice]
+    Union[OrderBookDelta, TradeTick, InstrumentStatusEvent, InstrumentClosePrice]
 ]:
     updates = []
     timestamp_ns = millis_to_nanos(raw["pt"])

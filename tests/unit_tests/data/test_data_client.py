@@ -30,7 +30,7 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -360,15 +360,15 @@ class MarketDataClientTests(unittest.TestCase):
 
     def test_handle_order_book_operations_sends_to_data_engine(self):
         # Arrange
-        ops = OrderBookOperations(
+        deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
-            ops=[],
+            deltas=[],
             timestamp_ns=0,
         )
 
         # Act
-        self.client._handle_data_py(ops)
+        self.client._handle_data_py(deltas)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)

@@ -25,14 +25,14 @@ from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
-from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
+from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import TradeTick
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -111,20 +111,20 @@ def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
 def test_market_resub_delta(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_RESUB_DELTA())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookOperations"] * 284
+    expected = ["OrderBookDeltas"] * 284
     assert result == expected
 
 
 def test_market_update(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_UPDATE())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookOperations"] * 1
+    expected = ["OrderBookDeltas"] * 1
     assert result == expected
-    result = [op.type for op in data_engine.events[0].ops]
-    expected = [OrderBookOperationType.UPDATE, OrderBookOperationType.DELETE]
+    result = [op.type for op in data_engine.events[0].deltas]
+    expected = [OrderBookDeltaType.UPDATE, OrderBookDeltaType.DELETE]
     assert result == expected
     # Ensure order prices are coming through as probability
-    update_op = data_engine.events[0].ops[0]
+    update_op = data_engine.events[0].deltas[0]
     assert update_op.order.price == 0.21277
 
 
@@ -160,7 +160,7 @@ def test_market_update_live_image(betfair_data_client, data_engine):
 def test_market_update_live_update(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_UPDATE())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookOperations", "TradeTick"]
+    expected = ["OrderBookDeltas", "TradeTick"]
     assert result == expected
 
 
@@ -200,8 +200,8 @@ def test_orderbook_updates(betfair_data_client):
                     instrument_id=update.instrument_id
                 )
                 order_books[update.instrument_id].apply_snapshot(update)
-            elif isinstance(update, OrderBookOperations):
-                order_books[update.instrument_id].apply_operations(update)
+            elif isinstance(update, OrderBookDeltas):
+                order_books[update.instrument_id].apply_deltas(update)
             elif isinstance(update, TradeTick):
                 pass
             else:

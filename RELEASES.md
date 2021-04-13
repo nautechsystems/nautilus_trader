@@ -1,9 +1,11 @@
 # NautilusTrader 1.116.0 Beta - Release Notes
 
-TODO: Update version to 1.116.0
 TODO: Poetry update
 
 ## Breaking Changes
+- Rename `OrderBookOperation` to `OrderBookDelta`.
+- Rename `OrderBookOperations` to `OrderBookDeltas`.
+- Rename `OrderBookOperationType` to `OrderBookDeltaType`.
 - Standardize client IDs to upper case.
 
 ## Enhancements
