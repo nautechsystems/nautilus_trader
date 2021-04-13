@@ -135,6 +135,7 @@ Index
     integrations/ccxtpro
     integrations/binance
     integrations/bitmex
+    integrations/betfair
 
 .. toctree::
     :glob:
