@@ -55,6 +55,7 @@ jobs:
         run: |
           redis-server --daemonize yes
           nox -s coverage --reuse-existing-virtualenvs
+          nox -s build_docs --reuse-existing-virtualenvs
           redis-cli shutdown
 
       # Upload to codecov
