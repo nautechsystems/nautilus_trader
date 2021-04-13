@@ -51,7 +51,7 @@ pytz = "^2020.5"
 redis = "3.5.3"
 scipy = "^1.6.1"
 tabulate = "^0.8.9"
-uvloop = { version = "^0.14.0", markers = "sys_platform != 'win32'" }
+uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
