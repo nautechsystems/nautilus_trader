@@ -549,8 +549,8 @@ cdef class Order:
         if self.avg_px is None:
             return last_px
 
-        total_quantity: Decimal = self.filled_qty + last_qty
-        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_quantity
+        total_qty: Decimal = self.filled_qty + last_qty
+        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
 
 
 cdef class PassiveOrder(Order):
