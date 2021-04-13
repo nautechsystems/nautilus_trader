@@ -50,12 +50,15 @@ jobs:
       - name: Install Redis
         run: sudo apt-get install redis-server
 
+      # Run docs build
+      - name: Run docs build
+        run: nox -s build_docs --reuse-existing-virtualenvs
+
       # Run coverage
       - name: Run coverage
         run: |
           redis-server --daemonize yes
           nox -s coverage --reuse-existing-virtualenvs
-          nox -s build_docs --reuse-existing-virtualenvs
           redis-cli shutdown
 
       # Upload to codecov
