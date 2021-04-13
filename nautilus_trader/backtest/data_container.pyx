@@ -316,22 +316,22 @@ cdef class BacktestDataContainer:
 
         # Check that all bar DataFrames for each instrument_id are of the same shape and index
         cdef dict shapes = {}  # type: dict[BarAggregation, tuple]
-        cdef dict indexs = {}  # type: dict[BarAggregation, DatetimeIndex]
+        cdef dict indices = {}  # type: dict[BarAggregation, DatetimeIndex]
         for instrument_id, data in self.bars_bid.items():
             for aggregation, dataframe in data.items():
                 if aggregation not in shapes:
                     shapes[aggregation] = dataframe.shape
-                if aggregation not in indexs:
-                    indexs[aggregation] = dataframe.index
+                if aggregation not in indices:
+                    indices[aggregation] = dataframe.index
                 if dataframe.shape != shapes[aggregation]:
                     raise RuntimeError(f"{dataframe} bid ask shape is not equal")
-                if not all(dataframe.index == indexs[aggregation]):
+                if not all(dataframe.index == indices[aggregation]):
                     raise RuntimeError(f"{dataframe} bid ask index is not equal")
         for instrument_id, data in self.bars_ask.items():
             for aggregation, dataframe in data.items():
                 if dataframe.shape != shapes[aggregation]:
                     raise RuntimeError(f"{dataframe} bid ask shape is not equal")
-                if not all(dataframe.index == indexs[aggregation]):
+                if not all(dataframe.index == indices[aggregation]):
                     raise RuntimeError(f"{dataframe} bid ask index is not equal")
 
     def has_quote_data(self, InstrumentId instrument_id) -> bool:
