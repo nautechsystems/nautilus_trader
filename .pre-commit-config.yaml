@@ -1,15 +1,9 @@
 repos:
+
   - repo: https://github.com/PyCQA/isort
     rev: 5.8.0
     hooks:
       - id: isort
-        name: isort (python)
-      - id: isort
-        name: isort (cython)
-        types: [cython]
-      - id: isort
-        name: isort (pyi)
-        types: [pyi]
 
   - repo: https://github.com/psf/black
     rev: 20.8b1
@@ -35,7 +29,15 @@ repos:
         args: [--remove]
       - id: forbid-new-submodules # Check for git submodules
       - id: end-of-file-fixer
+        exclude: \.txt$
       - id: trailing-whitespace
+
+  -   repo: https://github.com/codespell-project/codespell
+      rev: v2.0.0
+      hooks:
+        -   id: codespell
+            description: Checks for common misspellings.
+            types_or: [python, rst, markdown]  # TODO: Add Cython
 
   - repo: https://gitlab.com/PyCQA/flake8
     rev: 3.9.0
