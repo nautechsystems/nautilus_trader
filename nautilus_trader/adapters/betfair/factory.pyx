@@ -43,9 +43,11 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
 
         Parameters
         ----------
+        name : str
+            The name of the client.
         config : dict
             The configuration dictionary.
-        data_engine : LiveDataEngine
+        engine : LiveDataEngine
             The data engine for the Nautilus clients.
         clock : LiveClock
             The clock for the clients.
@@ -92,14 +94,18 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         Parameters
         ----------
+        name : str
+            The name of the client.
         config : dict
             The configuration dictionary.
-        exec_engine : LiveDataEngine
+        engine : LiveDataEngine
             The execution engine for the Nautilus clients.
         clock : LiveClock
             The clock for the clients.
         logger : LiveLogger
             The logger for the clients.
+        client_cls : class
+            The class to call to return a new internal client.
 
         Returns
         -------

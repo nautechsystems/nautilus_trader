@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Set
 import betfairlightweight
 import orjson
 
+from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -29,10 +30,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-
-from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
-
-from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
@@ -94,6 +92,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
+        market_filter : dict
+            The market filter.
+        load_instruments : bool
+            If all instruments should be loaded on instantiation.
 
         """
         self._client = client  # type: betfairlightweight.APIClient
@@ -125,6 +127,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids = set()  # type: Set[(ClientOrderId, VenueOrderId)]
 
     cpdef void connect(self) except *:
+        """
+        Connect the client.
+        """
         self._loop.create_task(self._connect())
 
     async def _connect(self):
@@ -142,7 +147,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
-        """ Disconnect the client """
+        """
+        Disconnect the client.
+        """
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -334,7 +341,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 # -- ORDER STREAM API ------------------------------------------------------------------------------
 
     cpdef void handle_order_stream_update(self, bytes raw) except *:
-        """ Handle an update from the order stream socket """
+        """
+        Handle an update from the order stream socket.
+        """
         cdef dict update = orjson.loads(raw)  # type: dict
         self._loop.create_task(self._handle_order_stream_update(update=update))
 

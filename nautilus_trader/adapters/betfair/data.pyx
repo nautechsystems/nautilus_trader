@@ -83,6 +83,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
+        market_filter : dict
+            The market filter.
+        load_instruments : bool
+            If all instruments should be loaded on instantiation.
 
         """
 
@@ -135,7 +139,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
-        """ Disconnect the client """
+        """
+        Disconnect the client.
+        """
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -205,7 +211,13 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book(
+        self,
+        InstrumentId instrument_id,
+        OrderBookLevel level,
+        int depth=0,
+        dict kwargs=None,
+    ) except *:
         """
         Subscribe to `OrderBook` data for the given instrument identifier.
 
@@ -213,6 +225,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The Instrument id to subscribe to order books.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -251,8 +265,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cdef inline void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-
-# -- Debugging ---------------------------------------------------------------------------------------
+# -- DEBUGGING -------------------------------------------------------------------------------------
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider

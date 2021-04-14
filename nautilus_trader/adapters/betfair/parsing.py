@@ -74,7 +74,9 @@ uuid_factory = UUIDFactory()
 
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
-    """ Convert a SubmitOrder command into the data required by betfairlightweight """
+    """
+    Convert a SubmitOrder command into the data required by betfairlightweight.
+    """
 
     order = command.order  # type: LimitOrder
     return {
@@ -111,7 +113,9 @@ def order_update_to_betfair(
     side: OrderSide,
     instrument: BettingInstrument,
 ):
-    """ Convert an UpdateOrder command into the data required by betfairlightweight """
+    """
+    Convert an UpdateOrder command into the data required by betfairlightweight.
+    """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
@@ -127,7 +131,9 @@ def order_update_to_betfair(
 
 
 def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):
-    """ Convert a SubmitOrder command into the data required by betfairlightweight """
+    """
+    Convert a SubmitOrder command into the data required by betfairlightweight.
+    """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),

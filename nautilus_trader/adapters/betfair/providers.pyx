@@ -39,16 +39,26 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     Provides a means of loading `BettingInstruments` from the Betfair APIClient.
     """
 
-    def __init__(self, client not None: APIClient, logger: Logger, bint load_all=True, dict market_filter=None):
+    def __init__(
+        self,
+        client not None: APIClient,
+        Logger logger,
+        bint load_all=True,
+        dict market_filter=None,
+    ):
         """
-        Initialize a new instance of the `CCXTInstrumentProvider` class.
+        Initialize a new instance of the `BetfairInstrumentProvider` class.
 
         Parameters
         ----------
         client : APIClient
             The client for the provider.
+        logger : Logger
+            The logger for the client.
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
+        market_filter : dict
+            The market filter.
 
         """
         super().__init__()
@@ -92,11 +102,15 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         assert self._instruments, "Instruments empty, has `load_all()` been called?"
 
     cpdef list search_markets(self, dict market_filter=None):
-        """ Search for betfair markets. Useful for debugging / interactive use """
+        """
+        Search for betfair markets. Useful for debugging / interactive use.
+        """
         return load_markets(client=self._client, market_filter=market_filter)
 
     cpdef list search_instruments(self, dict instrument_filter=None, bint load=True):
-        """ Search for instruments within the cache. Useful for debugging / interactive use """
+        """
+        Search for instruments within the cache. Useful for debugging / interactive use.
+        """
         key = tuple((instrument_filter or {}).items())
         if key not in self._searched_filters and load:
             self._log.info(f"Searching for instruments with filter: {instrument_filter}")
@@ -110,7 +124,9 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         return instruments
 
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
-        """ Performance friendly instrument lookup """
+        """
+        Performance friendly instrument lookup.
+        """
         key = (market_id, selection_id, handicap)
         if key not in self._cache:
             instrument_filter = {'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': handicap}
@@ -146,7 +162,9 @@ def parse_market_definition(market_definition):
         market_definition["marketId"] = market_id
 
     def _parse_grouped():
-        """ Parse a market where data is grouped by type (ie keys are {'competition': {'id': 1, 'name': 'NBA') """
+        """
+        Parse a market where data is grouped by type (ie keys are {'competition': {'id': 1, 'name': 'NBA').
+        """
         return {
             "event_type_id": market_definition["eventType"]["id"],
             "event_type_name": market_definition["eventType"]["name"],
@@ -178,7 +196,9 @@ def parse_market_definition(market_definition):
         }
 
     def _parse_top_level():
-        """ Parse a market where all data is contained at the top-level (ie keys are eventTypeId, competitionId) """
+        """
+        Parse a market where all data is contained at the top-level (ie keys are eventTypeId, competitionId).
+        """
         return {
             "event_type_id": market_definition["eventTypeId"],
             "event_type_name": market_definition["eventTypeName"],
