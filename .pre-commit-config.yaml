@@ -14,7 +14,6 @@ repos:
     rev: v3.4.0
     hooks:
       - id: check-builtin-literals
-      - id: check-byte-order-marker
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-json
