@@ -24,7 +24,7 @@ exclude =
    dist
    docs
    noxfile.py
-ignore = B305, E203, E225, E227, E252, E402, E999, D100, D101, D102, W503, S101, S403
+ignore = B305, C101, E203, E225, E227, E252, E402, E999, D100, D101, D102, W503, S101, S403
 max-complexity = 10
 max-line-length = 150
 statistics = True
@@ -37,6 +37,7 @@ statistics = True
 # Ignores justification
 # ---------------------
 # B305 `.next()` is not a thing on Python 3. (incorrectly picking up methods named next)
+# C101 Coding magic comment not found
 # D100 Missing docstring in public module (picks up entire test suite)
 # D101 Missing docstring in public class (picks up entire test suite)
 # D102 Missing docstring in public method (picks up entire test suite)
