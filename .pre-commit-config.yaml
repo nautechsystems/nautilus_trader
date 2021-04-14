@@ -13,6 +13,15 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v3.4.0
     hooks:
+      - id: forbid-new-submodules
+      - id: fix-encoding-pragma
+        args: [--remove]
+      - id: end-of-file-fixer
+        types_or: [python, cython]
+      - id: trailing-whitespace
+        types_or: [python, cython]
+      - id: debug-statements
+      - id: detect-private-key
       - id: check-builtin-literals
       - id: check-case-conflict
       - id: check-executables-have-shebangs
@@ -22,14 +31,6 @@ repos:
       - id: check-toml
       - id: check-xml
       - id: check-yaml
-      - id: debug-statements
-      - id: detect-private-key
-      - id: fix-encoding-pragma
-        args: [--remove]
-      - id: forbid-new-submodules # Check for git submodules
-      - id: end-of-file-fixer
-        exclude: \.txt$
-      - id: trailing-whitespace
 
   -   repo: https://github.com/codespell-project/codespell
       rev: v2.0.0
