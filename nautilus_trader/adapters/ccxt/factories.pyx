@@ -56,7 +56,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
         logger : LiveLogger
             The logger for the clients.
         client_cls : class
-            The class to call to return a new CCXT Pro client.
+            The class to call to return a new internal client.
 
         Returns
         -------
