@@ -34,7 +34,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 betfairlightweight = {extras = ["speed"], version = "^2.12.1"}
-ccxt = "^1.47.60"
+ccxt = "^1.47.91"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 ib_insync = "^0.9.65"
@@ -57,9 +57,11 @@ uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
 # https://github.com/cython/cython/issues/3515
 # A commit was pushed on 7/1/21 to fix the above,
 # possibly fixed in the next version of Cython.
+black = "^20.8.b1"
 coverage = "^4.5.4"
 flake8 = "^3.9.0"
 isort = "^5.8.0"
+mypy = "^0.812"
 nox = "^2020.12.31"
 numpydoc = "^1.1.0"
 parameterized = "^0.8.1"
