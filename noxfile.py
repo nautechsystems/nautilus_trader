@@ -1,3 +1,5 @@
+import tempfile
+
 import nox
 from nox.sessions import Session
 
@@ -58,6 +60,22 @@ def build_docs(session: Session) -> None:
     """Build documentation."""
     _setup_poetry(session)
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
+
+
+@nox.session
+def safety(session):
+    with tempfile.NamedTemporaryFile() as requirements:
+        session.run(
+            "poetry",
+            "export",
+            "--dev",
+            "--format=requirements.txt",
+            "--without-hashes",
+            f"--output={requirements.name}",
+            external=True,
+        )
+        session.install("safety")
+        session.run("safety", "check", f"--file={requirements.name}", "--full-report")
 
 
 def _setup_poetry(session: Session, *args, **kwargs) -> None:
