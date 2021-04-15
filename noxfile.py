@@ -63,6 +63,13 @@ def build_docs(session: Session) -> None:
 
 
 @nox.session
+def mypy(session):
+    """Run mypy on all of neko."""
+    _setup_poetry(session)
+    session.run("mypy", ".", external=True)
+
+
+@nox.session
 def safety(session):
     with tempfile.NamedTemporaryFile() as requirements:
         session.run(
