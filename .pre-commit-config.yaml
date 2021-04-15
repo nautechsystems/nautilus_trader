@@ -10,6 +10,45 @@ repos:
     hooks:
       - id: black
 
+  - repo: https://gitlab.com/PyCQA/flake8
+    rev: 3.9.0
+    hooks:
+      - id: flake8
+        name: flake8 (python)
+        additional_dependencies:
+          - flake8-bandit
+          - flake8-black
+          - flake8-bugbear
+          - flake8-coding
+          #          - flake8-comprehensions
+          - flake8-debugger
+          - flake8-deprecated
+          #          - flake8-docstrings
+          - flake8-pep3101
+          - flake8-string-format
+          #          - flake8-rst-docstrings
+          - flake8-typing-imports
+        #          - pep8-naming
+        types: [python]
+      - id: flake8
+        name: flake8 (cython)
+        additional_dependencies:
+          - flake8-bandit
+          - flake8-black
+          - flake8-bugbear
+          - flake8-coding
+          - flake8-comprehensions
+          - flake8-debugger
+          - flake8-deprecated
+          - flake8-docstrings
+          - flake8-pep3101
+          - flake8-polyfill
+          - flake8-string-format
+          - flake8-rst-docstrings
+          - flake8-typing-imports
+          - pep8-naming
+        types: [cython]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v3.4.0
     hooks:
@@ -38,42 +77,3 @@ repos:
         -   id: codespell
             description: Checks for common misspellings.
             types_or: [python, rst, markdown]  # TODO: Add Cython
-
-  - repo: https://gitlab.com/PyCQA/flake8
-    rev: 3.9.0
-    hooks:
-      - id: flake8
-        name: flake8 (python)
-        additional_dependencies:
-          - flake8-bandit
-          - flake8-black
-          - flake8-bugbear
-          - flake8-coding
-#          - flake8-comprehensions
-          - flake8-debugger
-          - flake8-deprecated
-#          - flake8-docstrings
-          - flake8-pep3101
-          - flake8-string-format
-#          - flake8-rst-docstrings
-          - flake8-typing-imports
-#          - pep8-naming
-        types: [python]
-      - id: flake8
-        name: flake8 (cython)
-        additional_dependencies:
-          - flake8-bandit
-          - flake8-black
-          - flake8-bugbear
-          - flake8-coding
-          - flake8-comprehensions
-          - flake8-debugger
-          - flake8-deprecated
-          - flake8-docstrings
-          - flake8-pep3101
-          - flake8-polyfill
-          - flake8-string-format
-          - flake8-rst-docstrings
-          - flake8-typing-imports
-          - pep8-naming
-        types: [cython]
