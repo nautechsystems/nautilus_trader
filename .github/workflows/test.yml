@@ -4,13 +4,9 @@ name: test
 
 on:
   push:
-    branches-ignore:
-      - "master"
-      - "dependabot/**"
+    branches: [ develop ]
   pull_request:
-    branches-ignore:
-      - "master"
-      - "dependabot/**"
+    branches: [ develop ]
 
 jobs:
   test:

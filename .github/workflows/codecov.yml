@@ -2,12 +2,9 @@ name: codecov
 
 on:
   push:
-    branches-ignore:
-      - "dependabot/**"
+    branches: [ master, develop ]
   pull_request:
-    branches-ignore:
-      - "master"
-      - "dependabot/**"
+    branches: [ develop ]
 
 jobs:
   codecov:
