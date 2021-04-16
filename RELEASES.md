@@ -1,6 +1,8 @@
 # NautilusTrader 1.116.0 Beta - Release Notes
 
-TODO: Poetry update
+**This release includes substantial breaking changes.**
+
+Further fundamental changes to the core API have been made.
 
 ## Breaking Changes
 - Introduce `ClientId` for data and execution client identification.
