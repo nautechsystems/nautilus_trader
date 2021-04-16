@@ -46,7 +46,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
         Parameters
         ----------
         name : str
-            The name for the client.
+            The client name.
         config : dict
             The configuration dictionary.
         engine : LiveDataEngine
@@ -134,7 +134,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         Parameters
         ----------
         name : str
-            The name for the client.
+            The client name.
         config : dict
             The configuration dictionary.
         engine : LiveDataEngine

@@ -34,6 +34,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
+from nautilus_trader.model.identifiers cimport ClientId
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -100,7 +101,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             market_filter=market_filter
         )
         super().__init__(
-            BETFAIR_VENUE.value,
+            ClientId(BETFAIR_VENUE.value),
             engine,
             clock,
             logger,

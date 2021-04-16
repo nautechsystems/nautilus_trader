@@ -26,6 +26,7 @@ from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -36,8 +37,8 @@ cdef class DataClient:
     cdef DataEngine _engine
     cdef dict _config
 
-    cdef readonly str name
-    """The clients name.\n\n:returns: `str`"""
+    cdef readonly ClientId id
+    """The client identifier.\n\n:returns: `ClientId`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 

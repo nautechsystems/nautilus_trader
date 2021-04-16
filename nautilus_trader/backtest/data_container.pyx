@@ -34,6 +34,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBookData
@@ -49,7 +50,7 @@ cdef class BacktestDataContainer:
         Initialize a new instance of the `BacktestDataContainer` class.
         """
         self._added_instrument_ids = set()  # type: set[InstrumentId]
-        self.clients = {}                   # type: dict[str, type]
+        self.clients = {}                   # type: dict[ClientId, type]
         self.generic_data = []              # type: list[GenericData]
         self.books = []                     # type: list[InstrumentId]
         self.order_book_data = []           # type: list[OrderBookData]
@@ -59,14 +60,14 @@ cdef class BacktestDataContainer:
         self.bars_bid = {}                  # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
         self.bars_ask = {}                  # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
 
-    def add_generic_data(self, str client_name, list data) -> None:
+    def add_generic_data(self, ClientId client_id, list data) -> None:
         """
         Add the generic data to the container.
 
         Parameters
         ----------
-        client_name : str
-            The data client name to associate with the generic data.
+        client_id : ClientId
+            The data client identifier to associate with the generic data.
         data : list[GenericData]
             The data to add.
 
@@ -76,14 +77,14 @@ cdef class BacktestDataContainer:
             If data is empty.
 
         """
-        Condition.not_none(client_name, "client_name")
+        Condition.not_none(client_id, "client_id")
         Condition.not_none(data, "data")
         Condition.not_empty(data, "data")
         Condition.list_type(data, GenericData, "data")
 
         # Add to clients to be constructed in backtest engine
-        if client_name not in self.clients:
-            self.clients[client_name] = BacktestDataClient
+        if client_id not in self.clients:
+            self.clients[client_id] = BacktestDataClient
 
         # Add data
         cdef GenericData x
@@ -117,10 +118,10 @@ cdef class BacktestDataContainer:
         if instrument_id not in self.books:
             self.books.append(instrument_id)
 
-        cdef str client_name = instrument_id.venue.first()
+        cdef ClientId client_id = instrument_id.venue.client_id
         # Add to clients to be constructed in backtest engine
-        if client_name not in self.clients:
-            self.clients[client_name] = BacktestMarketDataClient
+        if client_id not in self.clients:
+            self.clients[client_id] = BacktestMarketDataClient
 
         # Add data
         cdef OrderBookData x
@@ -142,9 +143,9 @@ cdef class BacktestDataContainer:
         Condition.not_none(instrument, "instrument")
 
         # Add to clients to be constructed in backtest engine
-        cdef str client_name = instrument.id.venue.first()
-        if client_name not in self.clients:
-            self.clients[client_name] = BacktestMarketDataClient
+        cdef ClientId client_id = instrument.id.venue.client_id
+        if client_id not in self.clients:
+            self.clients[client_id] = BacktestMarketDataClient
 
         # Add data
         self.instruments[instrument.id] = instrument
@@ -180,9 +181,9 @@ cdef class BacktestDataContainer:
         self._added_instrument_ids.add(instrument_id)
 
         # Add to clients to be constructed in backtest engine
-        cdef str client_name = instrument_id.venue.first()
-        if client_name not in self.clients:
-            self.clients[client_name] = BacktestMarketDataClient
+        cdef ClientId client_id = instrument_id.venue.client_id
+        if client_id not in self.clients:
+            self.clients[client_id] = BacktestMarketDataClient
 
         # Add data
         self.quote_ticks[instrument_id] = data
@@ -219,9 +220,9 @@ cdef class BacktestDataContainer:
         self._added_instrument_ids.add(instrument_id)
 
         # Add to clients to be constructed in backtest engine
-        cdef str client_name = instrument_id.venue.first()
-        if client_name not in self.clients:
-            self.clients[client_name] = BacktestMarketDataClient
+        cdef ClientId client_id = instrument_id.venue.client_id
+        if client_id not in self.clients:
+            self.clients[client_id] = BacktestMarketDataClient
 
         # Add data
         self.trade_ticks[instrument_id] = data
@@ -264,9 +265,9 @@ cdef class BacktestDataContainer:
         self._added_instrument_ids.add(instrument_id)
 
         # Add to clients to be constructed in backtest engine
-        cdef str client_name = instrument_id.venue.first()
-        if client_name not in self.clients:
-            self.clients[client_name] = BacktestMarketDataClient
+        cdef ClientId client_id = instrument_id.venue.client_id
+        if client_id not in self.clients:
+            self.clients[client_id] = BacktestMarketDataClient
 
         # Add data
         if price_type == PriceType.BID:

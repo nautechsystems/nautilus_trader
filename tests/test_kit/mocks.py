@@ -34,6 +34,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
@@ -266,7 +267,7 @@ class MockMarketDataClient(MarketDataClient):
 
     def __init__(
         self,
-        name: str,
+        client_id: ClientId,
         engine: DataEngine,
         clock: Clock,
         logger: Logger,
@@ -276,8 +277,8 @@ class MockMarketDataClient(MarketDataClient):
 
         Parameters
         ----------
-        name : str
-            The venue the client can provide data for.
+        client_id : ClientId
+            The client identifier.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -287,7 +288,7 @@ class MockMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             engine,
             clock,
             logger,
@@ -400,7 +401,7 @@ class MockExecutionClient(ExecutionClient):
 
     def __init__(
         self,
-        name,
+        client_id,
         account_id,
         engine,
         clock,
@@ -411,8 +412,8 @@ class MockExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        name : str
-            The venue for the client.
+        client_id : ClientId
+            The client identifier.
         account_id : AccountId
             The account_id for the client.
         engine : ExecutionEngine
@@ -424,7 +425,7 @@ class MockExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             account_id,
             engine,
             clock,
@@ -480,7 +481,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     def __init__(
         self,
-        name,
+        client_id,
         account_id,
         engine,
         instrument_provider,
@@ -492,8 +493,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         Parameters
         ----------
-        name : str
-            The venue for the client.
+        client_id : ClientId
+            The client identifier.
         account_id : AccountId
             The account_id for the client.
         engine : ExecutionEngine
@@ -507,7 +508,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             account_id,
             engine,
             instrument_provider,

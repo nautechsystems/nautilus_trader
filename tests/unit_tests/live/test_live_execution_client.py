@@ -28,6 +28,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -90,7 +91,7 @@ class TestLiveExecutionClient:
         )
 
         self.client = MockLiveExecutionClient(
-            name=SIM.value,
+            client_id=ClientId(SIM.value),
             account_id=self.account_id,
             engine=self.engine,
             instrument_provider=InstrumentProvider(),
@@ -146,7 +147,7 @@ class TestLiveExecutionClient:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id,
+                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
                 self.account_id,
                 strategy.id,
@@ -202,7 +203,7 @@ class TestLiveExecutionClient:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id,
+                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
                 self.account_id,
                 strategy.id,
@@ -260,7 +261,7 @@ class TestLiveExecutionClient:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id,
+                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
                 self.account_id,
                 strategy.id,

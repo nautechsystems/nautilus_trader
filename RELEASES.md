@@ -3,10 +3,11 @@
 TODO: Poetry update
 
 ## Breaking Changes
+- Introduce `ClientId` for data and execution client identification.
+- Standardize client IDs to upper case.
 - Rename `OrderBookOperation` to `OrderBookDelta`.
 - Rename `OrderBookOperations` to `OrderBookDeltas`.
 - Rename `OrderBookOperationType` to `OrderBookDeltaType`.
-- Standardize client IDs to upper case.
 
 ## Enhancements
 None

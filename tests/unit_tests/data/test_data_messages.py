@@ -21,6 +21,7 @@ from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -44,7 +45,7 @@ class DataMessageTests(unittest.TestCase):
         command_id = self.uuid_factory.generate()
 
         command = Subscribe(
-            client_name=BINANCE.value,
+            client_id=ClientId(BINANCE.value),
             data_type=DataType(str, {"type": "newswire"}),  # str data type is invalid
             handler=handler,
             command_id=command_id,
@@ -55,7 +56,7 @@ class DataMessageTests(unittest.TestCase):
         self.assertEqual("Subscribe(<str> {'type': 'newswire'})", str(command))
         self.assertEqual(
             f"Subscribe("
-            f"client_name=BINANCE, "
+            f"client_id=BINANCE, "
             f"data_type=<str> {{'type': 'newswire'}}, "
             f"handler={repr(handler)}, "
             f"id={command_id})",
@@ -69,7 +70,7 @@ class DataMessageTests(unittest.TestCase):
         request_id = self.uuid_factory.generate()
 
         request = DataRequest(
-            client_name=BINANCE.value,
+            client_id=ClientId(BINANCE.value),
             data_type=DataType(
                 str,
                 metadata={  # str data type is invalid
@@ -93,7 +94,7 @@ class DataMessageTests(unittest.TestCase):
         )
         self.assertEqual(
             f"DataRequest("
-            f"client_name=BINANCE, "
+            f"client_id=BINANCE, "
             f"data_type=<str> {{'InstrumentId': InstrumentId('SOMETHING.RANDOM'), "
             f"'FromDateTime': None, "
             f"'ToDateTime': None, "
@@ -111,7 +112,7 @@ class DataMessageTests(unittest.TestCase):
         instrument_id = InstrumentId(Symbol("AUD/USD"), IDEALPRO)
 
         response = DataResponse(
-            client_name=BINANCE.value,
+            client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick, metadata={"InstrumentId": instrument_id}),
             data=[],
             correlation_id=correlation_id,
@@ -126,7 +127,7 @@ class DataMessageTests(unittest.TestCase):
         )
         self.assertEqual(
             f"DataResponse("
-            f"client_name=BINANCE, "
+            f"client_id=BINANCE, "
             f"data_type=<QuoteTick> {{'InstrumentId': InstrumentId('AUD/USD.IDEALPRO')}}, "
             f"correlation_id={correlation_id}, "
             f"id={response_id})",

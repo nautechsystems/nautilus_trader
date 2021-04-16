@@ -65,6 +65,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
@@ -110,23 +111,23 @@ cdef class DataEngine(Component):
         super().__init__(clock, logger, name="DataEngine")
 
         self._use_previous_close = config.get("use_previous_close", True)
-        self._clients = {}               # type: dict[str, DataClient]
-        self._correlation_index = {}     # type: dict[UUID, callable]
+        self._clients = {}                    # type: dict[ClientId, DataClient]
+        self._correlation_index = {}          # type: dict[UUID, callable]
 
         # Handlers
-        self._instrument_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._order_book_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._order_book_delta_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._quote_tick_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._trade_tick_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._bar_handlers = {}          # type: dict[BarType, list[callable]]
-        self._data_handlers = {}         # type: dict[DataType, list[callable]]
+        self._instrument_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._order_book_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._order_book_delta_handlers = {}  # type: dict[InstrumentId, list[callable]]
+        self._quote_tick_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._trade_tick_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._bar_handlers = {}               # type: dict[BarType, list[callable]]
+        self._data_handlers = {}              # type: dict[DataType, list[callable]]
 
         # Aggregators
-        self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
+        self._bar_aggregators = {}            # type: dict[BarType, BarAggregator]
 
         # OrderBook indexes
-        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
+        self._order_book_intervals = {}       # type: dict[(InstrumentId, int), list[callable]]
 
         # Public components
         self.portfolio = portfolio
@@ -147,7 +148,7 @@ cdef class DataEngine(Component):
 
         Returns
         -------
-        list[str]
+        list[ClientId]
 
         """
         return sorted(list(self._clients.keys()))
@@ -287,9 +288,9 @@ cdef class DataEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.name, self._clients, "client", "self._clients")
+        Condition.not_in(client.id, self._clients, "client", "self._clients")
 
-        self._clients[client.name] = client
+        self._clients[client.id] = client
 
         self._log.info(f"Registered {client}.")
 
@@ -320,9 +321,9 @@ cdef class DataEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.is_in(client.name, self._clients, "client.name", "self._clients")
+        Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
-        del self._clients[client.name]
+        del self._clients[client.id]
         self._log.info(f"Deregistered {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
@@ -446,10 +447,10 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef DataClient client = self._clients.get(command.client_name)
+        cdef DataClient client = self._clients.get(command.client_id)
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"(no client registered for '{command.client_name}' in {self.registered_clients})"
+                            f"(no client registered for '{command.client_id}' in {self.registered_clients})"
                             f" {command}.")
             return  # No client to handle command
 
@@ -763,7 +764,8 @@ cdef class DataEngine(Component):
             try:
                 client.subscribe(data_type)
             except NotImplementedError:
-                self._log.error(f"Cannot subscribe: {client.name} has not implemented data type {data_type} subscriptions.")
+                self._log.error(f"Cannot subscribe: {client.id.value} "
+                                f"has not implemented data type {data_type} subscriptions.")
                 return
             self._data_handlers[data_type] = []  # type: list[callable]
             self._log.info(f"Subscribed to {data_type} data.")
@@ -973,10 +975,10 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{REQ} {request}.")
         self.request_count += 1
 
-        cdef DataClient client = self._clients.get(request.client_name)
+        cdef DataClient client = self._clients.get(request.client_id)
         if client is None:
             self._log.error(f"Cannot handle request: "
-                            f"no client registered for '{request.client_name}', {request}.")
+                            f"no client registered for '{request.client_id}', {request}.")
             return  # No client to handle request
 
         if request.id in self._correlation_index:
@@ -1306,7 +1308,7 @@ cdef class DataEngine(Component):
         # noinspection bulk_updater.receive
         # noinspection PyUnresolvedReferences
         request = DataRequest(
-            client_name=bar_type.instrument_id.venue.value,
+            client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),

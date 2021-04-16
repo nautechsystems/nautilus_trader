@@ -26,6 +26,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -65,7 +66,7 @@ class DataClientTests(unittest.TestCase):
         self.venue = Venue("SIM")
 
         self.client = DataClient(
-            name="TEST_PROVIDER",
+            client_id=ClientId("TEST_PROVIDER"),
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
@@ -162,7 +163,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.venue = Venue("SIM")
 
         self.client = MarketDataClient(
-            name=self.venue.value,
+            client_id=ClientId(self.venue.value),
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,

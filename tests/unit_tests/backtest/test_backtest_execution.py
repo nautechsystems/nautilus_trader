@@ -157,7 +157,7 @@ class TestBacktestExecClientTests:
         )
 
         command = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -189,7 +189,7 @@ class TestBacktestExecClientTests:
         )
 
         command = SubmitBracketOrder(
-            entry.instrument_id,
+            entry.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -213,9 +213,10 @@ class TestBacktestExecClientTests:
         )
 
         command = CancelOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
+            order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
             self.uuid_factory.generate(),
@@ -238,9 +239,10 @@ class TestBacktestExecClientTests:
         )
 
         command = UpdateOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
+            order.instrument_id,
             order.client_order_id,
             Quantity(100),
             Price("1010.00"),

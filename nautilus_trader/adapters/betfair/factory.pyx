@@ -32,11 +32,11 @@ from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
     @staticmethod
     def create(
-            str name not None,
-            dict config not None,
-            LiveDataEngine engine not None,
-            LiveClock clock not None,
-            LiveLogger logger not None,
+        str name not None,
+        dict config not None,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        LiveLogger logger not None,
     ):
         """
         Create new Betfair clients.
@@ -44,7 +44,7 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
         Parameters
         ----------
         name : str
-            The name of the client.
+            The client name.
         config : dict
             The configuration dictionary.
         engine : LiveDataEngine
@@ -95,7 +95,7 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         Parameters
         ----------
         name : str
-            The name of the client.
+            The client name.
         config : dict
             The configuration dictionary.
         engine : LiveDataEngine

@@ -23,6 +23,7 @@ from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -62,11 +63,11 @@ class TestBacktestDataContainer:
         ]
 
         # Act
-        data.add_generic_data("NEWS_CLIENT", generic_data1)
-        data.add_generic_data("NEWS_CLIENT", generic_data2)
+        data.add_generic_data(ClientId("NEWS_CLIENT"), generic_data1)
+        data.add_generic_data(ClientId("NEWS_CLIENT"), generic_data2)
 
         # Assert
-        assert "NEWS_CLIENT" in data.clients
+        assert ClientId("NEWS_CLIENT") in data.clients
         assert len(data.generic_data) == 5
         assert data.generic_data[-1].timestamp_ns == 3000  # sorted
 
@@ -105,7 +106,7 @@ class TestBacktestDataContainer:
         data.add_order_book_data([snapshot2, snapshot1])  # <-- reverse order
 
         # Assert
-        assert "BINANCE" in data.clients
+        assert ClientId("BINANCE") in data.clients
         assert ETHUSDT_BINANCE.id in data.books
         assert data.order_book_data == [snapshot1, snapshot2]  # <-- sorted
 
@@ -164,7 +165,7 @@ class TestBacktestDataContainer:
         data.add_order_book_data([operations2, operations1])  # <-- not sorted
 
         # Assert
-        assert "BINANCE" in data.clients
+        assert ClientId("BINANCE") in data.clients
         assert ETHUSDT_BINANCE.id in data.books
         assert data.order_book_data == [operations1, operations2]  # <-- sorted
 
@@ -179,7 +180,7 @@ class TestBacktestDataContainer:
         )
 
         # Assert
-        assert "SIM" in data.clients
+        assert ClientId("SIM") in data.clients
         assert data.has_quote_data(AUDUSD_SIM.id)
         assert AUDUSD_SIM.id in data.quote_ticks
         assert len(data.quote_ticks[AUDUSD_SIM.id]) == 100000
@@ -195,7 +196,7 @@ class TestBacktestDataContainer:
         )
 
         # Assert
-        assert "BINANCE" in data.clients
+        assert ClientId("BINANCE") in data.clients
         assert data.has_trade_data(ETHUSDT_BINANCE.id)
         assert ETHUSDT_BINANCE.id in data.trade_ticks
         assert len(data.trade_ticks[ETHUSDT_BINANCE.id]) == 69806
@@ -221,7 +222,7 @@ class TestBacktestDataContainer:
         )
 
         # Assert
-        assert "SIM" in data.clients
+        assert ClientId("SIM") in data.clients
         assert USDJPY_SIM.id in data.bars_ask
         assert USDJPY_SIM.id in data.bars_bid
         assert len(data.bars_bid[USDJPY_SIM.id]) == 1  # MINUTE key

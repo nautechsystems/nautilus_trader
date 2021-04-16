@@ -52,7 +52,7 @@ class SerializationPerformanceTests(unittest.TestCase):
         )
 
         self.command = SubmitOrder(
-            AUDUSD,
+            AUDUSD.venue.client_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
