@@ -66,4 +66,4 @@ jobs:
           redis-cli shutdown
       - name: Run tests (unit test suite only) [Windows]
         if: runner.os == 'Windows'
-        run: ox -s tests --reuse-existing-virtualenvs
+        run: nox -s tests --reuse-existing-virtualenvs
