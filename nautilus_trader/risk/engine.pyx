@@ -36,6 +36,7 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -74,7 +75,7 @@ cdef class RiskEngine(Component):
             config = {}
         super().__init__(clock, logger, name="RiskEngine")
 
-        self._clients = {}  # type: dict[str, ExecutionClient]
+        self._clients = {}  # type: dict[ClientId, ExecutionClient]
         self._portfolio = portfolio
         self._exec_engine = exec_engine
 
@@ -114,9 +115,9 @@ cdef class RiskEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.name, self._clients, "client.name", "self._clients")
+        Condition.not_in(client.id, self._clients, "client.id", "self._clients")
 
-        self._clients[client.name] = client
+        self._clients[client.id] = client
         self._log.info(f"Registered {client}.")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -185,10 +186,12 @@ cdef class RiskEngine(Component):
             self._handle_trading_command(command)
 
     cdef inline void _handle_trading_command(self, TradingCommand command) except *:
-        cdef ExecutionClient client = self._clients.get(command.instrument_id.venue.first())
+        cdef ExecutionClient client = self._clients.get(command.client_id)
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.instrument_id.venue.first()}, {command}.")
+                            f"No client registered for "
+                            f"{command.instrument_id.venue.client_id.value}, "
+                            f"{command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):

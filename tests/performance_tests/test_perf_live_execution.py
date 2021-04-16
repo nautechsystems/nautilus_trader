@@ -29,6 +29,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity
@@ -75,7 +76,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         exec_client = MockExecutionClient(
-            name="BINANCE",
+            client_id=ClientId("BINANCE"),
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -111,7 +112,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             self.strategy.id,

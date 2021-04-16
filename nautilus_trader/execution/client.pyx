@@ -24,6 +24,7 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 
 
 cdef class ExecutionClient:
@@ -35,7 +36,7 @@ cdef class ExecutionClient:
 
     def __init__(
         self,
-        str name not None,
+        ClientId client_id not None,
         AccountId account_id not None,
         ExecutionEngine engine not None,
         Clock clock not None,
@@ -47,8 +48,8 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        name : Venue
-            The data client name.
+        client_id : ClientId
+            The client identifier.
         account_id : AccountId
             The account identifier for the client.
         engine : ExecutionEngine
@@ -61,8 +62,7 @@ cdef class ExecutionClient:
             The configuration options.
 
         """
-        Condition.valid_string(name, "name")
-        Condition.equal(name, account_id.issuer_as_venue().value, "venue", "account_id.issuer_as_venue()")
+        Condition.equal(client_id.value, account_id.issuer_as_venue().value, "client_id.value", "account_id.issuer_as_venue().value")
 
         if config is None:
             config = {}
@@ -70,20 +70,20 @@ cdef class ExecutionClient:
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(
-            component=config.get("name", f"ExecClient-{name}"),
+            component=config.get("name", f"ExecClient-{client_id.value}"),
             logger=logger,
         )
         self._engine = engine
         self._config = config
 
-        self.name = name
+        self.id = client_id
         self.account_id = account_id
         self.is_connected = False
 
         self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}-{self.name}"
+        return f"{type(self).__name__}-{self.id.value}"
 
     cpdef void _set_connected(self, bint value=True) except *:
         """

@@ -27,6 +27,7 @@ from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data import Data
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -91,7 +92,7 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
         subscribe = Subscribe(
-            client_name=BINANCE.value,
+            client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
@@ -118,7 +119,7 @@ class LiveDataEngineTests(unittest.TestCase):
 
         handler = []
         request = DataRequest(
-            client_name="RANDOM",
+            client_id=ClientId("RANDOM"),
             data_type=DataType(
                 QuoteTick,
                 metadata={
@@ -152,7 +153,7 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
         response = DataResponse(
-            client_name="BINANCE",
+            client_id=ClientId("BINANCE"),
             data_type=DataType(QuoteTick),
             data=[],
             correlation_id=self.uuid_factory.generate(),
@@ -241,7 +242,7 @@ class LiveDataEngineTests(unittest.TestCase):
             self.engine.start()
 
             subscribe = Subscribe(
-                client_name=BINANCE.value,
+                client_id=ClientId(BINANCE.value),
                 data_type=DataType(QuoteTick),
                 handler=[].append,
                 command_id=self.uuid_factory.generate(),
@@ -268,7 +269,7 @@ class LiveDataEngineTests(unittest.TestCase):
 
             handler = []
             request = DataRequest(
-                client_name="RANDOM",
+                client_id=ClientId("RANDOM"),
                 data_type=DataType(
                     QuoteTick,
                     metadata={
@@ -304,7 +305,7 @@ class LiveDataEngineTests(unittest.TestCase):
             self.engine.start()
 
             response = DataResponse(
-                client_name="BINANCE",
+                client_id=ClientId("BINANCE"),
                 data_type=DataType(QuoteTick),
                 data=[],
                 correlation_id=self.uuid_factory.generate(),

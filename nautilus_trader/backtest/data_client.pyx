@@ -29,6 +29,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 
@@ -40,7 +41,7 @@ cdef class BacktestDataClient(DataClient):
 
     def __init__(
         self,
-        str name not None,
+        ClientId client_id not None,
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
@@ -51,8 +52,8 @@ cdef class BacktestDataClient(DataClient):
 
         Parameters
         ----------
-        name : str
-            The data client name.
+        client_id : ClientId
+            The data client identifier.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -69,7 +70,7 @@ cdef class BacktestDataClient(DataClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             engine,
             clock,
             logger,
@@ -185,7 +186,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     def __init__(
         self,
         list instruments not None,
-        str name not None,
+        ClientId client_id not None,
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
@@ -197,8 +198,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instruments : list[Instrument]
             The instruments for the data client.
-        name : str
-            The name of the data client.
+        client_id : ClientId
+            The data client identifier.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -208,7 +209,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             engine,
             clock,
             logger,
@@ -219,7 +220,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             # Check the instrument is for the correct client
             Condition.equal(
                 instrument.venue.value,
-                self.name,
+                self.id.value,
                 "instrument.venue.value",
                 "self.name",
             )
@@ -314,6 +315,33 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot subscribe to order book for {instrument_id} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void subscribe_order_book_deltas(
+        self,
+        InstrumentId instrument_id,
+        OrderBookLevel level,
+        dict kwargs=None,
+    ) except *:
+        """
+        Subscribe to `OrderBook` data for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to order book deltas for {instrument_id} (not connected).")
             return
 
         # Do nothing else for backtest

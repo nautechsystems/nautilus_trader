@@ -19,7 +19,7 @@ Defines domain value objects.
 The `BaseDecimal` class is intended to be used as the base class for fundamental
 domain model value types. The specification of precision is more straight
 forward than providing a decimal.Context. Also this type is able to be used as
-an operand for mathematical ops with `float` objects.
+an operand for mathematical operations with `float` objects.
 
 The fundamental value objects for the trading domain are defined here.
 

@@ -466,7 +466,7 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(event.client_order_id, self.client_order_id, "event.client_order_id", "self.client_order_id")
-        if self.venue_order_id.not_null() and event.venue_order_id.not_null():
+        if self.venue_order_id.not_null() and event.venue_order_id.not_null() and not isinstance(event, OrderUpdated):
             Condition.equal(event.venue_order_id, self.venue_order_id, "event.venue_order_id", "self.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
@@ -549,8 +549,8 @@ cdef class Order:
         if self.avg_px is None:
             return last_px
 
-        total_quantity: Decimal = self.filled_qty + last_qty
-        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_quantity
+        total_qty: Decimal = self.filled_qty + last_qty
+        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
 
 
 cdef class PassiveOrder(Order):
@@ -639,6 +639,8 @@ cdef class PassiveOrder(Order):
 
         super().__init__(init=init)
 
+        self._venue_order_ids = []  # type: list[VenueOrderId]
+
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
@@ -651,8 +653,25 @@ cdef class PassiveOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
+    cdef list venue_order_ids_c(self):
+        return self._venue_order_ids.copy()
+
+    @property
+    def venue_order_ids(self):
+        """
+        The venue order identifiers.
+
+        Returns
+        -------
+        list[VenueOrderId]
+
+        """
+        return self.venue_order_ids_c().copy()
+
     cdef void _updated(self, OrderUpdated event) except *:
-        self.venue_order_id = event.venue_order_id
+        if self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
+            self.venue_order_id = event.venue_order_id
         self.quantity = event.quantity
         self.price = event.price
 

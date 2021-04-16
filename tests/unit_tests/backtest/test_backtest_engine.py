@@ -71,7 +71,7 @@ class TestBacktestEngine:
         # Arrange
         # Act
         # Assert
-        len(self.engine.trader.strategy_states()) == 1
+        assert len(self.engine.trader.strategy_states()) == 1
 
     def test_reset_engine(self):
         # Arrange

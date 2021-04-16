@@ -12,11 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import logging
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
+
+
+logger = logging.getLogger(__name__)
 
 
 cdef class Ladder:
@@ -103,7 +107,10 @@ cdef class Ladder:
 
         """
         Condition.not_none(order, "order")
-
+        if order.id not in self.order_id_levels:
+            # TODO - we could emit a better error here about book integrity?
+            logger.warning(f"Couldn't find order_id {order.id} in levels, SKIPPING!")
+            return
         cdef Level level = self.order_id_levels[order.id]
         cdef int price_idx = self.prices().index(level.price())
         level.delete(order=order)

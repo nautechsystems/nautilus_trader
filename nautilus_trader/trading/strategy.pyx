@@ -67,6 +67,7 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -78,6 +79,7 @@ from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.order.bracket cimport BracketOrder
 from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -333,6 +335,23 @@ cdef class TradingStrategy(Component):
         ----------
         order_book : OrderBook
             The order book received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_order_book_delta(self, OrderBookData data) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        order book snapshot.
+
+        Parameters
+        ----------
+        data : OrderBookData
+            The order book snapshot / operations received.
 
         Warnings
         --------
@@ -722,23 +741,23 @@ cdef class TradingStrategy(Component):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, str client_name, DataType data_type) except *:
+    cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *:
         """
         Subscribe to data of the given data type.
 
         Parameters
         ----------
-        client_name : str
-            The data client name.
+        client_id : ClientId
+            The data client identifier.
         data_type : DataType
             The data type to subscribe to.
 
         """
-        Condition.valid_string(client_name, "client_name")
+        Condition.not_none(client_id, "client_id")
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
-            client_name=client_name,
+            client_id=client_id,
             data_type=data_type,
             handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
@@ -761,7 +780,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
@@ -779,7 +798,7 @@ cdef class TradingStrategy(Component):
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to streaming `OrderBook` data for the given instrument identifier.
+        Subscribe to streaming `OrderBook` for the given instrument identifier.
 
         The `DataEngine` will only maintain one order book stream for each
         instrument. Because of this the level, depth and kwargs for the stream will
@@ -816,7 +835,7 @@ cdef class TradingStrategy(Component):
         Condition.not_negative(interval, "interval")
 
         cdef Subscribe command = Subscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBook, metadata={
                 INSTRUMENT_ID: instrument_id,
                 LEVEL: level,
@@ -825,6 +844,49 @@ cdef class TradingStrategy(Component):
                 KWARGS: kwargs,
             }),
             handler=self.handle_order_book,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_order_book_deltas(
+        self,
+        InstrumentId instrument_id,
+        OrderBookLevel level=OrderBookLevel.L2,
+        dict kwargs=None,
+    ) except *:
+        """
+        Subscribe to streaming `OrderBook` snapshot then deltas data for the
+        given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument identifier to subscribe to.
+        level : OrderBookLevel (Enum)
+            The order book level (L1, L2, L3).
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        Raises
+        ------
+        ValueError
+            If depth is negative.
+        ValueError
+            If delay is not None and interval is None.
+
+        """
+        Condition.not_none(self._data_engine, "self._data_engine")
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef Subscribe command = Subscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(OrderBookData, metadata={
+                INSTRUMENT_ID: instrument_id,
+                LEVEL: level,
+                KWARGS: kwargs,
+            }),
+            handler=self.handle_order_book_delta,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -845,7 +907,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
@@ -868,7 +930,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
@@ -891,7 +953,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
-            client_name=bar_type.instrument_id.venue.value,
+            client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
@@ -900,23 +962,23 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_data(self, str client_name, DataType data_type) except *:
+    cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *:
         """
         Unsubscribe from data of the given data type.
 
         Parameters
         ----------
-        client_name : str
-            The data client name.
+        client_id : ClientId
+            The data client identifier.
         data_type : DataType
             The data type to unsubscribe from.
 
         """
-        Condition.valid_string(client_name, "client_name")
+        Condition.not_none(client_id, "client_id")
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            client_name=client_name,
+            client_id=client_id,
             data_type=data_type,
             handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
@@ -939,7 +1001,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
@@ -967,10 +1029,38 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBook, metadata={
                 INSTRUMENT_ID: instrument_id,
                 INTERVAL: interval,
+            }),
+            handler=self.handle_order_book,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `OrderBook` data for the given instrument identifier.
+
+        The interval must match the previously defined interval if unsubscribing
+        from snapshots.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(self._data_engine, "self._data_engine")
+
+        cdef Unsubscribe command = Unsubscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(OrderBookData, metadata={
+                INSTRUMENT_ID: instrument_id,
             }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate(),
@@ -993,7 +1083,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
@@ -1016,7 +1106,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
@@ -1039,7 +1129,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
-            client_name=bar_type.instrument_id.venue.value,
+            client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
@@ -1050,23 +1140,23 @@ cdef class TradingStrategy(Component):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, str client_name, DataType data_type) except *:
+    cpdef void request_data(self, ClientId client_id, DataType data_type) except *:
         """
         Request custom data for the given data type from the given data client.
 
         Parameters
         ----------
-        client_name : str
-            The data client name.
+        client_id : ClientId
+            The data client identifier.
         data_type : DataType
             The data type for the request.
 
         """
-        Condition.valid_string(client_name, "client_name")
+        Condition.not_none(client_id, "client_id")
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef DataRequest request = DataRequest(
-            client_name=client_name,
+            client_id=client_id,
             data_type=data_type,
             callback=self.handle_data,
             request_id=self.uuid_factory.generate(),
@@ -1107,7 +1197,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={
                 INSTRUMENT_ID: instrument_id,
                 FROM_DATETIME: from_datetime,
@@ -1153,7 +1243,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            client_name=instrument_id.venue.value,
+            client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={
                 INSTRUMENT_ID: instrument_id,
                 FROM_DATETIME: from_datetime,
@@ -1199,7 +1289,7 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            client_name=bar_type.instrument_id.venue.value,
+            client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: from_datetime,
@@ -1249,7 +1339,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             account_id,
             self.id,
@@ -1285,7 +1375,7 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
-            bracket_order.entry.instrument_id,
+            bracket_order.entry.instrument_id.venue.client_id,
             self.trader_id,
             account_id,
             self.id,
@@ -1373,9 +1463,10 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef UpdateOrder command = UpdateOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             quantity,
             price,
@@ -1411,9 +1502,10 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
             self.uuid_factory.generate(),
@@ -1484,7 +1576,7 @@ cdef class TradingStrategy(Component):
 
         # Create command
         cdef SubmitOrder command = SubmitOrder(
-            position.instrument_id,
+            position.instrument_id.venue.client_id,
             self.trader_id,
             position.account_id,
             self.id,
@@ -1573,6 +1665,31 @@ cdef class TradingStrategy(Component):
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_order_book(order_book)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise
+
+    cpdef void handle_order_book_delta(self, OrderBookData data) except *:
+        """
+        Handle the given order book snapshot.
+
+        Calls `on_order_book_delta` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        data : OrderBookData
+            The received order book data.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(data, "data")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_order_book_delta(data)
             except Exception as ex:
                 self.log.exception(ex)
                 raise

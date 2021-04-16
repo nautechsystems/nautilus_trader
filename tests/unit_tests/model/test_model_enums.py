@@ -41,10 +41,10 @@ from nautilus_trader.model.c_enums.order_state import OrderState
 from nautilus_trader.model.c_enums.order_state import OrderStateParser
 from nautilus_trader.model.c_enums.order_type import OrderType
 from nautilus_trader.model.c_enums.order_type import OrderTypeParser
+from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaType
+from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaTypeParser
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevelParser
-from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationType
-from nautilus_trader.model.c_enums.orderbook_op import OrderBookOperationTypeParser
 from nautilus_trader.model.c_enums.position_side import PositionSide
 from nautilus_trader.model.c_enums.position_side import PositionSideParser
 from nautilus_trader.model.c_enums.price_type import PriceType
@@ -599,23 +599,23 @@ class TestOrderBookOperationType:
         # Act
         # Assert
         with pytest.raises(ValueError):
-            OrderBookOperationTypeParser.to_str_py(0)
+            OrderBookDeltaTypeParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            OrderBookOperationTypeParser.from_str_py("")
+            OrderBookDeltaTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderBookOperationType.ADD, "ADD"],
-            [OrderBookOperationType.UPDATE, "UPDATE"],
-            [OrderBookOperationType.DELETE, "DELETE"],
+            [OrderBookDeltaType.ADD, "ADD"],
+            [OrderBookDeltaType.UPDATE, "UPDATE"],
+            [OrderBookDeltaType.DELETE, "DELETE"],
         ],
     )
     def test_orderbook_op_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderBookOperationTypeParser.to_str_py(enum)
+        result = OrderBookDeltaTypeParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -624,9 +624,9 @@ class TestOrderBookOperationType:
         "string, expected",
         [
             ["", None],
-            ["ADD", OrderBookOperationType.ADD],
-            ["UPDATE", OrderBookOperationType.UPDATE],
-            ["DELETE", OrderBookOperationType.DELETE],
+            ["ADD", OrderBookDeltaType.ADD],
+            ["UPDATE", OrderBookDeltaType.UPDATE],
+            ["DELETE", OrderBookDeltaType.DELETE],
         ],
     )
     def test_orderbook_op_from_str(self, string, expected):
@@ -635,7 +635,7 @@ class TestOrderBookOperationType:
         if expected is None:
             return
 
-        result = OrderBookOperationTypeParser.from_str_py(string)
+        result = OrderBookDeltaTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result

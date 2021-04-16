@@ -16,13 +16,13 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import OrderBookOperationType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookOperation
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
@@ -55,8 +55,8 @@ class TestOrderBookOperation:
     def test_repr(self):
         # Arrange
         order = Order(price=10, volume=5, side=OrderSide.BUY)
-        op = OrderBookOperation(
-            op_type=OrderBookOperationType.ADD,
+        op = OrderBookDelta(
+            delta_type=OrderBookDeltaType.ADD,
             order=order,
             timestamp_ns=0,
         )
@@ -65,7 +65,7 @@ class TestOrderBookOperation:
         # Assert
         assert (
             repr(op)
-            == f"OrderBookOperation(ADD, Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
+            == f"OrderBookDelta(ADD, Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
         )
 
 
@@ -147,33 +147,37 @@ def test_check_integrity_deep(empty_book):
 
 def test_orderbook_operation(empty_book):
     clock = TestClock()
-    op = OrderBookOperation(
-        op_type=OrderBookOperationType.UPDATE,
+    op = OrderBookDelta(
+        delta_type=OrderBookDeltaType.UPDATE,
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
         timestamp_ns=clock.timestamp(),
     )
-    empty_book.apply_operation(op)
+    empty_book.apply_delta(op)
     assert empty_book.best_ask_price() == 0.5814
 
 
 def test_orderbook_operations(empty_book):
-    op = OrderBookOperation(
-        op_type=OrderBookOperationType.UPDATE,
+    delta = OrderBookDelta(
+        delta_type=OrderBookDeltaType.UPDATE,
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
-    ops = OrderBookOperations(
+    deltas = OrderBookDeltas(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
-        ops=[op],
+        deltas=[delta],
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
-    empty_book.apply_operations(ops)
+    empty_book.apply_deltas(deltas)
     assert empty_book.best_ask_price() == 0.5814
+
+
+def test_orderbook_midpoint(sample_book):
+    assert sample_book.midpoint() == 0.858
 
 
 # def test_auction_match_match_orders():

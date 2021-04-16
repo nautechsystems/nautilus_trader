@@ -65,10 +65,12 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookData
+from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -109,22 +111,23 @@ cdef class DataEngine(Component):
         super().__init__(clock, logger, name="DataEngine")
 
         self._use_previous_close = config.get("use_previous_close", True)
-        self._clients = {}               # type: dict[str, DataClient]
-        self._correlation_index = {}     # type: dict[UUID, callable]
+        self._clients = {}                    # type: dict[ClientId, DataClient]
+        self._correlation_index = {}          # type: dict[UUID, callable]
 
         # Handlers
-        self._instrument_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._order_book_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._quote_tick_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._trade_tick_handlers = {}   # type: dict[InstrumentId, list[callable]]
-        self._bar_handlers = {}          # type: dict[BarType, list[callable]]
-        self._data_handlers = {}         # type: dict[DataType, list[callable]]
+        self._instrument_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._order_book_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._order_book_delta_handlers = {}  # type: dict[InstrumentId, list[callable]]
+        self._quote_tick_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._trade_tick_handlers = {}        # type: dict[InstrumentId, list[callable]]
+        self._bar_handlers = {}               # type: dict[BarType, list[callable]]
+        self._data_handlers = {}              # type: dict[DataType, list[callable]]
 
         # Aggregators
-        self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
+        self._bar_aggregators = {}            # type: dict[BarType, BarAggregator]
 
         # OrderBook indexes
-        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
+        self._order_book_intervals = {}       # type: dict[(InstrumentId, int), list[callable]]
 
         # Public components
         self.portfolio = portfolio
@@ -145,7 +148,7 @@ cdef class DataEngine(Component):
 
         Returns
         -------
-        list[str]
+        list[ClientId]
 
         """
         return sorted(list(self._clients.keys()))
@@ -186,6 +189,18 @@ cdef class DataEngine(Component):
         """
         cdef list interval_instruments = [k[0] for k in self._order_book_intervals.keys()]
         return sorted(list(self._order_book_handlers.keys()) + interval_instruments)
+
+    @property
+    def subscribed_order_book_data(self):
+        """
+        The order books data (diffs) subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._order_book_delta_handlers.keys()))
 
     @property
     def subscribed_quote_ticks(self):
@@ -273,9 +288,9 @@ cdef class DataEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.name, self._clients, "client", "self._clients")
+        Condition.not_in(client.id, self._clients, "client", "self._clients")
 
-        self._clients[client.name] = client
+        self._clients[client.id] = client
 
         self._log.info(f"Registered {client}.")
 
@@ -306,9 +321,9 @@ cdef class DataEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.is_in(client.name, self._clients, "client.name", "self._clients")
+        Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
-        del self._clients[client.name]
+        del self._clients[client.id]
         self._log.info(f"Deregistered {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
@@ -432,10 +447,11 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef DataClient client = self._clients.get(command.client_name)
+        cdef DataClient client = self._clients.get(command.client_id)
         if client is None:
             self._log.error(f"Cannot handle command: "
-                            f"(no client registered for '{command.client_name}') {command}.")
+                            f"(no client registered for '{command.client_id}' in {self.registered_clients})"
+                            f" {command}.")
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
@@ -454,6 +470,13 @@ cdef class DataEngine(Component):
             )
         elif command.data_type.type == OrderBook:
             self._handle_subscribe_order_book(
+                client,
+                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata,
+                command.handler,
+            )
+        elif command.data_type.type == OrderBookData:
+            self._handle_subscribe_order_book_deltas(
                 client,
                 command.data_type.metadata.get(INSTRUMENT_ID),
                 command.data_type.metadata,
@@ -610,6 +633,47 @@ cdef class DataEngine(Component):
             kwargs=metadata.get(KWARGS),
         )
 
+    cdef inline void _handle_subscribe_order_book_deltas(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+        dict metadata,
+        handler: callable,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(metadata, "metadata")
+        Condition.callable(handler, "handler")
+
+        # Subscribe to stream
+        if instrument_id not in self._order_book_delta_handlers:
+            # Setup handlers
+            self._order_book_delta_handlers[instrument_id] = []  # type: list[callable]
+            self._log.info(f"Subscribed to {instrument_id} <OrderBookDelta> data.")
+
+        # Add handler for subscriber
+        if handler not in self._order_book_delta_handlers[instrument_id]:
+            self._order_book_delta_handlers[instrument_id].append(handler)
+            self._log.debug(f"Added {handler} for {instrument_id} <OrderBookDelta> data.")
+        else:
+            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
+
+        # Create order book
+        if not self.cache.has_order_book(instrument_id):
+            order_book = OrderBook.create(
+                instrument_id=instrument_id,
+                level=metadata[LEVEL],
+            )
+
+            self.cache.add_order_book(order_book)
+
+        # Always re-subscribe to override previous settings
+        client.subscribe_order_book_deltas(
+            instrument_id=instrument_id,
+            level=metadata[LEVEL],
+            kwargs=metadata.get(KWARGS),
+        )
+
     cdef inline void _handle_subscribe_quote_ticks(
         self,
         MarketDataClient client,
@@ -700,7 +764,8 @@ cdef class DataEngine(Component):
             try:
                 client.subscribe(data_type)
             except NotImplementedError:
-                self._log.error(f"Cannot subscribe: {client.name} has not implemented data type {data_type} subscriptions.")
+                self._log.error(f"Cannot subscribe: {client.id.value} "
+                                f"has not implemented data type {data_type} subscriptions.")
                 return
             self._data_handlers[data_type] = []  # type: list[callable]
             self._log.info(f"Subscribed to {data_type} data.")
@@ -910,10 +975,10 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{REQ} {request}.")
         self.request_count += 1
 
-        cdef DataClient client = self._clients.get(request.client_name)
+        cdef DataClient client = self._clients.get(request.client_id)
         if client is None:
             self._log.error(f"Cannot handle request: "
-                            f"no client registered for '{request.client_name}', {request}.")
+                            f"no client registered for '{request.client_id}', {request}.")
             return  # No client to handle request
 
         if request.id in self._correlation_index:
@@ -972,8 +1037,8 @@ cdef class DataEngine(Component):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
-        elif isinstance(data, OrderBookOperations):
-            self._handle_order_book_operations(data)
+        elif isinstance(data, OrderBookDeltas):
+            self._handle_order_book_deltas(data)
         elif isinstance(data, OrderBookSnapshot):
             self._handle_order_book_snapshot(data)
         elif isinstance(data, Bar):
@@ -1011,20 +1076,25 @@ cdef class DataEngine(Component):
         for handler in tick_handlers:
             handler(tick)
 
-    cdef inline void _handle_order_book_operations(self, OrderBookOperations operations) except *:
-        cdef InstrumentId instrument_id = operations.instrument_id
+    cdef inline void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
+        cdef InstrumentId instrument_id = deltas.instrument_id
         cdef OrderBook order_book = self.cache.order_book(instrument_id)
         if order_book is None:
-            self._log.error(f"Cannot apply `OrderBookOperations`: "
-                            f"no book found for {operations.instrument_id}.")
+            self._log.error(f"Cannot apply `OrderBookDeltas`: "
+                            f"no book found for {deltas.instrument_id}.")
             return
 
-        order_book.apply_operations(operations)
+        order_book.apply_deltas(deltas)
 
         # Send to all registered order book handlers for that instrument_id
         cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])
-        for handler in order_book_handlers:
-            handler(order_book)
+        for orderbook_handler in order_book_handlers:
+            orderbook_handler(order_book)
+
+        # Send to all registered order book delta handlers for that instrument_id
+        cdef list order_book_delta_handlers = self._order_book_delta_handlers.get(instrument_id, [])
+        for orderbook_delta_handler in order_book_delta_handlers:
+            orderbook_delta_handler(deltas)
 
     cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
         cdef InstrumentId instrument_id = snapshot.instrument_id
@@ -1040,6 +1110,11 @@ cdef class DataEngine(Component):
         cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])
         for handler in order_book_handlers:
             handler(order_book)
+
+        # Send to all registered order book delta handlers for that instrument_id
+        cdef list order_book_delta_handlers = self._order_book_delta_handlers.get(instrument_id, [])
+        for orderbook_delta_handler in order_book_delta_handlers:
+            orderbook_delta_handler(snapshot)
 
     cdef inline void _handle_bar(self, Bar bar) except *:
         self.cache.add_bar(bar)
@@ -1233,7 +1308,7 @@ cdef class DataEngine(Component):
         # noinspection bulk_updater.receive
         # noinspection PyUnresolvedReferences
         request = DataRequest(
-            client_name=bar_type.instrument_id.venue.value,
+            client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),

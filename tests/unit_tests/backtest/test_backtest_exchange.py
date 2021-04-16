@@ -650,9 +650,10 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_cancel_stop_order_when_order_does_not_exist_generates_cancel_reject(self):
         # Arrange
         command = CancelOrder(
-            instrument_id=USDJPY_SIM.id,
+            client_id=USDJPY_SIM.id.venue.client_id,
             trader_id=self.trader_id,
             account_id=self.account_id,
+            instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
             command_id=self.uuid_factory.generate(),
@@ -668,9 +669,10 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_update_stop_order_when_order_does_not_exist(self):
         # Arrange
         command = UpdateOrder(
-            instrument_id=USDJPY_SIM.id,
+            client_id=USDJPY_SIM.id.venue.client_id,
             trader_id=self.trader_id,
             account_id=self.account_id,
+            instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             quantity=Quantity(100000),
             price=Price("1.00000"),

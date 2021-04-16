@@ -27,7 +27,7 @@
               "rac": "",
               "rc": "REG_LGA",
               "rfo": "O-20210401-003703-001-001-2",
-              "rfs": "1"
+              "rfs": "BetfairTestStrategy-001"
             },
             {
               "id": "228703177752",
@@ -46,7 +46,7 @@
               "rac": "",
               "rc": "REG_LGA",
               "rfo": "O-20210401-003703-001-001-1",
-              "rfs": "1"
+              "rfs": "BetfairTestStrategy-001"
             }
           ]
         }

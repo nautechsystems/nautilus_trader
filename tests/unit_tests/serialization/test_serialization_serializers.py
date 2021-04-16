@@ -270,7 +270,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -307,7 +307,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            entry_order.instrument_id,
+            entry_order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -344,7 +344,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            entry_order.instrument_id,
+            entry_order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "01"),
@@ -366,9 +366,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_amend_order_commands(self):
         # Arrange
         command = UpdateOrder(
-            AUDUSD_SIM.id,
+            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             Quantity(100000),
             Price("1.00001"),
@@ -388,9 +389,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_cancel_order_commands(self):
         # Arrange
         command = CancelOrder(
-            AUDUSD_SIM.id,
+            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("001"),
             uuid4(),

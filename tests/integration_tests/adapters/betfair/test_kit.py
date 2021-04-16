@@ -40,6 +40,7 @@ from tests.test_kit.stubs import TestStubs
 TEST_PATH = pathlib.Path(
     TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
 )
+DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_kit/data/betfair")
 
 
 class BetfairTestStubs(TestStubs):
@@ -144,7 +145,7 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def betfair_client():
         mock.patch("betfairlightweight.endpoints.login.Login.__call__")
-        return betfairlightweight.APIClient(
+        return betfairlightweight.APIClient(  # noqa (S106 Possible hardcoded password: 'password')
             username="username",
             password="password",
             app_key="app_key",
@@ -386,8 +387,16 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def raw_orderbook_updates():
-        return bz2.open(TEST_PATH / "1.133262888.json.bz2").readlines()
+    def raw_market_updates():
+        def _fix_ids(r):
+            return (
+                r.replace(b"1.166811431", b"1.180737206")
+                .replace(b"60424", b"19248890")
+                .replace(b"237478", b"38848248")
+            )
+
+        lines = bz2.open(DATA_PATH / "1.166811431.bz2").readlines()
+        return [orjson.loads(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
@@ -411,13 +420,13 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def submit_order_command():
         return SubmitOrder(
-            instrument_id=BetfairTestStubs.instrument_id(),
+            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
-                client_order_id=ClientOrderId("1"),
+                client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
                 strategy_id=BetfairTestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,
@@ -434,11 +443,15 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def update_order_command(instrument_id=None, client_order_id=None):
+        if instrument_id is None:
+            instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
-            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
+            client_id=instrument_id.venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            client_order_id=client_order_id or ClientOrderId("1"),
+            instrument_id=instrument_id,
+            client_order_id=client_order_id
+            or ClientOrderId("O-20210410-022422-001-001-1"),
             quantity=Quantity(50),
             price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),
@@ -448,11 +461,12 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def cancel_order_command():
         return CancelOrder(
-            instrument_id=BetfairTestStubs.instrument_id(),
+            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            client_order_id=ClientOrderId("1"),
-            venue_order_id=VenueOrderId("1"),
+            instrument_id=BetfairTestStubs.instrument_id(),
+            client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
+            venue_order_id=VenueOrderId("229597791245"),
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )

@@ -23,6 +23,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_client import LiveDataClient
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
@@ -59,7 +60,7 @@ class LiveDataClientTests(unittest.TestCase):
         )
 
         self.client = LiveDataClient(
-            name="BLOOMBERG",
+            client_id=ClientId("BLOOMBERG"),
             engine=self.engine,
             clock=self.clock,
             logger=self.logger,
@@ -96,7 +97,7 @@ class LiveMarketDataClientTests(unittest.TestCase):
         )
 
         self.client = LiveMarketDataClient(
-            name=BINANCE.value,
+            client_id=ClientId(BINANCE.value),
             engine=self.engine,
             clock=self.clock,
             logger=self.logger,

@@ -130,21 +130,7 @@ cdef class Venue(Identifier):
             name = f"{broker}-{name}"
         super().__init__(name)
 
-        self.broker = broker
-
-    cpdef str first(self):
-        """
-        Return the first routing point.
-
-        Returns
-        -------
-        str
-
-        """
-        if self.broker is not None:
-            return self.broker
-        else:
-            return self.value
+        self.client_id = ClientId(name)
 
 
 cdef class InstrumentId(Identifier):
@@ -493,6 +479,54 @@ cdef class AccountId(Identifier):
 
         """
         return AccountId.from_str_c(value)
+
+
+cdef class ClientId(Identifier):
+    """
+    Represents a system client identifier.
+
+    The identifier value must be unique per running `Trader` instance.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the `ClientId` class.
+
+        Parameters
+        ----------
+        value : str
+            The client identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
+        """
+        super().__init__(value)
+
+    @staticmethod
+    cdef ClientId from_str_c(str value):
+        Condition.valid_string(value, "value")
+
+        return ClientId(value)
+
+    @staticmethod
+    def from_str(value: str) -> ClientId:
+        """
+        Return a client identifier parsed from the given string value.
+
+        Parameters
+        ----------
+        value : str
+            The client identifier string value to parse.
+
+        Returns
+        -------
+        ClientId
+
+        """
+        return ClientId.from_str_c(value)
 
 
 cdef class BracketOrderId(Identifier):

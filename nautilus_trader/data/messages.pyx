@@ -28,7 +28,7 @@ cdef class DataCommand(Command):
 
     def __init__(
         self,
-        str client_name not None,
+        ClientId client_id not None,
         DataType data_type not None,
         handler not None: callable,
         UUID command_id not None,
@@ -39,8 +39,8 @@ cdef class DataCommand(Command):
 
         Parameters
         ----------
-        client_name : str
-            The data client name for the command.
+        client_id : ClientId
+            The data client identifier for the command.
         data_type : type
             The data type for the command.
         handler : callable
@@ -53,7 +53,7 @@ cdef class DataCommand(Command):
         """
         super().__init__(command_id, timestamp_ns)
 
-        self.client_name = client_name
+        self.client_id = client_id
         self.data_type = data_type
         self.handler = handler
 
@@ -62,7 +62,7 @@ cdef class DataCommand(Command):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_name={self.client_name}, "
+                f"client_id={self.client_id.value}, "
                 f"data_type={self.data_type}, "
                 f"handler={self.handler}, "
                 f"id={self.id})")
@@ -75,7 +75,7 @@ cdef class Subscribe(DataCommand):
 
     def __init__(
         self,
-        str client_name not None,
+        ClientId client_id not None,
         DataType data_type not None,
         handler not None: callable,
         UUID command_id not None,
@@ -86,8 +86,8 @@ cdef class Subscribe(DataCommand):
 
         Parameters
         ----------
-        client_name : str
-            The data client name for the command.
+        client_id : ClientId
+            The data client identifier for the command.
         data_type : type
             The data type for the subscription.
         handler : callable
@@ -99,7 +99,7 @@ cdef class Subscribe(DataCommand):
 
         """
         super().__init__(
-            client_name,
+            client_id,
             data_type,
             handler,
             command_id,
@@ -114,7 +114,7 @@ cdef class Unsubscribe(DataCommand):
 
     def __init__(
         self,
-        str client_name not None,
+        ClientId client_id not None,
         DataType data_type not None,
         handler not None: callable,
         UUID command_id not None,
@@ -125,8 +125,8 @@ cdef class Unsubscribe(DataCommand):
 
         Parameters
         ----------
-        client_name : str
-            The data client name for the command.
+        client_id : ClientId
+            The data client identifier for the command.
         data_type : type
             The data type to unsubscribe from.
         handler : callable
@@ -138,7 +138,7 @@ cdef class Unsubscribe(DataCommand):
 
         """
         super().__init__(
-            client_name,
+            client_id,
             data_type,
             handler,
             command_id,
@@ -153,7 +153,7 @@ cdef class DataRequest(Request):
 
     def __init__(
         self,
-        str client_name not None,
+        ClientId client_id not None,
         DataType data_type not None,
         callback not None: callable,
         UUID request_id not None,
@@ -164,8 +164,8 @@ cdef class DataRequest(Request):
 
         Parameters
         ----------
-        client_name : str
-            The data client name for the request.
+        client_id : ClientId
+            The data client identifier for the request.
         data_type : type
             The data type for the request.
         callback : callable
@@ -181,7 +181,7 @@ cdef class DataRequest(Request):
             timestamp_ns,
         )
 
-        self.client_name = client_name
+        self.client_id = client_id
         self.data_type = data_type
         self.callback = callback
 
@@ -190,7 +190,7 @@ cdef class DataRequest(Request):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_name={self.client_name}, "
+                f"client_id={self.client_id.value}, "
                 f"data_type={self.data_type}, "
                 f"callback={self.callback}, "
                 f"id={self.id})")
@@ -203,7 +203,7 @@ cdef class DataResponse(Response):
 
     def __init__(
         self,
-        str client_name not None,
+        ClientId client_id not None,
         DataType data_type not None,
         data not None,
         UUID correlation_id not None,
@@ -215,8 +215,8 @@ cdef class DataResponse(Response):
 
         Parameters
         ----------
-        client_name : str
-            The data client name of the response.
+        client_id : ClientId
+            The data client identifier of the response.
         data_type : type
             The data type of the response.
         data : object
@@ -235,7 +235,7 @@ cdef class DataResponse(Response):
             timestamp_ns,
         )
 
-        self.client_name = client_name
+        self.client_id = client_id
         self.data_type = data_type
         self.data = data
 
@@ -244,7 +244,7 @@ cdef class DataResponse(Response):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_name={self.client_name}, "
+                f"client_id={self.client_id.value}, "
                 f"data_type={self.data_type}, "
                 f"correlation_id={self.correlation_id}, "
                 f"id={self.id})")

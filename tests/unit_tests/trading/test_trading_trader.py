@@ -28,6 +28,7 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -95,7 +96,7 @@ class TraderTests(unittest.TestCase):
 
         self.data_client = BacktestMarketDataClient(
             instruments=[USDJPY_SIM],
-            name="SIM",
+            client_id=ClientId("SIM"),
             engine=self.data_engine,
             clock=clock,
             logger=logger,

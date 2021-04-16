@@ -488,7 +488,7 @@ class TestBaseDecimal:
     ):
         # Arrange
         # Act
-        result = value1 % value2
+        result = value1 % value2  # noqa (not modulo formatting)
 
         # Assert
         assert expected_type == type(result)

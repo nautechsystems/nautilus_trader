@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `model` sub-package provides a rich and expressive trading domain model.
+The `model` subpackage provides a rich and expressive trading domain model.
 
 The framework provides various basic value objects, entities and aggregates.
 Continuing with the message passing design philosophy - command and
