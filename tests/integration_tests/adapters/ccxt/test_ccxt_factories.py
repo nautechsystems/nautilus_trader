@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 
@@ -95,7 +96,7 @@ class TestCCXTDataClientFactory:
 
         # Assert
         assert type(data_client) == CCXTDataClient
-        assert data_client.name == "BINANCE"
+        assert data_client.id == ClientId("BINANCE")
 
 
 class TestCCXTExecClientFactory:
@@ -163,4 +164,4 @@ class TestCCXTExecClientFactory:
 
         # Assert
         assert type(client) == CCXTExecutionClient
-        assert client.name == "BINANCE"
+        assert client.id == ClientId("BINANCE")

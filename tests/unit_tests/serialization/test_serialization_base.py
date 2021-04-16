@@ -21,6 +21,7 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Quantity
@@ -70,7 +71,7 @@ class SerializationBaseTests(unittest.TestCase):
     def test_command_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         command = Subscribe(
-            client_name="SIM",
+            client_id=ClientId("SIM"),
             data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=uuid4(),

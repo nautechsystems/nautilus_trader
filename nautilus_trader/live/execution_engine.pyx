@@ -33,6 +33,7 @@ from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -156,20 +157,20 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Initialize order state map
         cdef dict client_orders = {
             name: [] for name in self._clients.keys()
-        }   # type: dict[str, list[Order]]
+        }   # type: dict[ClientId, list[Order]]
 
         # Build order state map
         cdef Order order
         for order in active_orders.values():
-            name = order.instrument_id.venue.first()
-            if name in client_orders:
-                client_orders[name].append(order)
+            client_id = order.instrument_id.venue.client_id
+            if client_id in client_orders:
+                client_orders[client_id].append(order)
             else:
                 self._log.error(f"Cannot reconcile state. No registered"
-                                f"execution client for {name} for active {order}.")
+                                f"execution client for {client_id.value} for active {order}.")
                 continue
 
-        cdef dict client_mass_status = {}  # type: dict[str, ExecutionMassStatus]
+        cdef dict client_mass_status = {}  # type: dict[ClientId, ExecutionMassStatus]
 
         cdef LiveExecutionClient client
         # Generate state report for each client
@@ -197,8 +198,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
             resolved = True
             for order in active_orders.values():
-                name = order.instrument_id.venue.first()
-                report = client_mass_status[name].order_reports().get(order.venue_order_id)
+                client_id = order.instrument_id.venue.client_id
+                report = client_mass_status[client_id].order_reports().get(order.venue_order_id)
                 if report is None:
                     return False  # Will never reconcile
                 if order.state_c() != report.order_state:

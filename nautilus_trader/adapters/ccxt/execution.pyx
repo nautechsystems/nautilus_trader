@@ -50,6 +50,7 @@ from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -100,7 +101,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
-            client.name.upper(),
+            ClientId(client.name.upper()),
             account_id,
             engine,
             instrument_provider,
@@ -143,7 +144,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for order in orders_all:
             if order.is_completed_c():
                 continue
-            if order.instrument_id.venue.first() == self.name:
+            if order.instrument_id.venue.client_id == self.id:
                 self._cached_orders[order.venue_order_id] = order
                 self._cached_filled[order.venue_order_id] = order.filled_qty.as_decimal()
 

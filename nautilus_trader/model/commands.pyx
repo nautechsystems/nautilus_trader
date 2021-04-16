@@ -17,6 +17,8 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -34,6 +36,7 @@ cdef class TradingCommand(Command):
 
     def __init__(
         self,
+        ClientId client_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
         InstrumentId instrument_id not None,
@@ -45,6 +48,8 @@ cdef class TradingCommand(Command):
 
         Parameters
         ----------
+        client_id : ClientId
+            The client identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -59,6 +64,7 @@ cdef class TradingCommand(Command):
         """
         super().__init__(command_id, timestamp_ns)
 
+        self.client_id = client_id
         self.trader_id = trader_id
         self.account_id = account_id
         self.instrument_id = instrument_id
@@ -76,7 +82,7 @@ cdef class SubmitOrder(TradingCommand):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
+        ClientId client_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
         StrategyId strategy_id not None,
@@ -90,8 +96,8 @@ cdef class SubmitOrder(TradingCommand):
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the command.
+        client_id : ClientId
+            The client identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -109,9 +115,10 @@ cdef class SubmitOrder(TradingCommand):
 
         """
         super().__init__(
+            client_id=client_id,
             trader_id=trader_id,
             account_id=account_id,
-            instrument_id=instrument_id,
+            instrument_id=order.instrument_id,
             command_id=command_id,
             timestamp_ns=timestamp_ns,
         )
@@ -124,8 +131,10 @@ cdef class SubmitOrder(TradingCommand):
         cdef str position_id_str = '' if self.position_id.is_null() else f"position_id={self.position_id.value}, "
         return (f"{type(self).__name__}("
                 f"{self.order.status_string_c()}, "
+                f"client_id={self.client_id.value}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
                 f"{position_id_str}"
                 f"strategy_id={self.strategy_id.value}, "
@@ -144,7 +153,7 @@ cdef class SubmitBracketOrder(TradingCommand):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
+        ClientId client_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
         StrategyId strategy_id not None,
@@ -157,8 +166,8 @@ cdef class SubmitBracketOrder(TradingCommand):
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the command.
+        client_id : ClientId
+            The client identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
@@ -174,9 +183,10 @@ cdef class SubmitBracketOrder(TradingCommand):
 
         """
         super().__init__(
+            client_id=client_id,
             trader_id=trader_id,
             account_id=account_id,
-            instrument_id=instrument_id,
+            instrument_id=bracket_order.entry.instrument_id,
             command_id=command_id,
             timestamp_ns=timestamp_ns,
         )
@@ -186,9 +196,10 @@ cdef class SubmitBracketOrder(TradingCommand):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
+                f"client_id={self.client_id.value}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
                 f"entry_client_order_id={self.bracket_order.entry.client_order_id.value}, "
                 f"command_id={self.id})")
@@ -206,9 +217,10 @@ cdef class UpdateOrder(TradingCommand):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
+        ClientId client_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         Quantity quantity not None,
         Price price not None,
@@ -220,12 +232,14 @@ cdef class UpdateOrder(TradingCommand):
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the command.
+        client_id : ClientId
+            The client identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
             The account identifier for the command.
+        instrument_id : InstrumentId
+            The instrument identifier for the command.
         client_order_id : VenueOrderId
             The client order identifier.
         quantity : Quantity
@@ -239,6 +253,7 @@ cdef class UpdateOrder(TradingCommand):
 
         """
         super().__init__(
+            client_id=client_id,
             trader_id=trader_id,
             account_id=account_id,
             instrument_id=instrument_id,
@@ -252,9 +267,10 @@ cdef class UpdateOrder(TradingCommand):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
+                f"client_id={self.client_id.value}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
@@ -273,9 +289,10 @@ cdef class CancelOrder(TradingCommand):
 
     def __init__(
         self,
-        InstrumentId instrument_id not None,
+        ClientId client_id not None,
         TraderId trader_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID command_id not None,
@@ -286,12 +303,14 @@ cdef class CancelOrder(TradingCommand):
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the command.
+        client_id : ClientId
+            The client identifier for the command.
         trader_id : TraderId
             The trader identifier for the command.
         account_id : AccountId
             The account identifier for the command.
+        instrument_id : InstrumentId
+            The instrument identifier for the command.
         client_order_id : ClientOrderId
             The client order identifier to cancel.
         venue_order_id : VenueOrderId
@@ -303,6 +322,7 @@ cdef class CancelOrder(TradingCommand):
 
         """
         super().__init__(
+            client_id=client_id,
             trader_id=trader_id,
             account_id=account_id,
             instrument_id=instrument_id,
@@ -315,9 +335,10 @@ cdef class CancelOrder(TradingCommand):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"instrument_id={self.instrument_id}, "
+                f"client_id={self.client_id.value}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"command_id={self.id})")

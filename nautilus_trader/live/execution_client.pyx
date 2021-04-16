@@ -45,6 +45,7 @@ from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -79,7 +80,7 @@ cdef class LiveExecutionClientFactory:
         Parameters
         ----------
         name : str
-            The name for the client.
+            The client name.
         config : dict[str, object]
             The client configuration.
         engine : LiveDataEngine
@@ -87,7 +88,7 @@ cdef class LiveExecutionClientFactory:
         clock : LiveClock
             The clients clock.
         logger : LiveLogger
-            The client logger.
+            The clients logger.
         client_cls : class, optional
             The internal client constructor. This allows external library and
             testing dependency injection.
@@ -109,7 +110,7 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     def __init__(
         self,
-        str name not None,
+        ClientId client_id not None,
         AccountId account_id not None,
         LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
@@ -122,8 +123,8 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
-        name : str
-            The name of the client.
+        client_id : ClientId
+            The client identifier.
         account_id : AccountId
             The account identifier for the client.
         engine : LiveDataEngine
@@ -139,7 +140,7 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             account_id,
             engine,
             clock,
@@ -248,10 +249,10 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         Condition.not_none(active_orders, "active_orders")
 
-        self._log.info(f"Generating ExecutionMassStatus for {self.name}...")
+        self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
 
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
-            client=self.name,
+            client_id=self.id,
             account_id=self.account_id,
             timestamp_ns=self._clock.timestamp_ns(),
         )

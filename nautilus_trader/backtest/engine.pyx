@@ -45,7 +45,9 @@ from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
+
 from nautilus_trader.core.functions import get_size_of  # Not cimport
+
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -218,10 +220,10 @@ cdef class BacktestEngine:
             self._data_producer = CachedProducer(self._data_producer)
 
         # Create data clients
-        for name, client_type in data.clients.items():
+        for client_id, client_type in data.clients.items():
             if client_type == BacktestDataClient:
                 data_client = BacktestDataClient(
-                    name=name,
+                    client_id=client_id,
                     engine=self._data_engine,
                     clock=self._test_clock,
                     logger=self._test_logger,
@@ -229,12 +231,12 @@ cdef class BacktestEngine:
             elif client_type == BacktestMarketDataClient:
                 instruments = []
                 for instrument in data.instruments.values():
-                    if instrument.id.venue.first() == name:
+                    if instrument.id.venue.client_id == client_id:
                         instruments.append(instrument)
 
                 data_client = BacktestMarketDataClient(
                     instruments=instruments,
-                    name=name,
+                    client_id=client_id,
                     engine=self._data_engine,
                     clock=self._test_clock,
                     logger=self._test_logger,

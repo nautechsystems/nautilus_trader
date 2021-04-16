@@ -18,6 +18,7 @@ from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.execution.messages import PositionStatusReport
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Quantity
@@ -30,18 +31,18 @@ AUDUSD_SIM = TestStubs.audusd_id()
 class TestExecutionStateReport:
     def test_instantiate_report(self):
         # Arrange
-        client = "IB"
+        client_id = ClientId("IB")
         account_id = TestStubs.account_id()
 
         # Act
         report = ExecutionMassStatus(
-            client=client,
+            client_id=client_id,
             account_id=account_id,
             timestamp_ns=0,
         )
 
         # Assert
-        assert report.client == client
+        assert report.client_id == client_id
         assert report.account_id == account_id
         assert report.timestamp_ns == 0
         assert report.order_reports() == {}
@@ -50,7 +51,7 @@ class TestExecutionStateReport:
     def test_add_order_state_report(self):
         # Arrange
         report = ExecutionMassStatus(
-            client="IB",
+            client_id=ClientId("IB"),
             account_id=TestStubs.account_id(),
             timestamp_ns=0,
         )
@@ -72,7 +73,7 @@ class TestExecutionStateReport:
 
     def test_add_position_state_report(self):
         report = ExecutionMassStatus(
-            client="IB",
+            client_id=ClientId("IB"),
             account_id=TestStubs.account_id(),
             timestamp_ns=0,
         )

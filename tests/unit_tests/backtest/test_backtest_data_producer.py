@@ -24,6 +24,7 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -100,7 +101,7 @@ class TestBacktestDataProducer:
             timestamp_ns=1_000_000,
         )
 
-        data.add_generic_data("NEWS_CLIENT", generic_data1)
+        data.add_generic_data(ClientId("NEWS_CLIENT"), generic_data1)
         data.add_order_book_data([snapshot1, snapshot2])
 
         producer = BacktestDataProducer(data=data, logger=self.logger)

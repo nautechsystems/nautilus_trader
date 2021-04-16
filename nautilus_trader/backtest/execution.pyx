@@ -24,6 +24,7 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -57,7 +58,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         """
         super().__init__(
-            exchange.id.value,
+            ClientId(exchange.id.value),
             account_id,
             engine,
             clock,

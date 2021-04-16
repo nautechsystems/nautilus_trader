@@ -420,7 +420,7 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def submit_order_command():
         return SubmitOrder(
-            instrument_id=BetfairTestStubs.instrument_id(),
+            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
@@ -443,10 +443,13 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def update_order_command(instrument_id=None, client_order_id=None):
+        if instrument_id is None:
+            instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
-            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
+            client_id=instrument_id.venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
+            instrument_id=instrument_id,
             client_order_id=client_order_id
             or ClientOrderId("O-20210410-022422-001-001-1"),
             quantity=Quantity(50),
@@ -458,9 +461,10 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def cancel_order_command():
         return CancelOrder(
-            instrument_id=BetfairTestStubs.instrument_id(),
+            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("229597791245"),
             command_id=BetfairTestStubs.uuid(),

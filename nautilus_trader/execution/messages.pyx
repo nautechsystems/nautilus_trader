@@ -163,7 +163,7 @@ cdef class ExecutionMassStatus:
 
     def __init__(
         self,
-        str client not None,
+        ClientId client_id not None,
         AccountId account_id not None,
         int64_t timestamp_ns,
     ):
@@ -172,8 +172,8 @@ cdef class ExecutionMassStatus:
 
         Parameters
         ----------
-        client : str
-            The client name for the report.
+        client_id : ClientId
+            The client identifier for the report.
         account_id : AccountId
             The account identifier for the report.
         timestamp_ns : int64
@@ -185,14 +185,12 @@ cdef class ExecutionMassStatus:
             If client is not a valid string.
 
         """
-        Condition.valid_string(client, "client")
-
-        self.client = client
+        self.client_id = client_id
         self.account_id = account_id
         self.timestamp_ns = timestamp_ns
 
-        self._order_reports = {}    # type: dict[VenueOrderId, OrderStatusReport]
-        self._exec_reports = {}     # type: dict[VenueOrderId, list[ExecutionReport]]
+        self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
+        self._exec_reports = {}      # type: dict[VenueOrderId, list[ExecutionReport]]
         self._position_reports = {}  # type: dict[InstrumentId, PositionStatusReport]
 
     cpdef dict order_reports(self):

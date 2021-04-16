@@ -25,6 +25,7 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -70,7 +71,7 @@ class TestRiskEngine:
         )
 
         self.exec_client = MockExecutionClient(
-            self.venue.value,
+            ClientId(self.venue.value),
             self.account_id,
             self.exec_engine,
             self.clock,
@@ -94,7 +95,7 @@ class TestRiskEngine:
         result = self.risk_engine.registered_clients
 
         # Assert
-        assert result == ["SIM"]
+        assert result == [ClientId("SIM")]
 
     def test_set_block_all_orders_changes_flag_value(self):
         # Arrange
@@ -107,6 +108,7 @@ class TestRiskEngine:
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
+            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
             self.account_id,
             AUDUSD_SIM.id,
@@ -145,7 +147,7 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -187,7 +189,7 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            entry.instrument_id,
+            entry.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -222,7 +224,7 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -261,7 +263,7 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -272,9 +274,10 @@ class TestRiskEngine:
         )
 
         update = UpdateOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
+            order.instrument_id,
             order.client_order_id,
             order.quantity,
             Price("1.00010"),
@@ -310,7 +313,7 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -321,9 +324,10 @@ class TestRiskEngine:
         )
 
         cancel = CancelOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
+            order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
             self.uuid_factory.generate(),
@@ -364,7 +368,7 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            entry.instrument_id,
+            entry.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,

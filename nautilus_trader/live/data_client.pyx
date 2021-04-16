@@ -22,6 +22,7 @@ from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
+from nautilus_trader.model.identifiers cimport ClientId
 
 
 cdef class LiveDataClientFactory:
@@ -44,15 +45,15 @@ cdef class LiveDataClientFactory:
         Parameters
         ----------
         name : str
-            The name for the client.
+            The client name.
         config : dict[str, object]
-            The client configuration.
+            The clients configuration.
         engine : LiveDataEngine
             The clients engine.
         clock : LiveClock
             The clients clock.
         logger : LiveLogger
-            The client logger.
+            The clients logger.
         client_cls : class, optional
             The internal client constructor.
 
@@ -73,7 +74,7 @@ cdef class LiveDataClient(DataClient):
 
     def __init__(
         self,
-        str name not None,
+        ClientId client_id not None,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -84,8 +85,8 @@ cdef class LiveDataClient(DataClient):
 
         Parameters
         ----------
-        name : str
-            The data client name.
+        client_id : ClientId
+            The client identifier.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -97,7 +98,7 @@ cdef class LiveDataClient(DataClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             engine,
             clock,
             logger,
@@ -116,7 +117,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
     def __init__(
         self,
-        str name not None,
+        ClientId client_id not None,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -127,8 +128,8 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         Parameters
         ----------
-        name : str
-            The data client name.
+        client_id : ClientId
+            The client identifier.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -140,7 +141,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            name,
+            client_id,
             engine,
             clock,
             logger,

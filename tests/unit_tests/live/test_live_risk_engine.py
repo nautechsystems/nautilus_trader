@@ -27,6 +27,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -91,7 +92,7 @@ class TestLiveRiskEngine:
 
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
-            self.venue.value,
+            ClientId(self.venue.value),
             self.account_id,
             self.exec_engine,
             self.clock,
@@ -154,7 +155,7 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -199,7 +200,7 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             strategy.id,
@@ -279,7 +280,7 @@ class TestLiveRiskEngine:
             )
 
             submit_order = SubmitOrder(
-                order.instrument_id,
+                order.instrument_id.venue.client_id,
                 self.trader_id,
                 self.account_id,
                 strategy.id,

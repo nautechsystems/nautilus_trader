@@ -27,13 +27,13 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
@@ -49,7 +49,7 @@ cdef class DataClient:
 
     def __init__(
         self,
-        str name not None,
+        ClientId client_id not None,
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
@@ -60,8 +60,8 @@ cdef class DataClient:
 
         Parameters
         ----------
-        name : str
-            The data client name.
+        client_id : ClientId
+            The data client identifier.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -77,27 +77,25 @@ cdef class DataClient:
             If name is not a valid string.
 
         """
-        Condition.valid_string(name, "name")
-
         if config is None:
             config = {}
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(
-            component=config.get("name", f"DataClient-{name}"),
+            component=config.get("name", f"DataClient-{client_id.value}"),
             logger=logger,
         )
         self._engine = engine
         self._config = config
 
-        self.name = name
+        self.id = client_id
         self.is_connected = False
 
         self._log.info("Initialized.")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}-{self.name}"
+        return f"{type(self).__name__}-{self.id.value}"
 
     cpdef void connect(self) except *:
         """Abstract method (implement in subclass)."""
@@ -146,7 +144,7 @@ cdef class DataClient:
 
     cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            client_name=self.name,
+            client_id=self.id,
             data_type=data.data_type,
             data=data,
             correlation_id=correlation_id,
@@ -166,7 +164,7 @@ cdef class MarketDataClient(DataClient):
 
     def __init__(
         self,
-        str name not None,
+        ClientId client_id not None,
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
@@ -177,8 +175,8 @@ cdef class MarketDataClient(DataClient):
 
         Parameters
         ----------
-        name : str
-            The data client name (normally the venue).
+        client_id : ClientId
+            The data client identifier (normally the venue).
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -190,7 +188,7 @@ cdef class MarketDataClient(DataClient):
 
         """
         super().__init__(
-            name=name,
+            client_id=client_id,
             engine=engine,
             clock=clock,
             logger=logger,
@@ -349,7 +347,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            client_name=self.name,
+            client_id=self.id,
             data_type=DataType(Instrument),
             data=instruments,
             correlation_id=correlation_id,
@@ -361,7 +359,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            client_name=self.name,
+            client_id=self.id,
             data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -373,7 +371,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            client_name=self.name,
+            client_id=self.id,
             data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
@@ -385,7 +383,7 @@ cdef class MarketDataClient(DataClient):
 
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            client_name=self.name,
+            client_id=self.id,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,

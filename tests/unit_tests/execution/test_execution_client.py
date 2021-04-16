@@ -28,6 +28,7 @@ from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -72,7 +73,7 @@ class ExecutionClientTests(unittest.TestCase):
         self.venue = Venue("SIM")
 
         self.client = ExecutionClient(
-            name=self.venue.value,
+            client_id=ClientId(self.venue.value),
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -106,7 +107,7 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            order.instrument_id,
+            order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "001"),
@@ -134,7 +135,7 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            entry_order.instrument_id,
+            entry_order.instrument_id.venue.client_id,
             self.trader_id,
             self.account_id,
             StrategyId("SCALPER", "001"),
@@ -151,9 +152,10 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = UpdateOrder(
-            AUDUSD_SIM.id,
+            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             Quantity(120000),
             Price("1.00000"),
@@ -168,9 +170,10 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = CancelOrder(
-            AUDUSD_SIM.id,
+            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
             self.uuid_factory.generate(),
