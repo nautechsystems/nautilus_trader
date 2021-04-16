@@ -13,17 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum OrderBookOperationType:
-    ADD = 1,
-    UPDATE = 2,
-    DELETE = 3,
-
-
-cdef class OrderBookOperationTypeParser:
+cdef class OrderBookDeltaTypeParser:
 
     @staticmethod
-    cdef str to_str(int value)
+    cdef str to_str(int value):
+        if value == 1:
+            return "ADD"
+        elif value == 2:
+            return "UPDATE"
+        elif value == 3:
+            return "DELETE"
+        else:
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderBookOperationType from_str(str value) except *
+    cdef OrderBookDeltaType from_str(str value) except *:
+        if value == "ADD":
+            return OrderBookDeltaType.ADD
+        elif value == "UPDATE":
+            return OrderBookDeltaType.UPDATE
+        elif value == "DELETE":
+            return OrderBookDeltaType.DELETE
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    def to_str_py(int value):
+        return OrderBookDeltaTypeParser.to_str(value)
+
+    @staticmethod
+    def from_str_py(str value):
+        return OrderBookDeltaTypeParser.from_str(value)

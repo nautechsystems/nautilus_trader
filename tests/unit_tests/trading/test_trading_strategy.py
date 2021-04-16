@@ -43,6 +43,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -120,7 +121,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.data_client = BacktestMarketDataClient(
             instruments=[AUDUSD_SIM, GBPUSD_SIM, USDJPY_SIM],
-            name="SIM",
+            client_id=ClientId("SIM"),
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
@@ -1400,7 +1401,7 @@ class TradingStrategyTests(unittest.TestCase):
         data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
 
         # Act
-        strategy.subscribe_data("QUANDL", data_type)
+        strategy.subscribe_data(ClientId("QUANDL"), data_type)
 
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
@@ -1419,10 +1420,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
-        strategy.subscribe_data("QUANDL", data_type)
+        strategy.subscribe_data(ClientId("QUANDL"), data_type)
 
         # Act
-        strategy.unsubscribe_data("QUANDL", data_type)
+        strategy.unsubscribe_data(ClientId("QUANDL"), data_type)
 
         # Assert
         self.assertEqual(2, self.data_engine.command_count)
@@ -1460,6 +1461,46 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         strategy.subscribe_order_book(AUDUSD_SIM.id, level=2)
+
+        # Act
+        strategy.unsubscribe_order_book(AUDUSD_SIM.id)
+
+        # Assert
+        self.assertEqual(2, self.data_engine.command_count)
+
+    def test_subscribe_order_book_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        # Act
+        strategy.subscribe_order_book_deltas(AUDUSD_SIM.id, level=2)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
+    def test_unsubscribe_order_book_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        strategy.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
 
         # Act
         strategy.unsubscribe_order_book(AUDUSD_SIM.id)
@@ -1654,7 +1695,7 @@ class TradingStrategyTests(unittest.TestCase):
         data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquakes"})
 
         # Act
-        strategy.request_data("BLOOMBERG-01", data_type)
+        strategy.request_data(ClientId("BLOOMBERG-01"), data_type)
 
         # Assert
         self.assertEqual(1, self.data_engine.request_count)

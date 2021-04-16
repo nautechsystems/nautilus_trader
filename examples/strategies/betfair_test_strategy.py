@@ -49,8 +49,8 @@ class BetfairTestStrategy(TradingStrategy):
         instrument_filter: dict,
         trade_size: Decimal,
         order_id_tag: str,  # Must be unique at 'trader level'
-        theo_change_threshold=Decimal(0.01),
-        market_width=Decimal(0.05),
+        theo_change_threshold=Decimal(0.01),  # noqa (B008)
+        market_width=Decimal(0.05),  # noqa (B008)
     ):
         """
         Initialize a new instance of the `EMACross` class.
@@ -167,7 +167,7 @@ class BetfairTestStrategy(TradingStrategy):
             self.midpoint = midpoint
 
     def send_orders(self, midpoint):
-        sell_price = midpoint + (self.market_width / Decimal(2.0))
+        # sell_price = midpoint + (self.market_width / Decimal(2.0))
         buy_price = midpoint - (self.market_width / Decimal(2.0))
         self.buy(price=buy_price)
         # self.sell(price=sell_price)

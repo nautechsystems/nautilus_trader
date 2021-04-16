@@ -19,12 +19,13 @@ from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import OrderBookOperationType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.orderbook.book import OrderBookOperation
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.providers import TestDataProvider
@@ -62,11 +63,11 @@ class TestBacktestDataContainer:
         ]
 
         # Act
-        data.add_generic_data("NEWS_CLIENT", generic_data1)
-        data.add_generic_data("NEWS_CLIENT", generic_data2)
+        data.add_generic_data(ClientId("NEWS_CLIENT"), generic_data1)
+        data.add_generic_data(ClientId("NEWS_CLIENT"), generic_data2)
 
         # Assert
-        assert "NEWS_CLIENT" in data.clients
+        assert ClientId("NEWS_CLIENT") in data.clients
         assert len(data.generic_data) == 5
         assert data.generic_data[-1].timestamp_ns == 3000  # sorted
 
@@ -105,7 +106,7 @@ class TestBacktestDataContainer:
         data.add_order_book_data([snapshot2, snapshot1])  # <-- reverse order
 
         # Assert
-        assert "BINANCE" in data.clients
+        assert ClientId("BINANCE") in data.clients
         assert ETHUSDT_BINANCE.id in data.books
         assert data.order_book_data == [snapshot1, snapshot2]  # <-- sorted
 
@@ -113,50 +114,50 @@ class TestBacktestDataContainer:
         # Arrange
         data = BacktestDataContainer()
 
-        ops = [
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+        deltas = [
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(13.0, 40, OrderSide.SELL),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(12.0, 30, OrderSide.SELL),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(11.0, 20, OrderSide.SELL),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(10.0, 20, OrderSide.BUY),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(9.0, 30, OrderSide.BUY),
                 timestamp_ns=0,
             ),
-            OrderBookOperation(
-                OrderBookOperationType.ADD,
+            OrderBookDelta(
+                OrderBookDeltaType.ADD,
                 Order(0.0, 40, OrderSide.BUY),
                 timestamp_ns=0,
             ),
         ]
 
-        operations1 = OrderBookOperations(
+        operations1 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
-            ops=ops,
+            deltas=deltas,
             timestamp_ns=0,
         )
 
-        operations2 = OrderBookOperations(
+        operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
-            ops=ops,
+            deltas=deltas,
             timestamp_ns=1000,
         )
 
@@ -164,7 +165,7 @@ class TestBacktestDataContainer:
         data.add_order_book_data([operations2, operations1])  # <-- not sorted
 
         # Assert
-        assert "BINANCE" in data.clients
+        assert ClientId("BINANCE") in data.clients
         assert ETHUSDT_BINANCE.id in data.books
         assert data.order_book_data == [operations1, operations2]  # <-- sorted
 
@@ -179,7 +180,7 @@ class TestBacktestDataContainer:
         )
 
         # Assert
-        assert "SIM" in data.clients
+        assert ClientId("SIM") in data.clients
         assert data.has_quote_data(AUDUSD_SIM.id)
         assert AUDUSD_SIM.id in data.quote_ticks
         assert len(data.quote_ticks[AUDUSD_SIM.id]) == 100000
@@ -195,7 +196,7 @@ class TestBacktestDataContainer:
         )
 
         # Assert
-        assert "BINANCE" in data.clients
+        assert ClientId("BINANCE") in data.clients
         assert data.has_trade_data(ETHUSDT_BINANCE.id)
         assert ETHUSDT_BINANCE.id in data.trade_ticks
         assert len(data.trade_ticks[ETHUSDT_BINANCE.id]) == 69806
@@ -221,7 +222,7 @@ class TestBacktestDataContainer:
         )
 
         # Assert
-        assert "SIM" in data.clients
+        assert ClientId("SIM") in data.clients
         assert USDJPY_SIM.id in data.bars_ask
         assert USDJPY_SIM.id in data.bars_bid
         assert len(data.bars_bid[USDJPY_SIM.id]) == 1  # MINUTE key

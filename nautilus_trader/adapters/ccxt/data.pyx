@@ -39,6 +39,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
@@ -85,7 +86,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         """
         super().__init__(
-            client.name.upper(),
+            ClientId(client.name.upper()),
             engine,
             clock,
             logger,

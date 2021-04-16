@@ -19,6 +19,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -28,9 +29,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class OrderStatusReport:
     cdef readonly ClientOrderId client_order_id
-    """The reported client order identifier.\n\n:returns: `ClientOrderId`"""
+    """The client order identifier for the report.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The reported order identifier.\n\n:returns: `VenueOrderId`"""
+    """The reported venue order identifier.\n\n:returns: `VenueOrderId`"""
     cdef readonly OrderState order_state
     """The reported order state at the exchange.\n\n:returns: `OrderState`"""
     cdef readonly Quantity filled_qty
@@ -51,18 +52,24 @@ cdef class PositionStatusReport:
 
 
 cdef class ExecutionReport:
-    # TODO: Docs
     cdef readonly ClientOrderId client_order_id
+    """The client order identifier for the report.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
+    """The reported venue order identifier.\n\n:returns: `VenueOrderId`"""
     cdef readonly ExecutionId id
+    """The reported execution identifier.\n\n:returns: `ExecutionId`"""
     cdef readonly object last_qty
-    cdef readonly object cum_qty
-    cdef readonly object leaves_qty
+    """The reported quantity of the last fill.\n\n:returns: `Decimal`"""
     cdef readonly object last_px
+    """The reported price of the last fill.\n\n:returns: `Decimal`"""
     cdef readonly object commission_amount
+    """The reported commission amount.\n\n:returns: `Decimal`"""
     cdef readonly str commission_currency
+    """The reported commission currency.\n\n:returns: `Decimal`"""
     cdef readonly LiquiditySide liquidity_side
+    """The reported liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t execution_ns
+    """The Unix timestamp (nanos) of the execution.\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t timestamp_ns
     """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
 
@@ -72,8 +79,8 @@ cdef class ExecutionMassStatus:
     cdef dict _exec_reports
     cdef dict _position_reports
 
-    cdef readonly str client
-    """The client name for the report.\n\n:returns: `str`"""
+    cdef readonly ClientId client_id
+    """The client identifier for the report.\n\n:returns: `ClientId`"""
     cdef readonly AccountId account_id
     """The account identifier for the report.\n\n:returns: `AccountId`"""
     cdef readonly int64_t timestamp_ns

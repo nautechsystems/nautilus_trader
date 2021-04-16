@@ -14,5 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `live` sub-package groups all engine and client implementations for live trading.
+The `live` subpackage groups all engine and client implementations for live trading.
 """

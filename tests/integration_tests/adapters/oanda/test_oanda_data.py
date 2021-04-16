@@ -33,6 +33,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -292,7 +293,7 @@ class OandaDataClientTests(unittest.TestCase):
             bar_type = BarType(instrument_id=AUDUSD, bar_spec=bar_spec)
 
             request = DataRequest(
-                client_name=OANDA.value,
+                client_id=ClientId(OANDA.value),
                 data_type=DataType(
                     Bar,
                     metadata={

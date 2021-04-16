@@ -26,8 +26,8 @@ cdef class Symbol(Identifier):
 cdef class Venue(Identifier):
     cdef readonly str broker
     """The optional broker name.\n\n:returns: `str` or None"""
-
-    cpdef str first(self)
+    cdef readonly ClientId client_id
+    """The client identifier for routing.\n\n:returns: `ClientId`"""
 
 
 cdef class InstrumentId(Identifier):
@@ -83,6 +83,12 @@ cdef class AccountId(Identifier):
 
     @staticmethod
     cdef AccountId from_str_c(str value)
+
+
+cdef class ClientId(Identifier):
+
+    @staticmethod
+    cdef ClientId from_str_c(str value)
 
 
 cdef class BracketOrderId(Identifier):

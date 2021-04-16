@@ -14,5 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `adapters` sub-package provides integrations for data providers, brokerages, and exchanges.
+The `adapters` subpackage provides integrations for data providers, brokerages, and exchanges.
 """

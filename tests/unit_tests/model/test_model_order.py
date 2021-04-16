@@ -732,6 +732,36 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertEqual(4, order.event_count)
 
+    def test_apply_order_updated_venue_id_change(self):
+        # Arrange
+        order = self.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("1.00000"),
+        )
+
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+
+        updated = OrderUpdated(
+            self.account_id,
+            order.client_order_id,
+            VenueOrderId("2"),
+            Quantity(120000),
+            Price("1.00001"),
+            0,
+            uuid4(),
+            0,
+        )
+
+        # Act
+        order.apply(updated)
+
+        # Assert
+        self.assertEqual(VenueOrderId("2"), order.venue_order_id)
+        self.assertEqual([VenueOrderId("1")], order.venue_order_ids)
+
     def test_apply_order_filled_event_to_order_without_accepted(self):
         # Arrange
         order = self.order_factory.market(

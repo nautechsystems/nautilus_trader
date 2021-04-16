@@ -124,6 +124,8 @@ cdef class Order:
 
 
 cdef class PassiveOrder(Order):
+    cdef list _venue_order_ids
+
     cdef readonly Price price
     """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly LiquiditySide liquidity_side
@@ -132,5 +134,7 @@ cdef class PassiveOrder(Order):
     """The order expire time.\n\n:returns: `datetime` or None"""
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
+
+    cdef list venue_order_ids_c(self)
 
     cdef void _set_slippage(self) except *

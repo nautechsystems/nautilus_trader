@@ -21,11 +21,8 @@ import orjson
 
 def flatten_tree(y: Dict, **filters):
     """
-    Flatten a nested dict into a list of dicts with each nested level combined into a singe dict
-
-    :param y: Dict
-    :param filters: Filter keys
-    :return:
+    Flatten a nested dict into a list of dicts with each nested level combined
+    into a single dict.
     """
 
     results = []
@@ -53,7 +50,9 @@ def flatten_tree(y: Dict, **filters):
 
 
 def chunk(list_like, n):
-    """ Yield successive n-sized chunks from l."""
+    """
+    Yield successive n-sized chunks from l.
+    """
     for i in range(0, len(list_like), n):
         yield list_like[i : i + n]
 

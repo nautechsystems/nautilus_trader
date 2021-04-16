@@ -32,20 +32,22 @@ from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
     @staticmethod
     def create(
-            str name not None,
-            dict config not None,
-            LiveDataEngine engine not None,
-            LiveClock clock not None,
-            LiveLogger logger not None,
+        str name not None,
+        dict config not None,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        LiveLogger logger not None,
     ):
         """
         Create new Betfair clients.
 
         Parameters
         ----------
+        name : str
+            The client name.
         config : dict
             The configuration dictionary.
-        data_engine : LiveDataEngine
+        engine : LiveDataEngine
             The data engine for the Nautilus clients.
         clock : LiveClock
             The clock for the clients.
@@ -92,14 +94,18 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         Parameters
         ----------
+        name : str
+            The client name.
         config : dict
             The configuration dictionary.
-        exec_engine : LiveDataEngine
+        engine : LiveDataEngine
             The execution engine for the Nautilus clients.
         clock : LiveClock
             The clock for the clients.
         logger : LiveLogger
             The logger for the clients.
+        client_cls : class
+            The class to call to return a new internal client.
 
         Returns
         -------

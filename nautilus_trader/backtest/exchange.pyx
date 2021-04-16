@@ -63,7 +63,7 @@ from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orderbook.book cimport L2OrderBook
-from nautilus_trader.model.orderbook.book cimport OrderBookOperations
+from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
@@ -270,15 +270,20 @@ cdef class SimulatedExchange:
                 bid = Price(data.bids[0], instrument.price_precision)
             if data.asks:
                 ask = Price(data.asks[0], instrument.price_precision)
-        elif isinstance(data, OrderBookOperations):
+        elif isinstance(data, OrderBookDeltas):
             order_book = self._books.get(instrument_id)
             if order_book is None:
                 order_book = L2OrderBook(instrument_id=instrument_id)
                 self._books[instrument_id] = order_book
-            order_book.apply_operations(data)
-
-            bid = Price(order_book.best_bid_price(), instrument.price_precision)
-            ask = Price(order_book.best_ask_price(), instrument.price_precision)
+            order_book.apply_deltas(data)
+            if order_book.best_bid_price():
+                bid = Price(order_book.best_bid_price(), instrument.price_precision)
+            else:
+                bid = None
+            if order_book.best_ask_price():
+                ask = Price(order_book.best_ask_price(), instrument.price_precision)
+            else:
+                ask = None
 
         self._market_bids[instrument_id] = bid
         self._market_asks[instrument_id] = ask

@@ -450,7 +450,7 @@ class TradingNode:
             return
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGABRT)
+        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")

@@ -42,6 +42,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -83,7 +84,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
         """
         super().__init__(
-            "OANDA",
+            ClientId("OANDA"),
             engine,
             clock,
             logger,

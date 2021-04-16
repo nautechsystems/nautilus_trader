@@ -1,15 +1,9 @@
 repos:
-  - repo: https://github.com/pycqa/isort
+
+  - repo: https://github.com/PyCQA/isort
     rev: 5.8.0
     hooks:
       - id: isort
-        name: isort (python)
-      - id: isort
-        name: isort (cython)
-        types: [cython]
-      - id: isort
-        name: isort (pyi)
-        types: [pyi]
 
   - repo: https://github.com/psf/black
     rev: 20.8b1
@@ -19,8 +13,16 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v3.4.0
     hooks:
+      - id: forbid-new-submodules
+      - id: fix-encoding-pragma
+        args: [--remove]
+      - id: end-of-file-fixer
+        types_or: [python, cython]
+      - id: trailing-whitespace
+        types_or: [python, cython]
+      - id: debug-statements
+      - id: detect-private-key
       - id: check-builtin-literals
-      - id: check-byte-order-marker
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-json
@@ -29,23 +31,49 @@ repos:
       - id: check-toml
       - id: check-xml
       - id: check-yaml
-      - id: debug-statements
-      - id: detect-private-key
-      - id: fix-encoding-pragma
-        args: [--remove]
-      - id: forbid-new-submodules # Check for git submodules
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
 
-  - repo: https://gitlab.com/pycqa/flake8
+  -   repo: https://github.com/codespell-project/codespell
+      rev: v2.0.0
+      hooks:
+        -   id: codespell
+            description: Checks for common misspellings.
+            types_or: [python, rst, markdown]  # TODO: Add Cython
+
+  - repo: https://gitlab.com/PyCQA/flake8
     rev: 3.9.0
     hooks:
       - id: flake8
+        name: flake8 (python)
         additional_dependencies:
-          - flake8-bandit==2.1.2
-          - flake8-bugbear==20.1.4
+          - flake8-bandit
+          - flake8-black
+          - flake8-bugbear
+          - flake8-coding
+#          - flake8-comprehensions
+          - flake8-debugger
+          - flake8-deprecated
+#          - flake8-docstrings
+          - flake8-pep3101
+          - flake8-string-format
+#          - flake8-rst-docstrings
+          - flake8-typing-imports
+#          - pep8-naming
+        types: [python]
+      - id: flake8
+        name: flake8 (cython)
+        additional_dependencies:
+          - flake8-bandit
+          - flake8-black
+          - flake8-bugbear
+          - flake8-coding
+          - flake8-comprehensions
+          - flake8-debugger
+          - flake8-deprecated
           - flake8-docstrings
-          - flake8-rst-docstrings==0.0.14
-          - flake8-typing-imports==1.9.0
-          - pep8-naming==0.11.1
-        types: [python, cython]
+          - flake8-pep3101
+          - flake8-polyfill
+          - flake8-string-format
+          - flake8-rst-docstrings
+          - flake8-typing-imports
+          - pep8-naming
+        types: [cython]

@@ -30,7 +30,13 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cdef inline void _log_betfair_error(self, ex, str method_name) except *
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=*, dict kwargs=*) except *
+    cpdef void subscribe_order_book(
+        self,
+        InstrumentId instrument_id,
+        OrderBookLevel level,
+        int depth=*,
+        dict kwargs=*,
+    ) except *
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *
     cpdef void handle_data(self, Data data) except *
     cpdef void _on_market_update(self, bytes raw) except *

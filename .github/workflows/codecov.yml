@@ -2,12 +2,9 @@ name: codecov
 
 on:
   push:
-    branches-ignore:
-      - "dependabot/**"
+    branches: [ master, develop ]
   pull_request:
-    branches-ignore:
-      - "master"
-      - "dependabot/**"
+    branches: [ develop ]
 
 jobs:
   codecov:
@@ -49,6 +46,10 @@ jobs:
       # Redis is a dep for integration tests
       - name: Install Redis
         run: sudo apt-get install redis-server
+
+      # Run docs build
+      - name: Run docs build
+        run: nox -s build_docs --reuse-existing-virtualenvs
 
       # Run coverage
       - name: Run coverage

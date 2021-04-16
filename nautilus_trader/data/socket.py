@@ -1,8 +1,8 @@
 import asyncio
+from asyncio import IncompleteReadError
 import json
 from typing import Optional
 
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import LoggerAdapter
 
 
@@ -44,7 +44,8 @@ class SocketClient:
         self.reader = None  # type: Optional[asyncio.StreamReader]
         self.writer = None  # type: Optional[asyncio.StreamWriter]
         self.connected = False
-        self.stop = False
+        self._stop = False
+        self._stopped = False
 
     async def connect(self):
         if not self.connected:
@@ -53,6 +54,23 @@ class SocketClient:
             )
             await self.post_connection()
             self.connected = True
+
+    async def disconnect(self):
+        self.stop()
+        while not self._stopped:
+            await asyncio.sleep(0.01)
+        self.writer.close()
+        await self.writer.wait_closed()
+        self.reader = None
+        self.writer = None
+        self.connected = False
+
+    def stop(self):
+        self._stop = True
+
+    async def reconnect(self):
+        await self.disconnect()
+        await self.connect()
 
     async def post_connection(self):
         """ Overridable hook for any post-connection duties, i.e. sending further connection messages """
@@ -63,23 +81,27 @@ class SocketClient:
             raw = json.dumps(raw)
         if not isinstance(raw, bytes):
             raw = raw.encode(self.encoding)
-        self.logger.debug(raw.decode(), color=LogColor.YELLOW)
+        self.logger.debug(raw.decode())
         self.writer.write(raw + self.crlf)
         await self.writer.drain()
 
     async def start(self):
+        partial = b""
         if not self.connected:
             await self.connect()
-        while not self.stop:
+        while not self._stop:
             try:
                 raw = await self.reader.readuntil(separator=self.crlf)
+                if partial:
+                    raw = partial + raw
+                    partial = b""
                 self.logger.debug(raw.decode())
                 self.message_handler(raw.rstrip(self.crlf))
                 await asyncio.sleep(0)
+            except IncompleteReadError as e:
+                partial = e.partial
+                self.logger.warning(str(e))
+                continue
             except ConnectionResetError:
                 await self.connect()
-        await self.shutdown()
-
-    async def shutdown(self):
-        self.writer.close()
-        await self.writer.wait_closed()
+        self._stopped = True

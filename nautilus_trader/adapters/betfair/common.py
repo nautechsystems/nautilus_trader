@@ -110,7 +110,7 @@ all_prices = np.asarray(np.asarray(list(price_probability_map)) / 100.0)
 
 
 def round_probability(probability, side):
-    """ If we have a probability in between two prices, round to the better price """
+    """If we have a probability in between two prices, round to the better price."""
     if probability in all_probabilities:
         return probability
     idx = all_probabilities.searchsorted(probability)
@@ -125,7 +125,7 @@ def round_probability(probability, side):
 
 
 def round_price(price, side):
-    """ If we have a probability in between two prices, round to the better price """
+    """If we have a probability in between two prices, round to the better price."""
     if price in all_prices:
         return price
     else:
@@ -138,8 +138,9 @@ def round_price(price, side):
 
 def price_to_probability(price, side=None) -> Price:
     """
-    Convert a bet price into a probability, rounded to the "better" probability (based on the side) if a the price
-    is between the real ticks for betfair prices.
+    Convert a bet price into a probability, rounded to the "better" probability
+    (based on the side) if a the price is between the real ticks for betfair
+    prices.
     """
     rounded = round(price * 100)
     if rounded not in price_probability_map:
@@ -154,14 +155,16 @@ def price_to_probability(price, side=None) -> Price:
 
 def probability_to_price(probability, side=None) -> Price:
     """
-    Convert a bet probability into a betting price, rounded to the "better" price (based on the side) if a the
-    probability is between the real ticks for betfair prices.
+    Convert a bet probability into a betting price, rounded to the "better"
+    price (based on the side) if a the probability is between the real ticks for
+    betfair prices.
     """
     parsed = parse_prob(probability)
     if parsed not in probability_price_map:
         if side is None:
             raise ValueError(
-                f"If not passing a side, probability ({probability}) must exist in `probability_price_map`"
+                f"If not passing a side, "
+                f"probability ({probability}) must exist in `probability_price_map`"
             )
         parsed = parse_prob(round_probability(probability=probability, side=side))
     price = float(probability_price_map[parsed]) / 100.0

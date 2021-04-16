@@ -31,6 +31,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
@@ -441,7 +442,7 @@ class CCXTDataClientTests(unittest.TestCase):
             handler = ObjectStorer()
 
             request = DataRequest(
-                client_name=BINANCE.value,
+                client_id=ClientId(BINANCE.value),
                 data_type=DataType(
                     TradeTick,
                     metadata={
@@ -488,7 +489,7 @@ class CCXTDataClientTests(unittest.TestCase):
             bar_type = BarType(instrument_id=ETHUSDT, bar_spec=bar_spec)
 
             request = DataRequest(
-                client_name=BINANCE.value,
+                client_id=ClientId(BINANCE.value),
                 data_type=DataType(
                     Bar,
                     metadata={

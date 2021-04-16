@@ -120,20 +120,17 @@ cpdef double fast_mean(np.ndarray values) except *:
     > 10x faster than `np.mean` if the array length < ~200.
 
     """
-    cdef double[:] mv
-    cdef int length
-    cdef double total = 0.0
-    cdef int i
-
     if values is None or values.ndim != 1:
         raise ValueError(f"values must be valid numpy.ndarray with ndim == 1.")
 
-    mv = values
-    length = len(mv)
+    cdef double[:] mv = values
+    cdef int length = len(mv)
 
     if length == 0:
         return 0.0
 
+    cdef double total = 0.0
+    cdef int i
     with nogil:
         for i in range(length):
             total += mv[i]
@@ -234,21 +231,18 @@ cpdef double fast_std_with_mean(np.ndarray values, double mean) except *:
     > 25x faster than `np.std` if the array length < ~200.
 
     """
-    cdef double[:] mv
-    cdef int length
-    cdef double std_dev = 0.0
-    cdef double v
-    cdef int i
-
     if values is None or values.ndim != 1:
         raise ValueError(f"values must be valid ndarray with ndim == 1.")
 
-    mv = values
-    length = len(mv)
+    cdef double[:] mv = values
+    cdef int length = len(mv)
 
     if length == 0:
         return 0.0
 
+    cdef double std_dev = 0.0
+    cdef double v
+    cdef int i
     with nogil:
         for i in range(length):
             v = mv[i] - mean

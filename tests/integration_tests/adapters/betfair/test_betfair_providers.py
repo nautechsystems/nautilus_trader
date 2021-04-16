@@ -24,7 +24,8 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 @pytest.fixture(autouse=True)
 def fix_mocks(mocker):
     """
-    Override the `_short` version of `list_market_catalogue` used by the top level conftest
+    Override the `_short` version of `list_market_catalogue` used by the
+    top-level conftest.
     """
     # Mock market catalogue endpoints
     mocker.patch(

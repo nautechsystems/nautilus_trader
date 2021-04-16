@@ -26,11 +26,12 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBookOperations
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -65,7 +66,7 @@ class DataClientTests(unittest.TestCase):
         self.venue = Venue("SIM")
 
         self.client = DataClient(
-            name="TEST_PROVIDER",
+            client_id=ClientId("TEST_PROVIDER"),
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
@@ -162,7 +163,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.venue = Venue("SIM")
 
         self.client = MarketDataClient(
-            name=self.venue.value,
+            client_id=ClientId(self.venue.value),
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
@@ -360,15 +361,15 @@ class MarketDataClientTests(unittest.TestCase):
 
     def test_handle_order_book_operations_sends_to_data_engine(self):
         # Arrange
-        ops = OrderBookOperations(
+        deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
-            ops=[],
+            deltas=[],
             timestamp_ns=0,
         )
 
         # Act
-        self.client._handle_data_py(ops)
+        self.client._handle_data_py(deltas)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)

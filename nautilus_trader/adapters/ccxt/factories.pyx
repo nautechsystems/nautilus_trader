@@ -46,7 +46,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
         Parameters
         ----------
         name : str
-            The name for the client.
+            The client name.
         config : dict
             The configuration dictionary.
         engine : LiveDataEngine
@@ -56,7 +56,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
         logger : LiveLogger
             The logger for the clients.
         client_cls : class
-            The class to call to return a new CCXT Pro client.
+            The class to call to return a new internal client.
 
         Returns
         -------
@@ -134,7 +134,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         Parameters
         ----------
         name : str
-            The name for the client.
+            The client name.
         config : dict
             The configuration dictionary.
         engine : LiveDataEngine

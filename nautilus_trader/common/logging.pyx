@@ -238,7 +238,7 @@ cdef class LoggerAdapter:
 
     cpdef Logger get_logger(self):
         """
-        Return the encapsulated logger
+        Return the encapsulated logger.
 
         Returns
         -------

@@ -25,10 +25,36 @@ cdef class IdentifierCache:
         """
         Initialize a new instance of the `IdentifierCache` class.
         """
+        self._cached_client_ids = ObjectCache(ClientId, ClientId.from_str_c)
         self._cached_trader_ids = ObjectCache(TraderId, TraderId.from_str_c)
         self._cached_account_ids = ObjectCache(AccountId, AccountId.from_str_c)
         self._cached_strategy_ids = ObjectCache(StrategyId, StrategyId.from_str_c)
         self._cached_instrument_ids = ObjectCache(InstrumentId, InstrumentId.from_str_c)
+
+    cpdef ClientId get_client_id(self, str value):
+        """
+        Return the cached client identifier.
+
+        Parameters
+        ----------
+        value : str
+            The value to be parsed to a client identifier.
+
+        Returns
+        -------
+        ClientId
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+        ValueError
+            If cache does not contain value and value cannot be parsed.
+
+        """
+        Condition.valid_string(value, "value")
+
+        return self._cached_client_ids.get(value)
 
     cpdef TraderId get_trader_id(self, str value):
         """
