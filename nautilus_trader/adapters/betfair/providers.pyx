@@ -45,7 +45,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
     def __init__(self, client not None: APIClient, logger: Logger, bint load_all=True, dict market_filter=None):
         """
-        Initialize a new instance of the `CCXTInstrumentProvider` class.
+        Initialize a new instance of the `BetfairInstrumentProvider` class.
 
         Parameters
         ----------
