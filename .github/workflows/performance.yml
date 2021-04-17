@@ -1,8 +1,8 @@
-name: codecov
+name: performance
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ develop ]
   pull_request:
     branches: [ develop ]
 
@@ -47,24 +47,20 @@ jobs:
       - name: Install Redis
         run: sudo apt-get install redis-server
 
-      # Run docs build
-      - name: Run docs build
-        run: nox -s build_docs --reuse-existing-virtualenvs
-
-      # Run coverage
-      - name: Run coverage
-        run: |
-          redis-server --daemonize yes
-          nox -s coverage --reuse-existing-virtualenvs
-          redis-cli shutdown
-
-      # Upload to codecov
-      - uses: codecov/codecov-action@v1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage.xml
-          verbose: true
-
       # Run performance
       - name: Run performance tests
         run: nox -s performance_tests --reuse-existing-virtualenvs
+
+      # Store benchmark results
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        with:
+          name: Python Benchmark with pytest-benchmark
+          tool: "pytest"
+          output-file-path: PERF.JSON
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          # Show alert with commit comment on detecting possible performance regression
+          alert-threshold: '200%'
+          comment-on-alert: true
+          fail-on-alert: true
