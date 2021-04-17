@@ -17,10 +17,10 @@ from collections import deque
 
 import pytest
 
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
-class PythonDequePerformanceTests(PerformanceTestCase):
+class PythonDequePerformanceTests(PerformanceHarness):
     def setUp(self):
         # Fixture Setup
         self.deque = deque(maxlen=1000)

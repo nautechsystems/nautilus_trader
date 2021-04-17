@@ -19,14 +19,14 @@ import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
 live_clock = LiveClock()
 test_clock = TestClock()
 
 
-class LiveClockPerformanceTests(PerformanceTestCase):
+class LiveClockPerformanceTests(PerformanceHarness):
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def setupBenchmark(self, benchmark):
@@ -58,7 +58,7 @@ class TestClockHarness:
         test_clock.advance_time(to_time_ns=test_time)
 
 
-class TestClockPerformanceTests(PerformanceTestCase):
+class TestClockPerformanceTests(PerformanceHarness):
     def test_advance_time(self):
         self.benchmark.pedantic(
             TestClockHarness.advance_time, iterations=100_000, rounds=1

@@ -37,7 +37,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -45,7 +45,7 @@ from tests.test_kit.stubs import TestStubs
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class LiveExecutionPerformanceTests(PerformanceTestCase):
+class LiveExecutionPerformanceTests(PerformanceHarness):
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
