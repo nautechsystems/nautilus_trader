@@ -1,2 +1,2 @@
 #!/bin/bash
-python build.py
+poetry run python build.py
