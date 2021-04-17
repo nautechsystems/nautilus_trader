@@ -58,11 +58,8 @@ jobs:
           redis-server --daemonize yes
       - name: Install Redis (Windows)
         if: runner.os == 'Windows'
-        uses: Vampire/setup-wsl@v1
-        shell: wsl-bash {0}
-        run: |
-          sudo apt-get install redis-server
-          redis-server --daemonize yes
+        with:
+            wsl-shell-command: sudo apt-get install redis-server | redis-server --daemonize yes
 
       # Run tests
       - name: Run tests [Windows/macOS/Linux]
