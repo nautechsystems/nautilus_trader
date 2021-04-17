@@ -16,7 +16,6 @@
 import hashlib
 from typing import Dict
 
-import fsspec
 import orjson
 
 
@@ -63,14 +62,6 @@ def chunk(list_like, n):
 def hash_json(data):
     h = hashlib.sha256(orjson.dumps(data))
     return h.hexdigest()
-
-
-def read_market_definition(filename, fs="file"):
-    """ Read the first line of a historical betfair file to retrieve the market definition """
-    with fsspec.open(f"{fs}://{filename}", "rb", compression="infer") as f:
-        for line in f:
-            data = orjson.loads(line.strip())
-            return data["mc"][0]
 
 
 def one(iterable):
