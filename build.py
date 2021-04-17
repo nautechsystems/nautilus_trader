@@ -24,7 +24,7 @@ ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # Skipping the build copy prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 # if INTERPRETER_32BIT_MODE is enabled, include additional macros for numpy compilation.
-INTERPRETER_32BIT_MODE = (platform.architecture() == ("32bit", "WindowsPE"))
+INTERPRETER_32BIT_MODE = platform.architecture() == ("32bit", "WindowsPE")
 
 print(
     f"DEBUG_MODE={DEBUG_MODE}, "
@@ -60,9 +60,10 @@ CYTHON_COMPILER_DIRECTIVES = {
 def _build_extensions() -> List[Extension]:
     # Build Extensions to feed into cythonize()
     # Profiling requires special macro directives
-    define_macros = [("NPY_NO_DEPRECATED_API", )]
+    define_macros = [("NPY_NO_DEPRECATED_API",)]
     if not INTERPRETER_32BIT_MODE:
-        # In Windows 32bit interpreter, there is numpy-cython compatibility issue
+        # With the Windows 32-bit interpreter, there is a numpy-cython
+        # compatibility issue - see:
         # https://github.com/nautechsystems/nautilus_trader/issues/257
         define_macros.append(("NPY_1_7_API_VERSION",))
     if PROFILING_MODE or ANNOTATION_MODE:
