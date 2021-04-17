@@ -14,31 +14,34 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
-import unittest
+
+import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
-from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.performance import PerformanceTestCase
 
 
 live_clock = LiveClock()
 test_clock = TestClock()
 
 
-class LiveClockPerformanceTests(unittest.TestCase):
-    @staticmethod
-    def test_utc_now():
-        PerformanceHarness.profile_function(live_clock.timestamp_ns, 100000, 1)
+class LiveClockPerformanceTests(PerformanceTestCase):
+    @pytest.fixture(autouse=True)
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
+    def setupBenchmark(self, benchmark):
+        self.benchmark = benchmark
+
+    def test_utc_now(self):
+        self.benchmark.pedantic(live_clock.timestamp_ns, iterations=100_000, rounds=1)
         # ~0.0ms / ~1.3μs / 1330ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_unix_timestamp():
-        PerformanceHarness.profile_function(live_clock.timestamp, 100000, 1)
+    def test_unix_timestamp(self):
+        self.benchmark.pedantic(live_clock.timestamp, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_unix_timestamp_ns():
-        PerformanceHarness.profile_function(live_clock.timestamp_ns, 100000, 1)
+    def test_unix_timestamp_ns(self):
+        self.benchmark.pedantic(live_clock.timestamp_ns, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
 
 
@@ -55,20 +58,18 @@ class TestClockHarness:
         test_clock.advance_time(to_time_ns=test_time)
 
 
-class TestClockPerformanceTests(unittest.TestCase):
-    @staticmethod
-    def test_advance_time():
-        PerformanceHarness.profile_function(TestClockHarness.advance_time, 100000, 1)
+class TestClockPerformanceTests(PerformanceTestCase):
+    def test_advance_time(self):
+        self.benchmark.pedantic(
+            TestClockHarness.advance_time, iterations=100_000, rounds=1
+        )
         # ~0.0ms / ~0.2μs / 175ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_iteratively_advance_time():
+    def test_iteratively_advance_time(self):
         store = []
         test_clock.set_timer("test", timedelta(seconds=1), handler=store.append)
-
-        iterations = 1
-        PerformanceHarness.profile_function(
-            TestClockHarness.iteratively_advance_time, 1, iterations
+        self.benchmark.pedantic(
+            TestClockHarness.iteratively_advance_time, iterations=1, rounds=1
         )
         # ~320.1ms                       minimum of 1 runs @ 1 iteration each run. (100000 advances)
         # ~3.7ms / ~3655.1μs / 3655108ns minimum of 1 runs @ 1 iteration each run.

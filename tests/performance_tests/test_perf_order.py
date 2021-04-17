@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
@@ -25,14 +25,14 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.performance import PerformanceTestCase
 from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_SIM = TestStubs.audusd_id()
 
 
-class OrderPerformanceTests(unittest.TestCase):
+class OrderPerformanceTests(PerformanceTestCase):
     def setUp(self):
         # Fixture Setup
         self.generator = ClientOrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())
@@ -41,6 +41,10 @@ class OrderPerformanceTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
+
+    @pytest.fixture(autouse=True)
+    def setupBenchmark(self, benchmark):
+        self.benchmark = benchmark
 
     def create_market_order(self):
         self.order_factory.market(
@@ -57,14 +61,17 @@ class OrderPerformanceTests(unittest.TestCase):
             Price("0.80010"),
         )
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_order_id_generator(self):
-        PerformanceHarness.profile_function(self.generator.generate, 100000, 1)
+        self.benchmark.pedantic(self.generator.generate, iterations=100_000, rounds=1)
         # ~0.0ms / ~2.9μs / 2894ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_market_order_creation(self):
-        PerformanceHarness.profile_function(self.create_market_order, 10000, 1)
+        self.benchmark.pedantic(self.create_market_order, iterations=10_000, rounds=1)
         # ~0.0ms / ~10.7μs / 10682ns minimum of 10,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_limit_order_creation(self):
-        PerformanceHarness.profile_function(self.create_limit_order, 10000, 1)
+        self.benchmark.pedantic(self.create_limit_order, iterations=10_000, rounds=1)
         # ~0.0ms / ~14.5μs / 14469ns minimum of 10,000 runs @ 1 iteration each run.

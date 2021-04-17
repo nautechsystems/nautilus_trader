@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.identifiers import InstrumentId
@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.performance import PerformanceTestCase
 from tests.test_kit.stubs import TestStubs
 
 
@@ -69,32 +69,35 @@ class ObjectTests:
         )
 
 
-class ObjectPerformanceTests(unittest.TestCase):
-    @staticmethod
-    def test_make_symbol():
-        PerformanceHarness.profile_function(ObjectTests.make_symbol, 100000, 1)
+class ObjectPerformanceTests(PerformanceTestCase):
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
+    def test_make_symbol(self):
+        self.benchmark.pedantic(ObjectTests.make_symbol, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.4μs / 400ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_make_instrument_id():
-        PerformanceHarness.profile_function(ObjectTests.make_instrument_id, 100000, 1)
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
+    def test_make_instrument_id(self):
+        self.benchmark.pedantic(
+            ObjectTests.make_instrument_id, iterations=100_000, rounds=1
+        )
         # ~0.0ms / ~1.3μs / 1251ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_instrument_id_to_str():
-        PerformanceHarness.profile_function(ObjectTests.instrument_id_to_str, 100000, 1)
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
+    def test_instrument_id_to_str(self):
+        self.benchmark.pedantic(
+            ObjectTests.instrument_id_to_str, iterations=100_000, rounds=1
+        )
         # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_build_bar_no_checking():
-        PerformanceHarness.profile_function(
-            ObjectTests.build_bar_no_checking, 100000, 1
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
+    def test_build_bar_no_checking(self):
+        self.benchmark.pedantic(
+            ObjectTests.build_bar_no_checking, iterations=100_000, rounds=1
         )
         # ~0.0ms / ~2.5μs / 2512ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_build_bar_with_checking():
-        PerformanceHarness.profile_function(
-            ObjectTests.build_bar_with_checking, 100000, 1
+    def test_build_bar_with_checking(self):
+        self.benchmark.pedantic(
+            ObjectTests.build_bar_with_checking, iterations=100_000, rounds=1
         )
         # ~0.0ms / ~2.7μs / 2717ns minimum of 100,000 runs @ 1 iteration each run.

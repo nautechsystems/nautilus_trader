@@ -13,20 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
 import uuid
 
+import pytest
+
 from nautilus_trader.core.uuid import uuid4
-from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.performance import PerformanceTestCase
 
 
-class UUIDPerformanceTests(unittest.TestCase):
+class UUIDPerformanceTests(PerformanceTestCase):
+    @pytest.mark.benchmark(group="uuid", disable_gc=True, warmup=True)
     @staticmethod
-    def test_make_builtin_uuid():
-        PerformanceHarness.profile_function(uuid.uuid4, 100000, 1)
+    def test_make_builtin_uuid(benchmark):
+        benchmark.pedantic(uuid.uuid4, iterations=100000, rounds=1)
         # ~0.0ms / ~2.1μs / 2067ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(group="uuid", disable_gc=True, warmup=True)
     @staticmethod
-    def test_make_nautilus_uuid():
-        PerformanceHarness.profile_function(uuid4, 100000, 1)
+    def test_make_nautilus_uuid(benchmark):
+        benchmark.pedantic(uuid4, iterations=100000, rounds=1)
         # ~0.0ms / ~0.6μs / 556ns minimum of 100,000 runs @ 1 iteration each run.
