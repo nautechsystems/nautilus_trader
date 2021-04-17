@@ -15,11 +15,16 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-A utility script to remove artifact files from source code directories.
+A utility script to remove specified directories and files.
 """
 
 import os
 import shutil
+
+
+print("Running cleanup.py...")
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+print(f"ROOT_DIR={ROOT_DIR}")
 
 
 FILES_TO_REMOVE = {
@@ -58,27 +63,33 @@ EXTENSIONS_TO_CLEAN = (
 )
 
 
-if __name__ == "__main__":
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    print(f"root_dir={root_dir}")
+def remove_benchmarks_dirs():
+    for root, _dirs, _files in os.walk(ROOT_DIR):
+        if root.endswith(".benchmarks"):
+            shutil.rmtree(root, ignore_errors=True)
+            print(f"Removed dir: {root}")
 
-    # Remove specific files
-    for target in FILES_TO_REMOVE:
-        try:
-            os.remove(os.path.join(root_dir, target))
-            print(f"Removed: {target}")
-        except FileNotFoundError:
-            pass
 
-    # Remove specific directories
+def remove_specific_dirs():
     for target in DIRS_TO_REMOVE:
-        print(f"Removing dir: {target}")
-        shutil.rmtree(os.path.join(root_dir, target), ignore_errors=True)
+        path = os.path.join(ROOT_DIR, target)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+            print(f"Removed dir: {path}")
 
-    # Walk directories to clean and remove files by extension
+
+def remove_specific_files():
+    for target in FILES_TO_REMOVE:
+        path = os.path.join(ROOT_DIR, target)
+        if os.path.isfile(path):
+            os.remove(path)
+            print(f"Removed: {path}")
+
+
+def clean_specific_directories():
     removed_count = 0
     for directory in DIRS_TO_CLEAN:
-        for root, _dirs, files in os.walk(root_dir + directory):
+        for root, _dirs, files in os.walk(ROOT_DIR + directory):
             for name in files:
                 path = os.path.join(root, name)
                 if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
@@ -86,3 +97,10 @@ if __name__ == "__main__":
                     removed_count += 1
 
     print(f"Removed {removed_count} discrete files by extension.")
+
+
+if __name__ == "__main__":
+    remove_benchmarks_dirs()
+    remove_specific_dirs()
+    remove_specific_files()
+    clean_specific_directories()
