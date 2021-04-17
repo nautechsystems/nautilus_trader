@@ -45,21 +45,25 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
-      # Install Redis
+      # Install and run Redis
       - name: Install Redis (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get install redis-server
+        run: |
+          sudo apt-get install redis-server
+          redis-server --daemonize yes
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'
-        run: brew install redis
-
-        # Run tests
-      - name: Run tests (with integrations test suite) [Linux/macOS]
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: |
+          brew install redis
           redis-server --daemonize yes
-          nox -s tests_with_integration --reuse-existing-virtualenvs
-          redis-cli shutdown
-      - name: Run tests (unit test suite only) [Windows]
+      - name: Install Redis (Windows)
         if: runner.os == 'Windows'
-        run: nox -s tests --reuse-existing-virtualenvs
+        uses: Vampire/setup-wsl@v1
+        shell: wsl-bash {0}
+        run: |
+          sudo apt-get install redis-server
+          redis-server --daemonize yes
+
+      # Run tests
+      - name: Run tests [Windows/macOS/Linux]
+        run: nox -s tests_with_integration --reuse-existing-virtualenvs
