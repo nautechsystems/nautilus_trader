@@ -13,10 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.core.correctness import PyCondition
-from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.performance import PerformanceTestCase
 
 
 class CorrectnessTests:
@@ -37,26 +35,26 @@ class CorrectnessTests:
         PyCondition.type_or_none("hello", str, "world")
 
 
-class CorrectnessConditionPerformanceTests(unittest.TestCase):
-    @staticmethod
-    def test_condition_none():
-        PerformanceHarness.profile_function(CorrectnessTests.none, 100000, 1)
+class CorrectnessConditionPerformanceTests(PerformanceTestCase):
+    def test_condition_none(self):
+        self.benchmark.pedantic(CorrectnessTests.none, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 142ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_condition_true():
-        PerformanceHarness.profile_function(CorrectnessTests.true, 100000, 1)
+    def test_condition_true(self):
+        self.benchmark.pedantic(CorrectnessTests.true, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 149ns minimum of 100,000 runs @ 1 iteration each run.
 
         # 100000 iterations @ 12ms with boolean except returning False
         # 100000 iterations @ 12ms with void except returning * !
 
-    @staticmethod
-    def test_condition_valid_string():
-        PerformanceHarness.profile_function(CorrectnessTests.valid_string, 100000, 1)
+    def test_condition_valid_string(self):
+        self.benchmark.pedantic(
+            CorrectnessTests.valid_string, iterations=100_000, rounds=1
+        )
         # ~0.0ms / ~0.2μs / 205ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @staticmethod
-    def test_condition_type_or_none():
-        PerformanceHarness.profile_function(CorrectnessTests.type_or_none, 100000, 1)
+    def test_condition_type_or_none(self):
+        self.benchmark.pedantic(
+            CorrectnessTests.type_or_none, iterations=100_000, rounds=1
+        )
         # ~0.0ms / ~0.2μs / 224ns minimum of 100,000 runs @ 1 iteration each run.

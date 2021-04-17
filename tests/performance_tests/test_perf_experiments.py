@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
@@ -22,7 +22,7 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.performance import PerformanceTestCase
 
 
 AUDUSD = InstrumentId(Symbol("AUDUSD"), Venue("IDEALPRO"))
@@ -56,28 +56,35 @@ class Experiments:
         return x
 
 
-class ExperimentsPerformanceTests(unittest.TestCase):
+class ExperimentsPerformanceTests(PerformanceTestCase):
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
-    def test_builtin_arithmetic():
-        PerformanceHarness.profile_function(Experiments.built_in_arithmetic, 100000, 1)
+    def test_builtin_arithmetic(benchmark):
+        benchmark.pedantic(
+            Experiments.built_in_arithmetic, iterations=100_000, rounds=1
+        )
         # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
-    def test_class_name():
-        PerformanceHarness.profile_function(Experiments.class_name, 100000, 1)
+    def test_class_name(benchmark):
+        benchmark.pedantic(Experiments.class_name, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.2μs / 161ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
-    def test_str_assignment():
-        PerformanceHarness.profile_function(Experiments.str_assignment, 100000, 1)
+    def test_str_assignment(benchmark):
+        benchmark.pedantic(Experiments.str_assignment, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 103ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
-    def test_is_instance():
-        PerformanceHarness.profile_function(Experiments.is_instance, 100000, 1)
+    def test_is_instance(benchmark):
+        benchmark.pedantic(Experiments.is_instance, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.2μs / 153ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
-    def test_is_message_type():
-        PerformanceHarness.profile_function(Experiments.is_message_type, 100000, 1)
+    def test_is_message_type(benchmark):
+        benchmark.pedantic(Experiments.is_message_type, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.2μs / 150ns minimum of 100,000 runs @ 1 iteration each run.
