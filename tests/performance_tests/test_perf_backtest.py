@@ -44,7 +44,7 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
-class BacktestEnginePerformanceTests(PerformanceHarness):
+class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_with_empty_strategy():
         # Arrange

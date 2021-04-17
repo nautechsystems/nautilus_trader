@@ -25,79 +25,70 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_SIM = TestStubs.audusd_id()
-AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
-
-
-class ObjectTests:
-    @staticmethod
-    def make_symbol():
-        Symbol("AUD/USD")
-
-    @staticmethod
-    def make_instrument_id():
-        InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
-
-    @staticmethod
-    def instrument_id_to_str():
-        str(AUDUSD_SIM)
-
-    @staticmethod
-    def build_bar_no_checking():
-        Bar(
-            AUDUSD_1MIN_BID,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity("100000"),
-            0,
-            check=False,
-        )
-
-    @staticmethod
-    def build_bar_with_checking():
-        Bar(
-            AUDUSD_1MIN_BID,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity("100000"),
-            0,
-            check=True,
-        )
-
-
-class ObjectPerformanceTests(PerformanceHarness):
+class TestObjectPerformance(PerformanceHarness):
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_make_symbol(self):
-        self.benchmark.pedantic(ObjectTests.make_symbol, iterations=100_000, rounds=1)
+        self.benchmark.pedantic(
+            target=Symbol,
+            args=("AUD/USD",),
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.4μs / 400ns minimum of 100,000 runs @ 1 iteration each run.
 
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_make_instrument_id(self):
         self.benchmark.pedantic(
-            ObjectTests.make_instrument_id, iterations=100_000, rounds=1
+            target=InstrumentId,
+            args=(Symbol("AUD/USD"), Venue("IDEALPRO")),
+            iterations=100_000,
+            rounds=1,
         )
         # ~0.0ms / ~1.3μs / 1251ns minimum of 100,000 runs @ 1 iteration each run.
 
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_instrument_id_to_str(self):
         self.benchmark.pedantic(
-            ObjectTests.instrument_id_to_str, iterations=100_000, rounds=1
+            target=str,
+            args=(TestStubs.audusd_id(),),
+            iterations=100_000,
+            rounds=1,
         )
         # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
 
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_build_bar_no_checking(self):
         self.benchmark.pedantic(
-            ObjectTests.build_bar_no_checking, iterations=100_000, rounds=1
+            target=Bar,
+            args=(
+                TestStubs.bartype_audusd_1min_bid(),
+                Price("1.00001"),
+                Price("1.00004"),
+                Price("1.00002"),
+                Price("1.00003"),
+                Quantity("100000"),
+                0,
+                False,  # <-- no check
+            ),
+            iterations=100_000,
+            rounds=1,
         )
         # ~0.0ms / ~2.5μs / 2512ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_build_bar_with_checking(self):
         self.benchmark.pedantic(
-            ObjectTests.build_bar_with_checking, iterations=100_000, rounds=1
+            target=Bar,
+            args=(
+                TestStubs.bartype_audusd_1min_bid(),
+                Price("1.00001"),
+                Price("1.00004"),
+                Price("1.00002"),
+                Price("1.00003"),
+                Quantity("100000"),
+                0,
+                True,  # <-- check
+            ),
+            iterations=100_000,
+            rounds=1,
         )
         # ~0.0ms / ~2.7μs / 2717ns minimum of 100,000 runs @ 1 iteration each run.

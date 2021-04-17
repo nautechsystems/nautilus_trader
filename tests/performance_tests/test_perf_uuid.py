@@ -21,15 +21,23 @@ from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.performance import PerformanceHarness
 
 
-class UUIDPerformanceTests(PerformanceHarness):
-    @pytest.mark.benchmark(group="uuid", disable_gc=True, warmup=True)
+class TestUUIDPerformance(PerformanceHarness):
+    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
     @staticmethod
     def test_make_builtin_uuid(benchmark):
-        benchmark.pedantic(uuid.uuid4, iterations=100000, rounds=1)
+        benchmark.pedantic(
+            target=uuid.uuid4,
+            iterations=100000,
+            rounds=1,
+        )
         # ~0.0ms / ~2.1μs / 2067ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(group="uuid", disable_gc=True, warmup=True)
+    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
     @staticmethod
     def test_make_nautilus_uuid(benchmark):
-        benchmark.pedantic(uuid4, iterations=100000, rounds=1)
+        benchmark.pedantic(
+            target=uuid4,
+            iterations=100000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.6μs / 556ns minimum of 100,000 runs @ 1 iteration each run.

@@ -24,25 +24,33 @@ live_clock = LiveClock()
 test_clock = TestClock()
 
 
-class LiveClockPerformanceTests(PerformanceHarness):
+class TestLiveClockPerformance(PerformanceHarness):
     def test_utc_now(self):
-        self.benchmark.pedantic(live_clock.timestamp_ns, iterations=100_000, rounds=1)
+        self.benchmark.pedantic(
+            target=live_clock.timestamp_ns,
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~1.3μs / 1330ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_unix_timestamp(self):
-        self.benchmark.pedantic(live_clock.timestamp, iterations=100_000, rounds=1)
+        self.benchmark.pedantic(
+            target=live_clock.timestamp,
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_unix_timestamp_ns(self):
-        self.benchmark.pedantic(live_clock.timestamp_ns, iterations=100_000, rounds=1)
+        self.benchmark.pedantic(
+            target=live_clock.timestamp_ns,
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
 
 
 class TestClockHarness:
-    @staticmethod
-    def advance_time():
-        test_clock.advance_time(to_time_ns=0)
-
     @staticmethod
     def iteratively_advance_time():
         test_time = 0
@@ -54,7 +62,10 @@ class TestClockHarness:
 class TestClockPerformanceTests(PerformanceHarness):
     def test_advance_time(self):
         self.benchmark.pedantic(
-            TestClockHarness.advance_time, iterations=100_000, rounds=1
+            target=test_clock.advance_time,
+            args=(0,),
+            iterations=100_000,
+            rounds=1,
         )
         # ~0.0ms / ~0.2μs / 175ns minimum of 100,000 runs @ 1 iteration each run.
 
@@ -62,7 +73,9 @@ class TestClockPerformanceTests(PerformanceHarness):
         store = []
         test_clock.set_timer("test", timedelta(seconds=1), handler=store.append)
         self.benchmark.pedantic(
-            TestClockHarness.iteratively_advance_time, iterations=1, rounds=1
+            target=TestClockHarness.iteratively_advance_time,
+            iterations=1,
+            rounds=1,
         )
         # ~320.1ms                       minimum of 1 runs @ 1 iteration each run. (100000 advances)
         # ~3.7ms / ~3655.1μs / 3655108ns minimum of 1 runs @ 1 iteration each run.

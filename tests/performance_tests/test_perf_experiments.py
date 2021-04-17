@@ -13,19 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.performance import PerformanceHarness
 
 
-AUDUSD = InstrumentId(Symbol("AUDUSD"), Venue("IDEALPRO"))
 MESSAGE = Message(MessageType.COMMAND, uuid4(), 0)
 
 
@@ -35,56 +29,42 @@ class Experiments:
         x = 1 + 1
         return x
 
-    @staticmethod
-    def class_name():
-        x = "123".__class__.__name__
-        return x
 
-    @staticmethod
-    def str_assignment():
-        x = "123"
-        return x
-
-    @staticmethod
-    def is_instance():
-        x = isinstance(MESSAGE, SubmitOrder)
-        return x
-
-    @staticmethod
-    def is_message_type():
-        x = 0 == MESSAGE.type
-        return x
-
-
-class ExperimentsPerformanceTests(PerformanceHarness):
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
+class TestPerformanceExperiments(PerformanceHarness):
     @staticmethod
     def test_builtin_arithmetic(benchmark):
         benchmark.pedantic(
-            Experiments.built_in_arithmetic, iterations=100_000, rounds=1
+            target=Experiments.built_in_arithmetic,
+            iterations=100_000,
+            rounds=1,
         )
         # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
     def test_class_name(benchmark):
-        benchmark.pedantic(Experiments.class_name, iterations=100_000, rounds=1)
+        benchmark.pedantic(
+            target="123".__class__.__name__,
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.2μs / 161ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    @staticmethod
-    def test_str_assignment(benchmark):
-        benchmark.pedantic(Experiments.str_assignment, iterations=100_000, rounds=1)
-        # ~0.0ms / ~0.1μs / 103ns minimum of 100,000 runs @ 1 iteration each run.
-
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
     def test_is_instance(benchmark):
-        benchmark.pedantic(Experiments.is_instance, iterations=100_000, rounds=1)
+        benchmark.pedantic(
+            target=isinstance,
+            args=(MESSAGE, SubmitOrder),
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.2μs / 153ns minimum of 100,000 runs @ 1 iteration each run.
 
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
     def test_is_message_type(benchmark):
-        benchmark.pedantic(Experiments.is_message_type, iterations=100_000, rounds=1)
+        benchmark.pedantic(
+            target=MESSAGE.type.__eq__,
+            args=(0,),
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.2μs / 150ns minimum of 100,000 runs @ 1 iteration each run.

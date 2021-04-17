@@ -45,8 +45,8 @@ from tests.test_kit.stubs import TestStubs
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class LiveExecutionPerformanceTests(PerformanceHarness):
-    def setUp(self):
+class TestLiveExecutionPerformance(PerformanceHarness):
+    def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
@@ -98,7 +98,7 @@ class LiveExecutionPerformanceTests(PerformanceHarness):
 
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def setupBenchmark(self, benchmark):
+    def setup_benchmark(self, benchmark):
         self.benchmark = benchmark
 
     def submit_order(self):
