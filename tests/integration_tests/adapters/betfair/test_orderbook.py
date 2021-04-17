@@ -14,10 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
-from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -27,8 +26,10 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 def test_betfair_orderbook(betfair_data_client, provider):
     provider.load_all()
-    book = OrderBook(
-        instrument_id=BetfairTestStubs.instrument_id(), level=OrderBookLevel.L2
+    book = L2OrderBook(
+        instrument_id=BetfairTestStubs.instrument_id(),
+        price_precision=2,
+        size_precision=2,
     )
     for update in BetfairTestStubs.raw_market_updates():
         for message in on_market_update(instrument_provider=provider, update=update):

@@ -331,7 +331,11 @@ class DataCacheTests(unittest.TestCase):
             timestamp_ns=0,
         )
 
-        order_book = L2OrderBook(instrument_id=ETHUSDT_BINANCE.id)
+        order_book = L2OrderBook(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price_precision=2,
+            size_precision=8,
+        )
         order_book.apply_snapshot(snapshot)
 
         self.cache.add_order_book(order_book)

@@ -21,7 +21,11 @@ from tests.test_kit.stubs import TestStubs
 
 
 def test_l3_feed():
-    ob = L3OrderBook(TestStubs.audusd_id())
+    ob = L3OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     # Updates that cause the book to fail integrity checks will be deleted
     # immediately, but we may get also delete later.
     skip_deletes = []
@@ -45,7 +49,11 @@ def test_l3_feed():
 
 
 def test_l2_feed():
-    ob = L2OrderBook(TestStubs.audusd_id())
+    ob = L2OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
 
     # Duplicate delete messages
     skip = [
@@ -66,7 +74,11 @@ def test_l2_feed():
 
 
 def test_l1_orderbook():
-    ob = L1OrderBook(TestStubs.audusd_id())
+    ob = L1OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     for i, m in enumerate(TestDataProvider.l1_feed()):  # noqa (B007)
         # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         # print("")

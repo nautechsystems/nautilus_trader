@@ -14,8 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Utility functions for working with Orderbook models. These used to reside on `Orderbook` and `Level` but have been
-moved here for simplification and to determine if they are still useful.
+Utility functions for working with OrderBook models.
+
+These used to reside on `Orderbook` and `Level` but have been moved here for
+simplification and to determine if they are still useful.
 
 """
 from bisect import bisect
