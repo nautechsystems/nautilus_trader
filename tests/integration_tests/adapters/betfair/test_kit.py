@@ -11,6 +11,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID
@@ -399,6 +400,13 @@ class BetfairTestStubs(TestStubs):
         return [orjson.loads(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
+    def raw_market_updates_instruments():
+        updates = BetfairTestStubs.raw_market_updates()
+        market_def = updates[0]["mc"][0]
+        instruments = make_instruments(market_def, "AUD")
+        return instruments
+
+    @staticmethod
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -420,7 +428,7 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def submit_order_command():
         return SubmitOrder(
-            client_id=BetfairTestStubs.instrument_id().venue.client_id,
+            instrument_id=BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
@@ -443,13 +451,10 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def update_order_command(instrument_id=None, client_order_id=None):
-        if instrument_id is None:
-            instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
-            client_id=instrument_id.venue.client_id,
+            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            instrument_id=instrument_id,
             client_order_id=client_order_id
             or ClientOrderId("O-20210410-022422-001-001-1"),
             quantity=Quantity(50),
@@ -461,10 +466,9 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def cancel_order_command():
         return CancelOrder(
-            client_id=BetfairTestStubs.instrument_id().venue.client_id,
+            instrument_id=BetfairTestStubs.instrument_id(),
             trader_id=BetfairTestStubs.trader_id(),
             account_id=BetfairTestStubs.account_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("229597791245"),
             command_id=BetfairTestStubs.uuid(),

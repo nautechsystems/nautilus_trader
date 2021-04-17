@@ -17,7 +17,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
-from nautilus_trader.adapters.betfair.providers import make_instrument
+from nautilus_trader.adapters.betfair.providers import make_instruments
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -68,7 +68,7 @@ def test_load_instruments(market_metadata):
     instruments = [
         instrument
         for metadata in market_metadata.values()
-        for instrument in make_instrument(metadata, currency="GBP")
+        for instrument in make_instruments(metadata, currency="GBP")
     ]
     assert len(instruments) == 172535
 
