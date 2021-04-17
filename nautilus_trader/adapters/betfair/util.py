@@ -16,6 +16,7 @@
 import hashlib
 from typing import Dict
 
+import fsspec
 import orjson
 
 
@@ -23,6 +24,10 @@ def flatten_tree(y: Dict, **filters):
     """
     Flatten a nested dict into a list of dicts with each nested level combined
     into a single dict.
+
+    :param y: Dict
+    :param filters: Filter keys
+    :return:
     """
 
     results = []
@@ -50,9 +55,7 @@ def flatten_tree(y: Dict, **filters):
 
 
 def chunk(list_like, n):
-    """
-    Yield successive n-sized chunks from l.
-    """
+    """ Yield successive n-sized chunks from l."""
     for i in range(0, len(list_like), n):
         yield list_like[i : i + n]
 
@@ -60,3 +63,31 @@ def chunk(list_like, n):
 def hash_json(data):
     h = hashlib.sha256(orjson.dumps(data))
     return h.hexdigest()
+
+
+def read_market_definition(filename, fs="file"):
+    """ Read the first line of a historical betfair file to retrieve the market definition """
+    with fsspec.open(f"{fs}://{filename}", "rb", compression="infer") as f:
+        for line in f:
+            data = orjson.loads(line.strip())
+            return data["mc"][0]
+
+
+def one(iterable):
+    """ Stolen from more_itertools.one() """
+    it = iter(iterable)
+
+    try:
+        first_value = next(it)
+    except StopIteration as e:
+        raise (ValueError("too few items in iterable (expected 1)")) from e
+
+    try:
+        second_value = next(it)
+    except StopIteration:
+        pass
+    else:
+        msg = f"Expected exactly one item in iterable, but got {first_value}, {second_value}, and perhaps more."
+        raise ValueError(msg)
+
+    return first_value
