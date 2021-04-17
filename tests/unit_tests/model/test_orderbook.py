@@ -58,25 +58,35 @@ class TestOrderBookOperation:
         op = OrderBookDelta(
             delta_type=OrderBookDeltaType.ADD,
             order=order,
+            instrument_id=AUDUSD,
             timestamp_ns=0,
         )
 
+        print(repr(op))
         # Act
         # Assert
         assert (
             repr(op)
-            == f"OrderBookDelta(ADD, Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
+            == f"OrderBookDelta(op_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
         )
 
 
 @pytest.fixture(scope="function")
 def empty_book():
-    return L2OrderBook(TestStubs.audusd_id())
+    return L2OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
 
 
 @pytest.fixture(scope="function")
 def sample_book():
-    ob = L3OrderBook(TestStubs.audusd_id())
+    ob = L3OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     orders = [
         Order(price=0.900, volume=20, side=OrderSide.SELL),
         Order(price=0.887, volume=10, side=OrderSide.SELL),
@@ -90,13 +100,21 @@ def sample_book():
 
 
 def test_init():
-    ob = L2OrderBook(TestStubs.audusd_id())
+    ob = L2OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     assert isinstance(ob.bids, Ladder) and isinstance(ob.asks, Ladder)
     assert ob.bids.reverse and not ob.asks.reverse
 
 
 def test_pprint_when_no_orders():
-    ob = L2OrderBook(TestStubs.audusd_id())
+    ob = L2OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     result = ob.pprint()
 
     assert "" == result
@@ -152,6 +170,7 @@ def test_orderbook_operation(empty_book):
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
+        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_delta(op)
@@ -164,6 +183,7 @@ def test_orderbook_operations(empty_book):
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
+        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     deltas = OrderBookDeltas(

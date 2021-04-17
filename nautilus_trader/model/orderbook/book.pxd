@@ -26,9 +26,13 @@ from nautilus_trader.model.orderbook.order cimport Order
 
 cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
-    """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    """The order book instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderBookLevel level
     """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
+    cdef readonly int price_precision
+    """The order book price precision.\n\n:returns: `int`"""
+    cdef readonly int size_precision
+    """The order book size precision.\n\n:returns: `int`"""
     cdef readonly Ladder bids
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks

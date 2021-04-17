@@ -30,7 +30,11 @@ def run_l3_test(ob, feed):
 def test_orderbook_updates(benchmark):
     # We only care about the actual updates here, so instantiate orderbook and
     # load updates outside of benchmark
-    ob = L3OrderBook(TestStubs.audusd_id())
+    ob = L3OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     feed = TestDataProvider.l3_feed()
     assert len(feed) == 100048  # 100k updates
 

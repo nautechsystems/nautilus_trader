@@ -167,7 +167,7 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
     assert len(bid_keys) <= 1
     assert len(ask_keys) <= 1
 
-    # Orderbook Snapshot
+    # OrderBook Snapshot
     # TODO Clean this crap up
     if bid_keys[0] == "atb":
         bids = selection.get("atb", [])
@@ -368,7 +368,7 @@ def build_market_snapshot_messages(
             )
         )
 
-        # Orderbook snapshots
+        # OrderBook snapshots
         if market.get("img") is True:
             market_id = market["id"]
             for (selection_id, handicap), selections in itertools.groupby(
