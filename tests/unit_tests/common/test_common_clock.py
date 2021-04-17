@@ -811,10 +811,10 @@ class TestLiveClockWithThreadTimer:
         # Act
         time.sleep(0.3)
         self.clock.cancel_timer(name)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
         # Assert
-        assert len(self.handler) <= 5
+        assert len(self.handler) <= 6
 
     def test_set_two_repeating_timers(self):
         # Arrange
