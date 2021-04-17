@@ -81,6 +81,8 @@ cdef class OrderBook:
         assert self.__class__.__name__ != "OrderBook", "Do not instantiate OrderBook directly; Use OrderBook.create()"
         self.instrument_id = instrument_id
         self.level = level
+        self.price_precision = price_precision
+        self.size_precision = size_precision
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
         self.last_update_timestamp_ns = 0
