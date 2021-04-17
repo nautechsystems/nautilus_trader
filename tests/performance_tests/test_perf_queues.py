@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from collections import deque
-import unittest
+
+import pytest
 
 from tests.test_kit.performance import PerformanceHarness
 
 
-class PythonDequePerformanceTests(unittest.TestCase):
+class PythonDequePerformanceTests(PerformanceHarness):
     def setUp(self):
         # Fixture Setup
         self.deque = deque(maxlen=1000)
@@ -31,10 +32,12 @@ class PythonDequePerformanceTests(unittest.TestCase):
     def peek(self):
         return self.deque[0]
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_append(self):
-        PerformanceHarness.profile_function(self.append, 100000, 1)
+        self.benchmark.pedantic(self.append, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.2μs / 173ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_peek(self):
-        PerformanceHarness.profile_function(self.peek, 100000, 1)
+        self.benchmark.pedantic(self.peek, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 144ns minimum of 100,000 runs @ 1 iteration each run.

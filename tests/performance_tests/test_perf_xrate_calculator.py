@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import unittest
 
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
@@ -23,9 +22,18 @@ from nautilus_trader.trading.calculators import ExchangeRateCalculator
 from tests.test_kit.performance import PerformanceHarness
 
 
-class ExchangeRateOperations:
+class TestExchangeRateCalculatorPerformanceTests(PerformanceHarness):
     @staticmethod
-    def get_xrate():
+    def get_xrate(bid_quotes, ask_quotes):
+        ExchangeRateCalculator().get_rate(
+            from_currency=ETH,
+            to_currency=USDT,
+            price_type=PriceType.MID,
+            bid_quotes=bid_quotes,
+            ask_quotes=ask_quotes,
+        )
+
+    def test_get_xrate(self, benchmark):
         bid_quotes = {
             "BTC/USD": Decimal("11291.38"),
             "ETH/USDT": Decimal("371.90"),
@@ -37,18 +45,10 @@ class ExchangeRateOperations:
             "ETH/USDT": Decimal("372.11"),
             "XBT/USD": Decimal("11286.0"),
         }
-
-        ExchangeRateCalculator().get_rate(
-            from_currency=ETH,
-            to_currency=USDT,
-            price_type=PriceType.MID,
-            bid_quotes=bid_quotes,
-            ask_quotes=ask_quotes,
+        self.benchmark.pedantic(
+            self.get_xrate,
+            kwargs={"bid_quotes": bid_quotes, "ask_quotes": ask_quotes},
+            iterations=100000,
+            rounds=1,
         )
-
-
-class ExchangeRateCalculatorPerformanceTests(unittest.TestCase):
-    @staticmethod
-    def test_get_xrate():
-        PerformanceHarness.profile_function(ExchangeRateOperations.get_xrate, 100000, 1)
         # ~0.0ms / ~8.2μs / 8198ns minimum of 100,000 runs @ 1 iteration each run.

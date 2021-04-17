@@ -17,7 +17,8 @@ import asyncio
 import cProfile
 import pstats
 import time
-import unittest
+
+import pytest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
@@ -44,7 +45,7 @@ from tests.test_kit.stubs import TestStubs
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class LiveExecutionPerformanceTests(unittest.TestCase):
+class LiveExecutionPerformanceTests(PerformanceHarness):
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
@@ -95,6 +96,11 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
 
         self.exec_engine.register_strategy(self.strategy)
 
+    @pytest.fixture(autouse=True)
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
+    def setupBenchmark(self, benchmark):
+        self.benchmark = benchmark
+
     def submit_order(self):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -125,7 +131,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         def execute_command():
             self.exec_engine.execute(command)
 
-        PerformanceHarness.profile_function(execute_command, 10000, 1)
+        self.benchmark.pedantic(execute_command, iterations=10_000, rounds=1)
         # ~0.0ms / ~0.2μs / 218ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_submit_order(self):
@@ -142,7 +148,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
 
                 self.strategy.submit_order(order)
 
-            PerformanceHarness.profile_function(submit_order, 10000, 1)
+            self.benchmark.pedantic(submit_order, iterations=10_000, rounds=1)
 
         self.loop.run_until_complete(run_test())
         # ~0.0ms / ~25.3μs / 25326ns minimum of 10,000 runs @ 1 iteration each run.
