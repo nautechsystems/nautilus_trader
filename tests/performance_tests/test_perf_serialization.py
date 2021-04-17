@@ -32,8 +32,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD = TestStubs.audusd_id()
 
 
-class SerializationPerformanceTests(PerformanceHarness):
-    def setUp(self):
+class TestSerializationPerformance(PerformanceHarness):
+    def setup(self):
         # Fixture Setup
         self.venue = Venue("SIM")
         self.trader_id = TestStubs.trader_id()
@@ -64,17 +64,15 @@ class SerializationPerformanceTests(PerformanceHarness):
 
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def setupBenchmark(self, benchmark):
+    def setup_benchmark(self, benchmark):
         self.benchmark = benchmark
 
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def serialize_submit_order(self):
-        # Arrange
-        self.serializer.serialize(self.command)
-
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def test_make_builtin_uuid(self):
+    def test_serialize_submit_order(self):
         self.benchmark.pedantic(
-            self.serialize_submit_order, iterations=10_000, rounds=1
+            target=self.serializer.serialize,
+            args=(self.command,),
+            iterations=10_000,
+            rounds=1,
         )
         # ~0.0ms / ~4.1μs / 4105ns minimum of 10,000 runs @ 1 iteration each run.
