@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections import defaultdict
 import datetime
 from decimal import Decimal
 import itertools
@@ -34,6 +35,7 @@ from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.util import hash_json
+from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
@@ -74,9 +76,7 @@ uuid_factory = UUIDFactory()
 
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
-    """
-    Convert a SubmitOrder command into the data required by betfairlightweight.
-    """
+    """ Convert a SubmitOrder command into the data required by betfairlightweight """
 
     order = command.order  # type: LimitOrder
     return {
@@ -113,9 +113,7 @@ def order_update_to_betfair(
     side: OrderSide,
     instrument: BettingInstrument,
 ):
-    """
-    Convert an UpdateOrder command into the data required by betfairlightweight.
-    """
+    """ Convert an UpdateOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
@@ -131,9 +129,7 @@ def order_update_to_betfair(
 
 
 def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):
-    """
-    Convert a SubmitOrder command into the data required by betfairlightweight.
-    """
+    """ Convert a SubmitOrder command into the data required by betfairlightweight """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
@@ -195,7 +191,7 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
         trade_id = hash_json((timestamp_ns, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
-            price=Price(price_to_probability(price)),
+            price=Price(price_to_probability(price, force=True)),
             size=Quantity(volume, precision=4),
             side=OrderSide.BUY,
             match_id=TradeMatchId(trade_id),
@@ -209,6 +205,8 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
 def _handle_market_trades(runner, instrument, timestamp_ns):
     trade_ticks = []
     for price, volume in runner.get("trd", []):
+        if volume == 0:
+            continue
         # Betfair doesn't publish trade ids, so we make our own
         # TODO - should we use clk here for ID instead of the hash?
         trade_id = hash_json(
@@ -223,7 +221,7 @@ def _handle_market_trades(runner, instrument, timestamp_ns):
         )
         tick = TradeTick(
             instrument_id=instrument.id,
-            price=Price(price_to_probability(price)),
+            price=Price(price_to_probability(price, force=True)),
             size=Quantity(volume, precision=4),
             side=OrderSide.BUY,
             match_id=TradeMatchId(trade_id),
@@ -254,6 +252,7 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                         volume=volume,
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
+                    instrument_id=instrument.id,
                     timestamp_ns=timestamp_ns,
                 )
             )
@@ -328,7 +327,7 @@ def _handle_instrument_status(market, instrument, timestamp_ns):
     return [status]
 
 
-def _handle_market_runners_status(self, market, timestamp_ns):
+def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
     updates = []
 
     for runner in market.get("marketDefinition", {}).get("runners", []):
@@ -337,7 +336,7 @@ def _handle_market_runners_status(self, market, timestamp_ns):
             selection_id=str(runner["id"]),
             handicap=str(runner.get("hc") or "0.0"),
         )
-        instrument = self.instrument_provider().get_betting_instrument(**kw)
+        instrument = instrument_provider.get_betting_instrument(**kw)
         if not instrument:
             continue
         updates.extend(
@@ -355,7 +354,7 @@ def _handle_market_runners_status(self, market, timestamp_ns):
 
 
 def build_market_snapshot_messages(
-    self, raw
+    instrument_provider, raw
 ) -> List[Union[OrderBookSnapshot, InstrumentStatusEvent]]:
     updates = []
     timestamp_ns = millis_to_nanos(raw["pt"])
@@ -363,7 +362,9 @@ def build_market_snapshot_messages(
         # Instrument Status
         updates.extend(
             _handle_market_runners_status(
-                self=self, market=market, timestamp_ns=timestamp_ns
+                instrument_provider=instrument_provider,
+                market=market,
+                timestamp_ns=timestamp_ns,
             )
         )
 
@@ -379,7 +380,7 @@ def build_market_snapshot_messages(
                         selection_id=str(selection_id),
                         handicap=str(handicap or "0.0"),
                     )
-                    instrument = self.instrument_provider().get_betting_instrument(**kw)
+                    instrument = instrument_provider.get_betting_instrument(**kw)
                     updates.extend(
                         _handle_market_snapshot(
                             selection=selection,
@@ -390,17 +391,38 @@ def build_market_snapshot_messages(
     return updates
 
 
+def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
+    per_instrument_deltas = defaultdict(list)
+    level = one(set(deltas.level for deltas in all_deltas))
+    timestamp_ns = one(set(deltas.timestamp_ns for deltas in all_deltas))
+
+    for deltas in all_deltas:
+        per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
+    return [
+        OrderBookDeltas(
+            instrument_id=instrument_id,
+            deltas=deltas,
+            level=level,
+            timestamp_ns=timestamp_ns,
+        )
+        for instrument_id, deltas in per_instrument_deltas.items()
+    ]
+
+
 def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
-    self, raw
+    instrument_provider, raw
 ) -> List[
     Union[OrderBookDelta, TradeTick, InstrumentStatusEvent, InstrumentClosePrice]
 ]:
     updates = []
+    book_updates = []
     timestamp_ns = millis_to_nanos(raw["pt"])
     for market in raw.get("mc", []):
         updates.extend(
             _handle_market_runners_status(
-                self=self, market=market, timestamp_ns=timestamp_ns
+                instrument_provider=instrument_provider,
+                market=market,
+                timestamp_ns=timestamp_ns,
             )
         )
         for runner in market.get("rc", []):
@@ -409,10 +431,11 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
                 selection_id=str(runner["id"]),
                 handicap=str(runner.get("hc") or "0.0"),
             )
-            instrument = self.instrument_provider().get_betting_instrument(**kw)
+            instrument = instrument_provider.get_betting_instrument(**kw)
             if not instrument:
                 continue
-            updates.extend(
+            # Delay appending book updates until we can merge at the end
+            book_updates.extend(
                 _handle_book_updates(
                     runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
                 )
@@ -422,19 +445,20 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
                     runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
                 )
             )
-
+    if book_updates:
+        updates.extend(_merge_order_book_deltas(book_updates))
     return updates
 
 
-def on_market_update(self, update: dict):
+def on_market_update(instrument_provider, update: dict):
     if update.get("ct") == "HEARTBEAT":
         # TODO - Should we send out heartbeats
         return []
     for mc in update.get("mc", []):
         if mc.get("img"):
-            return build_market_snapshot_messages(self, update)
+            return build_market_snapshot_messages(instrument_provider, update)
         else:
-            return build_market_update_messages(self, update)
+            return build_market_update_messages(instrument_provider, update)
     return []
 
 

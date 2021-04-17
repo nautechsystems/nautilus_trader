@@ -31,7 +31,8 @@ def test_betfair_orderbook(betfair_data_client, provider):
         instrument_id=BetfairTestStubs.instrument_id(), level=OrderBookLevel.L2
     )
     for update in BetfairTestStubs.raw_market_updates():
-        for message in on_market_update(self=betfair_data_client, update=update):
+        for message in on_market_update(instrument_provider=provider, update=update):
+
             if isinstance(message, OrderBookSnapshot):
                 book.apply_snapshot(message)
             elif isinstance(message, OrderBookDeltas):
