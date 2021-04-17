@@ -18,7 +18,6 @@ from datetime import datetime
 from decimal import Decimal
 import os
 import pstats
-import unittest
 
 import pandas as pd
 import pytz
@@ -35,6 +34,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
@@ -44,7 +44,7 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
-class BacktestEnginePerformanceTests(unittest.TestCase):
+class BacktestEnginePerformanceTests(PerformanceHarness):
     @staticmethod
     def test_run_with_empty_strategy():
         # Arrange
