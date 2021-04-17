@@ -27,6 +27,8 @@ def test_price_to_probability():
     # Rounding match
     assert price_to_probability(2.01, side=OrderSide.BUY) == Price("0.49505")
     assert price_to_probability(2.01, side=OrderSide.SELL) == Price("0.50000")
+    # Force for TradeTicks which can have non-tick prices
+    assert price_to_probability(10.4, force=True) == Price("0.09615")
 
 
 def test_probability_to_price():

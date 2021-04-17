@@ -1,4 +1,6 @@
+from model.orderbook.book import OrderBookDeltas
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
+from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
@@ -8,6 +10,7 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.tick import TradeTick
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -88,3 +91,29 @@ def test_account_statement(betfair_client, uuid, clock):
         result.timestamp_ns,
     )
     assert result == expected
+
+
+def test__merge_order_book_deltas(provider):
+    provider.load_all()
+    raw = {
+        "op": "mcm",
+        "clk": "792361654",
+        "pt": 1577575379148,
+        "mc": [
+            {
+                "id": "1.179082386",
+                "rc": [
+                    {"atl": [[3.15, 3.68]], "id": 50214},
+                    {"trd": [[3.15, 364.45]], "ltp": 3.15, "tv": 364.45, "id": 50214},
+                    {"atb": [[3.15, 0]], "id": 50214},
+                ],
+                "con": True,
+                "img": False,
+            }
+        ],
+    }
+    updates = build_market_update_messages(provider, raw)
+    assert len(updates) == 2
+    assert isinstance(updates[0], TradeTick)
+    assert isinstance(updates[1], OrderBookDeltas)
+    assert len(updates[1].deltas) == 2

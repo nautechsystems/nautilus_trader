@@ -81,7 +81,7 @@ class SocketClient:
             raw = json.dumps(raw)
         if not isinstance(raw, bytes):
             raw = raw.encode(self.encoding)
-        self.logger.debug(raw.decode())
+        self.logger.debug(f"SEND: {raw.decode()}")
         self.writer.write(raw + self.crlf)
         await self.writer.drain()
 
@@ -95,7 +95,7 @@ class SocketClient:
                 if partial:
                     raw = partial + raw
                     partial = b""
-                self.logger.debug(raw.decode())
+                self.logger.debug(f"RECV: {raw.decode()}")
                 self.message_handler(raw.rstrip(self.crlf))
                 await asyncio.sleep(0)
             except IncompleteReadError as e:
