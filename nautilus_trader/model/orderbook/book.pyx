@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 from operator import itemgetter
 
+import pandas as pd
 from tabulate import tabulate
 
 from nautilus_trader.core.correctness cimport Condition
@@ -53,6 +54,7 @@ cdef class OrderBook:
             The order book level (L1, L2, L3).
 
         """
+        assert self.__class__.__name__ != "OrderBook", "Do not instantiate OrderBook directly; Use OrderBook.create()"
         self.instrument_id = instrument_id
         self.level = level
         self.bids = Ladder(reverse=True)
@@ -195,6 +197,14 @@ cdef class OrderBook:
             self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
 
         self.last_update_timestamp_ns = snapshot.timestamp_ns
+
+    cpdef void apply(self, OrderBookData data) except *:
+        if isinstance(data, OrderBookSnapshot):
+            self.apply_snapshot(snapshot=data)
+        elif isinstance(data, OrderBookDeltas):
+            self.apply_deltas(deltas=data)
+        elif isinstance(data, OrderBookDelta):
+            self._apply_delta(delta=data)
 
     cpdef void check_integrity(self) except *:
         """
@@ -384,8 +394,12 @@ cdef class OrderBook:
             return None
 
     def __repr__(self):
-        return self.pprint()
-
+        return (
+            f"{type(self).__name__}\n"
+            f"instrument: {self.instrument_id}\n"
+            f"timestamp: {pd.Timestamp(self.last_update_timestamp_ns)}\n\n"
+            f"{self.pprint()}"
+        )
     cpdef spread(self):
         """
         Return the top of book spread (if no bids or asks then returns None).
@@ -413,7 +427,6 @@ cdef class OrderBook:
     cpdef str pprint(self, int num_levels=3, show='volume'):
         levels = [(lvl.price(), lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]]
         levels = list(reversed(sorted(levels, key=itemgetter(0))))
-        print(levels)
         data = [
             {
                 "bids": [
@@ -435,6 +448,10 @@ cdef class OrderBook:
         return tabulate(
             data, headers="keys", numalign="center", floatfmt=".4f", tablefmt="fancy"
         )
+
+    @property
+    def timestamp_ns(self):
+        return self.last_update_timestamp_ns
 
 
 cdef class L3OrderBook(OrderBook):
@@ -760,7 +777,7 @@ cdef class OrderBookDeltas(OrderBookData):
                 f"timestamp_ns={self.timestamp_ns})")
 
 
-cdef class OrderBookDelta:
+cdef class OrderBookDelta(OrderBookData):
     """
     Represents a single difference on an `OrderBook`.
     """
@@ -769,6 +786,7 @@ cdef class OrderBookDelta:
         self,
         OrderBookDeltaType delta_type,
         Order order not None,
+        InstrumentId instrument_id,
         int64_t timestamp_ns,
     ):
         """
@@ -784,12 +802,12 @@ cdef class OrderBookDelta:
             The Unix timestamp (nanos) of the operation.
 
         """
+        super().__init__(instrument_id=instrument_id, timestamp_ns=timestamp_ns)
         self.type = delta_type
         self.order = order
-        self.timestamp_ns = timestamp_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"{OrderBookDeltaTypeParser.to_str(self.type)}, "
-                f"{self.order}, "
+                f"op_type={OrderBookDeltaTypeParser.to_str(self.type)}, "
+                f"order={self.order}, "
                 f"timestamp_ns={self.timestamp_ns})")
