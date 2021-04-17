@@ -30,6 +30,8 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport BettingInstrument
+
+from model.identifiers import ClientId
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
@@ -96,7 +98,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             market_filter=market_filter
         )
         super().__init__(
-            BETFAIR_VENUE.value,
+            ClientId(BETFAIR_VENUE.value),
             engine,
             clock,
             logger,

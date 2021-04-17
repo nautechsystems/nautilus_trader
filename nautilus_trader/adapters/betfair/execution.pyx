@@ -40,6 +40,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 
+from model.identifiers import ClientId
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
@@ -107,7 +108,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
-            BETFAIR_VENUE.value,
+            ClientId(BETFAIR_VENUE.value),
             account_id,
             engine,
             instrument_provider,
