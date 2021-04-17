@@ -19,10 +19,10 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.trading.calculators import ExchangeRateCalculator
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
-class TestExchangeRateCalculatorPerformanceTests(PerformanceTestCase):
+class TestExchangeRateCalculatorPerformanceTests(PerformanceHarness):
     @staticmethod
     def get_xrate(bid_quotes, ask_quotes):
         ExchangeRateCalculator().get_rate(

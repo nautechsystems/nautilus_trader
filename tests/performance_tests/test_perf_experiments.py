@@ -22,7 +22,7 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
 AUDUSD = InstrumentId(Symbol("AUDUSD"), Venue("IDEALPRO"))
@@ -56,7 +56,7 @@ class Experiments:
         return x
 
 
-class ExperimentsPerformanceTests(PerformanceTestCase):
+class ExperimentsPerformanceTests(PerformanceHarness):
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
     @staticmethod
     def test_builtin_arithmetic(benchmark):

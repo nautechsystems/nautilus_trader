@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 
 
@@ -69,7 +69,7 @@ class ObjectTests:
         )
 
 
-class ObjectPerformanceTests(PerformanceTestCase):
+class ObjectPerformanceTests(PerformanceHarness):
     @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_make_symbol(self):
         self.benchmark.pedantic(ObjectTests.make_symbol, iterations=100_000, rounds=1)

@@ -18,7 +18,7 @@ from datetime import timedelta
 import pytest
 
 from nautilus_trader.common.throttler import Throttler
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
 @pytest.fixture()
@@ -34,7 +34,7 @@ def throttler(clock, logger):
     )
 
 
-class TestThrottlerPerformance(PerformanceTestCase):
+class TestThrottlerPerformance(PerformanceHarness):
     def test_send_unlimited(self, throttler):
         def send():
             throttler.send("MESSAGE")

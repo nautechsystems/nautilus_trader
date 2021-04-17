@@ -18,10 +18,10 @@ import pytest
 
 from nautilus_trader.core.functions import fast_mean
 from nautilus_trader.core.functions import fast_std
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
-class FunctionPerformanceTests(PerformanceTestCase):
+class FunctionPerformanceTests(PerformanceHarness):
     def setUp(self):
         # Fixture Setup
         self.values = np.random.rand(10)

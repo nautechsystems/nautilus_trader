@@ -18,10 +18,10 @@ import uuid
 import pytest
 
 from nautilus_trader.core.uuid import uuid4
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
-class UUIDPerformanceTests(PerformanceTestCase):
+class UUIDPerformanceTests(PerformanceHarness):
     @pytest.mark.benchmark(group="uuid", disable_gc=True, warmup=True)
     @staticmethod
     def test_make_builtin_uuid(benchmark):

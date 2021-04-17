@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.models import FillModel
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
 model = FillModel(
@@ -24,7 +24,7 @@ model = FillModel(
 )
 
 
-class TestFillModelPerformance(PerformanceTestCase):
+class TestFillModelPerformance(PerformanceHarness):
     def test_is_limit_filled(self):
         self.benchmark.pedantic(model.is_limit_filled, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.

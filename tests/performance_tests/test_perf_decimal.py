@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from nautilus_trader.model.objects import BaseDecimal
 from nautilus_trader.model.objects import Price
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
 _PRECISION_5_CONTEXT = decimal.Context(prec=5)
@@ -88,7 +88,7 @@ class DecimalTesting:
         Price(1.23456, 5)
 
 
-class DecimalPerformanceTests(PerformanceTestCase):
+class DecimalPerformanceTests(PerformanceHarness):
     # TODO
     # def test_builtin_decimal_size(self):
     #     PerformanceHarness.object_size(Decimal("1.00000"))

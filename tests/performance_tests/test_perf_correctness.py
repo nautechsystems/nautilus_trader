@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness import PyCondition
-from tests.test_kit.performance import PerformanceTestCase
+from tests.test_kit.performance import PerformanceHarness
 
 
 class CorrectnessTests:
@@ -35,7 +35,7 @@ class CorrectnessTests:
         PyCondition.type_or_none("hello", str, "world")
 
 
-class CorrectnessConditionPerformanceTests(PerformanceTestCase):
+class CorrectnessConditionPerformanceTests(PerformanceHarness):
     def test_condition_none(self):
         self.benchmark.pedantic(CorrectnessTests.none, iterations=100_000, rounds=1)
         # ~0.0ms / ~0.1μs / 142ns minimum of 100,000 runs @ 1 iteration each run.
