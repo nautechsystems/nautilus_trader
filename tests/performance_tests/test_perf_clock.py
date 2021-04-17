@@ -15,8 +15,6 @@
 
 from datetime import timedelta
 
-import pytest
-
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
@@ -27,11 +25,6 @@ test_clock = TestClock()
 
 
 class LiveClockPerformanceTests(PerformanceHarness):
-    @pytest.fixture(autouse=True)
-    @pytest.mark.benchmark(disable_gc=True, warmup=True)
-    def setupBenchmark(self, benchmark):
-        self.benchmark = benchmark
-
     def test_utc_now(self):
         self.benchmark.pedantic(live_clock.timestamp_ns, iterations=100_000, rounds=1)
         # ~0.0ms / ~1.3μs / 1330ns minimum of 100,000 runs @ 1 iteration each run.
