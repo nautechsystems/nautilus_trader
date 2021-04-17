@@ -75,7 +75,7 @@ def _build_extensions() -> List[Extension]:
             sources=[str(pyx)],
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
-            language="c",
+            language="c" if not INTERPRETER_32BIT_MODE else "c++",
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),
