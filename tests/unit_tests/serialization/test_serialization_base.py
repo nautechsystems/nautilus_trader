@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -37,15 +37,18 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class SerializationBaseTests(unittest.TestCase):
+class TestSerializationBase:
     def test_instrument_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         serializer = InstrumentSerializer()
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, serializer.serialize, AUDUSD_SIM)
-        self.assertRaises(NotImplementedError, serializer.deserialize, bytes())
+        with pytest.raises(NotImplementedError):
+            serializer.serialize(AUDUSD_SIM)
+
+        with pytest.raises(NotImplementedError):
+            serializer.deserialize(bytes())
 
     def test_order_serializer_methods_raise_not_implemented_error(self):
         # Arrange
@@ -65,8 +68,11 @@ class SerializationBaseTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, serializer.serialize, order)
-        self.assertRaises(NotImplementedError, serializer.deserialize, bytes())
+        with pytest.raises(NotImplementedError):
+            serializer.serialize(order)
+
+        with pytest.raises(NotImplementedError):
+            serializer.deserialize(bytes())
 
     def test_command_serializer_methods_raise_not_implemented_error(self):
         # Arrange
@@ -82,8 +88,11 @@ class SerializationBaseTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, serializer.serialize, command)
-        self.assertRaises(NotImplementedError, serializer.deserialize, bytes())
+        with pytest.raises(NotImplementedError):
+            serializer.serialize(command)
+
+        with pytest.raises(NotImplementedError):
+            serializer.deserialize(bytes())
 
     def test_event_serializer_methods_raise_not_implemented_error(self):
         # Arrange
@@ -92,5 +101,8 @@ class SerializationBaseTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, serializer.serialize, event)
-        self.assertRaises(NotImplementedError, serializer.deserialize, bytes())
+        with pytest.raises(NotImplementedError):
+            serializer.serialize(event)
+
+        with pytest.raises(NotImplementedError):
+            serializer.deserialize(bytes())
