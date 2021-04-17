@@ -25,6 +25,11 @@ MESSAGE = Message(MessageType.COMMAND, uuid4(), 0)
 
 class Experiments:
     @staticmethod
+    def class_name():
+        x = "123".__class__.__name__
+        return x
+
+    @staticmethod
     def built_in_arithmetic():
         x = 1 + 1
         return x
@@ -43,7 +48,7 @@ class TestPerformanceExperiments(PerformanceHarness):
     @staticmethod
     def test_class_name(benchmark):
         benchmark.pedantic(
-            target="123".__class__.__name__,
+            target=Experiments.class_name,
             iterations=100_000,
             rounds=1,
         )
