@@ -147,7 +147,7 @@ d = ["aiohttp (>=3.3.2)", "aiohttp-cors"]
 
 [[package]]
 name = "ccxt"
-version = "1.47.97"
+version = "1.48.8"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -802,8 +802,8 @@ testing = ["async-generator (>=1.3)", "coverage", "hypothesis (>=5.7.1)"]
 
 [[package]]
 name = "pytest-benchmark"
-version = "3.2.3"
-description = "A ``pytest`` fixture for benchmarking code. It will group the tests into rounds that are calibrated to the chosen timer. See calibration_ and FAQ_."
+version = "3.4.1"
+description = "A ``pytest`` fixture for benchmarking code. It will group the tests into rounds that are calibrated to the chosen timer."
 category = "dev"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
@@ -1191,7 +1191,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pyt
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "9029d99608a91975de9a1f0bd61fa6b5acc65e8cc46b9a9623f53d1d29df34ba"
+content-hash = "b6b6fcf7753948be177e8676645162e603c548a366dfa3f1d8694b8056cc3016"
 
 [metadata.files]
 aiodns = [
@@ -1277,8 +1277,8 @@ black = [
     {file = "black-20.8b1.tar.gz", hash = "sha256:1c02557aa099101b9d21496f8a914e9ed2222ef70336404eeeac8edba836fbea"},
 ]
 ccxt = [
-    {file = "ccxt-1.47.97-py2.py3-none-any.whl", hash = "sha256:46986f78ee8d8f56ef1283b0b4a99a64ec95976f734af8cff59122f6d2ecb6d7"},
-    {file = "ccxt-1.47.97.tar.gz", hash = "sha256:46166e8073416e00af2845be61666c5a2861d781da98859e051dc832a93f3c6b"},
+    {file = "ccxt-1.48.8-py2.py3-none-any.whl", hash = "sha256:dd2f899075ac465a4ab51204be4847859dd5268720b6bf5bbd60f9ba64656d12"},
+    {file = "ccxt-1.48.8.tar.gz", hash = "sha256:cb3d795fe1cb406454acf9991cd6a7c6b3b33f648c4fe7b61d3537887c6621a3"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1905,8 +1905,8 @@ pytest-asyncio = [
     {file = "pytest_asyncio-0.14.0-py3-none-any.whl", hash = "sha256:2eae1e34f6c68fc0a9dc12d4bea190483843ff4708d24277c41568d6b6044f1d"},
 ]
 pytest-benchmark = [
-    {file = "pytest-benchmark-3.2.3.tar.gz", hash = "sha256:ad4314d093a3089701b24c80a05121994c7765ce373478c8f4ba8d23c9ba9528"},
-    {file = "pytest_benchmark-3.2.3-py2.py3-none-any.whl", hash = "sha256:01f79d38d506f5a3a0a9ada22ded714537bbdfc8147a881a35c1655db07289d9"},
+    {file = "pytest-benchmark-3.4.1.tar.gz", hash = "sha256:40e263f912de5a81d891619032983557d62a3d85843f9a9f30b98baea0cd7b47"},
+    {file = "pytest_benchmark-3.4.1-py2.py3-none-any.whl", hash = "sha256:36d2b08c4882f6f997fd3126a3d6dfd70f3249cde178ed8bbc0b73db7c20f809"},
 ]
 pytest-cov = [
     {file = "pytest-cov-2.10.1.tar.gz", hash = "sha256:47bd0ce14056fdd79f93e1713f88fad7bdcc583dcd7783da86ef2f085a0bb88e"},
