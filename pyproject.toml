@@ -45,7 +45,7 @@ numpy = "^1.20.2"
 oandapyV20 = "^0.6.3"
 pandas = "^1.2.4"
 psutil = "^5.8.0"
-pyarrow = "^3.0.0"
+pyarrow = { version = "^3.0.0", markers = "sys_platform != 'win32'" }
 pytz = "^2020.5"
 redis = "3.5.3"
 scipy = "^1.6.1"
