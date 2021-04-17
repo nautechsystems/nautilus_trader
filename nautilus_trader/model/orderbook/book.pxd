@@ -41,14 +41,15 @@ cdef class OrderBook:
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
-    cpdef void apply_delta(self, OrderBookDelta operation) except *
+    cpdef void apply_delta(self, OrderBookDelta delta) except *
     cpdef void apply_deltas(self, OrderBookDeltas deltas) except *
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *
+    cpdef void apply(self, OrderBookData data) except *
     cpdef void clear_bids(self) except *
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
     cpdef void check_integrity(self) except *
-    cdef inline void _apply_delta(self, OrderBookDelta op) except *
+    cdef inline void _apply_delta(self, OrderBookDelta delta) except *
     cdef inline void _add(self, Order order) except *
     cdef inline void _update(self, Order order) except *
     cdef inline void _delete(self, Order order) except *
@@ -99,10 +100,8 @@ cdef class OrderBookDeltas(OrderBookData):
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
 
 
-cdef class OrderBookDelta:
+cdef class OrderBookDelta(OrderBookData):
     cdef readonly OrderBookDeltaType type
     """The type of change (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookDeltaType (Enum)`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""
-    cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the operation.\n\n:returns: `int64`"""
