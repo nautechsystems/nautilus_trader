@@ -41,6 +41,7 @@ def performance_tests(session: Session) -> None:
         session,
         "tests/performance_tests/",
         "--benchmark-json=PERF.JSON",
+        parallel=False,
     )
 
 
