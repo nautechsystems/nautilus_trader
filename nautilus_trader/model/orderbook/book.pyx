@@ -63,16 +63,9 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If price precision is negative (< 0).
+            If price_precision is negative (< 0).
         ValueError
-            If size precision is negative (< 0).
-
-        Raises
-        ------
-        ValueError
-            If price precision is negative (< 0).
-        ValueError
-            If size precision is negative (< 0).
+            If size_precision is negative (< 0).
 
         """
         Condition.not_negative_int(price_precision, "price_precision")
@@ -118,16 +111,9 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If price precision is negative (< 0).
+            If price_precision is negative (< 0).
         ValueError
-            If size precision is negative (< 0).
-
-        Raises
-        ------
-        ValueError
-            If price precision is negative (< 0).
-        ValueError
-            If size precision is negative (< 0).
+            If size_precision is negative (< 0).
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -543,9 +529,9 @@ cdef class L3OrderBook(OrderBook):
         Raises
         ------
         ValueError
-            If price precision is negative (< 0).
+            If price_precision is negative (< 0).
         ValueError
-            If size precision is negative (< 0).
+            If size_precision is negative (< 0).
 
         """
         super().__init__(
