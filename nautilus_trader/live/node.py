@@ -16,6 +16,7 @@
 import asyncio
 import concurrent.futures
 from datetime import timedelta
+import platform
 import signal
 import sys
 import time
@@ -146,7 +147,11 @@ class TradingNode:
         self._log_header()
         self._log.info("Building...")
 
-        self._setup_loop()  # Requires the logger to be initialized
+        if platform.system() != "Windows":
+            # Requires the logger to be initialized
+            # Windows does not support signal handling
+            # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
+            self._setup_loop()
 
         # Build platform
         # ----------------------------------------------------------------------

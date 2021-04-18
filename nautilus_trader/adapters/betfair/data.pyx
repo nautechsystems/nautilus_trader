@@ -18,10 +18,10 @@ from betfairlightweight import APIClient
 import orjson
 
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message import Event
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
@@ -30,11 +30,14 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport BettingInstrument
+
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
+
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.identifiers cimport ClientId
+
+from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -84,10 +87,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
-        market_filter : dict
-            The market filter.
-        load_instruments : bool
-            If all instruments should be loaded on instantiation.
 
         """
 
@@ -140,9 +139,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+        """ Disconnect the client """
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -211,14 +208,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             super().request(data_type=data_type, correlation_id=correlation_id)
 
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef void subscribe_order_book(
-        self,
-        InstrumentId instrument_id,
-        OrderBookLevel level,
-        int depth=0,
-        dict kwargs=None,
-    ) except *:
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
         """
         Subscribe to `OrderBook` data for the given instrument identifier.
 
@@ -226,8 +216,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The Instrument id to subscribe to order books.
-        level : OrderBookLevel (Enum)
-            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -248,7 +236,23 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         self._log.info(f"Subscribed to market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.")
 
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=None) except *:
+        self.subscribe_order_book(instrument_id=instrument_id, level=level, kwargs=kwargs)
+
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `OrderBook` data for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        self._log.warning(f"Betfair does not support unsubscribing from instruments")
+
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from `OrderBook` data for the given instrument identifier.
 
@@ -266,7 +270,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cdef inline void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-# -- DEBUGGING -------------------------------------------------------------------------------------
+
+# -- Debugging ---------------------------------------------------------------------------------------
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
@@ -278,7 +283,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void _on_market_update(self, bytes raw) except *:
         cdef dict update = orjson.loads(raw)  # type: dict
-        updates = on_market_update(self=self, update=update)
+        updates = on_market_update(instrument_provider=self.instrument_provider(), update=update)
         if not updates:
             if update.get('op') == 'connection' or update.get('connectionsAvailable'):
                 return

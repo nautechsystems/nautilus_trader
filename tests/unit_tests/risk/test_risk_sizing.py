@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import unittest
+
+import pytest
 
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
@@ -28,7 +29,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 USDJPY = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
-class PositionSizerTests(unittest.TestCase):
+class TestPositionSizer:
     def test_update_instrument(self):
         # Arrange
         sizer = PositionSizer(USDJPY)
@@ -37,7 +38,7 @@ class PositionSizerTests(unittest.TestCase):
         sizer.update_instrument(USDJPY)
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        assert True  # No exceptions raised
 
     def test_calculate_raises_not_implemented_exception(self):
         # Arrange
@@ -45,19 +46,18 @@ class PositionSizerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError,
-            sizer.calculate,
-            Price("1.00100"),
-            Price("1.00000"),
-            Money(1_000_000, USD),
-            Decimal("0.001"),
-            Decimal(1000),
-        )
+        with pytest.raises(NotImplementedError):
+            sizer.calculate(
+                Price("1.00100"),
+                Price("1.00000"),
+                Money(1_000_000, USD),
+                Decimal("0.001"),
+                Decimal(1000),
+            )
 
 
-class FixedRiskSizerTests(unittest.TestCase):
-    def setUp(self):
+class TestFixedRiskSizer:
+    def setup(self):
         # Fixture Setup
         self.sizer = FixedRiskSizer(USDJPY)
 
@@ -75,7 +75,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(0), result)
+        assert result == Quantity(0)
 
     def test_calculate_with_zero_exchange_rate_returns_quantity_zero(self):
         # Arrange
@@ -91,7 +91,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(0), result)
+        assert result == Quantity(0)
 
     def test_calculate_with_zero_risk_returns_quantity_zero(self):
         # Arrange
@@ -107,7 +107,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(0), result)
+        assert result == Quantity(0)
 
     def test_calculate_single_unit_size(self):
         # Arrange
@@ -123,7 +123,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(1_000_000), result)
+        assert result == Quantity(1_000_000)
 
     def test_calculate_single_unit_with_exchange_rate(self):
         # Arrange
@@ -139,7 +139,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(10000000), result)
+        assert result == Quantity(10000000)
 
     def test_calculate_single_unit_size_when_risk_too_high(self):
         # Arrange
@@ -155,7 +155,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(), result)
+        assert result == Quantity()
 
     def test_impose_hard_limit(self):
         # Arrange
@@ -173,7 +173,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(500000), result)
+        assert result == Quantity(500000)
 
     def test_calculate_multiple_unit_size(self):
         # Arrange
@@ -190,7 +190,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(3333000), result)
+        assert result == Quantity(3333000)
 
     def test_calculate_multiple_unit_size_larger_batches(self):
         # Arrange
@@ -207,7 +207,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(275000), result)
+        assert result == Quantity(275000)
 
     def test_calculate_for_usdjpy_with_commission(self):
         # Arrange
@@ -227,4 +227,4 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(3578000), result)
+        assert result == Quantity(3578000)

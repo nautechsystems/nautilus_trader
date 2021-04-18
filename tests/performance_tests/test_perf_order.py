@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
@@ -32,39 +32,56 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestStubs.audusd_id()
 
 
-class OrderPerformanceTests(unittest.TestCase):
-    def setUp(self):
+class TestOrderPerformance(PerformanceHarness):
+    def setup(self):
         # Fixture Setup
-        self.generator = ClientOrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())
+        self.generator = ClientOrderIdGenerator(
+            id_tag_trader=IdTag("001"),
+            id_tag_strategy=IdTag("001"),
+            clock=LiveClock(),
+        )
+
         self.order_factory = OrderFactory(
             trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
 
-    def create_market_order(self):
-        self.order_factory.market(
-            AUDUSD_SIM,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-    def create_limit_order(self):
-        self.order_factory.limit(
-            AUDUSD_SIM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price("0.80010"),
-        )
+    @pytest.fixture(autouse=True)
+    def setup_benchmark(self, benchmark):
+        self.benchmark = benchmark
 
     def test_order_id_generator(self):
-        PerformanceHarness.profile_function(self.generator.generate, 100000, 1)
+        self.benchmark.pedantic(
+            target=self.generator.generate,
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~2.9μs / 2894ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_market_order_creation(self):
-        PerformanceHarness.profile_function(self.create_market_order, 10000, 1)
+        self.benchmark.pedantic(
+            target=self.order_factory.market,
+            args=(
+                AUDUSD_SIM,
+                OrderSide.BUY,
+                Quantity(100000),
+            ),
+            iterations=10_000,
+            rounds=1,
+        )
         # ~0.0ms / ~10.7μs / 10682ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_limit_order_creation(self):
-        PerformanceHarness.profile_function(self.create_limit_order, 10000, 1)
+        self.benchmark.pedantic(
+            target=self.order_factory.limit,
+            args=(
+                AUDUSD_SIM,
+                OrderSide.BUY,
+                Quantity(100000),
+                Price("0.80010"),
+            ),
+            iterations=10_000,
+            rounds=1,
+        )
         # ~0.0ms / ~14.5μs / 14469ns minimum of 10,000 runs @ 1 iteration each run.

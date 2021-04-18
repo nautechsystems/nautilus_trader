@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from operator import itemgetter
 
+import pandas as pd
 from tabulate import tabulate
 
 from nautilus_trader.core.correctness cimport Condition
@@ -30,17 +32,18 @@ from nautilus_trader.model.orderbook.order cimport Order
 
 cdef class OrderBook:
     """
-    Provides a L1/L2/L3 order book.
-
     The base class for all order books.
 
-    An L3 order book can be proxied to L2 or L1 `OrderBook` classes.
+    Provides a L1/L2/L3 order book as a `L3OrderBook` can be proxied to
+    `L2OrderBook` or `L1OrderBook` classes.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
         OrderBookLevel level,
+        int price_precision,
+        int size_precision,
     ):
         """
         Initialize a new instance of the `OrderBook` class.
@@ -51,10 +54,32 @@ cdef class OrderBook:
             The instrument identifier for the book.
         level : OrderBookLevel (Enum)
             The order book level (L1, L2, L3).
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
+
+        Raises
+        ------
+        ValueError
+            If initializing type is not a subclass of `OrderBook`.
+        ValueError
+            If price_precision is negative (< 0).
+        ValueError
+            If size_precision is negative (< 0).
 
         """
+        Condition.true(
+            self.__class__.__name__ != "OrderBook",
+            "Cannot instantiate OrderBook directly: use OrderBook.create()",
+        )
+        Condition.not_negative_int(price_precision, "price_precision")
+        Condition.not_negative_int(size_precision, "size_precision")
+
         self.instrument_id = instrument_id
         self.level = level
+        self.price_precision = price_precision
+        self.size_precision = size_precision
         self.bids = Ladder(reverse=True)
         self.asks = Ladder(reverse=False)
         self.last_update_timestamp_ns = 0
@@ -63,7 +88,12 @@ cdef class OrderBook:
         # TODO: Id updates
 
     @staticmethod
-    def create(InstrumentId instrument_id, OrderBookLevel level):
+    def create(
+        InstrumentId instrument_id,
+        OrderBookLevel level,
+        int price_precision,
+        int size_precision,
+    ):
         """
         Create a new order book with the given parameters.
 
@@ -73,20 +103,43 @@ cdef class OrderBook:
             The instrument identifier for the book.
         level : OrderBookLevel (Enum)
             The order book level (L1, L2, L3).
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
 
         Returns
         -------
         OrderBook
 
+        Raises
+        ------
+        ValueError
+            If price_precision is negative (< 0).
+        ValueError
+            If size_precision is negative (< 0).
+
         """
         Condition.not_none(instrument_id, "instrument_id")
 
         if level == OrderBookLevel.L1:
-            return L1OrderBook(instrument_id)
+            return L1OrderBook(
+                instrument_id=instrument_id,
+                price_precision=price_precision,
+                size_precision=size_precision,
+            )
         elif level == OrderBookLevel.L2:
-            return L2OrderBook(instrument_id)
-        elif level == OrderBookLevel.L2:
-            return L3OrderBook(instrument_id)
+            return L2OrderBook(
+                instrument_id=instrument_id,
+                price_precision=price_precision,
+                size_precision=size_precision,
+            )
+        elif level == OrderBookLevel.L3:
+            return L3OrderBook(
+                instrument_id=instrument_id,
+                price_precision=price_precision,
+                size_precision=size_precision,
+            )
         else:
             raise RuntimeError(f"level was invalid, was {level} (must be in range [1, 3])")
 
@@ -195,6 +248,14 @@ cdef class OrderBook:
             self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
 
         self.last_update_timestamp_ns = snapshot.timestamp_ns
+
+    cpdef void apply(self, OrderBookData data) except *:
+        if isinstance(data, OrderBookSnapshot):
+            self.apply_snapshot(snapshot=data)
+        elif isinstance(data, OrderBookDeltas):
+            self.apply_deltas(deltas=data)
+        elif isinstance(data, OrderBookDelta):
+            self._apply_delta(delta=data)
 
     cpdef void check_integrity(self) except *:
         """
@@ -384,8 +445,12 @@ cdef class OrderBook:
             return None
 
     def __repr__(self):
-        return self.pprint()
-
+        return (
+            f"{type(self).__name__}\n"
+            f"instrument: {self.instrument_id}\n"
+            f"timestamp: {pd.Timestamp(self.last_update_timestamp_ns)}\n\n"
+            f"{self.pprint()}"
+        )
     cpdef spread(self):
         """
         Return the top of book spread (if no bids or asks then returns None).
@@ -413,7 +478,6 @@ cdef class OrderBook:
     cpdef str pprint(self, int num_levels=3, show='volume'):
         levels = [(lvl.price(), lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]]
         levels = list(reversed(sorted(levels, key=itemgetter(0))))
-        print(levels)
         data = [
             {
                 "bids": [
@@ -436,6 +500,10 @@ cdef class OrderBook:
             data, headers="keys", numalign="center", floatfmt=".4f", tablefmt="fancy"
         )
 
+    @property
+    def timestamp_ns(self):
+        return self.last_update_timestamp_ns
+
 
 cdef class L3OrderBook(OrderBook):
     """
@@ -444,7 +512,12 @@ cdef class L3OrderBook(OrderBook):
     Maps directly to functionality of the `OrderBook` base class.
     """
 
-    def __init__(self, InstrumentId instrument_id not None):
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        int price_precision,
+        int size_precision,
+    ):
         """
         Initialize a new instance of the `L3OrderBook` class.
 
@@ -452,19 +525,40 @@ cdef class L3OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
+
+        Raises
+        ------
+        ValueError
+            If price_precision is negative (< 0).
+        ValueError
+            If size_precision is negative (< 0).
 
         """
-        super().__init__(instrument_id, level=OrderBookLevel.L3)
+        super().__init__(
+            instrument_id=instrument_id,
+            level=OrderBookLevel.L3,
+            price_precision=price_precision,
+            size_precision=size_precision,
+        )
 
 
 cdef class L2OrderBook(OrderBook):
     """
     Provides an L2 order book.
 
-    An L2 order book `Levels` are only made up of a single order.
+    A level 2 order books `Levels` are only made up of a single order.
     """
 
-    def __init__(self, InstrumentId instrument_id not None):
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        int price_precision,
+        int size_precision,
+    ):
         """
         Initialize a new instance of the `L2OrderBook` class.
 
@@ -472,9 +566,18 @@ cdef class L2OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
 
         """
-        super().__init__(instrument_id, level=OrderBookLevel.L2)
+        super().__init__(
+            instrument_id=instrument_id,
+            level=OrderBookLevel.L2,
+            price_precision=price_precision,
+            size_precision=size_precision,
+        )
 
     cpdef void add(self, Order order) except *:
         """
@@ -532,7 +635,7 @@ cdef class L2OrderBook(OrderBook):
             True if check passes, else False.
 
         """
-        # For L2 Orderbook, ensure only one order per level in addition to
+        # For a L2OrderBook, ensure only one order per level in addition to
         # normal orderbook checks.
         self._check_integrity()
 
@@ -540,16 +643,15 @@ cdef class L2OrderBook(OrderBook):
             assert len(level.orders) == 1, f"Number of orders on {level} > 1"
 
     cdef inline Order _process_order(self, Order order):
-        # Because L2 Orderbook only has one order per level, we replace the
+        # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the proxy orderbook.
         order.id = str(order.price)
         return order
 
     cdef inline void _remove_if_exists(self, Order order) except *:
-        # For a L2 orderbook, an order update means a whole level update. If
-        # this level exists, remove it so we can insert the new level.
-
+        # For a L2OrderBook, an order update means a whole level update. If this
+        # level exists, remove it so we can insert the new level.
         if order.side == OrderSide.BUY and order.price in self.bids.prices():
             self.delete(order)
         elif order.side == OrderSide.SELL and order.price in self.asks.prices():
@@ -560,10 +662,15 @@ cdef class L1OrderBook(OrderBook):
     """
     Provides an L1 order book.
 
-    An L1 order book has a single (top) `Level`.
+    A level 1 order book has a single (top) `Level`.
     """
 
-    def __init__(self, InstrumentId instrument_id not None):
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        int price_precision,
+        int size_precision,
+    ):
         """
         Initialize a new instance of the `L1OrderBook` class.
 
@@ -571,9 +678,18 @@ cdef class L1OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
 
         """
-        super().__init__(instrument_id, level=OrderBookLevel.L1)
+        super().__init__(
+            instrument_id=instrument_id,
+            level=OrderBookLevel.L1,
+            price_precision=price_precision,
+            size_precision=size_precision,
+        )
 
     cpdef void add(self, Order order) except *:
         """
@@ -636,7 +752,7 @@ cdef class L1OrderBook(OrderBook):
             True if check passes, else False.
 
         """
-        # For an L1OrderBook, ensure only one level per side in addition to
+        # For a L1OrderBook, ensure only one level per side in addition to
         # normal orderbook checks.
         self._check_integrity()
         assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
@@ -760,7 +876,7 @@ cdef class OrderBookDeltas(OrderBookData):
                 f"timestamp_ns={self.timestamp_ns})")
 
 
-cdef class OrderBookDelta:
+cdef class OrderBookDelta(OrderBookData):
     """
     Represents a single difference on an `OrderBook`.
     """
@@ -769,6 +885,7 @@ cdef class OrderBookDelta:
         self,
         OrderBookDeltaType delta_type,
         Order order not None,
+        InstrumentId instrument_id,
         int64_t timestamp_ns,
     ):
         """
@@ -784,12 +901,15 @@ cdef class OrderBookDelta:
             The Unix timestamp (nanos) of the operation.
 
         """
+        super().__init__(
+            instrument_id=instrument_id,
+            timestamp_ns=timestamp_ns,
+        )
         self.type = delta_type
         self.order = order
-        self.timestamp_ns = timestamp_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"{OrderBookDeltaTypeParser.to_str(self.type)}, "
-                f"{self.order}, "
+                f"op_type={OrderBookDeltaTypeParser.to_str(self.type)}, "
+                f"order={self.order}, "
                 f"timestamp_ns={self.timestamp_ns})")

@@ -129,24 +129,20 @@ limited order feature set including simple vanilla MARKET and LIMIT orders.
 The `master` branch will always reflect the code of the latest release version.
 Also, the documentation is always current for the latest version.
 
-The package is tested against Python 3.7 - 3.9 on both Linux and MacOS.
+The package is tested against Python 3.7 - 3.9 on Windows, MacOS and Linux 64-bit.
 We recommend running the platform with the latest stable version of Python.
-
-Unfortunately Windows installations are not currently supported. Attempts have
-been made to get the project more compatible with Windows, however there are some
-low level implementation details currently preventing this from being possible.
 
 It is a goal for the project to keep dependencies focused, however there are
 still a large number of dependencies as found in the `pyproject.toml` file.
 Therefore we recommend you create a new virtual environment for NautilusTrader
 to isolate the dependencies.
 
-`pyenv` is the recommended tool for handling system wide Python installations
-and virtual environments.
+For Unix machines, `pyenv` is the recommended tool for handling system wide
+Python installations and virtual environments.
 
 > https://github.com/pyenv/pyenv
 
-Installation for Unix-like systems can be achieved through _one_ of the following options;
+Installation can be achieved through _one_ of the following options;
 
 #### From PyPI
 
@@ -277,31 +273,27 @@ at commit.
 
 The following steps are for Unix-like systems, and only need to be completed once.
 
-1. Install the Cython package by running:
-
-        pip install -U Cython==3.0a6
-
-2. Install `poetry` by running:
+1. Install `poetry` by running:
 
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 
-3. Then install all Python package dependencies, and compile the C extensions by running:
+2. Then install all Python package dependencies, and compile the C extensions by running:
 
         poetry install
 
-4. Install the `pre-commit` package by running:
+3. Install the `pre-commit` package by running:
 
         pip install pre-commit
 
-5. Setup the `pre-commit` hook which will then run automatically at commit by running:
+4. Setup the `pre-commit` hook which will then run automatically at commit by running:
 
-        pre-commit run --all-files
+        pre-commit install
 
 #### Builds
 
 Following any changes to `.pyx` or `.pxd` files, you can re-compile by running:
 
-    python build.py
+    poetry run python build.py
 
 Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 

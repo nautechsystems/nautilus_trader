@@ -13,44 +13,51 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 import numpy as np
+import pytest
 
 from nautilus_trader.core.functions import fast_mean
 from nautilus_trader.core.functions import fast_std
 from tests.test_kit.performance import PerformanceHarness
 
 
-class FunctionPerformanceTests(unittest.TestCase):
-    def setUp(self):
-        # Fixture Setup
-        self.values = np.random.rand(10)
-
-    def np_mean(self):
-        np.mean(self.values)
-
-    def np_std(self):
-        np.std(self.values)
-
-    def fast_mean(self):
-        fast_mean(self.values)
-
-    def fast_std(self):
-        fast_std(self.values)
-
+class TestFunctionPerformance(PerformanceHarness):
+    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
     def test_np_mean(self):
-        PerformanceHarness.profile_function(self.np_mean, 10000, 1)
+        self.benchmark.pedantic(
+            target=np.mean,
+            args=(np.random.rand(10),),
+            iterations=10_000,
+            rounds=1,
+        )
         # ~0ms / ~9μs / 8464ns minimum of 10000 runs @ 1 iterations each run.
 
+    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
     def test_np_std(self):
-        PerformanceHarness.profile_function(self.np_std, 10000, 1)
+        self.benchmark.pedantic(
+            target=np.std,
+            args=(np.random.rand(10),),
+            iterations=10_000,
+            rounds=1,
+        )
         # ~0ms / ~20μs / 19517ns minimum of 10000 runs @ 1 iterations each run.
 
+    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
     def test_fast_mean(self):
-        PerformanceHarness.profile_function(self.fast_mean, 100000, 1)
+        self.benchmark.pedantic(
+            target=fast_mean,
+            args=(np.random.rand(10),),
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.4μs / 440ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
     def test_fast_std(self):
-        PerformanceHarness.profile_function(self.fast_std, 100000, 1)
+        self.benchmark.pedantic(
+            target=fast_std,
+            args=(np.random.rand(10),),
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~1.0μs / 968ns minimum of 100,000 runs @ 1 iteration each run.

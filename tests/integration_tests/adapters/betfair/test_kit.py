@@ -11,6 +11,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID
@@ -317,6 +318,10 @@ class BetfairTestStubs(TestStubs):
         return (TEST_PATH / "streaming_ocm_MIXED.json").read_bytes()
 
     @staticmethod
+    def streaming_ocm_DUPLICATE_EXECUTION():
+        return (TEST_PATH / "streaming_ocm_DUPLICATE_EXECUTION.json").read_bytes()
+
+    @staticmethod
     def streaming_mcm_HEARTBEAT():
         return (TEST_PATH / "streaming_mcm_HEARTBEAT.json").read_bytes()
 
@@ -399,6 +404,13 @@ class BetfairTestStubs(TestStubs):
         return [orjson.loads(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
+    def raw_market_updates_instruments():
+        updates = BetfairTestStubs.raw_market_updates()
+        market_def = updates[0]["mc"][0]
+        instruments = make_instruments(market_def, "AUD")
+        return instruments
+
+    @staticmethod
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -470,3 +482,37 @@ class BetfairTestStubs(TestStubs):
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
+
+    @staticmethod
+    def make_order_place_response(
+        market_id="1.182127885",
+        customer_order_ref="O-20210418-015047-001-001-3",
+        bet_id="230486317487",
+    ):
+        return {
+            "customerRef": "c8dc484d5cea2ab472c844859bca7010",
+            "status": "SUCCESS",
+            "marketId": market_id,
+            "instructionReports": [
+                {
+                    "status": "SUCCESS",
+                    "instruction": {
+                        "selectionId": 237477,
+                        "handicap": 0.0,
+                        "limitOrder": {
+                            "size": 10.0,
+                            "price": 1.75,
+                            "persistenceType": "PERSIST",
+                        },
+                        "customerOrderRef": customer_order_ref,
+                        "orderType": "LIMIT",
+                        "side": "LAY",
+                    },
+                    "betId": bet_id,
+                    "placedDate": "2021-04-18T01:50:49.000Z",
+                    "averagePriceMatched": 1.73,
+                    "sizeMatched": 1.12,
+                    "orderStatus": "EXECUTABLE",
+                }
+            ],
+        }

@@ -14,27 +14,40 @@
 # -------------------------------------------------------------------------------------------------
 
 from collections import deque
-import unittest
+
+import pytest
 
 from tests.test_kit.performance import PerformanceHarness
 
 
-class PythonDequePerformanceTests(unittest.TestCase):
-    def setUp(self):
+class TestPythonDequePerformance(PerformanceHarness):
+    def setup(self):
         # Fixture Setup
         self.deque = deque(maxlen=1000)
         self.deque.append(1.0)
 
-    def append(self):
-        self.deque.append(1.0)
+    @pytest.fixture(autouse=True)
+    def setup_benchmark(self, benchmark):
+        self.benchmark = benchmark
 
     def peek(self):
         return self.deque[0]
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_append(self):
-        PerformanceHarness.profile_function(self.append, 100000, 1)
+        self.benchmark.pedantic(
+            target=deque(maxlen=1000).append,
+            args=(1.0,),
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.2μs / 173ns minimum of 100,000 runs @ 1 iteration each run.
 
+    @pytest.mark.benchmark(disable_gc=True, warmup=True)
     def test_peek(self):
-        PerformanceHarness.profile_function(self.peek, 100000, 1)
+        self.benchmark.pedantic(
+            target=self.peek,
+            iterations=100_000,
+            rounds=1,
+        )
         # ~0.0ms / ~0.1μs / 144ns minimum of 100,000 runs @ 1 iteration each run.

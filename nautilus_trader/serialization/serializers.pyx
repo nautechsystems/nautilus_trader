@@ -632,18 +632,18 @@ cdef class MsgPackEventSerializer(EventSerializer):
             options = {}
             order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
             if order_type == OrderType.LIMIT:
-                options[PRICE] = Price(unpacked[PRICE])
+                options[PRICE] = unpacked[PRICE]
                 options[EXPIRE_TIME] = maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME))
                 options[POST_ONLY] = unpacked[POST_ONLY]
                 options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
                 options[HIDDEN] = unpacked[HIDDEN]
             elif order_type == OrderType.STOP_MARKET:
-                options[PRICE] = Price(unpacked[PRICE])
+                options[PRICE] = unpacked[PRICE]
                 options[EXPIRE_TIME] = maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME))
                 options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
             elif order_type == OrderType.STOP_LIMIT:
-                options[PRICE] = Price(unpacked[PRICE])
-                options[TRIGGER] = Price(unpacked[TRIGGER])
+                options[PRICE] = unpacked[PRICE]
+                options[TRIGGER] = unpacked[TRIGGER]
                 options[EXPIRE_TIME] = maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME))
                 options[POST_ONLY] = unpacked[POST_ONLY]
                 options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]

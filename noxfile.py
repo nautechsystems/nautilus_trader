@@ -37,7 +37,12 @@ def integration_tests(session: Session) -> None:
 def performance_tests(session: Session) -> None:
     """Run the performance test suite."""
     _setup_poetry(session)
-    _run_pytest(session, "tests/performance_tests/")
+    _run_pytest(
+        session,
+        "tests/performance_tests/",
+        "--benchmark-json=PERF.JSON",
+        parallel=False,
+    )
 
 
 @nox.session

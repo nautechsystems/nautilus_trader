@@ -63,7 +63,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
     )
     command = BetfairTestStubs.submit_order_command()
     execution_client.submit_order(command)
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0.1)
     assert isinstance(exec_engine.events[0], OrderSubmitted)
     expected = {
         "market_id": "1.179082386",
@@ -203,7 +203,7 @@ def test_get_account_currency(execution_client):
 def _prefill_venue_order_id_to_client_order_id(raw):
     order_ids = [
         update["id"]
-        for market in raw["oc"]
+        for market in raw.get("oc", [])
         for order in market["orc"]
         for update in order.get("uo", [])
     ]
@@ -268,7 +268,7 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
         _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
     )
     execution_client.handle_order_stream_update(raw=raw)
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0.1)
     assert len(exec_engine.events) == 1
 
 
@@ -362,80 +362,42 @@ async def test_generate_trades_list(mocker, execution_client):
     assert result
 
 
-# def test_connect(self):
-#     # Arrange
-#     # Act
-#     self.exec_engine.start()  # Also connects clients
-#     await asyncio.sleep(0.3)  # Allow engine message queue to start
-#
-#     # Assert
-#     self.assertTrue(self.client.is_connected)
-#
-#     # Tear down
-#     self.exec_engine.stop()
-#     await self.exec_engine.get_run_queue_task()
-#
-#
-#
-# def test_disconnect(self):
-#     # Arrange
-#     self.exec_engine.start()
-#     await asyncio.sleep(0.3)  # Allow engine message queue to start
-#
-#     # Act
-#     self.client.disconnect()
-#     await asyncio.sleep(0.3)
-#
-#     # Assert
-#     self.assertFalse(self.client.is_connected)
-#
-#     # Tear down
-#     self.exec_engine.stop()
-#     await self.exec_engine.get_run_queue_task()
-#
-#
-# def test_reset_when_not_connected_successfully_resets(self):
-#     # Arrange
-#     self.exec_engine.start()
-#     await asyncio.sleep(0.3)  # Allow engine message queue to start
-#
-#     self.exec_engine.stop()
-#     await asyncio.sleep(0.3)  # Allow engine message queue to stop
-#
-#     # Act
-#     self.client.reset()
-#
-#     # Assert
-#     self.assertFalse(self.client.is_connected)
-#
-#
-# def test_reset_when_connected_does_not_reset(self):
-#     # Arrange
-#     self.exec_engine.start()
-#     await asyncio.sleep(0.3)  # Allow engine message queue to start
-#
-#     # Act
-#     self.client.reset()
-#
-#     # Assert
-#     self.assertTrue(self.client.is_connected)
-#
-#     # Tear Down
-#     self.exec_engine.stop()
-#     await self.exec_engine.get_run_queue_task()
-#
-#
-# def test_dispose_when_not_connected_does_not_dispose(self):
-#     # Arrange
-#     self.exec_engine.start()
-#     await asyncio.sleep(0.3)  # Allow engine message queue to start
-#
-#     # Act
-#     self.client.dispose()
-#
-#     # Assert
-#     self.assertTrue(self.client.is_connected)
-#
-#     # Tear Down
-#     self.exec_engine.stop()
-#     await self.exec_engine.get_run_queue_task()
+@pytest.mark.asyncio
+async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
+    mocker.patch.object(
+        execution_client,
+        "venue_order_id_to_client_order_id",
+        {"230486317487": ClientOrderId("1")},
+    )
+    # Load submitted orders
+    kw = {"customer_order_ref": "O-20210418-015047-001-001-3", "bet_id": "230486317487"}
+    f = asyncio.Future()
+    f.set_result(BetfairTestStubs.make_order_place_response())
+    execution_client._post_submit_order(f, ClientOrderId(kw["customer_order_ref"]))
+
+    kw = {
+        "customer_order_ref": "O-20210418-022610-001-001-19",
+        "bet_id": "230487922962",
+    }
+    f = asyncio.Future()
+    f.set_result(BetfairTestStubs.make_order_place_response(**kw))
+    execution_client._post_submit_order(f, ClientOrderId(kw["customer_order_ref"]))
+
+    for raw in orjson.loads(BetfairTestStubs.streaming_ocm_DUPLICATE_EXECUTION()):
+        execution_client.handle_order_stream_update(raw=orjson.dumps(raw))
+        await asyncio.sleep(0.1)
+    events = exec_engine.events
+    assert isinstance(events[0], OrderAccepted)
+    assert isinstance(events[1], OrderAccepted)
+    # First order example, partial fill followed by remainder cancelled
+    assert isinstance(events[2], OrderFilled)
+    assert isinstance(events[3], OrderCancelled)
+    # Second order example, partial fill followed by remainder filled
+    assert (
+        isinstance(events[4], OrderFilled)
+        and events[4].execution_id.value == "1618712776000"
+    )
+    assert (
+        isinstance(events[5], OrderFilled)
+        and events[5].execution_id.value == "1618712777000"
+    )
