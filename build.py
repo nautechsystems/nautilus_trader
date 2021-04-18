@@ -60,12 +60,12 @@ CYTHON_COMPILER_DIRECTIVES = {
 def _build_extensions() -> List[Extension]:
     # Build Extensions to feed into cythonize()
     # Profiling requires special macro directives
-    define_macros = [("NPY_NO_DEPRECATED_API",)]
+    define_macros = []
     if not INTERPRETER_32BIT_MODE:
         # With the Windows 32-bit interpreter, there is a numpy-cython
         # compatibility issue - see:
         # https://github.com/nautechsystems/nautilus_trader/issues/257
-        define_macros.append(("NPY_1_7_API_VERSION",))
+        define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
     if PROFILING_MODE or ANNOTATION_MODE:
         define_macros.append(("CYTHON_TRACE", "1"))
 
