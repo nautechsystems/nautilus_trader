@@ -22,29 +22,25 @@ Setup
 -----
 The following steps are for Unix-like systems, and only need to be completed once.
 
-1. Install the Cython package by running::
-
-        pip install -U Cython==3.0a6
-
-2. Install ``poetry`` by running::
+1. Install ``poetry`` by running::
 
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 
-3. Then install all Python package dependencies, and compile the C extensions by running::
+2. Then install all Python package dependencies, and compile the C extensions by running::
 
         poetry install
 
-4. Install the ``pre-commit`` package by running::
+3. Install the ``pre-commit`` package by running::
 
         pip install pre-commit
 
-5. Setup the ``pre-commit`` hook which will then run automatically at commit by running::
+4. Setup the ``pre-commit`` hook which will then run automatically at commit by running::
 
-        pre-commit run --all-files
+        pre-commit install
 
 Builds
 ------
 
 Following any changes to ``.pyx`` or ``.pxd`` files, you can re-compile by running::
 
-    python build.py
+    poetry run python build.py
