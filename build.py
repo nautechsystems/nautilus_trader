@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import sys
 from typing import List
 
 from Cython.Build import build_ext
@@ -160,5 +161,5 @@ if __name__ == "__main__":
             print("multiprocessing not available")
 
     print("Starting build...")
-    print(f"System: {platform.system()}")
+    print(f"System: {platform.system()} is_64bits={sys.maxsize > 2**32}")
     build({})
