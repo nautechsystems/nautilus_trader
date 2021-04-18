@@ -32,11 +32,10 @@ from nautilus_trader.model.orderbook.order cimport Order
 
 cdef class OrderBook:
     """
-    Provides a L1/L2/L3 order book.
-
     The base class for all order books.
 
-    An L3 order book can be proxied to L2 or L1 `OrderBook` classes.
+    Provides a L1/L2/L3 order book as a `L3OrderBook` can be proxied to
+    `L2OrderBook` or `L1OrderBook` classes.
     """
 
     def __init__(
@@ -63,15 +62,20 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
+            If initializing type is not a subclass of `OrderBook`.
+        ValueError
             If price_precision is negative (< 0).
         ValueError
             If size_precision is negative (< 0).
 
         """
+        Condition.true(
+            self.__class__.__name__ != "OrderBook",
+            "Cannot instantiate OrderBook directly: use OrderBook.create()",
+        )
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
 
-        assert self.__class__.__name__ != "OrderBook", "Do not instantiate OrderBook directly; Use OrderBook.create()"
         self.instrument_id = instrument_id
         self.level = level
         self.price_precision = price_precision
@@ -546,7 +550,7 @@ cdef class L2OrderBook(OrderBook):
     """
     Provides an L2 order book.
 
-    An L2 order book `Levels` are only made up of a single order.
+    A level 2 order books `Levels` are only made up of a single order.
     """
 
     def __init__(
@@ -562,6 +566,10 @@ cdef class L2OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
 
         """
         super().__init__(
@@ -627,7 +635,7 @@ cdef class L2OrderBook(OrderBook):
             True if check passes, else False.
 
         """
-        # For L2OrderBook, ensure only one order per level in addition to
+        # For a L2OrderBook, ensure only one order per level in addition to
         # normal orderbook checks.
         self._check_integrity()
 
@@ -635,16 +643,15 @@ cdef class L2OrderBook(OrderBook):
             assert len(level.orders) == 1, f"Number of orders on {level} > 1"
 
     cdef inline Order _process_order(self, Order order):
-        # Because L2OrderBook only has one order per level, we replace the
+        # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the proxy orderbook.
         order.id = str(order.price)
         return order
 
     cdef inline void _remove_if_exists(self, Order order) except *:
-        # For a L2 orderbook, an order update means a whole level update. If
-        # this level exists, remove it so we can insert the new level.
-
+        # For a L2OrderBook, an order update means a whole level update. If this
+        # level exists, remove it so we can insert the new level.
         if order.side == OrderSide.BUY and order.price in self.bids.prices():
             self.delete(order)
         elif order.side == OrderSide.SELL and order.price in self.asks.prices():
@@ -655,7 +662,7 @@ cdef class L1OrderBook(OrderBook):
     """
     Provides an L1 order book.
 
-    An L1 order book has a single (top) `Level`.
+    A level 1 order book has a single (top) `Level`.
     """
 
     def __init__(
@@ -671,6 +678,10 @@ cdef class L1OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
 
         """
         super().__init__(
@@ -741,7 +752,7 @@ cdef class L1OrderBook(OrderBook):
             True if check passes, else False.
 
         """
-        # For an L1OrderBook, ensure only one level per side in addition to
+        # For a L1OrderBook, ensure only one level per side in addition to
         # normal orderbook checks.
         self._check_integrity()
         assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
