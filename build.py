@@ -161,5 +161,10 @@ if __name__ == "__main__":
             print("multiprocessing not available")
 
     print("Starting build...")
-    print(f"System: {platform.system()} is_64bits={sys.maxsize > 2**32}")
+    # Note: On Mac OS X (and perhaps other platforms), executable files may be
+    # universal files containing multiple architectures. To determine the
+    # “64-bitness” of the current interpreter, it is more reliable to query the
+    # sys.maxsize attribute:
+    bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
+    print(f"System: {platform.system()} {bits}")
     build({})
