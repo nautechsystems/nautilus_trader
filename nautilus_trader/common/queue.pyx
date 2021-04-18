@@ -156,6 +156,19 @@ cdef class Queue:
         """
         return self._get_nowait()
 
+    cpdef object peek(self):
+        """
+        Return the item at the front of the queue without popping (if not empty).
+
+        Returns
+        -------
+        object or None
+
+        """
+        if self.count == 0:
+            return None
+        return self._queue[0]
+
     @types.coroutine
     def _sleep0(self):
         yield  # Skip one event loop run cycle
