@@ -56,7 +56,8 @@ class TestBacktestLoaders:
 
 
 @pytest.mark.skipif(
-    platform.system() == "Windows", reason="Windows does not support `pyarrow`"
+    platform.system() == "Windows",
+    reason="Windows does not support `pyarrow`",
 )
 class TestParquetTickDataLoaders:
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
