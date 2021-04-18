@@ -586,11 +586,19 @@ cdef class LiveLogger(Logger):
             try:
                 self._queue.put_nowait(record)
             except asyncio.QueueFull:
+                next_msg = self._queue.peek().get("msg")
+                # TODO: WIP
+                # spamming = next_msg == record.get("msg")
+                # if spamming:
+                #     return
+
                 blocking = self.create_record(
                     level=LogLevel.WARNING,
                     color=LogColor.YELLOW,
                     component=type(self).__name__,
-                    msg=f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.",
+                    msg=f"Blocking on `_queue.put` as queue full at "
+                        f"{self._queue.qsize()} items. "
+                        f"Next msg = '{next_msg}'.",
                 )
 
                 self._log(blocking)
