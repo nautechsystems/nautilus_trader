@@ -45,7 +45,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
-      # Install and run Redis
+      # Install and run database dependencies
       - name: Install Memurai (Windows)
         if: runner.os == 'Windows'
         run: |
