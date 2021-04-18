@@ -46,13 +46,10 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run Redis
-      - uses: Vampire/setup-wsl@v1
-      - name: Install Redis (Windows)
+      - name: Install Memurai (Windows)
         if: runner.os == 'Windows'
-        shell: wsl-bash {0}
         run: |
-          sudo apt-get install redis-server
-          redis-server --daemonize yes
+          choco install memurai-developer.install
 
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'
