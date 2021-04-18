@@ -71,7 +71,6 @@ repos:
           - flake8-deprecated
           - flake8-docstrings
           - flake8-pep3101
-          - flake8-polyfill
           - flake8-string-format
           - flake8-rst-docstrings
           - flake8-typing-imports

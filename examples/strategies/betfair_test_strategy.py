@@ -30,6 +30,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookUpdate
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -79,13 +80,12 @@ class BetfairTestStrategy(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        # Get historical data
         self.request_data(
             "BETFAIR", DataType(InstrumentSearch, metadata=self.instrument_filter)
         )
 
     def on_event(self, event: Event):
-        self.log.debug(f"on_event: {event}")
+        self.log.info(f"on_event: {event}")
         if isinstance(event, (OrderAccepted, OrderUpdated, OrderCancelled)):
             self._in_flight.remove(event.client_order_id)
         self.trigger()
@@ -100,10 +100,33 @@ class BetfairTestStrategy(TradingStrategy):
             )
             self.instrument_id = instrument_search.instruments[0].id
             # Subscribe to live data
-            self.subscribe_order_book(
+            self.subscribe_order_book_deltas(
                 instrument_id=self.instrument_id,
                 level=OrderBookLevel.L2,
             )
+            self.book = OrderBook(
+                instrument_id=self.instrument_id,
+                level=OrderBookLevel.L2,
+            )
+
+    def on_order_book_delta(self, data: OrderBookUpdate):
+        """
+        Actions to be performed when the strategy is running and receives an order book.
+
+        Parameters
+        ----------
+        order_book : OrderBook
+            The order book received.
+
+        """
+        # self.log.debug(
+        #     f"Received {repr(order_book)}"
+        # )  # For debugging (must add a subscription)
+        self.book.apply(data)
+        if self.book.spread():
+            self.update_midpoint(order_book=self.book)
+            self.log.info(f"on_order_book {self._in_flight}")
+            self.trigger()
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -120,15 +143,15 @@ class BetfairTestStrategy(TradingStrategy):
         # )  # For debugging (must add a subscription)
         if order_book.spread():
             self.update_midpoint(order_book=order_book)
-            self.log.debug(f"on_order_book {self._in_flight}")
+            self.log.info(f"on_order_book {self._in_flight}")
             self.trigger()
 
     def trigger(self):
         if self._state == "START" and self.midpoint:
-            self.log.info("Sending orders")
+            self.log.info("Sending orders", color=LogColor.YELLOW)
             self.send_orders(midpoint=self.midpoint)
         elif self._state == "UPDATE" and not self._in_flight:
-            self.log.info("Sending order update...")
+            self.log.info("Sending order update...", color=LogColor.YELLOW)
             for client_order_id in self.execution.client_order_ids_working():
                 order = self.execution.order(client_order_id)
                 new_price = (
@@ -139,22 +162,23 @@ class BetfairTestStrategy(TradingStrategy):
                 self._in_flight.add(order.client_order_id)
                 self.update_order(order=order, price=Price(new_price, precision=5))
             self._state = "CANCEL"
-            self.log.debug(f"Trigger cancel {self._in_flight}")
+            self.log.info(f"Trigger cancel {self._in_flight}", color=LogColor.YELLOW)
         elif self._state == "CANCEL" and not self._in_flight:
             orders = self.execution.orders()
-            self.log.debug(f"Sending cancel for orders: {orders}")
+            self.log.info(f"Sending cancel for orders: {orders}", color=LogColor.YELLOW)
             for order in orders:
                 self.cancel_order(order=order)
                 self._in_flight.add(order.client_order_id)
             self._state = "COMPLETE"
         elif self._state == "COMPLETE":
-            self.log.info("Complete - shutting down")
+            self.log.info("Complete - shutting down", color=LogColor.YELLOW)
             self.stop()
 
     def update_midpoint(self, order_book: OrderBook):
         """
         Check if midpoint has moved more than threshold, if so , update quotes.
         """
+
         midpoint = Decimal(
             order_book.best_ask_price() + order_book.best_bid_price()
         ) / Decimal(2.0)

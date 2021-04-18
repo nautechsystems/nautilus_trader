@@ -1,3 +1,25 @@
+# NautilusTrader 1.116.1 Beta - Release Notes
+
+Announcing official Windows 64-bit support.
+
+Several bugs have been identified and fixed.
+
+## Breaking Changes
+None
+
+## Enhancements
+- Performance test refactoring.
+- Remove redundant performance harness.
+- Add `Queue.peek()` to high-performance queue.
+- GitHub action refactoring, CI for Windows.
+- Builds for 32-bit platforms.
+
+## Fixes
+- `OrderBook.create` for `OrderBookLevel.L3` now returns correct book.
+- Betfair handling of execution IDs.
+
+---
+
 # NautilusTrader 1.116.0 Beta - Release Notes
 
 **This release includes substantial breaking changes.**

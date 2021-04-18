@@ -45,21 +45,24 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
-      # Install Redis
-      - name: Install Redis (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get install redis-server
+      # Install and run database dependencies
+      - name: Install Memurai (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install memurai-developer.install
+
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'
-        run: brew install redis
-
-        # Run tests
-      - name: Run tests (with integrations test suite) [Linux/macOS]
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: |
+          brew install redis
           redis-server --daemonize yes
-          nox -s tests_with_integration --reuse-existing-virtualenvs
-          redis-cli shutdown
-      - name: Run tests (unit test suite only) [Windows]
-        if: runner.os == 'Windows'
-        run: nox -s tests --reuse-existing-virtualenvs
+
+      - name: Install Redis (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install redis-server
+          redis-server --daemonize yes
+
+      # Run tests
+      - name: Run tests
+        run: nox -s tests_with_integration --reuse-existing-virtualenvs

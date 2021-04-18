@@ -907,6 +907,10 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
 
+        self.data_engine.process(
+            ETHUSDT_BINANCE
+        )  # <-- add necessary instrument for test
+
         handler = []
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
@@ -946,6 +950,10 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
+
+        self.data_engine.process(
+            ETHUSDT_BINANCE
+        )  # <-- add necessary instrument for test
 
         handler = []
         subscribe = Subscribe(
@@ -987,6 +995,10 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
+
+        self.data_engine.process(
+            ETHUSDT_BINANCE
+        )  # <-- add necessary instrument for test
 
         handler1 = []
         subscribe1 = Subscribe(

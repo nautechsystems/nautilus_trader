@@ -618,9 +618,16 @@ cdef class DataEngine(Component):
 
         # Create order book
         if not self.cache.has_order_book(instrument_id):
+            instrument = self.cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot subscribe to {instrument_id} <OrderBook> data: "
+                                f"no instrument found in cache.")
+                return
             order_book = OrderBook.create(
                 instrument_id=instrument_id,
                 level=metadata[LEVEL],
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
 
             self.cache.add_order_book(order_book)
@@ -649,20 +656,28 @@ cdef class DataEngine(Component):
         if instrument_id not in self._order_book_delta_handlers:
             # Setup handlers
             self._order_book_delta_handlers[instrument_id] = []  # type: list[callable]
-            self._log.info(f"Subscribed to {instrument_id} <OrderBookDelta> data.")
+            self._log.info(f"Subscribed to {instrument_id} <OrderBookDeltas> data.")
 
         # Add handler for subscriber
         if handler not in self._order_book_delta_handlers[instrument_id]:
             self._order_book_delta_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <OrderBookDelta> data.")
+            self._log.debug(f"Added {handler} for {instrument_id} <OrderBookDeltas> data.")
         else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
+            self._log.warning(f"Handler {handler} already subscribed to "
+                              f"{instrument_id} <OrderBookDeltas> data.")
 
         # Create order book
         if not self.cache.has_order_book(instrument_id):
+            instrument = self.cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(f"Cannot subscribe to {instrument_id} <OrderBookDeltas> data: "
+                                f"no instrument found in cache.")
+                return
             order_book = OrderBook.create(
                 instrument_id=instrument_id,
                 level=metadata[LEVEL],
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
 
             self.cache.add_order_book(order_book)

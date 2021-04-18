@@ -273,7 +273,11 @@ cdef class SimulatedExchange:
         elif isinstance(data, OrderBookDeltas):
             order_book = self._books.get(instrument_id)
             if order_book is None:
-                order_book = L2OrderBook(instrument_id=instrument_id)
+                order_book = L2OrderBook(
+                    instrument_id=instrument_id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                )
                 self._books[instrument_id] = order_book
             order_book.apply_deltas(data)
             if order_book.best_bid_price():

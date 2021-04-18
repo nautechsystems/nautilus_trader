@@ -13,30 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.models import FillModel
-from tests.test_kit.performance import PerformanceHarness
+import pytest
+
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import Logger
 
 
-model = FillModel(
-    prob_fill_at_stop=0.95,
-    prob_fill_at_limit=0.5,
-    random_seed=42,
-)
+@pytest.fixture
+def clock():
+    return TestClock()
 
 
-class TestFillModelPerformance(PerformanceHarness):
-    def test_is_limit_filled(self):
-        self.benchmark.pedantic(
-            target=model.is_limit_filled,
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
-
-    def test_is_stop_filled(self):
-        self.benchmark.pedantic(
-            target=model.is_stop_filled,
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~0.1μs / 106ns minimum of 100,000 runs @ 1 iteration each run.
+@pytest.fixture
+def logger(clock):
+    return Logger(clock, bypass_logging=True)

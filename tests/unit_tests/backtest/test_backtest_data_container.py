@@ -118,31 +118,37 @@ class TestBacktestDataContainer:
             OrderBookDelta(
                 OrderBookDeltaType.ADD,
                 Order(13.0, 40, OrderSide.SELL),
+                instrument_id=AUDUSD_SIM.id,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
                 OrderBookDeltaType.ADD,
                 Order(12.0, 30, OrderSide.SELL),
+                instrument_id=AUDUSD_SIM.id,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
                 OrderBookDeltaType.ADD,
                 Order(11.0, 20, OrderSide.SELL),
+                instrument_id=AUDUSD_SIM.id,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
                 OrderBookDeltaType.ADD,
                 Order(10.0, 20, OrderSide.BUY),
+                instrument_id=AUDUSD_SIM.id,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
                 OrderBookDeltaType.ADD,
                 Order(9.0, 30, OrderSide.BUY),
+                instrument_id=AUDUSD_SIM.id,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
                 OrderBookDeltaType.ADD,
                 Order(0.0, 40, OrderSide.BUY),
+                instrument_id=AUDUSD_SIM.id,
                 timestamp_ns=0,
             ),
         ]

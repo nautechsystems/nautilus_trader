@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pandas as pd
 import pytest
 
@@ -19,8 +20,10 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -30,6 +33,138 @@ from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD = TestStubs.audusd_id()
+
+
+class TestOrderBook:
+    def test_instantiate_base_class_directly_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            OrderBook(
+                instrument_id=AUDUSD,
+                level=OrderBookLevel.L2,
+                price_precision=5,
+                size_precision=0,
+            )
+
+    def test_create_level_1_order_book(self):
+        # Arrange
+        # Act
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L1,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Assert
+        assert isinstance(book, L1OrderBook)
+        assert book.level == OrderBookLevel.L1
+
+    def test_create_level_2_order_book(self):
+        # Arrange
+        # Act
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Assert
+        assert isinstance(book, L2OrderBook)
+        assert book.level == OrderBookLevel.L2
+
+    def test_create_level_3_order_book(self):
+        # Arrange
+        # Act
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L3,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Assert
+        assert isinstance(book, L3OrderBook)
+        assert book.level == OrderBookLevel.L3
+
+    def test_best_bid_or_ask_price_with_no_orders_returns_none(self):
+        # Arrange
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Act
+        # Assert
+        assert book.best_bid_price() is None
+        assert book.best_ask_price() is None
+
+    def test_best_bid_or_ask_qty_with_no_orders_returns_none(self):
+        # Arrange
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Act
+        # Assert
+        assert book.best_bid_qty() is None
+        assert book.best_ask_qty() is None
+
+    def test_spread_with_no_orders_returns_none(self):
+        # Arrange
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Act
+        # Assert
+        assert book.spread() is None
+
+    def test_add_orders_to_book(self):
+        # Arrange
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Act
+        book.add(Order(price=10, volume=5, side=OrderSide.BUY))
+        book.add(Order(price=11, volume=6, side=OrderSide.SELL))
+
+        # Assert
+        assert book.best_bid_price() == 10
+        assert book.best_ask_price() == 11
+        assert book.best_bid_qty() == 5
+        assert book.best_ask_qty() == 6
+        assert book.spread() == 1
+
+    def test_repr(self):
+        book = OrderBook.create(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
+            price_precision=2,
+            size_precision=2,
+        )
+
+        # Act
+        book.add(Order(price=10, volume=5, side=OrderSide.BUY))
+        book.add(Order(price=11, volume=6, side=OrderSide.SELL))
+
+        # Assert
+        assert isinstance(repr(book), str)  # <-- calls pprint internally
 
 
 class TestOrderBookSnapshot:
@@ -58,25 +193,35 @@ class TestOrderBookOperation:
         op = OrderBookDelta(
             delta_type=OrderBookDeltaType.ADD,
             order=order,
+            instrument_id=AUDUSD,
             timestamp_ns=0,
         )
 
+        print(repr(op))
         # Act
         # Assert
         assert (
             repr(op)
-            == f"OrderBookDelta(ADD, Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
+            == f"OrderBookDelta(op_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
         )
 
 
 @pytest.fixture(scope="function")
 def empty_book():
-    return L2OrderBook(TestStubs.audusd_id())
+    return L2OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
 
 
 @pytest.fixture(scope="function")
 def sample_book():
-    ob = L3OrderBook(TestStubs.audusd_id())
+    ob = L3OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     orders = [
         Order(price=0.900, volume=20, side=OrderSide.SELL),
         Order(price=0.887, volume=10, side=OrderSide.SELL),
@@ -90,13 +235,21 @@ def sample_book():
 
 
 def test_init():
-    ob = L2OrderBook(TestStubs.audusd_id())
+    ob = L2OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     assert isinstance(ob.bids, Ladder) and isinstance(ob.asks, Ladder)
     assert ob.bids.reverse and not ob.asks.reverse
 
 
 def test_pprint_when_no_orders():
-    ob = L2OrderBook(TestStubs.audusd_id())
+    ob = L2OrderBook(
+        instrument_id=TestStubs.audusd_id(),
+        price_precision=5,
+        size_precision=0,
+    )
     result = ob.pprint()
 
     assert "" == result
@@ -152,6 +305,7 @@ def test_orderbook_operation(empty_book):
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
+        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_delta(op)
@@ -164,6 +318,7 @@ def test_orderbook_operations(empty_book):
         order=Order(
             0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
         ),
+        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     deltas = OrderBookDeltas(
@@ -183,18 +338,18 @@ def test_orderbook_midpoint(sample_book):
 # def test_auction_match_match_orders():
 #     l1 = Ladder.from_orders(
 #         [
-#             Order(price=103, volume=5, side=BID),
-#             Order(price=102, volume=10, side=BID),
-#             Order(price=100, volume=5, side=BID),
-#             Order(price=90, volume=5, side=BID),
+#             Order(price=103, volume=5, side=OrderSide.BUY),
+#             Order(price=102, volume=10, side=OrderSide.BUY),
+#             Order(price=100, volume=5, side=OrderSide.BUY),
+#             Order(price=90, volume=5, side=OrderSide.BUY),
 #         ]
 #     )
 #     l2 = Ladder.from_orders(
 #         [
-#             Order(price=100, volume=10, side=ASK),
-#             Order(price=101, volume=10, side=ASK),
-#             Order(price=105, volume=5, side=ASK),
-#             Order(price=110, volume=5, side=ASK),
+#             Order(price=100, volume=10, side=OrderSide.SELL),
+#             Order(price=101, volume=10, side=OrderSide.SELL),
+#             Order(price=105, volume=5, side=OrderSide.SELL),
+#             Order(price=110, volume=5, side=OrderSide.SELL),
 #         ]
 #     )
 #     trades = l1.auction_match(l2, on="volume")

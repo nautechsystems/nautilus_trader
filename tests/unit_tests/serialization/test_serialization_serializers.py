@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
-import unittest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -67,8 +66,8 @@ from tests.test_kit.stubs import UNIX_EPOCH
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class SerializerBaseTests(unittest.TestCase):
-    def setUp(self):
+class TestSerializerBase:
+    def setup(self):
         # Fixture Setup
         self.serializer = Serializer()
 
@@ -84,9 +83,9 @@ class SerializerBaseTests(unittest.TestCase):
         result2 = self.serializer.py_convert_camel_to_snake(value2)
 
         # Assert
-        self.assertEqual("CAMEL_CASE", result0)
-        self.assertEqual("CAMEL_CASE", result1)
-        self.assertEqual("CAMEL", result2)
+        assert result0 == "CAMEL_CASE"
+        assert result1 == "CAMEL_CASE"
+        assert result2 == "CAMEL"
 
     def test_py_convert_snake_to_camel(self):
         # Arrange
@@ -100,13 +99,13 @@ class SerializerBaseTests(unittest.TestCase):
         result2 = self.serializer.py_convert_snake_to_camel(value2)
 
         # Assert
-        self.assertEqual("SnakeCase", result0)
-        self.assertEqual("SnakeCase", result1)
-        self.assertEqual("Snake", result2)
+        assert result0 == "SnakeCase"
+        assert result1 == "SnakeCase"
+        assert result2 == "Snake"
 
 
-class MsgPackOrderSerializerTests(unittest.TestCase):
-    def setUp(self):
+class TestMsgPackOrderSerializer:
+    def setup(self):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
@@ -128,7 +127,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(order, deserialized)
+        assert deserialized == order
         print(b64encode(serialized))
         print(order)
 
@@ -147,7 +146,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(order, deserialized)
+        assert deserialized == order
         print(b64encode(serialized))
         print(order)
 
@@ -171,7 +170,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(order, deserialized)
+        assert deserialized == order
         print(b64encode(serialized))
         print(order)
 
@@ -195,7 +194,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(order, deserialized)
+        assert deserialized == order
         print(b64encode(serialized))
         print(order)
 
@@ -220,7 +219,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(order, deserialized)
+        assert deserialized == order
         print(b64encode(serialized))
         print(order)
 
@@ -245,13 +244,13 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(order, deserialized)
+        assert deserialized == order
         print(b64encode(serialized))
         print(order)
 
 
-class MsgPackCommandSerializerTests(unittest.TestCase):
-    def setUp(self):
+class TestMsgPackCommandSerializer:
+    def setup(self):
         # Fixture Setup
         self.venue = Venue("SIM")
         self.trader_id = TestStubs.trader_id()
@@ -285,8 +284,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(command, deserialized)
-        self.assertEqual(order, deserialized.order)
+        assert deserialized == command
+        assert deserialized.order == order
         print(command)
         print(len(serialized))
         print(serialized)
@@ -321,8 +320,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(command, deserialized)
-        self.assertEqual(bracket_order, deserialized.bracket_order)
+        assert deserialized == command
+        assert deserialized.bracket_order == bracket_order
         print(b64encode(serialized))
         print(command)
 
@@ -358,8 +357,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(command, deserialized)
-        self.assertEqual(bracket_order, deserialized.bracket_order)
+        assert deserialized == command
+        assert deserialized.bracket_order == bracket_order
         print(b64encode(serialized))
         print(command)
 
@@ -382,7 +381,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(command, deserialized)
+        assert deserialized == command
         print(b64encode(serialized))
         print(command)
 
@@ -404,13 +403,13 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(command, deserialized)
+        assert deserialized == command
         print(b64encode(serialized))
         print(command)
 
 
-class MsgPackEventSerializerTests(unittest.TestCase):
-    def setUp(self):
+class TestMsgPackEventSerializer:
+    def setup(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackEventSerializer()
@@ -432,7 +431,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_market_order_initialized_events(self):
         # Arrange
@@ -454,11 +453,12 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_limit_order_initialized_events(self):
         # Arrange
         options = {
+            "ExpireTime": None,
             "Price": "1.0010",
             "PostOnly": True,
             "ReduceOnly": True,
@@ -483,12 +483,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
-        self.assertEqual(options, event.options)
+        assert deserialized == event
+        assert deserialized.options == options
 
     def test_serialize_and_deserialize_stop_market_order_initialized_events(self):
         # Arrange
-        options = {"Price": "1.0005", "ReduceOnly": False}
+        options = {
+            "ExpireTime": None,
+            "Price": "1.0005",
+            "ReduceOnly": False,
+        }
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
@@ -508,12 +512,13 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
-        self.assertEqual(options, event.options)
+        assert deserialized == event
+        assert deserialized.options == options
 
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
+            "ExpireTime": None,
             "Price": "1.0005",
             "Trigger": "1.0010",
             "PostOnly": True,
@@ -539,8 +544,8 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
-        self.assertEqual(options, event.options)
+        assert deserialized == event
+        assert deserialized.options == options
 
     def test_serialize_and_deserialize_order_submitted_events(self):
         # Arrange
@@ -557,7 +562,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_invalid_events(self):
         # Arrange
@@ -573,7 +578,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_denied_events(self):
         # Arrange
@@ -589,7 +594,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_accepted_events(self):
         # Arrange
@@ -607,7 +612,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_rejected_events(self):
         # Arrange
@@ -625,7 +630,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_cancelled_events(self):
         # Arrange
@@ -643,7 +648,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_update_reject_events(self):
         # Arrange
@@ -663,7 +668,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_cancel_reject_events(self):
         # Arrange
@@ -683,7 +688,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_amended_events(self):
         # Arrange
@@ -703,7 +708,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_expired_events(self):
         # Arrange
@@ -721,7 +726,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_partially_filled_events(self):
         # Arrange
@@ -752,7 +757,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
 
     def test_serialize_and_deserialize_order_filled_events(self):
         # Arrange
@@ -783,4 +788,4 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         deserialized = self.serializer.deserialize(serialized)
 
         # Assert
-        self.assertEqual(deserialized, event)
+        assert deserialized == event
