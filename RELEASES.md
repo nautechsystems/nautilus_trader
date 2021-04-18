@@ -10,6 +10,7 @@ None
 ## Enhancements
 - Performance test refactoring.
 - Remove redundant performance harness.
+- Add `Queue.peek()` to high-performance queue.
 - GitHub action refactoring, CI for Windows.
 - Builds for 32-bit platforms.
 
