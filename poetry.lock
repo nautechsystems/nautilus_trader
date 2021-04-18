@@ -147,7 +147,7 @@ d = ["aiohttp (>=3.3.2)", "aiohttp-cors"]
 
 [[package]]
 name = "ccxt"
-version = "1.48.8"
+version = "1.48.9"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -1191,7 +1191,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pyt
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "b6b6fcf7753948be177e8676645162e603c548a366dfa3f1d8694b8056cc3016"
+content-hash = "ca45ef5718b113ce41f2473d4f131b3b0266675e530b7c6d4bf3163e2cc46873"
 
 [metadata.files]
 aiodns = [
@@ -1277,8 +1277,8 @@ black = [
     {file = "black-20.8b1.tar.gz", hash = "sha256:1c02557aa099101b9d21496f8a914e9ed2222ef70336404eeeac8edba836fbea"},
 ]
 ccxt = [
-    {file = "ccxt-1.48.8-py2.py3-none-any.whl", hash = "sha256:dd2f899075ac465a4ab51204be4847859dd5268720b6bf5bbd60f9ba64656d12"},
-    {file = "ccxt-1.48.8.tar.gz", hash = "sha256:cb3d795fe1cb406454acf9991cd6a7c6b3b33f648c4fe7b61d3537887c6621a3"},
+    {file = "ccxt-1.48.9-py2.py3-none-any.whl", hash = "sha256:cf54cccc7403df72d3ce06d43fda1dba9628ec413fd0ea94fe6d48bc69a86795"},
+    {file = "ccxt-1.48.9.tar.gz", hash = "sha256:f213f89c3d38992ee5fed38f92ed3cb6f1bdbbee1ed5fc44fed533c7b52afb90"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
