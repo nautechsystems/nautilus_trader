@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
 from functools import partial
@@ -122,6 +123,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.is_connected = False
         self.venue_order_id_to_client_order_id = {}  # type: Dict[str, ClientOrderId]
         self.pending_update_order_client_ids = set()  # type: Set[(ClientOrderId, VenueOrderId)]
+        self.published_executions = defaultdict(list)  # type: Dict[ClientOrderId, ExecutionId]
 
     cpdef void connect(self) except *:
         self._loop.create_task(self._connect())
@@ -351,43 +353,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     if client_order_id is None:
                         continue
                     venue_order_id = VenueOrderId(order["id"])
-                    execution_id = ExecutionId(str(order["id"]))
-                    # Execution complete, this order is fulled match or cancelled
-                    if order["status"] == "EC":
-                        if order["sm"] != 0:
-                            # At least some part of this order has been filled
-                            self._generate_order_filled(
-                                client_order_id=client_order_id,
-                                venue_order_id=venue_order_id,
-                                execution_id=execution_id,
-                                instrument_id=instrument.id,
-                                order_side=B2N_ORDER_STREAM_SIDE[order['side']],
-                                last_qty=Decimal(order['sm']),
-                                last_px=price_to_probability(order['p']),
-                                cum_qty=Decimal(order['s'] - order['sr']),
-                                leaves_qty=Decimal(order['sr']),
-                                # avg_px=order['avp'],
-                                commission_amount=Decimal(0.0),
-                                commission_currency=self.get_account_currency(),
-                                liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
-                                timestamp_ns=millis_to_nanos(order['md']),
-                            )
-                        if any([order[x] != 0 for x in ("sc", "sl", "sv")]):
-                            cancel_qty = sum([order[k] for k in ('sc', 'sl', 'sv')])
-                            assert order['sm'] + cancel_qty == order['s'], f"Size matched + cancelled != total: {order}"
-                            # If this is the result of a UpdateOrder, we don't want to emit a cancel
-                            key = (ClientOrderId(order.get('rfo')), VenueOrderId(order['id']))
-                            self._log.debug(f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}")
-                            if key not in self.pending_update_order_client_ids:
-                                # The remainder of this order has been cancelled
-                                self._generate_order_cancelled(
-                                    client_order_id=client_order_id,
-                                    venue_order_id=venue_order_id,
-                                    timestamp_ns=millis_to_nanos(order.get('cd') or order.get('ld') or order.get('md')),
-                                )
 
-                    # This order is still executable (live / working)
-                    elif order['status'] == "E":
+                    # "E" = Executable (live / working)
+                    if order['status'] == "E":
                         # Check if this is the first time seeing this order (backtest or replay)
                         if venue_order_id.value in self.venue_order_id_to_client_order_id:
                             # We've already sent an accept for this order in self._post_submit_order
@@ -401,22 +369,63 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
                         # Check for any portion executed
                         if order['sm'] != 0:
-                            self._generate_order_filled(
-                                client_order_id=client_order_id,
-                                venue_order_id=venue_order_id,
-                                execution_id=execution_id,
-                                instrument_id=instrument.id,
-                                order_side=B2N_ORDER_STREAM_SIDE[order['side']],
-                                last_qty=Decimal(order['sm']),
-                                last_px=price_to_probability(order['p']),
-                                cum_qty=Decimal(order['s'] - order['sr']),
-                                leaves_qty=Decimal(order['sr']),
-                                # avg_px=Decimal(order['avp']),
-                                commission_amount=Decimal(0.0),
-                                commission_currency=self.get_account_currency(),
-                                liquidity_side=LiquiditySide.NONE,
-                                timestamp_ns=millis_to_nanos(order['md']),
-                            )
+                            execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
+                            if execution_id not in self.published_executions[client_order_id]:
+                                self._generate_order_filled(
+                                    client_order_id=client_order_id,
+                                    venue_order_id=venue_order_id,
+                                    execution_id=execution_id,
+                                    instrument_id=instrument.id,
+                                    order_side=B2N_ORDER_STREAM_SIDE[order['side']],
+                                    last_qty=Decimal(order['sm']),
+                                    last_px=price_to_probability(order['p']),
+                                    cum_qty=Decimal(order['s'] - order['sr']),
+                                    leaves_qty=Decimal(order['sr']),
+                                    # avg_px=Decimal(order['avp']),
+                                    commission_amount=Decimal(0.0),
+                                    commission_currency=self.get_account_currency(),
+                                    liquidity_side=LiquiditySide.NONE,
+                                    timestamp_ns=millis_to_nanos(order['md']),
+                                )
+                                self.published_executions[client_order_id].append(execution_id)
+
+                    # Execution complete, this order is fulled match or cancelled
+                    elif order["status"] == "EC":
+                        if order["sm"] != 0:
+                            execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
+                            if execution_id not in self.published_executions[client_order_id]:
+                                # At least some part of this order has been filled
+                                self._generate_order_filled(
+                                    client_order_id=client_order_id,
+                                    venue_order_id=venue_order_id,
+                                    execution_id=execution_id,
+                                    instrument_id=instrument.id,
+                                    order_side=B2N_ORDER_STREAM_SIDE[order['side']],
+                                    last_qty=Decimal(order['sm']),
+                                    last_px=price_to_probability(order['p']),
+                                    cum_qty=Decimal(order['s'] - order['sr']),
+                                    leaves_qty=Decimal(order['sr']),
+                                    # avg_px=order['avp'],
+                                    commission_amount=Decimal(0.0),
+                                    commission_currency=self.get_account_currency(),
+                                    liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
+                                    timestamp_ns=millis_to_nanos(order['md']),
+                                )
+                        if any([order[x] != 0 for x in ("sc", "sl", "sv")]):
+                            cancel_qty = sum([order[k] for k in ('sc', 'sl', 'sv')])
+                            assert order['sm'] + cancel_qty == order['s'], f"Size matched + cancelled != total: {order}"
+                            # If this is the result of a UpdateOrder, we don't want to emit a cancel
+                            key = (ClientOrderId(order.get('rfo')), VenueOrderId(order['id']))
+                            self._log.debug(f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}")
+                            if key not in self.pending_update_order_client_ids:
+                                # The remainder of this order has been cancelled
+                                self._generate_order_cancelled(
+                                    client_order_id=client_order_id,
+                                    venue_order_id=venue_order_id,
+                                    timestamp_ns=millis_to_nanos(order.get('cd') or order.get('ld') or order.get('md')),
+                                )
+                        # This execution is complete - no need to track this anymore
+                        del self.published_executions[client_order_id]
                     else:
                         self._log.warning("Unknown order state: {order}")
                         # raise KeyError("Unknown order type", order, None)
