@@ -51,16 +51,16 @@ jobs:
       - name: Run performance tests
         run: nox -s performance_tests --reuse-existing-virtualenvs
 
-      # Store benchmark results
-      - name: Store benchmark result
-        uses: rhysd/github-action-benchmark@v1
-        with:
-          name: Python Benchmark with pytest-benchmark
-          tool: "pytest"
-          output-file-path: PERF.JSON
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
-          # Show alert with commit comment on detecting possible performance regression
-          alert-threshold: '200%'
-          comment-on-alert: true
-          fail-on-alert: true
+      # TODO: Store benchmark results
+#      - name: Store benchmark result
+#        uses: rhysd/github-action-benchmark@v1
+#        with:
+#          name: Python Benchmark with pytest-benchmark
+#          tool: "pytest"
+#          output-file-path: PERF.JSON
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          auto-push: true
+#          # Show alert with commit comment on detecting possible performance regression
+#          alert-threshold: '200%'
+#          comment-on-alert: true
+#          fail-on-alert: true
