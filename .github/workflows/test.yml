@@ -64,5 +64,5 @@ jobs:
           redis-server --daemonize yes
 
       # Run tests
-      - name: Run tests [Windows/macOS/Linux]
+      - name: Run tests
         run: nox -s tests_with_integration --reuse-existing-virtualenvs
