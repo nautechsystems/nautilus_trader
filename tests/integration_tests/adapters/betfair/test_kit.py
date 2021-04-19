@@ -392,15 +392,15 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def raw_market_updates():
+    def raw_market_updates(market="1.166811431", runner1="60424", runner2="237478"):
         def _fix_ids(r):
             return (
-                r.replace(b"1.166811431", b"1.180737206")
-                .replace(b"60424", b"19248890")
-                .replace(b"237478", b"38848248")
+                r.replace(market.encode(), b"1.180737206")
+                .replace(runner1.encode(), b"19248890")
+                .replace(runner2.encode(), b"38848248")
             )
 
-        lines = bz2.open(DATA_PATH / "1.166811431.bz2").readlines()
+        lines = bz2.open(DATA_PATH / f"{market}.bz2").readlines()
         return [orjson.loads(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
@@ -438,7 +438,9 @@ class BetfairTestStubs(TestStubs):
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
-                client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
+                client_order_id=ClientOrderId(
+                    f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
+                ),
                 strategy_id=BetfairTestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,

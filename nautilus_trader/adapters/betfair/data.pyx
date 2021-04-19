@@ -12,8 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
 
-import betfairlightweight
 from betfairlightweight import APIClient
 import orjson
 
@@ -79,7 +79,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
-        client : betfairlightweight.APIClient
+        client : APIClient
             The betfairlightweight client.
         engine : LiveDataEngine
             The live data engine for the client.
@@ -110,6 +110,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             client=self._client, logger=logger, message_handler=self._on_market_update,
         )
         self.is_connected = False
+        self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
         self._subscribed_market_ids = set()      # type: set[InstrumentId]
@@ -135,8 +136,16 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         self._log.debug(f"DataEngine has {len(self._engine.cache.instruments())} instruments")
 
+        # Schedule a heartbeat in 10s to give us a little more time to load instruments
+        self._log.debug("scheduling heartbeat")
+        self._loop.create_task(self._post_connect_heartbeat())
+
         self.is_connected = True
         self._log.info("Connected.")
+
+    async def _post_connect_heartbeat(self):
+        await asyncio.sleep(5)
+        await self._stream.send(orjson.dumps({'op': 'heartbeat'}))
 
     cpdef void disconnect(self) except *:
         """ Disconnect the client """
@@ -166,7 +175,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         self._log.info("Resetting...")
 
-        # TODO: Reset client
+        # TODO: Reset client ?
+
         self._instrument_provider = BetfairInstrumentProvider(
             client=self._client,
             load_all=False,
@@ -232,9 +242,25 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             self._log.warning(f"Already subscribed to market_id: {instrument.market_id} [Instrument: {instrument_id.symbol}] <OrderBook> data.")
             return
 
-        self._loop.create_task(self._stream.send_subscription_message(market_ids=[instrument.market_id]))
+        # If this is the first subscription request we're receiving, schedule a subscription after a short delay to
+        # allow other strategies to send their subscriptions (every change triggers a full snapshot).
+        self._subscribed_market_ids.add(instrument.market_id)
+        if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
+            self._loop.create_task(self.delayed_subscribe(delay=5))
+            self.subscription_status = SubscriptionStatus.PENDING_STARTUP
+        elif self.subscription_status == SubscriptionStatus.PENDING_STARTUP:
+            pass
+        elif self.subscription_status == SubscriptionStatus.RUNNING:
+            self._loop.create_task(self.delayed_subscribe(delay=0))
 
-        self._log.info(f"Subscribed to market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.")
+        self._log.info(f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data.")
+
+    async def delayed_subscribe(self, delay=0):
+        self._log.debug(f"Scheduling subscribe for delay={delay}")
+        await asyncio.sleep(delay)
+        self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
+        await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
+        self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
 
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=None) except *:
         self.subscribe_order_book(instrument_id=instrument_id, level=level, kwargs=kwargs)
@@ -249,6 +275,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The order book instrument to unsubscribe from.
 
         """
+        # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
+        #  subscription message - when we have a use case
         Condition.not_none(instrument_id, "instrument_id")
         self._log.warning(f"Betfair does not support unsubscribing from instruments")
 
@@ -262,6 +290,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The order book instrument to unsubscribe from.
 
         """
+        # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
+        #  subscription message - when we have a use case
         Condition.not_none(instrument_id, "instrument_id")
         self._log.warning(f"Betfair does not support unsubscribing from instruments")
 
