@@ -218,7 +218,7 @@ class TestLiveLogger:
             logger = LiveLogger(
                 loop=self.loop,
                 clock=LiveClock(),
-                maxsize=1,
+                maxsize=5,
             )
 
             logger_adapter = LoggerAdapter(component="LIVE_LOGGER", logger=logger)
@@ -227,7 +227,9 @@ class TestLiveLogger:
             # Act
             logger_adapter.info("A log message.")
             logger_adapter.info("A log message.")  # <-- blocks
+            logger_adapter.info("A different log message.")  # <-- blocks
             logger_adapter.info("A log message.")  # <-- blocks
+            logger_adapter.info("A different log message.")  # <-- blocks
             logger_adapter.info("A log message.")  # <-- blocks
 
             await asyncio.sleep(0.1)  # <-- processes all log messages
