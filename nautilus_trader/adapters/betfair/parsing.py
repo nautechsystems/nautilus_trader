@@ -101,7 +101,11 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
                 ),
-                customer_order_ref=order.client_order_id.value,
+                # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
+                # length the strategy might be or what characters users might append
+                customer_order_ref=order.client_order_id.value.rsplit(
+                    "-" + command.strategy_id.value, maxsplit=1
+                )[0],
             )
         ],
     }
@@ -185,19 +189,12 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
         timestamp_ns=timestamp_ns,
     )
     updates.append(snapshot)
-
-    # Trade Ticks
-    for price, volume in selection.get("trd", []):
-        trade_id = hash_json((timestamp_ns, price, volume))
-        tick = TradeTick(
-            instrument_id=instrument.id,
-            price=Price(price_to_probability(price, force=True)),
-            size=Quantity(volume, precision=4),
-            side=OrderSide.BUY,
-            match_id=TradeMatchId(trade_id),
-            timestamp_ns=timestamp_ns,
+    if "trd" in selection:
+        updates.extend(
+            _handle_market_trades(
+                runner=selection, instrument=instrument, timestamp_ns=timestamp_ns
+            )
         )
-        updates.append(tick)
 
     return updates
 
@@ -209,16 +206,7 @@ def _handle_market_trades(runner, instrument, timestamp_ns):
             continue
         # Betfair doesn't publish trade ids, so we make our own
         # TODO - should we use clk here for ID instead of the hash?
-        trade_id = hash_json(
-            data=(
-                timestamp_ns,
-                instrument.market_id,
-                str(runner["id"]),
-                str(runner.get("hc", "0.0")),
-                price,
-                volume,
-            )
-        )
+        trade_id = hash_json(data=(timestamp_ns, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
             price=Price(price_to_probability(price, force=True)),
@@ -440,11 +428,12 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
                     runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
                 )
             )
-            updates.extend(
-                _handle_market_trades(
-                    runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+            if "trd" in runner:
+                updates.extend(
+                    _handle_market_trades(
+                        runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                    )
                 )
-            )
     if book_updates:
         updates.extend(_merge_order_book_deltas(book_updates))
     return updates
