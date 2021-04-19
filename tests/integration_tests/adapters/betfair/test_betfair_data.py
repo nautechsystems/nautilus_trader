@@ -31,6 +31,7 @@ from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -298,3 +299,26 @@ def test_instrument_closing_events(data_engine, betfair_data_client):
         isinstance(messages[3], InstrumentClosePrice)
         and messages[3].close_type == InstrumentCloseType.EXPIRED
     )
+
+
+#  TODO - Awaiting a response from betfair
+@pytest.mark.skip
+def test_duplicate_trades(betfair_data_client):
+    messages = []
+    for update in BetfairTestStubs.raw_market_updates(
+        market="1.180305278", runner1="2696769", runner2="4297085"
+    ):
+        messages.extend(
+            on_market_update(
+                instrument_provider=betfair_data_client.instrument_provider(),
+                update=update,
+            )
+        )
+        if update["pt"] >= 1615222877785:
+            break
+    trades = [
+        m
+        for m in messages
+        if isinstance(m, TradeTick) and m.price == Price("0.69930", 5)
+    ]
+    assert len(trades) == 5
