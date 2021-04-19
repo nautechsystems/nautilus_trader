@@ -63,7 +63,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
     )
     command = BetfairTestStubs.submit_order_command()
     execution_client.submit_order(command)
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)
     assert isinstance(exec_engine.events[0], OrderSubmitted)
     expected = {
         "market_id": "1.179082386",
