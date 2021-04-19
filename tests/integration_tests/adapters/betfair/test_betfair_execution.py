@@ -85,8 +85,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
             }
         ],
     }
-    result = mock_place_orders.call_args.kwargs
-    assert result == expected
+    mock_place_orders.assert_called_with(**expected)
 
 
 @pytest.mark.asyncio
