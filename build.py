@@ -46,7 +46,7 @@ if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
 Options.fast_fail = True  # Abort compilation on first error
 Options.warning_errors = True  # Treat compiler warnings as errors
-# **Options.extra_warnings,  TODO: Extra warnings will require manual linting.
+Options.extra_warnings = True
 
 CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
