@@ -627,5 +627,4 @@ cdef class BettingInstrument(Instrument):
             "selection_name",
             "selection_handicap",
         )
-        cdef str k
         return Symbol(value="|".join([str(getattr(self, k)) for k in keys]))

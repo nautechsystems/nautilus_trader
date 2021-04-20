@@ -1214,7 +1214,7 @@ cdef class DataEngine(Component):
             self._log.error(f"Callback not found for correlation_id {correlation_id}.")
             return
 
-        cdef TimeBarAggregator
+        cdef TimeBarAggregator aggregator
         if partial is not None:
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.type)

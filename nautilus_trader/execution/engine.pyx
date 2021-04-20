@@ -674,7 +674,6 @@ cdef class ExecutionEngine(Component):
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self.cache.order(event.client_order_id)
-        cdef str event_str
         if order is None:
             self._log.warning(f"{repr(event.client_order_id)} was not found in cache "
                               f"for {repr(event.venue_order_id)} to apply {event}.")

@@ -130,7 +130,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     async def _connect(self):
         self._log.info("Connecting to Betfair APIClient...")
-        resp = self._client.login()
         self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
 
         aws = [
@@ -431,12 +430,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                         # raise KeyError("Unknown order type", order, None)
 
                 # these values?
-                for trade in selection.get("mb", []):
-                    # TODO - we can get a matched back without full details.
-                    #  Need to match ourselves??
-                    pass
-                for trade in selection.get("ml", []):
-                    pass
+                # for trade in selection.get("mb", []):
+                #     # TODO - we can get a matched back without full details.
+                #     #  Need to match ourselves??
+                #     pass
+                # for trade in selection.get("ml", []):
+                #     pass
 
                 # TODO - Should be no difference for fullImage at this stage.
                 #  We just send all updates individually.

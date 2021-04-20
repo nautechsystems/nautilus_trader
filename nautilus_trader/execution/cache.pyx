@@ -166,19 +166,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             True if checks pass, else False.
 
         """
-        cdef InstrumentId instrument_id
-        cdef Venue venue
-        cdef AccountId account_id
-        cdef Account account
-        cdef ClientOrderId client_order_id
-        cdef Order order
-        cdef PositionId position_id
-        cdef Position position
-        cdef StrategyId strategy_id
-        cdef set client_order_ids
-        cdef set position_ids
-        cdef set strategy_ids
-
         cdef int error_count = 0
         cdef str failure = "Integrity failure"
 
@@ -188,9 +175,15 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef double timestamp_us = unix_timestamp_us()
         self._log.info("Checking data integrity...")
 
+        # Needed type defs
+        # ----------------
+        cdef AccountId account_id
+        cdef Order order
+        cdef Position position
+
         # Check object caches
         # -------------------
-        for account_id, account in self._cached_accounts.items():
+        for account_id in self._cached_accounts:
             if account_id.issuer_as_venue() not in self._index_venue_account:
                 self._log.error(f"{failure} in _cached_accounts: "
                                 f"{repr(account_id)} not found in self._index_venue_account")
@@ -238,37 +231,37 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Check indexes
         # -------------
-        for venue, account_id in self._index_venue_account.items():
+        for account_id in self._index_venue_account.values():
             if account_id not in self._cached_accounts:
                 self._log.error(f"{failure} in _index_venue_account: "
                                 f"{repr(account_id)} not found in self._cached_accounts")
                 error_count += 1
 
-        for venue_order_id, client_order_id in self._index_venue_order_ids.items():
+        for client_order_id in self._index_venue_order_ids.values():
             if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_venue_order_ids: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
-        for client_order_id, position_id in self._index_order_position.items():
+        for client_order_id in self._index_order_position:
             if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_order_position: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
-        for client_order_id, strategy_id in self._index_order_strategy.items():
+        for client_order_id in self._index_order_strategy:
             if client_order_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_order_strategy: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
-        for position_id, strategy_id in self._index_position_strategy.items():
+        for position_id in self._index_position_strategy:
             if position_id not in self._cached_positions:
                 self._log.error(f"{failure} in _index_position_strategy: "
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
-        for position_id, client_order_ids in self._index_position_orders.items():
+        for position_id in self._index_position_orders:
             if position_id not in self._cached_positions:
                 self._log.error(f"{failure} in _index_position_orders: "
                                 f"{repr(position_id)} not found in self._cached_positions")
@@ -281,20 +274,20 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                     f"{repr(instrument_id)} not found in self._cached_orders")
                     error_count += 1
 
-        for instrument_id, position_ids in self._index_instrument_positions.items():
+        for instrument_id in self._index_instrument_positions:
             if instrument_id not in self._index_instrument_orders:
                 self._log.error(f"{failure} in _index_instrument_positions: "
                                 f"{repr(instrument_id)} not found in self._index_instrument_orders")
                 error_count += 1
 
-        for strategy_id, client_order_ids in self._index_strategy_orders.items():
+        for client_order_ids in self._index_strategy_orders.values():
             for client_order_id in client_order_ids:
                 if client_order_id not in self._cached_orders:
                     self._log.error(f"{failure} in _index_strategy_orders: "
                                     f"{repr(client_order_id)} not found in self._cached_orders")
                     error_count += 1
 
-        for strategy_id, position_ids in self._index_strategy_positions.items():
+        for position_ids in self._index_strategy_positions.values():
             for position_id in position_ids:
                 if position_id not in self._cached_positions:
                     self._log.error(f"{failure} in _index_strategy_positions: "
@@ -1212,7 +1205,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set client_order_ids = self.client_order_ids(instrument_id, strategy_id)
 
-        cdef ClientOrderId client_order_id
         try:
             return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
@@ -1236,7 +1228,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set client_order_ids = self.client_order_ids_working(instrument_id, strategy_id)
 
-        cdef ClientOrderId client_order_id
         try:
             return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
@@ -1260,7 +1251,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set client_order_ids = self.client_order_ids_completed(instrument_id, strategy_id)
 
-        cdef ClientOrderId client_order_id
         try:
             return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
@@ -1323,7 +1313,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set position_ids = self.position_ids(instrument_id, strategy_id)
 
-        cdef PositionId position_id
         try:
             return [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
@@ -1347,7 +1336,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set position_ids = self.position_open_ids(instrument_id, strategy_id)
 
-        cdef PositionId position_id
         try:
             return [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
@@ -1371,11 +1359,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set position_ids = self.position_closed_ids(instrument_id, strategy_id)
 
-        cdef PositionId position_id
-        cdef list positions
         try:
-            positions = [self._cached_positions[position_id] for position_id in position_ids]
-            return positions
+            return [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
 

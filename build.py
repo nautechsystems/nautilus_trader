@@ -56,7 +56,7 @@ CYTHON_COMPILER_DIRECTIVES = {
     "linetrace": PROFILING_MODE,
     # "always_allow_keywords": False,  TODO: Performance profiling needed (faster calling)
     "warn.maybe_uninitialized": True,  # Warns about use of variables that are uninitialized
-    # "warn.unused": True,
+    # "warn.unused": True,  TODO: Determine fix for Unused entry 'genexpr'
     # "warn.unused_arg": True,
     # "warn.unused_result": True,
 }

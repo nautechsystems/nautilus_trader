@@ -537,7 +537,6 @@ cdef class BacktestEngine:
         self.trader.start()
 
         cdef Data data
-        cdef Venue venue
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()

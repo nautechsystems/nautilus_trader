@@ -189,7 +189,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Wait for state resolution until timeout...
         cdef int seconds = 10  # Hard coded for now
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
-        cdef OrderStatusReport state_report
+        cdef OrderStatusReport report
         while True:
             if self._clock.utc_now() >= timeout:
                 self._log.error(f"Timed out ({seconds}s) waiting for "

@@ -87,7 +87,6 @@ cdef class BacktestDataContainer:
             self.clients[client_id] = BacktestDataClient
 
         # Add data
-        cdef GenericData x
         self.generic_data = sorted(
             self.generic_data + data,
             key=lambda x: x.timestamp_ns,
@@ -124,7 +123,6 @@ cdef class BacktestDataContainer:
             self.clients[client_id] = BacktestMarketDataClient
 
         # Add data
-        cdef OrderBookData x
         self.order_book_data = sorted(
             self.order_book_data + data,
             key=lambda x: x.timestamp_ns,
