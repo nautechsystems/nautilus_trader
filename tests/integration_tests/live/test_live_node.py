@@ -168,7 +168,7 @@ class TradingNodeOperationTests(unittest.TestCase):
         time.sleep(1)  # Allow node to start
         self.loop.call_soon_threadsafe(self.node.stop)
 
-        time.sleep(0.3)  # Allow node to stop
+        time.sleep(1)  # Allow node to stop
 
         # Act
         # Assert
@@ -183,7 +183,7 @@ class TradingNodeOperationTests(unittest.TestCase):
         self.loop.call_soon_threadsafe(self.node.stop)
 
         # Allow node to stop
-        time.sleep(0.3)
+        time.sleep(1)
 
         self.node.dispose()
 
