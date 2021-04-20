@@ -240,7 +240,6 @@ class TestInstrumentProvider:
             margin_maint=Decimal(),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            financing={},
             timestamp_ns=0,
         )
 
@@ -282,7 +281,6 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.35"),
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
-            financing={},
             timestamp_ns=0,
         )
 
@@ -324,7 +322,6 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.0035"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            financing={},
             timestamp_ns=0,
         )
 
@@ -366,7 +363,6 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            financing={},
             timestamp_ns=0,
         )
 
@@ -434,6 +430,5 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
-            financing={},
             timestamp_ns=0,
         )
