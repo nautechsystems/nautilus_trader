@@ -737,7 +737,9 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         }
 
         cdef str order_type = ""
-        if order.type == OrderType.LIMIT and order.is_post_only:
+        if order.type == OrderType.MARKET:
+            order_type = "MARKET"
+        elif order.type == OrderType.LIMIT and order.is_post_only:
             # Cannot be hidden as post only is True
             order_type = "LIMIT_MAKER"
         elif order.type == OrderType.LIMIT:
@@ -752,7 +754,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
                 order_type = "TAKE_PROFIT"
             params["stopPrice"] = str(order.price)
         else:
-            order_type = "MARKET"
+            raise ValueError(f"Invalid OrderType, "
+                             f"was {OrderTypeParser.to_str(order.type)}")
 
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
