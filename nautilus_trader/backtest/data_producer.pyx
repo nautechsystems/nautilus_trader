@@ -603,7 +603,7 @@ cdef class CachedProducer(DataProducerFacade):
         """
         # Cython does not produce efficient generator code, and so we will
         # manually track the index for efficiency.
-        cdef Data data
+        cdef Data data = None
         if self.has_data:
             data = self._data_cache[self._data_index]
             self._data_index += 1

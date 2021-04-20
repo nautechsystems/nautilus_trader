@@ -262,9 +262,9 @@ cdef class SimulatedExchange:
         cdef InstrumentId instrument_id = data.instrument_id
         cdef Instrument instrument = self.instruments[instrument_id]
 
-        cdef Price bid
-        cdef Price ask
-        cdef L2OrderBook order_book
+        cdef Price bid = None
+        cdef Price ask = None
+        cdef L2OrderBook order_book = None
         if isinstance(data, OrderBookSnapshot):
             if data.bids:
                 bid = Price(data.bids[0], instrument.price_precision)
@@ -319,8 +319,8 @@ cdef class SimulatedExchange:
         cdef InstrumentId instrument_id = tick.instrument_id
 
         # Update market bid and ask
-        cdef Price bid
-        cdef Price ask
+        cdef Price bid = None
+        cdef Price ask = None
         if isinstance(tick, QuoteTick):
             bid = tick.bid
             ask = tick.ask
@@ -1115,7 +1115,7 @@ cdef class SimulatedExchange:
     ) except *:
         self._delete_order(order)  # Remove order from working orders (if found)
 
-        cdef PositionId position_id
+        cdef PositionId position_id = None
         if self.oms_type == OMSType.NETTING:
             position_id = PositionId.null_c()
         elif self.oms_type == OMSType.HEDGING:

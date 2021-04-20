@@ -241,6 +241,8 @@ cdef class BacktestEngine:
                     clock=self._test_clock,
                     logger=self._test_logger,
                 )
+            else:
+                raise RuntimeError(f"DataClient type invalid, was {client_type}")
 
             self._data_engine.register_client(data_client)
 

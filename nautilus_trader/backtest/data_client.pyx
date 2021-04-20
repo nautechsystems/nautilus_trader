@@ -74,6 +74,7 @@ cdef class BacktestDataClient(DataClient):
             engine,
             clock,
             logger,
+            config,
         )
 
         self.is_connected = False

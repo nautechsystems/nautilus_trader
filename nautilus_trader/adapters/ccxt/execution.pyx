@@ -222,21 +222,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return None
 
         filled_qty = Decimal(f"{response['filled']:.{instrument.price_precision}f}")
-        leaves_qty = Decimal(f"{response['remaining']:.{instrument.price_precision}f}")
 
         # Determine state
         status = response["status"]
-        if status == "open":
-            if filled_qty > 0 and leaves_qty > 0:
-                state = OrderState.PARTIALLY_FILLED
-            else:
-                state = OrderState.ACCEPTED
+        if status == "open" and filled_qty > 0:
+            state = OrderState.PARTIALLY_FILLED
         elif status == "closed":
             state = OrderState.FILLED
         elif status == "canceled":
             state = OrderState.CANCELLED
         elif status == "expired":
             state = OrderState.EXPIRED
+        else:
+            state = OrderState.ACCEPTED
 
         return OrderStatusReport(
             client_order_id=order.client_order_id,
@@ -738,10 +736,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             "recvWindow": 10000  # TODO: Server time sync issue?
         }
 
-        cdef str order_type
-        if order.type == OrderType.MARKET:
-            order_type = "MARKET"
-        elif order.type == OrderType.LIMIT and order.is_post_only:
+        cdef str order_type = ""
+        if order.type == OrderType.LIMIT and order.is_post_only:
             # Cannot be hidden as post only is True
             order_type = "LIMIT_MAKER"
         elif order.type == OrderType.LIMIT:
@@ -755,6 +751,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             elif order.side == OrderSide.SELL:
                 order_type = "TAKE_PROFIT"
             params["stopPrice"] = str(order.price)
+        else:
+            order_type = "MARKET"
 
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
@@ -831,7 +829,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             "clOrdID": order.client_order_id.value,
         }
 
-        cdef str order_type
+        cdef str order_type = ""
         cdef list exec_instructions = []
         if order.type == OrderType.MARKET:
             order_type = "Market"
