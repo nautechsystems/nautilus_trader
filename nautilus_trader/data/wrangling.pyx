@@ -126,6 +126,8 @@ cdef class QuoteTickDataWrangler:
             return
 
         # Build ticks from highest resolution bar data
+        bars_bid = None
+        bars_ask = None
         if BarAggregation.SECOND in self._data_bars_bid:
             bars_bid = self._data_bars_bid[BarAggregation.SECOND]
             bars_ask = self._data_bars_ask[BarAggregation.SECOND]

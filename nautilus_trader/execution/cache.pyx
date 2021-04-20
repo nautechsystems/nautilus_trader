@@ -1213,13 +1213,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef set client_order_ids = self.client_order_ids(instrument_id, strategy_id)
 
         cdef ClientOrderId client_order_id
-        cdef list orders
         try:
-            orders = [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
+            return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
-
-        return orders
 
     cpdef list orders_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
@@ -1240,13 +1237,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef set client_order_ids = self.client_order_ids_working(instrument_id, strategy_id)
 
         cdef ClientOrderId client_order_id
-        cdef list orders_working
         try:
-            orders_working = [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
+            return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
-
-        return orders_working
 
     cpdef list orders_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
@@ -1267,13 +1261,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef set client_order_ids = self.client_order_ids_completed(instrument_id, strategy_id)
 
         cdef ClientOrderId client_order_id
-        cdef list orders_completed
         try:
-            orders_completed = [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
+            return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
-
-        return orders_completed
 
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
@@ -1333,13 +1324,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef set position_ids = self.position_ids(instrument_id, strategy_id)
 
         cdef PositionId position_id
-        cdef list positions
         try:
-            positions = [self._cached_positions[position_id] for position_id in position_ids]
+            return [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
-
-        return positions
 
     cpdef list positions_open(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
@@ -1360,13 +1348,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef set position_ids = self.position_open_ids(instrument_id, strategy_id)
 
         cdef PositionId position_id
-        cdef list positions
         try:
-            positions = [self._cached_positions[position_id] for position_id in position_ids]
+            return [self._cached_positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
-
-        return positions
 
     cpdef list positions_closed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """
@@ -1390,10 +1375,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef list positions
         try:
             positions = [self._cached_positions[position_id] for position_id in position_ids]
+            return positions
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
-
-        return positions
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """

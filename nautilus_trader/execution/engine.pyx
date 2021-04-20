@@ -594,7 +594,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *:
         cdef ClientOrderId entry_id = bracket_order.entry.client_order_id
         cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.client_order_id
-        cdef ClientOrderId take_profit_id
+        cdef ClientOrderId take_profit_id = None
         if bracket_order.take_profit:
             take_profit_id = bracket_order.take_profit.client_order_id
 

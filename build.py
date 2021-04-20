@@ -55,6 +55,10 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
     # "always_allow_keywords": False,  TODO: Performance profiling needed (faster calling)
+    "warn.maybe_uninitialized": True,  # Warns about use of variables that are uninitialized
+    # "warn.unused": True,
+    # "warn.unused_arg": True,
+    # "warn.unused_result": True,
 }
 
 
