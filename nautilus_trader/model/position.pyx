@@ -97,15 +97,12 @@ cdef class Position:
         return f"{type(self).__name__}({self.status_string_c()}, id={self.id.value})"
 
     cdef list client_order_ids_c(self):
-        cdef OrderFilled fill
         return sorted(list({fill.client_order_id for fill in self._events}))
 
     cdef list venue_order_ids_c(self):
-        cdef OrderFilled fill
         return sorted(list({fill.venue_order_id for fill in self._events}))
 
     cdef list execution_ids_c(self):
-        cdef OrderFilled fill
         return [fill.execution_id for fill in self._events]
 
     cdef list events_c(self):

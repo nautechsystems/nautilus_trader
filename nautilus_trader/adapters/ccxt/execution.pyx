@@ -138,7 +138,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info("Connecting...")
 
         # Re-cache orders
-        cdef dict venue_orders = {}
         cdef list orders_all = self._engine.cache.orders()
         cdef Order order
         for order in orders_all:

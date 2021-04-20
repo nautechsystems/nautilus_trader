@@ -103,7 +103,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._instrument_index = {}
 
         # Merge data stream
-        cdef Data x
         self._stream = sorted(
             data.generic_data + data.order_book_data,
             key=lambda x: x.timestamp_ns,
@@ -294,8 +293,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
         # Calculate data size
         cdef uint64_t total_size = 0
 
-        cdef int idx
-        cdef Data data
         if self._stream:
             # Set data stream start index
             self._stream_index = next(

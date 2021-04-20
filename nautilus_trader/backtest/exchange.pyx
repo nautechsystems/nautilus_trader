@@ -494,13 +494,9 @@ cdef class SimulatedExchange:
         )
 
     cdef inline dict _build_current_bid_rates(self):
-        cdef InstrumentId instrument_id
-        cdef QuoteTick tick
         return {instrument_id.symbol.value: price.as_decimal() for instrument_id, price in self._market_bids.items()}
 
     cdef inline dict _build_current_ask_rates(self):
-        cdef InstrumentId instrument_id
-        cdef QuoteTick tick
         return {instrument_id.symbol.value: price.as_decimal() for instrument_id, price in self._market_asks.items()}
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
@@ -595,8 +591,6 @@ cdef class SimulatedExchange:
                 f"repr{client_order_id} not found",
             )
             return  # Cannot update order
-
-        cdef Instrument instrument = self.instruments[order.instrument_id]
 
         if qty <= 0:
             self._reject_update(
@@ -1236,7 +1230,6 @@ cdef class SimulatedExchange:
         self._delete_order(oco_order)
 
         # Reject any latent bracket child orders first
-        cdef ClientOrderId bracket_order_id
         cdef list child_orders
         cdef PassiveOrder order
         for child_orders in self._child_orders.values():
