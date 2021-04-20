@@ -75,6 +75,9 @@ cdef class RiskEngine(Component):
             config = {}
         super().__init__(clock, logger, name="RiskEngine")
 
+        if config:
+            self._log.info(f"Config: {config}.")
+
         self._clients = {}  # type: dict[ClientId, ExecutionClient]
         self._portfolio = portfolio
         self._exec_engine = exec_engine

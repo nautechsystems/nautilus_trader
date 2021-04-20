@@ -142,7 +142,6 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
             margin_maint=Decimal(values["marginRate"]),
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            financing=values.get("financing", {}),
             timestamp_ns=unix_timestamp_ns(),
             info=values,
         )

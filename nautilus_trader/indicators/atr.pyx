@@ -33,7 +33,6 @@ cdef class AverageTrueRange(Indicator):
         ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
         bint use_previous=True,
         double value_floor=0,
-        bint check_inputs=False,
     ):
         """
         Initialize a new instance of the `AverageTrueRange` class.
@@ -50,8 +49,6 @@ cdef class AverageTrueRange(Indicator):
             use previous price.
         value_floor : double
             The floor (minimum) output value for the indicator (>= 0).
-        check_inputs : bool
-            If the input values should be checked.
 
         """
         Condition.positive_int(period, "period")
