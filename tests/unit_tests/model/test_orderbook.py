@@ -305,6 +305,19 @@ def test_check_integrity_deep(empty_book):
     empty_book.check_integrity()
 
 
+def test_orderbook_snapshot(empty_book):
+    snapshot = OrderBookSnapshot(
+        instrument_id=empty_book.instrument_id,
+        level=OrderBookLevel.L2,
+        bids=[[1550.15, 0.51], [1580.00, 1.20]],
+        asks=[[1552.15, 1.51], [1582.00, 2.20]],
+        timestamp_ns=0,
+    )
+    empty_book.apply_snapshot(snapshot)
+    assert empty_book.best_bid_price() == Price("1580.00")
+    assert empty_book.best_ask_price() == Price("1552.15")
+
+
 def test_orderbook_operation(empty_book):
     clock = TestClock()
     op = OrderBookDelta(

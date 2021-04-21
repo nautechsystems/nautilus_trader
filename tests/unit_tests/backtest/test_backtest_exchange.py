@@ -2072,6 +2072,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(Decimal("2000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.5"), order.avg_px)
 
+    # TODO - broken on some position issue?
     def test_submit_limit_order_passive_trades(self):
         # Arrange: Prepare market
         snapshot = TestStubs.order_book_snapshot(

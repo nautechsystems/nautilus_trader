@@ -246,9 +246,19 @@ cdef class OrderBook:
         self.clear()
         # Use `update` instead of `add` (when book has been cleared they're equivalent) to make work for L1 Orderbook
         for bid in snapshot.bids:
-            self.update(order=Order(price=Price(bid[0]), volume=Quantity(bid[1]), side=OrderSide.BUY))
+            order = Order(
+                price=Price(bid[0], precision=self.price_precision),
+                volume=Quantity(bid[1], precision=self.size_precision),
+                side=OrderSide.BUY
+            )
+            self.update(order=order)
         for ask in snapshot.asks:
-            self.update(order=Order(price=Price(ask[0]), volume=Quantity(ask[1]), side=OrderSide.SELL))
+            order = Order(
+                price=Price(ask[0], precision=self.price_precision),
+                volume=Quantity(ask[1], precision=self.size_precision),
+                side=OrderSide.SELL
+            )
+            self.update(order=order)
 
         self.last_update_timestamp_ns = snapshot.timestamp_ns
 

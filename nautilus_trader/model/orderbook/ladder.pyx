@@ -202,7 +202,6 @@ cdef class Ladder:
         for level in levels:
             if not self.is_bid:
                 if price >= level.price():
-                    print("Adding to depth")
                     depth += level.volume() if depth_type == DepthType.VOLUME else level.exposure()
                 else:
                     break
@@ -252,8 +251,6 @@ cdef class Ladder:
                     # This order has filled us, calc and return
                     value_volumes.append((value - cumulative_value, order.price))
                     break
-                print(value, current, cumulative_value, value_volumes, order)
-        print("Done", cumulative_value, value)
         if not partial_ok and cumulative_value < value:
             return
         return sum([(price * val / cumulative_value) for val, price in value_volumes])
