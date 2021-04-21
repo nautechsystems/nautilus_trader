@@ -20,6 +20,8 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
@@ -141,8 +143,8 @@ class TestOrderBook:
         )
 
         # Act
-        book.add(Order(price=10, volume=5, side=OrderSide.BUY))
-        book.add(Order(price=11, volume=6, side=OrderSide.SELL))
+        book.add(Order(price=Price(10), volume=Quantity(5), side=OrderSide.BUY))
+        book.add(Order(price=Price(11), volume=Quantity(6), side=OrderSide.SELL))
 
         # Assert
         assert book.best_bid_price() == 10
@@ -160,8 +162,8 @@ class TestOrderBook:
         )
 
         # Act
-        book.add(Order(price=10, volume=5, side=OrderSide.BUY))
-        book.add(Order(price=11, volume=6, side=OrderSide.SELL))
+        book.add(Order(price=Price(10), volume=Quantity(5), side=OrderSide.BUY))
+        book.add(Order(price=Price(11), volume=Quantity(6), side=OrderSide.SELL))
 
         # Assert
         assert isinstance(repr(book), str)  # <-- calls pprint internally
@@ -189,7 +191,7 @@ class TestOrderBookSnapshot:
 class TestOrderBookOperation:
     def test_repr(self):
         # Arrange
-        order = Order(price=10, volume=5, side=OrderSide.BUY)
+        order = Order(price=Price(10), volume=Quantity(5), side=OrderSide.BUY)
         op = OrderBookDelta(
             delta_type=OrderBookDeltaType.ADD,
             order=order,
@@ -202,7 +204,7 @@ class TestOrderBookOperation:
         # Assert
         assert (
             repr(op)
-            == f"OrderBookDelta(op_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
+            == f"OrderBookDelta(op_type=ADD, order=Order(10, 5, BUY, {order.id}), timestamp_ns=0)"
         )
 
 
@@ -223,11 +225,11 @@ def sample_book():
         size_precision=0,
     )
     orders = [
-        Order(price=0.900, volume=20, side=OrderSide.SELL),
-        Order(price=0.887, volume=10, side=OrderSide.SELL),
-        Order(price=0.886, volume=5, side=OrderSide.SELL),
-        Order(price=0.830, volume=4, side=OrderSide.BUY),
-        Order(price=0.820, volume=1, side=OrderSide.BUY),
+        Order(price=Price("0.900"), volume=Quantity(20), side=OrderSide.SELL),
+        Order(price=Price("0.887"), volume=Quantity(10), side=OrderSide.SELL),
+        Order(price=Price("0.886"), volume=Quantity(5), side=OrderSide.SELL),
+        Order(price=Price("0.830"), volume=Quantity(4), side=OrderSide.BUY),
+        Order(price=Price("0.820"), volume=Quantity(1), side=OrderSide.BUY),
     ]
     for order in orders:
         ob.add(order)
@@ -241,7 +243,12 @@ def test_init():
         size_precision=0,
     )
     assert isinstance(ob.bids, Ladder) and isinstance(ob.asks, Ladder)
-    assert ob.bids.reverse and not ob.asks.reverse
+    assert (
+        ob.bids.reverse()
+        and ob.bids.is_bid
+        and not ob.asks.reverse()
+        and not ob.asks.is_bid
+    )
 
 
 def test_pprint_when_no_orders():
@@ -268,33 +275,33 @@ def test_pprint_full_book(sample_book):
 
 
 def test_add(empty_book):
-    empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
+    empty_book.add(Order(price=Price("10"), volume=Quantity("5"), side=OrderSide.BUY))
     assert empty_book.bids.top().price() == 10.0
 
 
 def test_top(empty_book):
-    empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
-    empty_book.add(Order(price=20, volume=5, side=OrderSide.BUY))
-    empty_book.add(Order(price=5, volume=5, side=OrderSide.BUY))
-    empty_book.add(Order(price=25, volume=5, side=OrderSide.SELL))
-    empty_book.add(Order(price=30, volume=5, side=OrderSide.SELL))
-    empty_book.add(Order(price=21, volume=5, side=OrderSide.SELL))
+    empty_book.add(Order(price=Price("10"), volume=Quantity("5"), side=OrderSide.BUY))
+    empty_book.add(Order(price=Price("20"), volume=Quantity("5"), side=OrderSide.BUY))
+    empty_book.add(Order(price=Price("5"), volume=Quantity("5"), side=OrderSide.BUY))
+    empty_book.add(Order(price=Price("25"), volume=Quantity("5"), side=OrderSide.SELL))
+    empty_book.add(Order(price=Price("30"), volume=Quantity("5"), side=OrderSide.SELL))
+    empty_book.add(Order(price=Price("21"), volume=Quantity("5"), side=OrderSide.SELL))
     assert empty_book.best_bid_level().price() == 20
     assert empty_book.best_ask_level().price() == 21
 
 
 def test_check_integrity_shallow(empty_book):
-    empty_book.add(Order(price=10, volume=5, side=OrderSide.SELL))
+    empty_book.add(Order(price=Price("10"), volume=Quantity("5"), side=OrderSide.SELL))
     empty_book.check_integrity()
-    empty_book.add(Order(price=20, volume=5, side=OrderSide.BUY))
+    empty_book.add(Order(price=Price("20"), volume=Quantity("5"), side=OrderSide.BUY))
 
     with pytest.raises(AssertionError):
         empty_book.check_integrity()
 
 
 def test_check_integrity_deep(empty_book):
-    empty_book.add(Order(price=10, volume=5, side=OrderSide.BUY))
-    empty_book.add(Order(price=5, volume=5, side=OrderSide.BUY))
+    empty_book.add(Order(price=Price("10"), volume=Quantity("5"), side=OrderSide.BUY))
+    empty_book.add(Order(price=Price("5"), volume=Quantity("5"), side=OrderSide.BUY))
     empty_book.check_integrity()
 
 
@@ -303,20 +310,26 @@ def test_orderbook_operation(empty_book):
     op = OrderBookDelta(
         delta_type=OrderBookDeltaType.UPDATE,
         order=Order(
-            0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
+            Price("0.5814"),
+            Quantity("672.45"),
+            OrderSide.SELL,
+            "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
         instrument_id=TestStubs.audusd_id(),
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_delta(op)
-    assert empty_book.best_ask_price() == 0.5814
+    assert empty_book.best_ask_price().as_double() == 0.5814
 
 
 def test_orderbook_operations(empty_book):
     delta = OrderBookDelta(
         delta_type=OrderBookDeltaType.UPDATE,
         order=Order(
-            0.5814, 672.45, OrderSide.SELL, "4a25c3f6-76e7-7584-c5a3-4ec84808e240"
+            Price("0.5814"),
+            Quantity("672.45"),
+            OrderSide.SELL,
+            "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
         instrument_id=TestStubs.audusd_id(),
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
@@ -328,77 +341,8 @@ def test_orderbook_operations(empty_book):
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     empty_book.apply_deltas(deltas)
-    assert empty_book.best_ask_price() == 0.5814
+    assert empty_book.best_ask_price().as_double() == 0.5814
 
 
 def test_orderbook_midpoint(sample_book):
     assert sample_book.midpoint() == 0.858
-
-
-# def test_auction_match_match_orders():
-#     l1 = Ladder.from_orders(
-#         [
-#             Order(price=103, volume=5, side=OrderSide.BUY),
-#             Order(price=102, volume=10, side=OrderSide.BUY),
-#             Order(price=100, volume=5, side=OrderSide.BUY),
-#             Order(price=90, volume=5, side=OrderSide.BUY),
-#         ]
-#     )
-#     l2 = Ladder.from_orders(
-#         [
-#             Order(price=100, volume=10, side=OrderSide.SELL),
-#             Order(price=101, volume=10, side=OrderSide.SELL),
-#             Order(price=105, volume=5, side=OrderSide.SELL),
-#             Order(price=110, volume=5, side=OrderSide.SELL),
-#         ]
-#     )
-#     trades = l1.auction_match(l2, on="volume")
-#     assert trades
-#
-#
-# def test_insert_remaining():
-#     bids = Ladder.from_orders(orders=[Order(price=103, volume=1, side=BID), Order(price=102, volume=1, side=BID)])
-#     orderbook = Orderbook(bids=bids)
-#
-#     order = Order(price=100, volume=3, side=ASK)
-#     trades = orderbook.insert(order=order)
-#     assert trades[0].price == 103
-#     assert trades[0].volume == 1
-#     assert trades[1].price == 102
-#     assert trades[1].volume == 1
-#
-#     assert orderbook.asks.top_level.price == 100
-#     assert orderbook.asks.top_level.volume == 1
-#
-#
-#
-#
-# def test_insert_in_cross_order(orderbook):
-#     order = Order(price=100, volume=1, side=BID)
-#     trades = orderbook.insert(order=order, remove_trades=True)
-#     expected = [Order(price=1.2, volume=1.0, side=ASK, order_id="a4")]
-#     assert trades == expected
-#
-#
-# def test_exchange_order_ids():
-#     book = Orderbook(bids=None, asks=None, exchange_order_ids=True)
-#     assert book.exchange_order_ids
-#     assert book.bids.exchange_order_ids
-#     assert book.asks.exchange_order_ids
-#
-#
-# def test_order_id_side(orderbook):
-#     result = orderbook.loads(orderbook.dumps()).order_id_side
-#     expected = orderbook.order_id_side
-#     assert len(result) == 10
-#     assert result == expected
-#
-#
-# def test_orderbook_in_cross():
-#     orderbook = Orderbook(bids=Ladder.from_orders(orders=[Order(price=15, volume=1, side=BID)]), asks=None)
-#     assert not orderbook.in_cross
-#     orderbook = Orderbook(
-#         bids=Ladder.from_orders(orders=[Order(price=15, volume=1, side=BID)]),
-#         asks=Ladder.from_orders(orders=[Order(price=10, volume=1, side=ASK)]),
-#     )
-#     assert orderbook.in_cross

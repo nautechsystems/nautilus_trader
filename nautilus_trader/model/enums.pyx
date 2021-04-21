@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.asset_class import AssetClass                
 from nautilus_trader.model.c_enums.asset_type import AssetType                      # noqa F401 (being used)
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation            # noqa F401 (being used)
 from nautilus_trader.model.c_enums.currency_type import CurrencyType                # noqa F401 (being used)
+from nautilus_trader.model.c_enums.depth_type import DepthType                      # noqa F401 (being used)
 from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType # noqa F401 (being used)
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus        # noqa F401 (being used)
 from nautilus_trader.model.c_enums.venue_status import VenueStatus                  # noqa F401 (being used)

@@ -24,6 +24,7 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -46,6 +47,7 @@ from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
@@ -58,6 +60,9 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     cdef readonly OMSType oms_type
+    cdef readonly OrderBookLevel exchange_order_book_level
+    cdef readonly int exchange_order_book_price_precision
+    cdef readonly int exchange_order_book_size_precision
 
     cdef readonly ExecutionCache exec_cache
     cdef readonly BacktestExecClient exec_client
@@ -78,8 +83,6 @@ cdef class SimulatedExchange:
     cdef readonly dict data_ticks
 
     cdef dict _books
-    cdef dict _market_bids
-    cdef dict _market_asks
     cdef dict _slippages
 
     cdef dict _instrument_orders
@@ -114,8 +117,8 @@ cdef class SimulatedExchange:
 
     cpdef void adjust_account(self, Money adjustment) except *
 
-    cdef inline Price get_current_bid(self, InstrumentId instrument_id)
-    cdef inline Price get_current_ask(self, InstrumentId instrument_id)
+    cdef inline Price best_bid_price(self, InstrumentId instrument_id)
+    cdef inline Price best_ask_price(self, InstrumentId instrument_id)
     cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
     cdef inline dict _build_current_bid_rates(self)
     cdef inline dict _build_current_ask_rates(self)
@@ -137,36 +140,39 @@ cdef class SimulatedExchange:
     cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _trigger_order(self, StopLimitOrder order) except *
     cdef inline void _process_order(self, Order order) except *
-    cdef inline void _process_market_order(self, MarketOrder order, Price bid, Price ask) except *
-    cdef inline void _process_limit_order(self, LimitOrder order, Price bid, Price ask) except *
-    cdef inline void _process_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *
-    cdef inline void _process_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *
-    cdef inline void _update_limit_order(self, LimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
-    cdef inline void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price, Price bid, Price ask) except *
-    cdef inline void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price bid, Price ask) except *
+    cdef inline void _process_market_order(self, MarketOrder order) except *
+    cdef inline void _process_limit_order(self, LimitOrder order) except *
+    cdef inline void _process_stop_market_order(self, StopMarketOrder order) except *
+    cdef inline void _process_stop_limit_order(self, StopLimitOrder order) except *
+    cdef inline void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
+    cdef inline void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
+    cdef inline void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price) except *
     cdef inline void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
     cdef inline void _add_order(self, PassiveOrder order) except *
     cdef inline void _delete_order(self, Order order) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
-    cdef inline void _iterate_matching_engine(self, InstrumentId instrument_id, Price bid, Price ask, int64_t timestamp_ns) except *
-    cdef inline void _match_order(self, PassiveOrder order, Price bid, Price ask) except *
-    cdef inline void _match_limit_order(self, LimitOrder order, Price bid, Price ask) except *
-    cdef inline void _match_stop_market_order(self, StopMarketOrder order, Price bid, Price ask) except *
-    cdef inline void _match_stop_limit_order(self, StopLimitOrder order, Price bid, Price ask) except *
-    cdef inline bint _is_limit_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *
-    cdef inline bint _is_limit_matched(self, OrderSide side, Price order_price, Price bid, Price ask) except *
-    cdef inline bint _is_stop_marketable(self, OrderSide side, Price order_price, Price bid, Price ask) except *
-    cdef inline bint _is_stop_triggered(self, OrderSide side, Price order_price, Price bid, Price ask) except *
-    cdef inline Price _fill_price_maker(self, OrderSide side, Price bid, Price ask)
-    cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Price bid, Price ask)
+    cdef inline void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
+    cdef inline void _match_order(self, PassiveOrder order) except *
+    cdef inline void _match_limit_order(self, LimitOrder order) except *
+    cdef inline void _match_stop_market_order(self, StopMarketOrder order) except *
+    cdef inline void _match_stop_limit_order(self, StopLimitOrder order) except *
+    cdef inline bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef inline bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef inline bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef inline bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef inline Quantity _limit_volume_matched(self, InstrumentId instrument_id, OrderSide side, Price price)
+    cdef inline Price _fill_price_maker(self, InstrumentId instrument_id, OrderSide side)
+    cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Quantity volume)
     cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop)
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline void _fill_order(self, Order order, Price fill_px, LiquiditySide liquidity_side) except *
+    cdef inline void _fill_order(self, Order order, Price fill_px, Quantity fill_quantity, LiquiditySide liquidity_side) except *
     cdef inline void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
     cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *
     cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *
+    cpdef OrderBook book(self, InstrumentId instrument_id)
+    cpdef object books(self)

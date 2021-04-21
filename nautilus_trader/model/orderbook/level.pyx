@@ -141,6 +141,9 @@ cdef class Level:
             return True
         return order.price == self.orders[0].price
 
+    cpdef double exposure(self):
+        return self.price() * self.volume()
+
     # cdef MaybeDouble price_c(self) except *:
     #     cdef MaybeDouble price
     #     if self.orders:

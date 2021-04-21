@@ -24,6 +24,8 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaType
 from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaTypeParser
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -80,8 +82,8 @@ cdef class OrderBook:
         self.level = level
         self.price_precision = price_precision
         self.size_precision = size_precision
-        self.bids = Ladder(reverse=True)
-        self.asks = Ladder(reverse=False)
+        self.bids = Ladder(is_bid=True)
+        self.asks = Ladder(is_bid=False)
         self.last_update_timestamp_ns = 0
         self.last_update_id = 0
 
@@ -242,10 +244,11 @@ cdef class OrderBook:
         Condition.equal(snapshot.level, self.level, "snapshot.level", "self.level")
 
         self.clear()
+        # Use `update` instead of `add` (when book has been cleared they're equivalent) to make work for L1 Orderbook
         for bid in snapshot.bids:
-            self.add(order=Order(price=bid[0], volume=bid[1], side=OrderSide.BUY))
+            self.update(order=Order(price=Price(bid[0]), volume=Quantity(bid[1]), side=OrderSide.BUY))
         for ask in snapshot.asks:
-            self.add(order=Order(price=ask[0], volume=ask[1], side=OrderSide.SELL))
+            self.update(order=Order(price=Price(ask[0]), volume=Quantity(ask[1]), side=OrderSide.SELL))
 
         self.last_update_timestamp_ns = snapshot.timestamp_ns
 
@@ -273,13 +276,13 @@ cdef class OrderBook:
         """
         Clear the bids from the book.
         """
-        self.bids = Ladder(reverse=True)
+        self.bids = Ladder(is_bid=True)
 
     cpdef void clear_asks(self) except *:
         """
         Clear the asks from the book.
         """
-        self.asks = Ladder(reverse=False)
+        self.asks = Ladder(is_bid=False)
 
     cpdef void clear(self) except *:
         """
@@ -471,7 +474,7 @@ cdef class OrderBook:
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level and top_ask_level:
-            return (top_ask_level.price() + top_bid_level.price()) / 2.0
+            return float((top_ask_level.price() + top_bid_level.price()) / Price("2.0"))
         else:
             return None
 
@@ -481,14 +484,14 @@ cdef class OrderBook:
         data = [
             {
                 "bids": [
-                    getattr(order, show)
+                    getattr(order, show).as_double()
                     for order in level.orders
                     if level.price() in self.bids.prices()
                 ]
                 or None,
-                "price": level.price(),
+                "price": level.price().as_double(),
                 "asks": [
-                    getattr(order, show)
+                    getattr(order, show).as_double()
                     for order in level.orders
                     if level.price() in self.asks.prices()
                 ]
