@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
@@ -42,9 +42,9 @@ def test_l3_feed():
             ob.delete(order=m["order"])
         ob.check_integrity()
     assert i == 100_047
-    assert ob.best_ask_level().price() == 61405.27923706
+    assert ob.best_ask_level().price() == Price("61405.27923706")
     assert ob.best_ask_level().volume() == 0.12227
-    assert ob.best_bid_level().price() == 61391
+    assert ob.best_bid_level().price() == Price(61391)
     assert ob.best_bid_level().volume() == 1
 
 

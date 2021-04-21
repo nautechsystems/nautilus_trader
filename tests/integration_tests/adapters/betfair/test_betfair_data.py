@@ -126,7 +126,7 @@ def test_market_update(betfair_data_client, data_engine):
     assert result == expected
     # Ensure order prices are coming through as probability
     update_op = data_engine.events[0].deltas[0]
-    assert update_op.order.price == 0.21277
+    assert update_op.order.price == Price("0.21277")
 
 
 # TODO - waiting for market status implementation
@@ -180,11 +180,11 @@ async def test_request_search_instruments(betfair_data_client, data_engine, uuid
 def test_orderbook_repr(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
     ob_snap = data_engine.events[14]
-    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 2, 2)
+    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
     ob.apply_snapshot(ob_snap)
     print(ob.pprint())
-    assert ob.best_ask_price() == 0.58824
-    assert ob.best_bid_price() == 0.58480
+    assert ob.best_ask_price() == Price("0.58824")
+    assert ob.best_bid_price() == Price("0.58480")
 
 
 def test_orderbook_updates(betfair_data_client):
@@ -199,8 +199,8 @@ def test_orderbook_updates(betfair_data_client):
             if isinstance(update, OrderBookSnapshot):
                 order_books[update.instrument_id] = L2OrderBook(
                     instrument_id=update.instrument_id,
-                    price_precision=2,
-                    size_precision=2,
+                    price_precision=4,
+                    size_precision=4,
                 )
                 order_books[update.instrument_id].apply_snapshot(update)
             elif isinstance(update, OrderBookDeltas):

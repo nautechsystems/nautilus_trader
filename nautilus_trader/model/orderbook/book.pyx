@@ -369,9 +369,9 @@ cdef class OrderBook:
         if top_bid_level is None or top_ask_level is None:
             return
 
-        cdef double best_bid = top_bid_level.price()
-        cdef double best_ask = top_ask_level.price()
-        if best_bid == 0. or best_ask == 0.:
+        best_bid = top_bid_level.price()
+        best_ask = top_ask_level.price()
+        if best_bid is None or best_ask is None:
             return
         assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
 

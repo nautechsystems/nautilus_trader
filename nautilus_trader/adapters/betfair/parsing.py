@@ -237,7 +237,7 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                         price=price_to_probability(
                             price, side=B2N_MARKET_STREAM_SIDE[side]
                         ),
-                        volume=volume,
+                        volume=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
                     instrument_id=instrument.id,

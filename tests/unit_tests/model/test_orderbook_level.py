@@ -15,8 +15,8 @@
 
 import pytest
 
-from model.objects import Price
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.model.orderbook.order import Order
