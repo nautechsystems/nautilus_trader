@@ -12,10 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from decimal import Decimal
 import logging
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport bisect_double_right
+from nautilus_trader.model.objects cimport BaseDecimal
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
@@ -27,19 +31,22 @@ cdef class Ladder:
     """
     Represents a ladder of orders in a book.
     """
-    def __init__(self, bint reverse):
+    def __init__(self, bint is_bid):
         """
         Initialize a new instance of the `Ladder` class.
 
         Parameters
         ----------
-        reverse : bool
+        is_bid : bool
             If the ladder should be represented in reverse order of price.
 
         """
-        self.reverse = reverse
+        self.is_bid = is_bid
         self.levels = []           # type: list[Level]
         self.order_id_levels = {}  # type: dict[str, Level]
+
+    cpdef bint reverse(self) except *:
+        return self.is_bid
 
     def __repr__(self):
         return f"Ladder({self.levels})"
@@ -135,7 +142,7 @@ cdef class Ladder:
         if not self.levels:
             return []
         n = n or len(self.levels)
-        return list(reversed(self.levels[-n:])) if self.reverse else self.levels[:n]
+        return list(reversed(self.levels[-n:])) if self.reverse() else self.levels[:n]
 
     cpdef list prices(self):
         """
@@ -159,9 +166,20 @@ cdef class Ladder:
         """
         return [level.volume() for level in self.levels]
 
-    cpdef Level top(self):
+    cpdef list exposures(self):
         """
         The exposures in the ladder.
+
+        Returns
+        -------
+        list[double]
+
+        """
+        return [level.exposure() for level in self.levels]
+
+    cpdef Level top(self):
+        """
+        The top Level in the ladder.
 
         Returns
         -------
@@ -173,3 +191,69 @@ cdef class Ladder:
             return top[0]
         else:
             return None
+
+    cpdef Quantity depth_at_price(self, Price price, DepthType depth_type=DepthType.VOLUME):
+        """
+        Find the depth (volume or exposure) that would be filled at a given price
+        """
+        cdef int depth = 0
+        cdef list levels = self.levels if not self.reverse() else self.levels[::-1]
+
+        for level in levels:
+            if not self.is_bid:
+                if price >= level.price():
+                    print("Adding to depth")
+                    depth += level.volume() if depth_type == DepthType.VOLUME else level.exposure()
+                else:
+                    break
+            else:
+                if price <= level.price():
+                    depth += level.volume() if depth_type == DepthType.VOLUME else level.exposure()
+                else:
+                    break
+        return Quantity(depth)
+
+    cpdef volume_fill_price(self, Quantity volume, bint partial_ok=True):
+        """
+        Returns the average price that a certain volume order would be filled at
+
+        :param volume: The volume to be filled
+        :param partial_ok: return a value even if the total volume would not be matched
+        :return:
+        """
+        return self._depth_for_value(value=volume, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
+
+    cpdef exposure_fill_price(self, Quantity exposure, bint partial_ok=True):
+        """
+        Returns the average price that a certain exposure order would be filled at
+        """
+        return self._depth_for_value(value=exposure, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
+
+    cpdef _depth_for_value(self, Quantity value, DepthType depth_type=DepthType.VOLUME, bint partial_ok=True):
+        """
+        Find the levels in this ladder required to fill a certain volume or exposure
+        """
+        cdef list levels = self.levels if not self.reverse() else self.levels[::-1]
+        cdef Quantity cumulative_value = Quantity(0)
+        cdef Quantity current = Quantity(0)
+        cdef list value_volumes = []
+
+        for level in levels:
+            for order in level.orders:
+                current = order.volume if depth_type == DepthType.VOLUME else order.exposure()
+                if current >= value:
+                    # We are totally filled, early exit
+                    return order.price
+                elif value >= (cumulative_value + current):
+                    # Add this order and continue
+                    value_volumes.append((current, order.price))
+                    cumulative_value = Quantity(cumulative_value + current)
+                elif (cumulative_value + current) >= value:
+                    # This order has filled us, calc and return
+                    value_volumes.append((value - cumulative_value, order.price))
+                    break
+                print(value, current, cumulative_value, value_volumes, order)
+        print("Done", cumulative_value, value)
+        if not partial_ok and cumulative_value < value:
+            return
+        return sum([(price * val / cumulative_value) for val, price in value_volumes])

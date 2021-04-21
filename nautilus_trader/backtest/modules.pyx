@@ -150,11 +150,9 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             mid: Decimal = mid_prices.get(instrument.id)
             if mid is None:
-                bid = self._exchange.get_current_bid(instrument.id)
-                ask = self._exchange.get_current_ask(instrument.id)
-                if bid is None or ask is None:
+                mid = self._book[instrument.id].midpoint()
+                if mid is None:
                     raise RuntimeError("Cannot apply rollover interest, no market prices")
-                mid: Decimal = (bid + ask) / 2
                 mid_prices[instrument.id] = mid
 
             interest_rate = self._calculator.calc_overnight_rate(

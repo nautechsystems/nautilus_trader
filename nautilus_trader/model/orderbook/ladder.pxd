@@ -12,23 +12,34 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
 
+cpdef enum DepthType:
+    VOLUME = 1
+    EXPOSURE = 2
+
+
 cdef class Ladder:
-    cdef readonly bint reverse
+    cdef readonly bint is_bid
     """If the ladder is in reverse order.\n\n:returns: `bool`"""
     cdef readonly list levels
     """The ladders levels.\n\n:returns: `list[Level]`"""
     cdef readonly dict order_id_levels
     """The ladders levels.\n\n:returns: `dict[str, Level]`"""
-
+    cpdef bint reverse(self) except *
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
     cpdef list depth(self, int n=*)
     cpdef list prices(self)
     cpdef list volumes(self)
+    cpdef list exposures(self)
     cpdef Level top(self)
+    cpdef Quantity depth_at_price(self, Price price, DepthType depth_type=*)
+    cpdef volume_fill_price(self, Quantity volume, bint partial_ok=*)
+    cpdef exposure_fill_price(self, Quantity exposure, bint  partial_ok=*)
+    cpdef _depth_for_value(self, Quantity value, DepthType depth_type=*, bint partial_ok=*)

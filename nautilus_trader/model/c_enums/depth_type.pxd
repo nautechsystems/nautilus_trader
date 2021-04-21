@@ -12,3 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+
+cpdef enum DepthType:
+    VOLUME = 1,
+    EXPOSURE = 2,
+
+
+cdef class DepthTypeParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef DepthType from_str(str value) except *
