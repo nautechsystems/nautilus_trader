@@ -143,15 +143,3 @@ cdef class Level:
 
     cpdef double exposure(self):
         return self.price() * self.volume()
-
-    # cdef MaybeDouble price_c(self) except *:
-    #     cdef MaybeDouble price
-    #     if self.orders:
-    #         price = MaybeDouble(value=self.orders[0].price)
-    #         price.has_value = True
-    #         return price
-    #     else:
-    #         return MaybeDouble(has_value=False)
-    #
-    # cdef double volume_c(self)  except *:
-    #     return sum([order.volume for order in self.orders])

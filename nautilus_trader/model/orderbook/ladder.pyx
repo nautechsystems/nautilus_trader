@@ -12,12 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from decimal import Decimal
+
 import logging
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport bisect_double_right
-from nautilus_trader.model.objects cimport BaseDecimal
+from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.level cimport Level
@@ -192,13 +192,22 @@ cdef class Ladder:
         else:
             return None
 
-    cpdef Quantity depth_at_price(self, Price price, DepthType depth_type=DepthType.VOLUME):
+    cpdef double depth_at_price(self, double price, DepthType depth_type=DepthType.VOLUME):
         """
-        Find the depth (volume or exposure) that would be filled at a given price
+        Find the depth (volume or exposure) that would be filled at the given price.
+
+        Parameters
+        ----------
+        price : double
+            The price for the calculation.
+        depth_type : DepthType (Enum)
+            The depth type.
+
         """
-        cdef int depth = 0
+        cdef double depth = 0.0
         cdef list levels = self.levels if not self.reverse() else self.levels[::-1]
 
+        cdef Level level
         for level in levels:
             if not self.is_bid:
                 if price >= level.price():
@@ -210,33 +219,56 @@ cdef class Ladder:
                     depth += level.volume() if depth_type == DepthType.VOLUME else level.exposure()
                 else:
                     break
-        return Quantity(depth)
+        return depth
 
-    cpdef volume_fill_price(self, Quantity volume, bint partial_ok=True):
+    cpdef volume_fill_price(self, double volume, bint partial_ok=True):
         """
-        Returns the average price that a certain volume order would be filled at
+        Returns the average price that a certain volume order would be filled at.
 
-        :param volume: The volume to be filled
-        :param partial_ok: return a value even if the total volume would not be matched
-        :return:
+        Parameters
+        ----------
+        volume : double
+            The volume to be filled.
+        partial_ok : bool
+            If a value should be returned even if the total volume would not be
+            matched.
+
+        Returns
+        -------
+        double or None
+
         """
         return self._depth_for_value(value=volume, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
 
-    cpdef exposure_fill_price(self, Quantity exposure, bint partial_ok=True):
+    cpdef exposure_fill_price(self, double exposure, bint partial_ok=True):
         """
-        Returns the average price that a certain exposure order would be filled at
+        Returns the average price that a certain exposure order would be filled at.
+
+        Parameters
+        ----------
+        exposure : double
+            The exposure amount.
+        partial_ok : bool
+            If partial fills are ok for the calculation.
+
+        Returns
+        -------
+        double
+
         """
         return self._depth_for_value(value=exposure, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
 
-    cpdef _depth_for_value(self, Quantity value, DepthType depth_type=DepthType.VOLUME, bint partial_ok=True):
+    cpdef _depth_for_value(self, double value, DepthType depth_type=DepthType.VOLUME, bint partial_ok=True):
         """
-        Find the levels in this ladder required to fill a certain volume or exposure
+        Find the levels in this ladder required to fill a certain volume or exposure.
         """
         cdef list levels = self.levels if not self.reverse() else self.levels[::-1]
-        cdef Quantity cumulative_value = Quantity(0)
-        cdef Quantity current = Quantity(0)
+        cdef double cumulative_value = 0.0
+        cdef double current = 0.0
         cdef list value_volumes = []
 
+        cdef Level level
+        cdef Order order
         for level in levels:
             for order in level.orders:
                 current = order.volume if depth_type == DepthType.VOLUME else order.exposure()
@@ -246,7 +278,7 @@ cdef class Ladder:
                 elif value >= (cumulative_value + current):
                     # Add this order and continue
                     value_volumes.append((current, order.price))
-                    cumulative_value = Quantity(cumulative_value + current)
+                    cumulative_value = cumulative_value + current
                 elif (cumulative_value + current) >= value:
                     # This order has filled us, calc and return
                     value_volumes.append((value - cumulative_value, order.price))

@@ -169,7 +169,7 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline void _fill_order(self, Order order, Price fill_px, Quantity fill_quantity, LiquiditySide liquidity_side) except *
+    cdef inline void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
     cdef inline void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
     cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *
     cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *

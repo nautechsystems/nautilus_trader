@@ -494,14 +494,14 @@ cdef class OrderBook:
         data = [
             {
                 "bids": [
-                    getattr(order, show).as_double()
+                    getattr(order, show)
                     for order in level.orders
                     if level.price() in self.bids.prices()
                 ]
                 or None,
-                "price": level.price().as_double(),
+                "price": level.price(),
                 "asks": [
-                    getattr(order, show).as_double()
+                    getattr(order, show)
                     for order in level.orders
                     if level.price() in self.asks.prices()
                 ]

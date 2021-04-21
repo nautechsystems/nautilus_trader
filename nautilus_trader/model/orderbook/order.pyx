@@ -12,15 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from decimal import Decimal
+
 
 from nautilus_trader.core.uuid import uuid4
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.objects import BaseDecimal
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Order:
@@ -29,8 +26,8 @@ cdef class Order:
     """
     def __init__(
         self,
-        Price price,
-        Quantity volume,
+        double price,
+        double volume,
         OrderSide side,
         str id=None,
     ):
@@ -54,7 +51,7 @@ cdef class Order:
         self.side = side
         self.id = id or str(uuid4())
 
-    cpdef void update_price(self, Price price) except *:
+    cpdef void update_price(self, double price) except *:
         """
         Update the orders price.
 
@@ -66,7 +63,7 @@ cdef class Order:
         """
         self.price = price
 
-    cpdef void update_volume(self, Quantity volume) except *:
+    cpdef void update_volume(self, double volume) except *:
         """
         Update the orders volume.
 
@@ -90,8 +87,8 @@ cdef class Order:
         """
         self.id = value
 
-    cpdef Quantity exposure(self):
-        return Quantity(self.price * self.volume)
+    cpdef double exposure(self):
+        return self.price * self.volume
 
     cpdef double signed_volume(self):
         if self.side == OrderSide.BUY:

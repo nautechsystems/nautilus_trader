@@ -204,7 +204,7 @@ class TestOrderBookOperation:
         # Assert
         assert (
             repr(op)
-            == f"OrderBookDelta(op_type=ADD, order=Order(10, 5, BUY, {order.id}), timestamp_ns=0)"
+            == f"OrderBookDelta(op_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
         )
 
 
@@ -300,8 +300,8 @@ def test_check_integrity_shallow(empty_book):
 
 
 def test_check_integrity_deep(empty_book):
-    empty_book.add(Order(price=Price("10"), volume=Quantity("5"), side=OrderSide.BUY))
-    empty_book.add(Order(price=Price("5"), volume=Quantity("5"), side=OrderSide.BUY))
+    empty_book.add(Order(price=10.0, volume=5, side=OrderSide.BUY))
+    empty_book.add(Order(price=5.0, volume=5, side=OrderSide.BUY))
     empty_book.check_integrity()
 
 
@@ -314,8 +314,8 @@ def test_orderbook_snapshot(empty_book):
         timestamp_ns=0,
     )
     empty_book.apply_snapshot(snapshot)
-    assert empty_book.best_bid_price() == Price("1580.00")
-    assert empty_book.best_ask_price() == Price("1552.15")
+    assert empty_book.best_bid_price() == 1580.0
+    assert empty_book.best_ask_price() == 1552.15
 
 
 def test_orderbook_operation(empty_book):
@@ -332,7 +332,7 @@ def test_orderbook_operation(empty_book):
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_delta(op)
-    assert empty_book.best_ask_price().as_double() == 0.5814
+    assert empty_book.best_ask_price() == 0.5814
 
 
 def test_orderbook_operations(empty_book):
@@ -354,7 +354,7 @@ def test_orderbook_operations(empty_book):
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     empty_book.apply_deltas(deltas)
-    assert empty_book.best_ask_price().as_double() == 0.5814
+    assert empty_book.best_ask_price() == 0.5814
 
 
 def test_orderbook_midpoint(sample_book):

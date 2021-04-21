@@ -12,25 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from decimal import Decimal
+
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Order:
-    cdef readonly Price price
+    cdef readonly double price
     """The orders price.\n\n:returns: `double`"""
-    cdef readonly Quantity volume
-    """The orders volume.\n\n:returns: `volume`"""
+    cdef readonly double volume
+    """The orders volume.\n\n:returns: `double`"""
     cdef readonly OrderSide side
     """The orders side.\n\n:returns: `OrderSide`"""
     cdef readonly str id
     """The orders identifier.\n\n:returns: `str`"""
 
-    cpdef void update_price(self, Price price) except *
-    cpdef void update_volume(self, Quantity volume) except *
+    cpdef void update_price(self, double price) except *
+    cpdef void update_volume(self, double volume) except *
     cpdef void update_id(self, str value) except *
-    cpdef Quantity exposure(self)
+    cpdef double exposure(self)
     cpdef double signed_volume(self)

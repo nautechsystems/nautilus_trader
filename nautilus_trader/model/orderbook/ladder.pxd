@@ -12,15 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
-
-
-cpdef enum DepthType:
-    VOLUME = 1
-    EXPOSURE = 2
 
 
 cdef class Ladder:
@@ -39,7 +34,7 @@ cdef class Ladder:
     cpdef list volumes(self)
     cpdef list exposures(self)
     cpdef Level top(self)
-    cpdef Quantity depth_at_price(self, Price price, DepthType depth_type=*)
-    cpdef volume_fill_price(self, Quantity volume, bint partial_ok=*)
-    cpdef exposure_fill_price(self, Quantity exposure, bint  partial_ok=*)
-    cpdef _depth_for_value(self, Quantity value, DepthType depth_type=*, bint partial_ok=*)
+    cpdef double depth_at_price(self, double price, DepthType depth_type=*)
+    cpdef volume_fill_price(self, double volume, bint partial_ok=*)
+    cpdef exposure_fill_price(self, double exposure, bint  partial_ok=*)
+    cpdef _depth_for_value(self, double value, DepthType depth_type=*, bint partial_ok=*)
