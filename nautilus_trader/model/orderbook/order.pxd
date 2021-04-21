@@ -33,4 +33,4 @@ cdef class Order:
     cpdef void update_volume(self, Quantity volume) except *
     cpdef void update_id(self, str value) except *
     cpdef Quantity exposure(self)
-    cpdef Quantity signed_volume(self)
+    cpdef double signed_volume(self)

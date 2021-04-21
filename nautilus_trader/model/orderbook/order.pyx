@@ -18,6 +18,7 @@ from nautilus_trader.core.uuid import uuid4
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.objects import BaseDecimal
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -92,11 +93,11 @@ cdef class Order:
     cpdef Quantity exposure(self):
         return Quantity(self.price * self.volume)
 
-    cpdef Quantity signed_volume(self):
+    cpdef double signed_volume(self):
         if self.side == OrderSide.BUY:
-            return self.volume
+            return self.volume * 1.0
         else:
-            return self.volume * Quantity(-1)
+            return self.volume * -1.0
 
     def __eq__(self, Order other):
         return self.id == other.id
