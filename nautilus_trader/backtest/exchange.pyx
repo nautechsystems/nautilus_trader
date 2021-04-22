@@ -32,6 +32,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -64,14 +65,10 @@ from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orderbook.book cimport L2OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.order cimport Order as OrderBookOrder
-
-from nautilus_trader.model.orderbook.book import OrderBook
-
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport Tick
@@ -297,10 +294,10 @@ cdef class SimulatedExchange:
             # Turn quote tick into a snapshot
             snapshot = OrderBookSnapshot(
                 instrument_id=tick.instrument_id,
-                timestamp_ns=tick.timestamp_ns,
                 level=self.exchange_order_book_level,
                 bids=[(tick.bid.as_double(), tick.bid_size.as_double())],
                 asks=[(tick.ask.as_double(), tick.ask_size.as_double())],
+                timestamp_ns=tick.timestamp_ns,
             )
             self.get_book(instrument_id).apply(snapshot)
         elif isinstance(tick, TradeTick):
@@ -1005,6 +1002,8 @@ cdef class SimulatedExchange:
         cdef Quantity filled_volume
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             filled_volume = self._order_volume_matched(order.instrument_id, order.side, order.price)
+            if filled_volume is None:
+                return
 
             self._fill_order(
                 order=order,
@@ -1028,6 +1027,9 @@ cdef class SimulatedExchange:
             #  we could probably just reduce this to one call to see how much (if any) is matched
             if self._is_limit_matched(order.instrument_id, order.side, order.price):
                 filled_volume = self._order_volume_matched(order.instrument_id, order.side, order.price)
+                if filled_volume is None:
+                    return
+
                 self._fill_order(
                     order=order,
                     last_px=order.price,  # Price is 'guaranteed' (negative slippage not currently modeled)
@@ -1113,9 +1115,7 @@ cdef class SimulatedExchange:
             ladder = book.asks
         else:  # => OrderSide.SELL
             ladder = book.bids
-        depth = ladder.depth_at_price(price=price.as_double(), depth_type=DepthType.VOLUME)
-        if depth > 0:
-            return Quantity(depth, precision=book.size_precision)
+        return ladder.depth_at_price(price=price.as_double(), depth_type=DepthType.VOLUME)
 
     cdef inline Price _fill_price_maker(self, InstrumentId instrument_id, OrderSide side):
         cdef OrderBook book = self.get_book(instrument_id)
@@ -1134,9 +1134,7 @@ cdef class SimulatedExchange:
             ladder = book.asks
         else:  # => OrderSide.SELL
             ladder = book.bids
-        fill_price = ladder.volume_fill_price(volume=volume)
-        if fill_price:
-            return Price(fill_price, precision=book.price_precision)
+        return ladder.volume_fill_price(volume=volume)
 
     cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop):
         if side == OrderSide.BUY:

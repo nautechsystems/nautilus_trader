@@ -87,8 +87,16 @@ cdef class OrderBook:
         self.level = level
         self.price_precision = price_precision
         self.size_precision = size_precision
-        self.bids = Ladder(is_bid=True)
-        self.asks = Ladder(is_bid=False)
+        self.bids = Ladder(
+            is_bid=True,
+            price_precision=price_precision,
+            size_precision=size_precision,
+        )
+        self.asks = Ladder(
+            is_bid=False,
+            price_precision=price_precision,
+            size_precision=size_precision,
+        )
         self.last_update_timestamp_ns = 0
         self.last_update_id = 0
 
@@ -313,13 +321,21 @@ cdef class OrderBook:
         """
         Clear the bids from the book.
         """
-        self.bids = Ladder(is_bid=True)
+        self.bids = Ladder(
+            is_bid=True,
+            price_precision=self.price_precision,
+            size_precision=self.size_precision,
+        )
 
     cpdef void clear_asks(self) except *:
         """
         Clear the asks from the book.
         """
-        self.asks = Ladder(is_bid=False)
+        self.asks = Ladder(
+            is_bid=False,
+            price_precision=self.price_precision,
+            size_precision=self.size_precision,
+        )
 
     cpdef void clear(self) except *:
         """

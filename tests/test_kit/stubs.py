@@ -219,7 +219,7 @@ class TestStubs:
 
     @staticmethod
     def ladder(is_bid: bool, orders: List[Order]):
-        ladder = Ladder(is_bid=is_bid)
+        ladder = Ladder(is_bid=is_bid, price_precision=2, size_precision=2)
         for order in orders:
             ladder.add(order)
         return ladder

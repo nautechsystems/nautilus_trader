@@ -382,6 +382,8 @@ def test_orderbook_operation_update(empty_book, clock):
 
 def test_orderbook_operation_add(empty_book, clock):
     op = OrderBookDelta(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L2,
         delta_type=OrderBookDeltaType.ADD,
         order=Order(
             Price("0.5900"),
@@ -389,7 +391,6 @@ def test_orderbook_operation_add(empty_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_delta(op)
@@ -430,6 +431,8 @@ def test_apply(empty_book, clock):
     empty_book.apply_snapshot(snapshot)
     assert empty_book.best_ask_price() == 160
     op = OrderBookDelta(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L2,
         delta_type=OrderBookDeltaType.ADD,
         order=Order(
             Price(155),
@@ -437,7 +440,6 @@ def test_apply(empty_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply(op)
@@ -465,6 +467,8 @@ def test_orderbook_direct_instantiation_fails():
 def test_timestamp_ns(empty_book, clock):
     assert empty_book.timestamp_ns == 0
     op = OrderBookDelta(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L2,
         delta_type=OrderBookDeltaType.ADD,
         order=Order(
             Price("0.5900"),
@@ -472,7 +476,6 @@ def test_timestamp_ns(empty_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_delta(op)

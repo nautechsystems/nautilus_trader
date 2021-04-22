@@ -18,6 +18,8 @@ import logging
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
@@ -29,7 +31,12 @@ cdef class Ladder:
     """
     Represents a ladder of orders in a book.
     """
-    def __init__(self, bint is_bid):
+    def __init__(
+        self,
+        bint is_bid,
+        int price_precision,
+        int size_precision,
+    ):
         """
         Initialize a new instance of the `Ladder` class.
 
@@ -37,9 +44,25 @@ cdef class Ladder:
         ----------
         is_bid : bool
             If the ladder should be represented in reverse order of price.
+        price_precision : int
+            The price precision for the book.
+        size_precision : int
+            The size precision for the book.
+
+        Raises
+        ------
+        ValueError
+            If price_precision is negative (< 0).
+        ValueError
+            If size_precision is negative (< 0).
 
         """
+        Condition.not_negative_int(price_precision, "price_precision")
+        Condition.not_negative_int(size_precision, "size_precision")
+
         self.is_bid = is_bid
+        self.price_precision = price_precision
+        self.size_precision = size_precision
         self.levels = []           # type: list[Level]
         self.order_id_levels = {}  # type: dict[str, Level]
 
@@ -190,7 +213,7 @@ cdef class Ladder:
         else:
             return None
 
-    cpdef double depth_at_price(self, double price, DepthType depth_type=DepthType.VOLUME):
+    cpdef Quantity depth_at_price(self, double price, DepthType depth_type=DepthType.VOLUME):
         """
         Find the depth (volume or exposure) that would be filled at the given price.
 
@@ -217,9 +240,9 @@ cdef class Ladder:
                     depth += level.volume() if depth_type == DepthType.VOLUME else level.exposure()
                 else:
                     break
-        return depth
+        return Quantity(depth, precision=self.size_precision)
 
-    cpdef volume_fill_price(self, double volume, bint partial_ok=True):
+    cpdef Price volume_fill_price(self, double volume, bint partial_ok=True):
         """
         Returns the average price that a certain volume order would be filled at.
 
@@ -233,12 +256,15 @@ cdef class Ladder:
 
         Returns
         -------
-        double or None
+        Price or None
 
         """
-        return self._depth_for_value(value=volume, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
+        value = self._depth_for_value(value=volume, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
+        if value is None:
+            return None
+        return Price(value, precision=self.price_precision)
 
-    cpdef exposure_fill_price(self, double exposure, bint partial_ok=True):
+    cpdef Price exposure_fill_price(self, double exposure, bint partial_ok=True):
         """
         Returns the average price that a certain exposure order would be filled at.
 
@@ -251,12 +277,15 @@ cdef class Ladder:
 
         Returns
         -------
-        double
+        Price or None
 
         """
-        return self._depth_for_value(value=exposure, depth_type=DepthType.EXPOSURE, partial_ok=partial_ok)
+        value = self._depth_for_value(value=exposure, depth_type=DepthType.EXPOSURE, partial_ok=partial_ok)
+        if value is None:
+            return None
+        return Price(value, precision=self.price_precision)
 
-    cpdef _depth_for_value(self, double value, DepthType depth_type=DepthType.VOLUME, bint partial_ok=True):
+    cdef _depth_for_value(self, double value, DepthType depth_type=DepthType.VOLUME, bint partial_ok=True):
         """
         Find the levels in this ladder required to fill a certain volume or exposure.
         """
@@ -283,5 +312,5 @@ cdef class Ladder:
                 cumulative_value += value - cumulative_value
                 break
         if not partial_ok and cumulative_value < value:
-            return
+            return None
         return sum([(price * val / cumulative_value) for val, price in value_volumes])

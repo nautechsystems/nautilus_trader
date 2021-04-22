@@ -34,7 +34,7 @@ def bids():
 
 
 def test_init():
-    ladder = Ladder(is_bid=False)
+    ladder = Ladder(is_bid=False, price_precision=2, size_precision=2)
     assert ladder
 
 
@@ -48,7 +48,7 @@ def test_insert():
         Order(price=Price(100), volume=Quantity(1), side=OrderSide.BUY),
         Order(price=Price(105), volume=Quantity(20), side=OrderSide.BUY),
     ]
-    ladder = Ladder(is_bid=False)
+    ladder = Ladder(is_bid=False, price_precision=0, size_precision=0)
     for order in orders:
         ladder.add(order=order)
     ladder.add(

@@ -483,7 +483,9 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_submit_limit_order_fills_at_most_book_volume(self):
         # Arrange: Prepare market
         snapshot = TestStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, level=OrderBookLevel.L1, ask_volume=500
+            instrument_id=USDJPY_SIM.id,
+            level=OrderBookLevel.L1,
+            ask_volume=500,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
