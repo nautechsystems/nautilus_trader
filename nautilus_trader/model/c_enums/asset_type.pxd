@@ -22,6 +22,9 @@ cpdef enum AssetType:
     CFD = 5,
     OPTION = 6,
     WARRANT = 7,
+    CALL = 8,
+    PUT = 9,
+    SPREAD = 10,
 
 
 cdef class AssetTypeParser:

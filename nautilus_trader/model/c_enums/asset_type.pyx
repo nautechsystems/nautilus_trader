@@ -31,6 +31,12 @@ cdef class AssetTypeParser:
             return "OPTION"
         elif value == 7:
             return "WARRANT"
+        elif value == 8:
+            return "CALL"
+        elif value == 9:
+            return "PUT"
+        elif value == 10:
+            return "SPREAD"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -50,6 +56,12 @@ cdef class AssetTypeParser:
             return AssetType.OPTION
         elif value == "WARRANT":
             return AssetType.WARRANT
+        elif value == "CALL":
+            return AssetType.CALL
+        elif value == "PUT":
+            return AssetType.PUT
+        elif value == "SPREAD":
+            return AssetType.SPREAD
         else:
             raise ValueError(f"value was invalid, was {value}")
 
