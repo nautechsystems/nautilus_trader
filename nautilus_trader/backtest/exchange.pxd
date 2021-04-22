@@ -60,9 +60,6 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     cdef readonly OMSType oms_type
-    cdef readonly OrderBookLevel exchange_order_book_level
-    cdef readonly int exchange_order_book_price_precision
-    cdef readonly int exchange_order_book_size_precision
 
     cdef readonly ExecutionCache exec_cache
     cdef readonly BacktestExecClient exec_client
@@ -174,5 +171,7 @@ cdef class SimulatedExchange:
     cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *
     cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *
-    cpdef OrderBook book(self, InstrumentId instrument_id)
+
+    cpdef OrderBook get_book(self, InstrumentId instrument_id)
+    cpdef OrderBook try_get_book(self, InstrumentId instrument_id, OrderBookLevel level)
     cpdef object books(self)

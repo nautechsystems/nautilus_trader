@@ -66,7 +66,10 @@ from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orderbook.book cimport L2OrderBook
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.order cimport Order as OrderBookOrder
+
 from nautilus_trader.model.orderbook.book import OrderBook
+
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.position cimport Position
@@ -93,9 +96,6 @@ cdef class SimulatedExchange:
         FillModel fill_model not None,
         TestClock clock not None,
         Logger logger not None,
-        OrderBookLevel exchange_order_book_level=OrderBookLevel.L1,
-        int exchange_order_book_price_precision=4,
-        int exchange_order_book_size_precision=4,
     ):
         """
         Initialize a new instance of the `SimulatedExchange` class.
@@ -108,8 +108,6 @@ cdef class SimulatedExchange:
             The order management system type used by the exchange (HEDGING or NETTING).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
-        exchange_order_book_level : OrderBookLevel
-            The level (L1/L2/L3) of orderbook to maintain within the exchange
         starting_balances : list[Money]
             The starting balances for the exchange.
         exec_cache : ExecutionCache
@@ -150,9 +148,6 @@ cdef class SimulatedExchange:
 
         self.id = venue
         self.oms_type = oms_type
-        self.exchange_order_book_level = exchange_order_book_level
-        self.exchange_order_book_price_precision = exchange_order_book_price_precision
-        self.exchange_order_book_size_precision = exchange_order_book_size_precision
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
 
         self.exec_cache = exec_cache
@@ -255,12 +250,12 @@ cdef class SimulatedExchange:
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
-        Process the exchanges market for the given snapshot.
+        Process the exchanges market for the given order book data.
 
         Parameters
         ----------
         data : OrderBookData
-            The order book data process.
+            The order book data to process.
 
         """
         Condition.not_none(data, "data")
@@ -268,12 +263,9 @@ cdef class SimulatedExchange:
         self._clock.set_time(data.timestamp_ns)
 
         cdef InstrumentId instrument_id = data.instrument_id
-        cdef Instrument instrument = self.instruments[instrument_id]
 
-        if isinstance(data, OrderBookSnapshot):
-            self.book(instrument_id).apply_snapshot(data)
-        elif isinstance(data, OrderBookDeltas):
-            self.book(instrument_id).apply_deltas(data)
+        self.try_get_book(instrument_id, data.level).apply(data)
+
         self._iterate_matching_engine(
             instrument_id,
             data.timestamp_ns,
@@ -297,17 +289,18 @@ cdef class SimulatedExchange:
 
         cdef InstrumentId instrument_id = tick.instrument_id
 
+        cdef OrderBookSnapshot snapshot
         # Update market bid and ask
         if isinstance(tick, QuoteTick):
             # Turn quote tick into a snapshot
             snapshot = OrderBookSnapshot(
                 instrument_id=tick.instrument_id,
                 timestamp_ns=tick.timestamp_ns,
-                level=self.exchange_order_book_level,
-                bids=[(tick.bid, tick.bid_size)],
-                asks=[(tick.ask, tick.ask_size)],
+                level=OrderBookLevel.L1,
+                bids=[(tick.bid.as_double(), tick.bid_size.as_double())],
+                asks=[(tick.ask.as_double(), tick.ask_size.as_double())],
             )
-            self.book(instrument_id).apply_snapshot(snapshot)
+            self.try_get_book(instrument_id).apply(snapshot)
         elif isinstance(tick, TradeTick):
             if tick.side == OrderSide.SELL:  # TAKER hit the bid
                 bid = OrderBookOrder(
@@ -315,7 +308,7 @@ cdef class SimulatedExchange:
                     volume=tick.size.as_double(),
                     side=OrderSide.BUY,
                 )
-                self.book(instrument_id).update(bid)
+                self.try_get_book(instrument_id).update(bid)
                 # assert bid == self.best_bid_price(instrument_id), "TradeTick out of sync with best_bid"
             elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
                 ask = OrderBookOrder(
@@ -323,7 +316,7 @@ cdef class SimulatedExchange:
                     volume=tick.size.as_double(),
                     side=OrderSide.SELL,
                 )
-                self.book(instrument_id).update(ask)
+                self.try_get_book(instrument_id).update(ask)
                 # assert ask == self.best_ask_price(instrument_id), "TradeTick out of sync with best_bid"
             # tick.side must be BUY or SELL (condition checked in TradeTick)
         else:
@@ -973,12 +966,6 @@ cdef class SimulatedExchange:
             instrument_orders.pop(order.client_order_id, None)
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
-#     cdef inline void _on_trade_tick(
-#         self, InstrumentId instrument_id,
-#         int64_t timestamp_ns,
-#         TradeTick tick=None,
-#     ) except *:
-#         pass
 
     cdef inline void _iterate_matching_engine(
         self, InstrumentId instrument_id,
@@ -1038,7 +1025,7 @@ cdef class SimulatedExchange:
             if self._is_limit_matched(order.instrument_id, order.side, order.price):
                 self._fill_order(
                     order=order,
-                    last_px=order.price,          # Price is 'guaranteed' (negative slippage not currently modeled)
+                    last_px=order.price,  # Price is 'guaranteed' (negative slippage not currently modeled)
                     last_qty=order.quantity,
                     liquidity_side=LiquiditySide.MAKER,  # Providing liquidity
                 )
@@ -1114,29 +1101,26 @@ cdef class SimulatedExchange:
             return bid < price or (bid == price and self.fill_model.is_stop_filled())
 
     cdef inline Quantity _limit_volume_matched(self, InstrumentId instrument_id, OrderSide side, Price price):
+        cdef OrderBook book = self.get_book(instrument_id)
         cdef Ladder ladder
         if side == OrderSide.BUY:
-            ladder = self._books[instrument_id].asks
+            ladder = ladder.asks
         else:  # => OrderSide.SELL
-            ladder = self._books[instrument_id].bids
-        print(ladder.depth_at_price(price=price.as_double(), depth_type=DepthType.VOLUME))  # TODO!
+            ladder = ladder.bids
+
         return Quantity(
             ladder.depth_at_price(price=price.as_double(), depth_type=DepthType.VOLUME),
-            precision=self.book(instrument_id).size_precision,
+            precision=book.size_precision,
         )
 
     cdef inline Price _fill_price_maker(self, InstrumentId instrument_id, OrderSide side):
+        cdef OrderBook book = self.get_book(instrument_id)
+
         # LIMIT orders will always fill at the top of the book.
         if side == OrderSide.BUY:
-            return Price(
-                self.best_bid_price(instrument_id),
-                precision=self.book(instrument_id).price_precision,
-            )
+            return self.best_bid_price(instrument_id)
         else:  # => OrderSide.SELL
-            return Price(
-                self.best_ask_price(instrument_id),
-                precision=self.book(instrument_id).price_precision,
-            )
+            return self.best_ask_price(instrument_id)
 
     cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Quantity volume):
         # Find fill price for order as it enters the order_book
@@ -1146,6 +1130,7 @@ cdef class SimulatedExchange:
             ladder = book.asks
         else:  # => OrderSide.SELL
             ladder = book.bids
+
         fill_price = ladder.volume_fill_price(volume=volume)
         if fill_price:
             return Price(fill_price, precision=book.price_precision)
@@ -1217,7 +1202,7 @@ cdef class SimulatedExchange:
             # Calculate PnL
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
-                avg_px_close=last_px,  # TODO: Need average close price here
+                avg_px_close=last_px,
                 quantity=order.quantity,
             )
 
@@ -1341,15 +1326,26 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(cancelled)
 
-    cpdef OrderBook book(self, InstrumentId instrument_id):
-        if instrument_id not in self._books:
-            self._books[instrument_id] = OrderBook.create(
+    cpdef OrderBook get_book(self, InstrumentId instrument_id):
+        return self._books.get(instrument_id)
+
+    cpdef OrderBook try_get_book(self, InstrumentId instrument_id, OrderBookLevel level):
+        cdef Instrument instrument
+        cdef OrderBook book = self._books.get(instrument_id)
+        if book is None:
+            instrument = self.instruments.get(instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"Cannot create OrderBook: "
+                                   f"no instrument for {instrument_id.value}")
+            book = OrderBook.create(
                 instrument_id=instrument_id,
-                level=self.exchange_order_book_level,
-                price_precision=self.exchange_order_book_price_precision,
-                size_precision=self.exchange_order_book_size_precision,
+                level=level,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
-        return self._books[instrument_id]
+            self._books[instrument_id] = book
+
+        return book
 
     cpdef object books(self):
         return self._books

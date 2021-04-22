@@ -184,7 +184,7 @@ class TestOrderBookSnapshot:
         # Assert
         assert (
             repr(snapshot)
-            == "OrderBookSnapshot('AUD/USD.SIM', bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], timestamp_ns=0)"
+            == "OrderBookSnapshot('AUD/USD.SIM', level=L2, bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], timestamp_ns=0)"
         )
 
 
@@ -193,9 +193,10 @@ class TestOrderBookOperation:
         # Arrange
         order = Order(price=Price(10), volume=Quantity(5), side=OrderSide.BUY)
         op = OrderBookDelta(
+            instrument_id=AUDUSD,
+            level=OrderBookLevel.L2,
             delta_type=OrderBookDeltaType.ADD,
             order=order,
-            instrument_id=AUDUSD,
             timestamp_ns=0,
         )
 
@@ -204,7 +205,7 @@ class TestOrderBookOperation:
         # Assert
         assert (
             repr(op)
-            == f"OrderBookDelta(op_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
+            == f"OrderBookDelta('AUD/USD.SIM', level=L2, op_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
         )
 
 
@@ -321,6 +322,8 @@ def test_orderbook_snapshot(empty_book):
 def test_orderbook_operation(empty_book):
     clock = TestClock()
     op = OrderBookDelta(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L2,
         delta_type=OrderBookDeltaType.UPDATE,
         order=Order(
             Price("0.5814"),
@@ -328,7 +331,6 @@ def test_orderbook_operation(empty_book):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=clock.timestamp(),
     )
     empty_book.apply_delta(op)
@@ -337,6 +339,8 @@ def test_orderbook_operation(empty_book):
 
 def test_orderbook_operations(empty_book):
     delta = OrderBookDelta(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L2,
         delta_type=OrderBookDeltaType.UPDATE,
         order=Order(
             Price("0.5814"),
@@ -344,7 +348,6 @@ def test_orderbook_operations(empty_book):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        instrument_id=TestStubs.audusd_id(),
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     deltas = OrderBookDeltas(
