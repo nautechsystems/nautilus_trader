@@ -165,3 +165,17 @@ def test_volume_fill_price_partial(asks):
 
     price = asks.volume_fill_price(Quantity(31), partial_ok=True)
     assert price == 16
+
+
+def test_exposure_fill_price(asks):
+    price = asks.exposure_fill_price(exposure=200)
+    assert price == 15.25
+
+
+def test_repr(asks):
+    expected = (
+        "Ladder([Level(price=15.0, orders=[Order(15.0, 10.0, SELL, 15.0)]), "
+        "Level(price=16.0, orders=[Order(16.0, 10.0, SELL, 16.0)]), Level(price=17.0, "
+        "orders=[Order(17.0, 10.0, SELL, 17.0)])])"
+    )
+    assert str(asks) == expected

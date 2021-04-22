@@ -214,8 +214,8 @@ class TestStubs:
         )
 
     @staticmethod
-    def order(price: str, side: OrderSide, size="10"):
-        return Order(price=Price(price), side=side, size=Quantity(size))
+    def order(price: float, side: OrderSide, size=10):
+        return Order(price=price, side=side, volume=size)
 
     @staticmethod
     def ladder(is_bid: bool, orders: List[Order]):
@@ -262,13 +262,14 @@ class TestStubs:
         ask_levels=3,
         bid_volume=10,
         ask_volume=10,
+        level=OrderBookLevel.L2,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
 
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
-            level=OrderBookLevel.L2,
+            level=level,
             bids=[(bid_price - i, bid_volume) for i in range(bid_levels)],
             asks=[(ask_price + i, ask_volume) for i in range(ask_levels)],
             timestamp_ns=0,

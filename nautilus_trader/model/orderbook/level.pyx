@@ -43,19 +43,19 @@ cdef class Level:
             self.add(order)
 
     def __eq__(self, Level other) -> bool:
-        return self.price == other.price
+        return self.price() == other.price()
 
     def __lt__(self, Level other) -> bool:
-        return self.price < other.price
+        return self.price() < other.price()
 
     def __le__(self, Level other) -> bool:
-        return self.price <= other.price
+        return self.price() <= other.price()
 
     def __gt__(self, Level other) -> bool:
-        return self.price > other.price
+        return self.price() > other.price()
 
     def __ge__(self, Level other) -> bool:
-        return self.price >= other.price
+        return self.price() >= other.price()
 
     def __repr__(self):
         return f"Level(price={self.price()}, orders={self.orders[:5]})"

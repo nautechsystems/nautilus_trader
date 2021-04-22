@@ -162,7 +162,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.id)
         self.data_engine.process(tick)
         self.exchange.process_tick(tick)
-        book = self.exchange.book(USDJPY_SIM.id)
+        book = self.exchange.get_book(USDJPY_SIM.id)
         assert book.best_ask_price() == 90.005
         assert book.best_bid_price() == 90.002
         # self.assertTrue(book.best_bid_price() and not book.best_ask_price())
@@ -454,6 +454,54 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(LiquiditySide.TAKER, order.liquidity_side)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
+
+    def test_submit_limit_order_fills_at_correct_price(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("90.010"),  # <-- Limit price above the ask
+            post_only=False,  # <-- Can be liquidity TAKER
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.FILLED, order.state)
+        self.assertEqual(tick.ask, order.avg_px)
+
+    def test_submit_limit_order_fills_at_most_book_volume(self):
+        # Arrange: Prepare market
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=USDJPY_SIM.id, level=OrderBookLevel.L1, ask_volume=500
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book(snapshot)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity(1000),  # <-- Order volume greater than available ask volume
+            Price("90.010"),
+            post_only=False,  # <-- Can be liquidity TAKER
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.FILLED, order.state)
+        self.assertEqual(500, order.filled_qty)
 
     def test_submit_stop_market_order_inside_market_rejects(self):
         # Arrange: Prepare market
@@ -1051,37 +1099,38 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, bracket_order.stop_loss.state)
         self.assertEqual(Price("85.100"), bracket_order.stop_loss.price)
 
-    def test_submit_market_order_with_slippage_fill_model_slips_order(self):
-        # Arrange: Prepare market
-        tick = TestStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price("90.002"),
-            ask=Price("90.005"),
-        )
-        self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
-
-        fill_model = FillModel(
-            prob_fill_at_limit=0.0,
-            prob_fill_at_stop=1.0,
-            prob_slippage=1.0,
-            random_seed=None,
-        )
-
-        self.exchange.set_fill_model(fill_model)
-
-        order = self.strategy.order_factory.market(
-            USDJPY_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        # Act
-        self.strategy.submit_order(order)
-
-        # Assert
-        self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Decimal("90.006"), order.avg_px)
+    # TODO! - No more implied slippages
+    # def test_submit_market_order_with_slippage_fill_model_slips_order(self):
+    #     # Arrange: Prepare market
+    #     tick = TestStubs.quote_tick_3decimal(
+    #         instrument_id=USDJPY_SIM.id,
+    #         bid=Price("90.002"),
+    #         ask=Price("90.005"),
+    #     )
+    #     self.data_engine.process(tick)
+    #     self.exchange.process_tick(tick)
+    #
+    #     fill_model = FillModel(
+    #         prob_fill_at_limit=0.0,
+    #         prob_fill_at_stop=1.0,
+    #         prob_slippage=1.0,
+    #         random_seed=None,
+    #     )
+    #
+    #     self.exchange.set_fill_model(fill_model)
+    #
+    #     order = self.strategy.order_factory.market(
+    #         USDJPY_SIM.id,
+    #         OrderSide.BUY,
+    #         Quantity(100000),
+    #     )
+    #
+    #     # Act
+    #     self.strategy.submit_order(order)
+    #
+    #     # Assert
+    #     self.assertEqual(OrderState.FILLED, order.state)
+    #     self.assertEqual(Decimal("90.006"), order.avg_px)
 
     def test_order_fills_gets_commissioned(self):
         # Arrange: Prepare market
@@ -1694,6 +1743,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity(100000),
         )
 
+        # TODO! This should not fill for 100k - it should fill for (1) ?
         # Act 1
         self.strategy.submit_order(order_open)
 

@@ -25,8 +25,11 @@ from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaType
 from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaTypeParser
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevelParser
+from nautilus_trader.model.tick cimport TradeTick
+
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -551,6 +554,7 @@ cdef class OrderBook:
 
 
 cdef class L3OrderBook(OrderBook):
+
     """
     Provides an L3 order book.
 

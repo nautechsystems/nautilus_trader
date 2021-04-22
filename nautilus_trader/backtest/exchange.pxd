@@ -60,7 +60,7 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     cdef readonly OMSType oms_type
-
+    cdef readonly OrderBookLevel exchange_order_book_level
     cdef readonly ExecutionCache exec_cache
     cdef readonly BacktestExecClient exec_client
 
@@ -159,7 +159,7 @@ cdef class SimulatedExchange:
     cdef inline bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef inline bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef inline bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef inline Quantity _limit_volume_matched(self, InstrumentId instrument_id, OrderSide side, Price price)
+    cdef inline Quantity _order_volume_matched(self, InstrumentId instrument_id, OrderSide side, Price price)
     cdef inline Price _fill_price_maker(self, InstrumentId instrument_id, OrderSide side)
     cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Quantity volume)
     cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop)
@@ -173,5 +173,4 @@ cdef class SimulatedExchange:
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *
 
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
-    cpdef OrderBook try_get_book(self, InstrumentId instrument_id, OrderBookLevel level)
     cpdef object books(self)

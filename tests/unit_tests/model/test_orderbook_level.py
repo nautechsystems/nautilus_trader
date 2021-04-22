@@ -61,3 +61,19 @@ def test_zero_volume_level():
         orders=[Order(price=Price(10), volume=Quantity(0), side=OrderSide.BUY)]
     )
     assert level.volume() == 0
+
+
+def test_level_comparison():
+    l1 = Level(orders=[Order(price=Price(10), volume=Quantity(0), side=OrderSide.BUY)])
+    l2 = Level(orders=[Order(price=Price(11), volume=Quantity(0), side=OrderSide.BUY)])
+    assert l2 >= l1
+    assert l1 < l2
+    assert l1 != l2
+
+
+def test_level_repr():
+    l1 = Level(
+        orders=[Order(price=Price(10), volume=Quantity(0), side=OrderSide.BUY, id="1")]
+    )
+    expected = "Level(price=10.0, orders=[Order(10.0, 0.0, BUY, 1)])"
+    assert str(l1) == expected

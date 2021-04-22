@@ -18,8 +18,6 @@ import logging
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
@@ -256,7 +254,7 @@ cdef class Ladder:
         double
 
         """
-        return self._depth_for_value(value=exposure, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
+        return self._depth_for_value(value=exposure, depth_type=DepthType.EXPOSURE, partial_ok=partial_ok)
 
     cpdef _depth_for_value(self, double value, DepthType depth_type=DepthType.VOLUME, bint partial_ok=True):
         """
@@ -269,20 +267,21 @@ cdef class Ladder:
 
         cdef Level level
         cdef Order order
-        for level in levels:
-            for order in level.orders:
-                current = order.volume if depth_type == DepthType.VOLUME else order.exposure()
-                if current >= value:
-                    # We are totally filled, early exit
-                    return order.price
-                elif value >= (cumulative_value + current):
-                    # Add this order and continue
-                    value_volumes.append((current, order.price))
-                    cumulative_value = cumulative_value + current
-                elif (cumulative_value + current) >= value:
-                    # This order has filled us, calc and return
-                    value_volumes.append((value - cumulative_value, order.price))
-                    break
+
+        for order in [order for level in levels for order in level.orders]:
+            current = order.volume if depth_type == DepthType.VOLUME else order.exposure()
+            if current >= value:
+                # We are totally filled, early exit
+                return order.price
+            elif value >= (cumulative_value + current):
+                # Add this order and continue
+                value_volumes.append((current, order.price))
+                cumulative_value += current
+            elif (cumulative_value + current) >= value:
+                # This order has filled us, calc and return
+                value_volumes.append((value - cumulative_value, order.price))
+                cumulative_value += value - cumulative_value
+                break
         if not partial_ok and cumulative_value < value:
             return
         return sum([(price * val / cumulative_value) for val, price in value_volumes])

@@ -92,6 +92,18 @@ class TestOrderBook:
         assert isinstance(book, L3OrderBook)
         assert book.level == OrderBookLevel.L3
 
+    def test_create_level_fail(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(RuntimeError):
+            OrderBook.create(
+                instrument_id=AUDUSD,
+                level=0,
+                price_precision=2,
+                size_precision=2,
+            )
+
     def test_best_bid_or_ask_price_with_no_orders_returns_none(self):
         # Arrange
         book = OrderBook.create(
@@ -237,6 +249,11 @@ def sample_book():
     return ob
 
 
+@pytest.fixture(scope="function")
+def clock():
+    return TestClock()
+
+
 def test_init():
     ob = L2OrderBook(
         instrument_id=TestStubs.audusd_id(),
@@ -280,6 +297,29 @@ def test_add(empty_book):
     assert empty_book.bids.top().price() == 10.0
 
 
+def test_add_l1_fails():
+    book = OrderBook.create(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L1,
+        price_precision=5,
+        size_precision=0,
+    )
+    with pytest.raises(NotImplementedError):
+        book.add(TestStubs.order(price=10.0, side=OrderSide.BUY))
+
+
+def test_delete_l1():
+    book = OrderBook.create(
+        instrument_id=TestStubs.audusd_id(),
+        level=OrderBookLevel.L1,
+        price_precision=5,
+        size_precision=0,
+    )
+    order = TestStubs.order(price=10.0, side=OrderSide.BUY)
+    book.update(order)
+    book.delete(order)
+
+
 def test_top(empty_book):
     empty_book.add(Order(price=Price("10"), volume=Quantity("5"), side=OrderSide.BUY))
     empty_book.add(Order(price=Price("20"), volume=Quantity("5"), side=OrderSide.BUY))
@@ -289,6 +329,10 @@ def test_top(empty_book):
     empty_book.add(Order(price=Price("21"), volume=Quantity("5"), side=OrderSide.SELL))
     assert empty_book.best_bid_level().price() == 20
     assert empty_book.best_ask_level().price() == 21
+
+
+def test_check_integrity_empty(empty_book):
+    empty_book.check_integrity()
 
 
 def test_check_integrity_shallow(empty_book):
@@ -319,8 +363,7 @@ def test_orderbook_snapshot(empty_book):
     assert empty_book.best_ask_price() == 1552.15
 
 
-def test_orderbook_operation(empty_book):
-    clock = TestClock()
+def test_orderbook_operation_update(empty_book, clock):
     op = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
@@ -335,6 +378,22 @@ def test_orderbook_operation(empty_book):
     )
     empty_book.apply_delta(op)
     assert empty_book.best_ask_price() == 0.5814
+
+
+def test_orderbook_operation_add(empty_book, clock):
+    op = OrderBookDelta(
+        delta_type=OrderBookDeltaType.ADD,
+        order=Order(
+            Price("0.5900"),
+            Quantity("672.45"),
+            OrderSide.SELL,
+            "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
+        ),
+        instrument_id=TestStubs.audusd_id(),
+        timestamp_ns=clock.timestamp(),
+    )
+    empty_book.apply_delta(op)
+    assert empty_book.best_ask_price() == 0.59
 
 
 def test_orderbook_operations(empty_book):
@@ -360,5 +419,83 @@ def test_orderbook_operations(empty_book):
     assert empty_book.best_ask_price() == 0.5814
 
 
+def test_apply(empty_book, clock):
+    snapshot = OrderBookSnapshot(
+        instrument_id=empty_book.instrument_id,
+        level=OrderBookLevel.L2,
+        bids=[[150.0, 0.51]],
+        asks=[[160.0, 1.51]],
+        timestamp_ns=0,
+    )
+    empty_book.apply_snapshot(snapshot)
+    assert empty_book.best_ask_price() == 160
+    op = OrderBookDelta(
+        delta_type=OrderBookDeltaType.ADD,
+        order=Order(
+            Price(155),
+            Quantity("672.45"),
+            OrderSide.SELL,
+            "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
+        ),
+        instrument_id=TestStubs.audusd_id(),
+        timestamp_ns=clock.timestamp(),
+    )
+    empty_book.apply(op)
+    assert empty_book.best_ask_price() == 155
+
+
 def test_orderbook_midpoint(sample_book):
     assert sample_book.midpoint() == 0.858
+
+
+def test_orderbook_midpoint_empty(empty_book):
+    assert empty_book.midpoint() is None
+
+
+def test_orderbook_direct_instantiation_fails():
+    with pytest.raises(ValueError):
+        OrderBook(
+            instrument_id=TestStubs.audusd_id(),
+            level=OrderBookLevel.L2,
+            size_precision=2,
+            price_precision=2,
+        )
+
+
+def test_timestamp_ns(empty_book, clock):
+    assert empty_book.timestamp_ns == 0
+    op = OrderBookDelta(
+        delta_type=OrderBookDeltaType.ADD,
+        order=Order(
+            Price("0.5900"),
+            Quantity("672.45"),
+            OrderSide.SELL,
+            "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
+        ),
+        instrument_id=TestStubs.audusd_id(),
+        timestamp_ns=clock.timestamp(),
+    )
+    empty_book.apply_delta(op)
+    assert empty_book.timestamp_ns == op.timestamp_ns
+
+
+def test_trade_side(sample_book):
+    # Sample book is 0.83 @ 0.8860
+
+    # Trade above the ask
+    trade = TestStubs.trade_tick_5decimal(
+        instrument_id=sample_book.instrument_id, price=Price("0.8870")
+    )
+    assert sample_book.trade_side(trade=trade) == OrderSide.SELL
+
+    # Trade below the bid
+    trade = TestStubs.trade_tick_5decimal(
+        instrument_id=sample_book.instrument_id, price=Price("0.80")
+    )
+    assert sample_book.trade_side(trade=trade) == OrderSide.BUY
+
+    # Trade inside the spread
+    trade = TestStubs.trade_tick_5decimal(
+        instrument_id=sample_book.instrument_id, price=Price("0.85")
+    )
+    assert sample_book.trade_side(trade=trade) == 0
