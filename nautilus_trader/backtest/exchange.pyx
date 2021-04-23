@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+from libc.limits cimport INT_MAX
+from libc.limits cimport INT_MIN
 from libc.stdint cimport int64_t
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -770,11 +772,8 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
         # Immediately fill marketable order
-        filled_volume = self._order_volume_matched(order.instrument_id, order.side, 9e9)
-        self._fill_order(
+        self._check_market_fill_order(
             order=order,
-            last_px=self._fill_price_taker(order.instrument_id, order.side, order.quantity),
-            last_qty=filled_volume,
             liquidity_side=LiquiditySide.TAKER,
         )
 
@@ -795,13 +794,9 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
         # Check for immediate fill
-        cdef Price fill_px
         if not order.is_post_only and self._is_limit_matched(order.instrument_id, order.side, order.price):
-            fill_px = self._fill_price_taker(order.instrument_id, order.side, order.quantity)
-            self._fill_order(
+            self._check_passive_fill_order(
                 order=order,
-                last_px=fill_px,
-                last_qty=order.quantity,
                 liquidity_side=LiquiditySide.TAKER,
             )
 
@@ -841,7 +836,6 @@ cdef class SimulatedExchange:
         Quantity qty,
         Price price,
     ) except *:
-        cdef Price fill_px
         if self._is_limit_marketable(order.instrument_id, order.side, price):
             if order.is_post_only:
                 bid = self.best_bid_price(order.instrument_id)
@@ -856,12 +850,8 @@ cdef class SimulatedExchange:
             else:
                 # Immediate fill as TAKER
                 self._generate_order_updated(order, qty, price)
-
-                fill_px = self._fill_price_taker(order.instrument_id, order.side, order.quantity)
-                self._fill_order(
+                self._check_passive_fill_order(
                     order=order,
-                    last_px=fill_px,
-                    last_qty=order.quantity,
                     liquidity_side=LiquiditySide.TAKER,
                 )
                 return  # Filled
@@ -893,7 +883,6 @@ cdef class SimulatedExchange:
         Quantity qty,
         Price price,
     ) except *:
-        cdef Price fill_px
         if not order.is_triggered:
             # Amending stop price
             if self._is_stop_marketable(order.instrument_id, order.side, price):
@@ -924,12 +913,8 @@ cdef class SimulatedExchange:
                 else:
                     # Immediate fill as TAKER
                     self._generate_order_updated(order, qty, price)
-
-                    fill_px = self._fill_price_taker(order.instrument_id, order.side, order.quantity)
-                    self._fill_order(
+                    self._check_passive_fill_order(
                         order=order,
-                        last_px=fill_px,
-                        last_qty=order.quantity,
                         liquidity_side=LiquiditySide.TAKER,
                     )
                     return  # Filled
@@ -999,21 +984,15 @@ cdef class SimulatedExchange:
             raise RuntimeError("invalid order type")
 
     cdef inline void _match_limit_order(self, LimitOrder order) except *:
-        cdef Quantity filled_volume
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
-            filled_volume = self._order_volume_matched(order.instrument_id, order.side, order.price)
-            if filled_volume is None:
-                return
-
-            self._fill_order(
+            self._check_passive_fill_order(
                 order=order,
-                last_px=order.price,  # price 'guaranteed'
-                last_qty=filled_volume,
-                liquidity_side=LiquiditySide.MAKER,
+                liquidity_side=LiquiditySide.TAKER,
             )
 
     cdef inline void _match_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_triggered(order.instrument_id, order.side, order.price):
+            # TODO! Left this as is to make tests pass - should we change it?
             self._fill_order(
                 order=order,
                 last_px=self._fill_price_stop(order.instrument_id, order.side, order.price),
@@ -1023,19 +1002,12 @@ cdef class SimulatedExchange:
 
     cdef inline void _match_stop_limit_order(self, StopLimitOrder order) except *:
         if order.is_triggered:
-            # TODO! We're making two calls here, one to check for a match, one to see how much volume is filed,
-            #  we could probably just reduce this to one call to see how much (if any) is matched
             if self._is_limit_matched(order.instrument_id, order.side, order.price):
-                filled_volume = self._order_volume_matched(order.instrument_id, order.side, order.price)
-                if filled_volume is None:
-                    return
-
-                self._fill_order(
+                self._check_passive_fill_order(
                     order=order,
-                    last_px=order.price,  # Price is 'guaranteed' (negative slippage not currently modeled)
-                    last_qty=filled_volume,
-                    liquidity_side=LiquiditySide.MAKER,  # Providing liquidity
+                    liquidity_side=LiquiditySide.TAKER,
                 )
+
         else:  # Order not triggered
             if self._is_stop_triggered(order.instrument_id, order.side, order.trigger):
                 self._trigger_order(order)
@@ -1052,11 +1024,9 @@ cdef class SimulatedExchange:
                             f"limit px of {order.price} would have been a TAKER: bid={bid}, ask={ask}",
                         )
                     else:
-                        self._fill_order(
+                        self._check_passive_fill_order(
                             order=order,
-                            last_px=self._fill_price_taker(order.instrument_id, order.side, order.quantity),
-                            last_qty=order.quantity,
-                            liquidity_side=LiquiditySide.TAKER,  # Immediate fill takes liquidity
+                            liquidity_side=LiquiditySide.TAKER,
                         )
 
     cdef inline bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price order_price) except *:
@@ -1107,34 +1077,23 @@ cdef class SimulatedExchange:
                 return False  # No market
             return bid < price or (bid == price and self.fill_model.is_stop_filled())
 
-    cdef inline Quantity _order_volume_matched(self, InstrumentId instrument_id, OrderSide side, Price price):
-        cdef OrderBook book = self.get_book(instrument_id)
-        cdef Ladder ladder
-        cdef double depth
-        if side == OrderSide.BUY:
-            ladder = book.asks
+    cdef inline tuple _determine_limit_price_and_volume(self, PassiveOrder order):
+        cdef OrderBook book = self.get_book(order.instrument_id)
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, volume=order.quantity, side=order.side)
+        if order.side == OrderSide.BUY:
+            return book.asks.simulate_order_fill(order=submit_order, depth_type=DepthType.VOLUME)
         else:  # => OrderSide.SELL
-            ladder = book.bids
-        return ladder.depth_at_price(price=price.as_double(), depth_type=DepthType.VOLUME)
+            return book.bids.simulate_order_fill(order=submit_order, depth_type=DepthType.VOLUME)
 
-    cdef inline Price _fill_price_maker(self, InstrumentId instrument_id, OrderSide side):
-        cdef OrderBook book = self.get_book(instrument_id)
+    cdef inline tuple _determine_market_price_and_volume(self, MarketOrder order):
+        cdef OrderBook book = self.get_book(order.instrument_id)
+        cdef Price price = Price(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
+        cdef OrderBookOrder submit_order = OrderBookOrder(price=price, volume=order.quantity, side=order.side)
 
-        # LIMIT orders will always fill at the top of the book.
-        if side == OrderSide.BUY:
-            return self.best_bid_price(instrument_id)
+        if order.side == OrderSide.BUY:
+            return book.asks.simulate_order_fill(order=submit_order)
         else:  # => OrderSide.SELL
-            return self.best_ask_price(instrument_id)
-
-    cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Quantity volume):
-        # Find fill price for order as it enters the order_book
-        cdef OrderBook book = self._books[instrument_id]
-        cdef Ladder ladder
-        if side == OrderSide.BUY:
-            ladder = book.asks
-        else:  # => OrderSide.SELL
-            ladder = book.bids
-        return ladder.volume_fill_price(volume=volume)
+            return book.bids.simulate_order_fill(order=submit_order)
 
     cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop):
         if side == OrderSide.BUY:
@@ -1143,6 +1102,32 @@ cdef class SimulatedExchange:
             return stop if not self.fill_model.is_slipped() else Price(stop - self._slippages[instrument_id])
 
 # --------------------------------------------------------------------------------------------------
+
+    cdef inline void _check_passive_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
+        cdef Price fill_px
+        cdef Quantity fill_qty
+        fill_px, fill_qty = self._determine_limit_price_and_volume(order)
+        if fill_qty == 0:
+            return
+        self._fill_order(
+            order=order,
+            last_px=fill_px,
+            last_qty=min(order.quantity, fill_qty),
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+    cdef inline void _check_market_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
+        cdef Price fill_px
+        cdef Quantity fill_qty
+        fill_px, fill_qty = self._determine_market_price_and_volume(order)
+        if fill_qty == 0:
+            return
+        self._fill_order(
+            order=order,
+            last_px=fill_px,
+            last_qty=fill_qty,
+            liquidity_side=LiquiditySide.TAKER,
+        )
 
     cdef inline void _fill_order(
         self,

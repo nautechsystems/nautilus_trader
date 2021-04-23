@@ -159,13 +159,13 @@ cdef class SimulatedExchange:
     cdef inline bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef inline bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef inline bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef inline Quantity _order_volume_matched(self, InstrumentId instrument_id, OrderSide side, Price price)
-    cdef inline Price _fill_price_maker(self, InstrumentId instrument_id, OrderSide side)
-    cdef inline Price _fill_price_taker(self, InstrumentId instrument_id, OrderSide side, Quantity volume)
+    cdef inline tuple _determine_limit_price_and_volume(self, PassiveOrder order)
+    cdef inline tuple _determine_market_price_and_volume(self, MarketOrder order)
     cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop)
 
 # --------------------------------------------------------------------------------------------------
-
+    cdef inline void _check_passive_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
+    cdef inline void _check_market_fill_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef inline void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
     cdef inline void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
     cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *

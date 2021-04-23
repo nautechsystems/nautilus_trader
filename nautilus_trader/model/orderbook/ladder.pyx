@@ -20,6 +20,7 @@ from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
@@ -213,9 +214,49 @@ cdef class Ladder:
         else:
             return None
 
-    cpdef Quantity depth_at_price(self, double price, DepthType depth_type=DepthType.VOLUME):
+    cpdef tuple simulate_order_fill(self, Order order, DepthType depth_type=DepthType.VOLUME):
+        """ Simulate where this order would be filled in the ladder """
+        cdef int level_idx = 0
+        cdef int order_idx = 0
+        cdef Order book_order
+        cdef double cumulative_numerator = 0.0
+        cdef double cumulative_denominator = 0.0
+        cdef double current = 0.0
+        cdef double target = order.volume if depth_type == DepthType.VOLUME else order.price * order.volume
+        cdef bint completed = False
+
+        for level_idx in reversed(range(len(self.levels))) if self.is_bid else range(len(self.levels)):
+            if self.is_bid and self.levels[level_idx].price() < order.price:
+                break
+            elif not self.is_bid and self.levels[level_idx].price() > order.price:
+                break
+            for order_idx in range(len(self.levels[level_idx].orders)):
+                book_order = self.levels[level_idx].orders[order_idx]
+                current = book_order.volume if depth_type == DepthType.VOLUME else book_order.exposure()
+                if (cumulative_denominator + current) >= target:
+                    # This order has filled us, calc and return
+                    remainder = target - cumulative_denominator
+                    cumulative_numerator += book_order.price * remainder
+                    cumulative_denominator += remainder
+                    completed = True
+                else:
+                    # Add this order and continue
+                    cumulative_numerator += book_order.price * current
+                    cumulative_denominator += current
+        if cumulative_denominator:
+            return (
+                Price(cumulative_numerator / cumulative_denominator, precision=self.price_precision),
+                Quantity(cumulative_denominator, precision=self.size_precision),
+            )
+        else:
+            return (
+                Price(0, precision=self.price_precision),
+                Quantity(0, precision=self.size_precision),
+            )
+
+    cpdef tuple depth_at_price(self, double price, DepthType depth_type=DepthType.VOLUME):
         """
-        Find the depth (volume or exposure) that would be filled at the given price.
+        Find the total volume or exposure and average price that an  order inserted at `price` would be filled for.
 
         Parameters
         ----------
@@ -225,24 +266,33 @@ cdef class Ladder:
             The depth type.
 
         """
-        cdef double depth = 0.0
-        cdef list levels = self.levels if not self.reverse() else self.levels[::-1]
+        cdef int level_idx = 0
+        cdef int order_idx = 0
+        cdef Order order
+        cdef double cumulative_numerator = 0.0
+        cdef double cumulative_denominator = 0.0
+        cdef double current = 0.0
 
-        cdef Level level
-        for level in levels:
-            if not self.is_bid:
-                if price >= level.price():
-                    depth += level.volume() if depth_type == DepthType.VOLUME else level.exposure()
-                else:
-                    break
-            else:
-                if price <= level.price():
-                    depth += level.volume() if depth_type == DepthType.VOLUME else level.exposure()
-                else:
-                    break
-        return Quantity(depth, precision=self.size_precision)
+        for level_idx in reversed(range(len(self.levels))) if self.is_bid else range(len(self.levels)):
+            if self.is_bid and self.levels[level_idx].price() < price or not self.is_bid and self.levels[level_idx].price() > price:
+                break
+            for order_idx in range(len(self.levels[level_idx].orders)):
+                order = self.levels[level_idx].orders[order_idx]
+                current = order.volume if depth_type == DepthType.VOLUME else order.exposure()
+                cumulative_numerator += order.price * current
+                cumulative_denominator += current
+        if cumulative_denominator:
+            return (
+                Price(cumulative_numerator / cumulative_denominator, precision=self.price_precision),
+                Quantity(cumulative_denominator, precision=self.size_precision),
+            )
+        else:
+            return (
+                Price(0, precision=self.price_precision),
+                Quantity(0, precision=self.size_precision),
+            )
 
-    cpdef Price volume_fill_price(self, double volume, bint partial_ok=True):
+    cpdef tuple volume_fill_price(self, double volume):
         """
         Returns the average price that a certain volume order would be filled at.
 
@@ -250,21 +300,15 @@ cdef class Ladder:
         ----------
         volume : double
             The volume to be filled.
-        partial_ok : bool
-            If a value should be returned even if the total volume would not be
-            matched.
 
         Returns
         -------
         Price or None
 
         """
-        value = self._depth_for_value(value=volume, depth_type=DepthType.VOLUME, partial_ok=partial_ok)
-        if value is None:
-            return None
-        return Price(value, precision=self.price_precision)
+        return self._depth_for_value(target=volume, depth_type=DepthType.VOLUME)
 
-    cpdef Price exposure_fill_price(self, double exposure, bint partial_ok=True):
+    cpdef tuple exposure_fill_price(self, double exposure):
         """
         Returns the average price that a certain exposure order would be filled at.
 
@@ -272,45 +316,50 @@ cdef class Ladder:
         ----------
         exposure : double
             The exposure amount.
-        partial_ok : bool
-            If partial fills are ok for the calculation.
 
         Returns
         -------
         Price or None
 
         """
-        value = self._depth_for_value(value=exposure, depth_type=DepthType.EXPOSURE, partial_ok=partial_ok)
-        if value is None:
-            return None
-        return Price(value, precision=self.price_precision)
+        return self._depth_for_value(target=exposure, depth_type=DepthType.EXPOSURE)
 
-    cdef _depth_for_value(self, double value, DepthType depth_type=DepthType.VOLUME, bint partial_ok=True):
+    cdef tuple _depth_for_value(self, double target, DepthType depth_type=DepthType.VOLUME):
         """
         Find the levels in this ladder required to fill a certain volume or exposure.
         """
-        cdef list levels = self.levels if not self.reverse() else self.levels[::-1]
-        cdef double cumulative_value = 0.0
-        cdef double current = 0.0
-        cdef list value_volumes = []
-
-        cdef Level level
+        cdef int level_idx = 0
+        cdef int order_idx = 0
         cdef Order order
+        cdef double cumulative_numerator = 0.0
+        cdef double cumulative_denominator = 0.0
+        cdef double current = 0.0
+        cdef double remainder = 0.0
+        cdef bint completed = False
 
-        for order in [order for level in levels for order in level.orders]:
-            current = order.volume if depth_type == DepthType.VOLUME else order.exposure()
-            if current >= value:
-                # We are totally filled, early exit
-                return order.price
-            elif value >= (cumulative_value + current):
-                # Add this order and continue
-                value_volumes.append((current, order.price))
-                cumulative_value += current
-            elif (cumulative_value + current) >= value:
-                # This order has filled us, calc and return
-                value_volumes.append((value - cumulative_value, order.price))
-                cumulative_value += value - cumulative_value
+        for level_idx in reversed(range(len(self.levels))) if self.is_bid else range(len(self.levels)):
+            if completed:
                 break
-        if not partial_ok and cumulative_value < value:
-            return None
-        return sum([(price * val / cumulative_value) for val, price in value_volumes])
+            for order_idx in range(len(self.levels[level_idx].orders)):
+                order = self.levels[level_idx].orders[order_idx]
+                current = order.volume if depth_type == DepthType.VOLUME else order.exposure()
+                if (cumulative_denominator + current) >= target:
+                    # This order has filled us, calc and return
+                    remainder = target - cumulative_denominator
+                    cumulative_numerator += order.price * remainder
+                    cumulative_denominator += remainder
+                    completed = True
+                else:
+                    # Add this order and continue
+                    cumulative_numerator += order.price * current
+                    cumulative_denominator += current
+        if cumulative_denominator:
+            return (
+                Price(cumulative_numerator / cumulative_denominator, precision=self.price_precision),
+                Quantity(cumulative_denominator, precision=self.size_precision),
+            )
+        else:
+            return (
+                Price(0, precision=self.price_precision),
+                Quantity(0, precision=self.size_precision),
+            )

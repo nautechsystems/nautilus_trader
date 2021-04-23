@@ -20,7 +20,7 @@ cdef class DepthTypeParser:
         if value == 1:
             return "VOLUME"
         elif value == 2:
-            return "EXPOSURE"
+            return "PRICE"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -28,8 +28,8 @@ cdef class DepthTypeParser:
     cdef DepthType from_str(str value) except *:
         if value == "VOLUME":
             return DepthType.VOLUME
-        elif value == "EXPOSURE":
-            return DepthType.EXPOSURE
+        elif value == "PRICE":
+            return DepthType.PRICE
         else:
             raise ValueError(f"value was invalid, was {value}")
 

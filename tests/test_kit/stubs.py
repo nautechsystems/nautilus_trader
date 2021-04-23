@@ -270,8 +270,8 @@ class TestStubs:
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
             level=level,
-            bids=[(bid_price - i, bid_volume) for i in range(bid_levels)],
-            asks=[(ask_price + i, ask_volume) for i in range(ask_levels)],
+            bids=[(bid_price - i, bid_volume * (1 + i)) for i in range(bid_levels)],
+            asks=[(ask_price + i, ask_volume * (1 + i)) for i in range(ask_levels)],
             timestamp_ns=0,
         )
 

@@ -119,63 +119,63 @@ def test_exposure():
 
 def test_depth_at_price_no_trade(bids, asks):
     result = asks.depth_at_price(price=Price(12))
-    assert result == 0.0
+    assert result == (Price("0"), Quantity("0"))
 
     result = bids.depth_at_price(price=Price(12))
-    assert result == 0.0
+    assert result == (Price("0"), Quantity("0"))
 
 
 def test_depth_at_price_middle(bids, asks):
     result = asks.depth_at_price(price=Price("15.5"))
-    assert result == 10.0
+    assert result == (15, 10)
     result = asks.depth_at_price(price=Price(16))
-    assert result == 20.0
+    assert result == (Price("15.6667"), 30)
     result = bids.depth_at_price(price=Price("9.1"))
-    assert result == 10.0
+    assert result == (10.0, 10.0)
 
 
 def test_depth_at_price_all_levels(bids, asks):
     result = asks.depth_at_price(price=Price(20))
-    assert result == 30
+    assert result == (Price("16.3333"), 60)
 
     result = bids.depth_at_price(price=Price(1))
-    assert result == 30
+    assert result == (Price("8.6667"), 60)
 
 
 def test_depth_at_price_exposure(bids, asks):
     result = asks.depth_at_price(price=Price("15.1"), depth_type=DepthType.EXPOSURE)
-    assert result == 150
+    assert result == (15, 150)
 
     result = bids.depth_at_price(price=Price(1), depth_type=DepthType.EXPOSURE)
-    assert result == 270
+    assert result == (Price("8.7308"), 520)
 
 
-def test_volume_fill_price_amounts(asks):
-    price = asks.volume_fill_price(Quantity(10))
-    assert price == 15
-    price = asks.volume_fill_price(Quantity(20))
-    assert price == 15.5
-    price = asks.volume_fill_price(Quantity(30))
-    assert price == 16
+def test_volume_fill_price_amounts(bids, asks):
+    assert asks.volume_fill_price(Quantity(11)) == (Price("15.0909"), 11)
+    assert asks.volume_fill_price(Quantity(10)) == (15.0, 10)
+    assert asks.volume_fill_price(Quantity(30)) == (Price("15.6667"), 30)
+
+    assert bids.volume_fill_price(Quantity(11)) == (Price("9.9091"), 11)
+    assert bids.volume_fill_price(Quantity(10)) == (10.0, 10)
+    assert bids.volume_fill_price(Quantity(30)) == (Price("9.3333"), 30)
 
 
 def test_volume_fill_price_partial(asks):
-    price = asks.volume_fill_price(Quantity(31), partial_ok=False)
-    assert price is None
-
-    price = asks.volume_fill_price(Quantity(31), partial_ok=True)
-    assert price == 16
+    assert asks.volume_fill_price(Quantity(100)) == (
+        Price("16.3333"),
+        Quantity("60.0000"),
+    )
 
 
 def test_exposure_fill_price(asks):
-    price = asks.exposure_fill_price(exposure=200)
-    assert price == 15.25
+    result = asks.exposure_fill_price(exposure=200)
+    assert result == (Price("15.2500"), Quantity("200.0000"))
 
 
 def test_repr(asks):
     expected = (
         "Ladder([Level(price=15.0, orders=[Order(15.0, 10.0, SELL, 15.0)]), "
-        "Level(price=16.0, orders=[Order(16.0, 10.0, SELL, 16.0)]), Level(price=17.0, "
-        "orders=[Order(17.0, 10.0, SELL, 17.0)])])"
+        "Level(price=16.0, orders=[Order(16.0, 20.0, SELL, 16.0)]), Level(price=17.0, "
+        "orders=[Order(17.0, 30.0, SELL, 17.0)])])"
     )
     assert str(asks) == expected
