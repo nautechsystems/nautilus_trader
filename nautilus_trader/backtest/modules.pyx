@@ -150,17 +150,17 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             mid: Decimal = mid_prices.get(instrument.id)
             if mid is None:
-                mid = self._book[instrument.id].midpoint()
+                mid = self._exchange.get_book(instrument.id).midpoint()
                 if mid is None:
                     raise RuntimeError("Cannot apply rollover interest, no market prices")
-                mid_prices[instrument.id] = mid
+                mid_prices[instrument.id] = Price(mid, precision=instrument.price_precision)
 
             interest_rate = self._calculator.calc_overnight_rate(
                 position.instrument_id,
                 timestamp,
             )
 
-            rollover = instrument.notional_value(position.quantity, mid) * interest_rate
+            rollover = instrument.notional_value(position.quantity, mid_prices[instrument.id]) * interest_rate
 
             if iso_week_day == 3:  # Book triple for Wednesdays
                 rollover *= 3
