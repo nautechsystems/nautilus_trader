@@ -377,8 +377,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        # TODO! - Book needs more volume?
-        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Decimal("90.005"), order.avg_px)  # No slippage
 
     def test_submit_post_only_limit_order_when_marketable_then_rejects(self):
@@ -452,8 +451,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        # TODO! - Book needs more volume?
-        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(LiquiditySide.TAKER, order.liquidity_side)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
 
@@ -479,8 +477,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        # TODO! - Book needs more volume?
-        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(tick.ask, order.avg_px)
 
     def test_submit_limit_order_fills_at_most_book_volume(self):
@@ -641,8 +638,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             ClientOrderId("O-19700101-000000-000-001-3")
         )
 
-        # TODO! - Book needs more volume?
-        self.assertEqual(OrderState.PARTIALLY_FILLED, entry_order.state)
+        self.assertEqual(OrderState.FILLED, entry_order.state)
         self.assertEqual(OrderState.ACCEPTED, stop_loss_order.state)
         self.assertEqual(OrderState.ACCEPTED, take_profit_order.state)
 
@@ -835,8 +831,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.update_order(order, order.quantity, Price("90.005"))
 
         # Assert
-        # TODO! - Book needs more volume?
-        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.005"), order.avg_px)
 
@@ -1030,8 +1025,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.update_order(order, order.quantity, Price("90.010"))
 
         # Assert
-        # TODO! - Book needs more volume?
-        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertTrue(order.is_triggered)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.010"), order.price)
@@ -1107,39 +1101,6 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, bracket_order.stop_loss.state)
         self.assertEqual(Price("85.100"), bracket_order.stop_loss.price)
 
-    # TODO! - No more implied slippages - happy to nuke this?
-    # def test_submit_market_order_with_slippage_fill_model_slips_order(self):
-    #     # Arrange: Prepare market
-    #     tick = TestStubs.quote_tick_3decimal(
-    #         instrument_id=USDJPY_SIM.id,
-    #         bid=Price("90.002"),
-    #         ask=Price("90.005"),
-    #     )
-    #     self.data_engine.process(tick)
-    #     self.exchange.process_tick(tick)
-    #
-    #     fill_model = FillModel(
-    #         prob_fill_at_limit=0.0,
-    #         prob_fill_at_stop=1.0,
-    #         prob_slippage=1.0,
-    #         random_seed=None,
-    #     )
-    #
-    #     self.exchange.set_fill_model(fill_model)
-    #
-    #     order = self.strategy.order_factory.market(
-    #         USDJPY_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #     )
-    #
-    #     # Act
-    #     self.strategy.submit_order(order)
-    #
-    #     # Assert
-    #     self.assertEqual(OrderState.FILLED, order.state)
-    #     self.assertEqual(Decimal("90.006"), order.avg_px)
-
     def test_order_fills_gets_commissioned(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
@@ -1183,8 +1144,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         account = self.exec_engine.cache.account_for_venue(Venue("SIM"))
 
         # Assert
-        # TODO! - Book needs more volume?
-        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Money(180.01, JPY), account_event1.commission)
         self.assertEqual(Money(180.01, JPY), account_event2.commission)
         self.assertEqual(Money(90.00, JPY), account_event3.commission)
@@ -1359,7 +1319,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
-            price=Price("90.000"),
+            price=Price("90.001"),
             trigger=Price("90.006"),
         )
 
@@ -1752,21 +1712,20 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        # TODO! This should not fill for 100k - it should fill for (1) ?
         # Act 1
         self.strategy.submit_order(order_open)
 
-        reduce_quote = QuoteTick(
+        quote = QuoteTick(
             USDJPY_SIM.id,
             Price("100.003"),
-            Price("100.003"),
+            Price("100.004"),
             Quantity(100000),
             Quantity(100000),
             0,
         )
 
-        self.exchange.process_tick(reduce_quote)
-        self.portfolio.update_tick(reduce_quote)
+        self.exchange.process_tick(quote)
+        self.portfolio.update_tick(quote)
 
         order_reduce = self.strategy.order_factory.market(
             USDJPY_SIM.id,
@@ -1826,8 +1785,8 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.id,
             Price("90.002"),
             Price("90.003"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -1846,9 +1805,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         reduce_quote = QuoteTick(
             USDJPY_SIM.id,
             Price("100.003"),
-            Price("100.003"),
-            Quantity(1),
-            Quantity(1),
+            Price("100.004"),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -2012,11 +1971,11 @@ class BitmexExchangeTests(unittest.TestCase):
             self.strategy.object_storer.get_store()[6].liquidity_side,
         )
         self.assertEqual(
-            Money("0.00652529", BTC),
+            Money("0.00652526", BTC),
             self.strategy.object_storer.get_store()[2].commission,
         )
         self.assertEqual(
-            Money("-0.00217511", BTC),
+            Money("-0.00217512", BTC),
             self.strategy.object_storer.get_store()[6].commission,
         )
 

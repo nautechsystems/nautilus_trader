@@ -66,10 +66,8 @@ from nautilus_trader.model.order.limit cimport LimitOrder
 from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
-from nautilus_trader.model.orderbook.book cimport L2OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
-from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.order cimport Order as OrderBookOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
@@ -185,7 +183,7 @@ cdef class SimulatedExchange:
             self._instrument_indexer[instrument.id] = index
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
-        self._books = {}                # type: dict[InstrumentId, L2OrderBook]
+        self._books = {}                # type: dict[InstrumentId, OrderBook]
         self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
         self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
@@ -262,13 +260,10 @@ cdef class SimulatedExchange:
         Condition.not_none(data, "data")
 
         self._clock.set_time(data.timestamp_ns)
-
-        cdef InstrumentId instrument_id = data.instrument_id
-
-        self.get_book(instrument_id).apply(data)
+        self.get_book(data.instrument_id).apply(data)
 
         self._iterate_matching_engine(
-            instrument_id,
+            data.instrument_id,
             data.timestamp_ns,
         )
 
@@ -288,8 +283,6 @@ cdef class SimulatedExchange:
 
         self._clock.set_time(tick.timestamp_ns)
 
-        cdef InstrumentId instrument_id = tick.instrument_id
-
         cdef OrderBookSnapshot snapshot
         # Update market bid and ask
         if isinstance(tick, QuoteTick):
@@ -301,24 +294,25 @@ cdef class SimulatedExchange:
                 asks=[(tick.ask.as_double(), tick.ask_size.as_double())],
                 timestamp_ns=tick.timestamp_ns,
             )
-            self.get_book(instrument_id).apply(snapshot)
+            self.get_book(tick.instrument_id).apply(snapshot)
         elif isinstance(tick, TradeTick):
+            print(tick)  # TODO!
             if tick.side == OrderSide.SELL:  # TAKER hit the bid
                 bid = OrderBookOrder(
                     price=tick.price.as_double(),
                     volume=tick.size.as_double(),
                     side=OrderSide.BUY,
                 )
-                self.get_book(instrument_id).update(bid)
-                # assert bid == self.best_bid_price(instrument_id), "TradeTick out of sync with best_bid"
+                self.get_book(tick.instrument_id).update(bid)
+                book = self.get_book(tick.instrument_id)  # TODO!
+                print(book)  # TODO!
             elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
                 ask = OrderBookOrder(
                     price=tick.price.as_double(),
                     volume=tick.size.as_double(),
                     side=OrderSide.SELL,
                 )
-                self.get_book(instrument_id).update(ask)
-                # assert ask == self.best_ask_price(instrument_id), "TradeTick out of sync with best_bid"
+                self.get_book(tick.instrument_id).update(ask)
             # tick.side must be BUY or SELL (condition checked in TradeTick)
         else:
             raise RuntimeError("not market data")  # Design-time error
@@ -451,6 +445,7 @@ cdef class SimulatedExchange:
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef OrderBook order_book = self._books.get(instrument_id)
+        # print(order_book)  # TODO!
         if order_book is None:
             return None
         best_bid_price = order_book.best_bid_price()
@@ -462,6 +457,7 @@ cdef class SimulatedExchange:
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef OrderBook order_book = self._books.get(instrument_id)
+        # print(order_book)  # TODO!
         if order_book is None:
             return None
         best_ask_price = order_book.best_ask_price()
@@ -503,7 +499,6 @@ cdef class SimulatedExchange:
         cdef dict slippage_index = {}  # type: dict[InstrumentId, Decimal]
 
         for instrument_id, instrument in self.instruments.items():
-            # noinspection PyUnresolvedReferences
             slippage_index[instrument_id] = instrument.tick_size
 
         return slippage_index
@@ -987,7 +982,7 @@ cdef class SimulatedExchange:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             self._check_passive_fill_order(
                 order=order,
-                liquidity_side=LiquiditySide.TAKER,
+                liquidity_side=LiquiditySide.MAKER,
             )
 
     cdef inline void _match_stop_market_order(self, StopMarketOrder order) except *:
@@ -1005,9 +1000,8 @@ cdef class SimulatedExchange:
             if self._is_limit_matched(order.instrument_id, order.side, order.price):
                 self._check_passive_fill_order(
                     order=order,
-                    liquidity_side=LiquiditySide.TAKER,
+                    liquidity_side=LiquiditySide.MAKER,
                 )
-
         else:  # Order not triggered
             if self._is_stop_triggered(order.instrument_id, order.side, order.trigger):
                 self._trigger_order(order)
@@ -1113,7 +1107,7 @@ cdef class SimulatedExchange:
             order=order,
             last_px=fill_px,
             last_qty=min(order.quantity, fill_qty),
-            liquidity_side=LiquiditySide.TAKER,
+            liquidity_side=liquidity_side,
         )
 
     cdef inline void _check_market_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
@@ -1126,7 +1120,7 @@ cdef class SimulatedExchange:
             order=order,
             last_px=fill_px,
             last_qty=fill_qty,
-            liquidity_side=LiquiditySide.TAKER,
+            liquidity_side=liquidity_side,
         )
 
     cdef inline void _fill_order(

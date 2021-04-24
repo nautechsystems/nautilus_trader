@@ -16,7 +16,7 @@
 
 cpdef enum DepthType:
     VOLUME = 1,
-    EXPOSURE = 2
+    EXPOSURE = 2,
 
 
 cdef class DepthTypeParser:

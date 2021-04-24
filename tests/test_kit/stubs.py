@@ -162,7 +162,7 @@ class TestStubs:
             Price("1.00004"),
             Price("1.00001"),
             Price("1.00003"),
-            Quantity(100000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -174,7 +174,7 @@ class TestStubs:
             Price("90.004"),
             Price("90.001"),
             Price("90.003"),
-            Quantity(100000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -184,8 +184,8 @@ class TestStubs:
             instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
             bid if bid is not None else Price("90.002"),
             ask if ask is not None else Price("90.005"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -195,8 +195,8 @@ class TestStubs:
             instrument_id if instrument_id is not None else TestStubs.audusd_id(),
             bid if bid is not None else Price("1.00001"),
             ask if ask is not None else Price("1.00003"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 

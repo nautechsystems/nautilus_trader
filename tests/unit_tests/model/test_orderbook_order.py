@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from decimal import Decimal
 
 from nautilus_trader.model.c_enums.order_side import OrderSide

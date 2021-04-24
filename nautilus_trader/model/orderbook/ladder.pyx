@@ -20,7 +20,6 @@ from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport PassiveOrder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
@@ -215,7 +214,23 @@ cdef class Ladder:
             return None
 
     cpdef tuple simulate_order_fill(self, Order order, DepthType depth_type=DepthType.VOLUME):
-        """ Simulate where this order would be filled in the ladder """
+        """
+        Return a simulation of where this order would be filled in the ladder.
+
+        Parameters
+        ----------
+        order : Order
+            The order to simulate.
+        depth_type : DepthType (Enum)
+            The depth type to simulate.
+
+        Returns
+        -------
+        (Price, Quantity)
+
+        """
+        Condition.not_none(order, "order")
+
         cdef int level_idx = 0
         cdef int order_idx = 0
         cdef Order book_order
@@ -256,7 +271,8 @@ cdef class Ladder:
 
     cpdef tuple depth_at_price(self, double price, DepthType depth_type=DepthType.VOLUME):
         """
-        Find the total volume or exposure and average price that an  order inserted at `price` would be filled for.
+        Find the total volume or exposure and average price that an order
+        inserted at `price` would be filled for.
 
         Parameters
         ----------
@@ -264,6 +280,10 @@ cdef class Ladder:
             The price for the calculation.
         depth_type : DepthType (Enum)
             The depth type.
+
+        Returns
+        -------
+        (Price, Quantity)
 
         """
         cdef int level_idx = 0
@@ -303,7 +323,7 @@ cdef class Ladder:
 
         Returns
         -------
-        Price or None
+        (Price, Quantity)
 
         """
         return self._depth_for_value(target=volume, depth_type=DepthType.VOLUME)
@@ -319,15 +339,13 @@ cdef class Ladder:
 
         Returns
         -------
-        Price or None
+        (Price, Quantity)
 
         """
         return self._depth_for_value(target=exposure, depth_type=DepthType.EXPOSURE)
 
     cdef tuple _depth_for_value(self, double target, DepthType depth_type=DepthType.VOLUME):
-        """
-        Find the levels in this ladder required to fill a certain volume or exposure.
-        """
+        # Find the levels in this ladder required to fill a certain volume or exposure
         cdef int level_idx = 0
         cdef int order_idx = 0
         cdef Order order
