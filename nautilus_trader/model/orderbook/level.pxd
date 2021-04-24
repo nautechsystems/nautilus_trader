@@ -24,8 +24,8 @@ cdef class Level:
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
 
-    cpdef double volume(self) except *
     cpdef price(self)
+    cpdef double volume(self) except *
     cpdef double exposure(self)
 
     cdef inline bint _check_price(self, Order order) except *

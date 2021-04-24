@@ -96,8 +96,8 @@ cdef class Order:
         else:
             return self.volume * -1.0
 
-    def __eq__(self, Order other):
+    def __eq__(self, Order other) -> bool:
         return self.id == other.id
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Order({self.price}, {self.volume}, {OrderSideParser.to_str(self.side)}, {self.id})"

@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import logging
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
@@ -22,9 +20,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
-
-
-logger = logging.getLogger(__name__)
 
 
 cdef class Ladder:
@@ -64,13 +59,13 @@ cdef class Ladder:
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.levels = []           # type: list[Level]
-        self.order_id_levels = {}  # type: dict[str, Level]
+        self.order_id_level_index = {}  # type: dict[str, Level]
 
     cpdef bint reverse(self) except *:
         return self.is_bid
 
-    def __repr__(self):
-        return f"Ladder({self.levels})"
+    def __repr__(self) -> str:
+        return f"{Ladder.__name__}({self.levels})"
 
     cpdef void add(self, Order order) except *:
         """
@@ -84,10 +79,11 @@ cdef class Ladder:
         """
         Condition.not_none(order, "order")
 
+        cdef list existing_prices = self.prices()
+
         # Level exists, add new order
         cdef int price_idx
         cdef Level level
-        existing_prices = self.prices()
         if order.price in existing_prices:
             price_idx = existing_prices.index(order.price)
             level = self.levels[price_idx]
@@ -97,7 +93,8 @@ cdef class Ladder:
             level = Level(orders=[order])
             price_idx = bisect_double_right(existing_prices, level.price())
             self.levels.insert(price_idx, level)
-        self.order_id_levels[order.id] = level
+
+        self.order_id_level_index[order.id] = level
 
     cpdef void update(self, Order order) except *:
         """
@@ -111,12 +108,12 @@ cdef class Ladder:
         """
         Condition.not_none(order, "order")
 
-        if order.id not in self.order_id_levels:
+        if order.id not in self.order_id_level_index:
             self.add(order=order)
             return
 
         # Find the existing order
-        cdef Level level = self.order_id_levels[order.id]
+        cdef Level level = self.order_id_level_index[order.id]
         if order.price == level.price():
             # This update contains a volume update
             level.update(order=order)
@@ -133,16 +130,21 @@ cdef class Ladder:
         ----------
         order : Order
 
+        Raises
+        ------
+        KeyError
+            If order.id is not contained in the order_id_level_index.
+
         """
         Condition.not_none(order, "order")
-        if order.id not in self.order_id_levels:
-            # TODO - we could emit a better error here about book integrity?
-            logger.warning(f"Couldn't find order_id {order.id} in levels, SKIPPING!")
+
+        cdef Level level = self.order_id_level_index.get(order.id)
+        if level is None:
             return
-        cdef Level level = self.order_id_levels[order.id]
+            # TODO: raise KeyError("Cannot delete order: not found at level.")
         cdef int price_idx = self.prices().index(level.price())
         level.delete(order=order)
-        del self.order_id_levels[order.id]
+        self.order_id_level_index.pop(order.id)
         if not level.orders:
             del self.levels[price_idx]
 
@@ -200,7 +202,7 @@ cdef class Ladder:
 
     cpdef Level top(self):
         """
-        The top Level in the ladder.
+        The top `Level` in the ladder.
 
         Returns
         -------

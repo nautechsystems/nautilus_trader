@@ -26,7 +26,7 @@ cdef class Ladder:
     """The ladders size precision.\n\n:returns: `int`"""
     cdef readonly list levels
     """The ladders levels.\n\n:returns: `list[Level]`"""
-    cdef readonly dict order_id_levels
+    cdef readonly dict order_id_level_index
     """The ladders levels.\n\n:returns: `dict[str, Level]`"""
 
     cpdef bint reverse(self) except *

@@ -436,8 +436,8 @@ cdef class SimulatedExchange:
             snapshot = OrderBookSnapshot(
                 instrument_id=tick.instrument_id,
                 level=self.exchange_order_book_level,
-                bids=[(tick.bid.as_double(), tick.bid_size.as_double())],
-                asks=[(tick.ask.as_double(), tick.ask_size.as_double())],
+                bids=[(tick.bid, tick.bid_size)],
+                asks=[(tick.ask, tick.ask_size)],
                 timestamp_ns=tick.timestamp_ns,
             )
             self.get_book(tick.instrument_id).apply(snapshot)

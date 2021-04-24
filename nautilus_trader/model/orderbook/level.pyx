@@ -57,7 +57,7 @@ cdef class Level:
     def __ge__(self, Level other) -> bool:
         return self.price() >= other.price()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Level(price={self.price()}, orders={self.orders[:5]})"
 
     cpdef void add(self, Order order) except *:
@@ -84,17 +84,22 @@ cdef class Level:
         order : Order
             The order to update.
 
+        Raises
+        ------
+        KeyError
+            If the order is not found at this level.
+
         """
         Condition.not_none(order, "order")
-        assert self._check_price(order=order), "Order passed to `update` has wrong price! " \
-                                               "Should be handled in Ladder"
+        if self.orders:
+            Condition.equal(order.price, self.orders[0].price, "order.price", "self.orders[0].price")
+
         if order.volume == 0:
             self.delete(order=order)
         else:
             existing = self.orders[self.orders.index(order)]
             if existing is None:
-                # TODO: logging.warning(f"Tried to update unknown order: {order}")
-                return
+                raise KeyError("Cannot update order: order not found.")
             existing.update_volume(volume=order.volume)
 
     cpdef void delete(self, Order order) except *:
@@ -111,17 +116,6 @@ cdef class Level:
 
         self.orders.remove(order)
 
-    cpdef double volume(self) except *:
-        """
-        Return the volume at this level.
-
-        Returns
-        -------
-        double
-
-        """
-        return sum([order.volume for order in self.orders])
-
     cpdef price(self):
         """
         Return the price for this level.
@@ -136,10 +130,29 @@ cdef class Level:
         else:
             return None
 
+    cpdef double volume(self) except *:
+        """
+        Return the volume at this level.
+
+        Returns
+        -------
+        double
+
+        """
+        return sum([order.volume for order in self.orders])
+
+    cpdef double exposure(self):
+        """
+        Return the exposure at this level (price * volume).
+
+        Returns
+        -------
+        double
+
+        """
+        return self.price() * self.volume()
+
     cdef inline bint _check_price(self, Order order) except *:
         if not self.orders:
             return True
         return order.price == self.orders[0].price
-
-    cpdef double exposure(self):
-        return self.price() * self.volume()

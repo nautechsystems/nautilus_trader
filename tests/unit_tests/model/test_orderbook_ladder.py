@@ -26,12 +26,12 @@ from tests.test_kit.stubs import TestStubs
 
 @pytest.fixture()
 def asks():
-    return TestStubs.order_book(bid_price=10, ask_price=15).asks
+    return TestStubs.order_book(bid_price=10.0, ask_price=15.0).asks
 
 
 @pytest.fixture()
 def bids():
-    return TestStubs.order_book(bid_price=10, ask_price=15).bids
+    return TestStubs.order_book(bid_price=10.0, ask_price=15.0).bids
 
 
 def test_init():
@@ -45,22 +45,16 @@ def test_reverse(asks):
 
 def test_insert():
     orders = [
-        Order(price=Price(100), volume=Quantity(10), side=OrderSide.BUY),
-        Order(price=Price(100), volume=Quantity(1), side=OrderSide.BUY),
-        Order(price=Price(105), volume=Quantity(20), side=OrderSide.BUY),
+        Order(price=100.0, volume=10.0, side=OrderSide.BUY),
+        Order(price=100.0, volume=1.0, side=OrderSide.BUY),
+        Order(price=105.0, volume=20.0, side=OrderSide.BUY),
     ]
     ladder = Ladder(is_bid=False, price_precision=0, size_precision=0)
     for order in orders:
         ladder.add(order=order)
-    ladder.add(
-        order=Order(price=Price("100.0"), volume=Quantity("10.0"), side=OrderSide.BUY)
-    )
-    ladder.add(
-        order=Order(price=Price("101.0"), volume=Quantity("5.0"), side=OrderSide.BUY)
-    )
-    ladder.add(
-        order=Order(price=Price("101.0"), volume=Quantity("5.0"), side=OrderSide.BUY)
-    )
+    ladder.add(order=Order(price=100.0, volume=10.0, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101.0, volume=5.0, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101.0, volume=5.0, side=OrderSide.BUY))
 
     expected = [
         (100, 21),
@@ -73,8 +67,8 @@ def test_insert():
 
 def test_delete_individual_order(asks):
     orders = [
-        Order(price=Price(100), volume=Quantity(10), side=OrderSide.BUY, id="1"),
-        Order(price=Price(100), volume=Quantity(5), side=OrderSide.BUY, id="2"),
+        Order(price=100.0, volume=10.0, side=OrderSide.BUY, id="1"),
+        Order(price=100.0, volume=5.0, side=OrderSide.BUY, id="2"),
     ]
     ladder = TestStubs.ladder(is_bid=True, orders=orders)
     ladder.delete(orders[0])
@@ -82,23 +76,23 @@ def test_delete_individual_order(asks):
 
 
 def test_delete_level():
-    orders = [Order(price=Price(100), volume=Quantity(10), side=OrderSide.BUY)]
+    orders = [Order(price=100.0, volume=10.0, side=OrderSide.BUY)]
     ladder = TestStubs.ladder(is_bid=True, orders=orders)
     ladder.delete(orders[0])
     assert ladder.levels == []
 
 
 def test_update_level():
-    order = Order(price=Price(100), volume=Quantity(10), side=OrderSide.BUY, id="1")
+    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY, id="1")
     ladder = TestStubs.ladder(is_bid=True, orders=[order])
-    order.update_volume(volume=Quantity("20.0"))
+    order.update_volume(volume=20.0)
     ladder.update(order)
     assert ladder.levels[0].volume() == 20
 
 
 def test_update_no_volume(bids):
     order = bids.levels[0].orders[0]
-    order.update_volume(volume=Quantity(0))
+    order.update_volume(volume=0.0)
     bids.update(order)
     assert order.price not in bids.prices()
 
@@ -110,9 +104,9 @@ def test_top_level(bids, asks):
 
 def test_exposure():
     orders = [
-        Order(price=Price(100), volume=Quantity(10), side=OrderSide.SELL),
-        Order(price=Price(101), volume=Quantity(10), side=OrderSide.SELL),
-        Order(price=Price(105), volume=Quantity(5), side=OrderSide.SELL),
+        Order(price=100.0, volume=10.0, side=OrderSide.SELL),
+        Order(price=101.0, volume=10.0, side=OrderSide.SELL),
+        Order(price=105.0, volume=5.0, side=OrderSide.SELL),
     ]
     ladder = TestStubs.ladder(is_bid=True, orders=orders)
     assert tuple(ladder.exposures()) == (1000.0, 1010.0, 525.0)
@@ -170,6 +164,7 @@ def test_volume_fill_price_partial(asks):
 
 def test_exposure_fill_price(asks):
     result = asks.exposure_fill_price(exposure=200)
+    print(result)
     assert result == (Price("15.2500"), Quantity("200.0000"))
 
 
