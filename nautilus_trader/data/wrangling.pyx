@@ -316,7 +316,7 @@ cdef class TradeTickDataWrangler:
         self.processed_data = processed_trades
 
     def _create_side_if_not_exist(self):
-        if 'side' in self._data_trades.columns:
+        if "side" in self._data_trades.columns:
             return self._data_trades["side"]
         else:
             return self._data_trades["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")

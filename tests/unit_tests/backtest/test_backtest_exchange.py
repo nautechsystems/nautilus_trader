@@ -482,18 +482,18 @@ class SimulatedExchangeTests(unittest.TestCase):
 
     def test_submit_limit_order_fills_at_most_book_volume(self):
         # Arrange: Prepare market
-        snapshot = TestStubs.order_book_snapshot(
+        tick = TestStubs.quote_tick_3decimal(
             instrument_id=USDJPY_SIM.id,
-            level=OrderBookLevel.L1,
-            ask_volume=500,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
         )
-        self.data_engine.process(snapshot)
-        self.exchange.process_order_book(snapshot)
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
 
         order = self.strategy.order_factory.limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(1000),  # <-- Order volume greater than available ask volume
+            Quantity(2_000_000),  # <-- Order volume greater than available ask volume
             Price("90.010"),
             post_only=False,  # <-- Can be liquidity TAKER
         )
@@ -502,8 +502,8 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(500, order.filled_qty)
+        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(1_000_000, order.filled_qty)
 
     def test_submit_stop_market_order_inside_market_rejects(self):
         # Arrange: Prepare market
@@ -1603,7 +1603,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("0.99899"),
             Quantity(100000),
-            OrderSide.SELL,  # Lowers bid price
+            OrderSide.BUY,  # Lowers bid price
             TradeMatchId("123456789"),
             0,
         )

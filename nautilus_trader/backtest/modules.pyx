@@ -32,6 +32,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
@@ -139,8 +140,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
         cdef Position position
         cdef Instrument instrument
-        cdef Price bid
-        cdef Price ask
+        cdef OrderBook book
         cdef dict mid_prices = {}  # type: dict[InstrumentId, Decimal]
         cdef Currency currency
         for position in open_positions:
@@ -150,7 +150,12 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             mid: Decimal = mid_prices.get(instrument.id)
             if mid is None:
-                mid = self._exchange.get_book(instrument.id).midpoint()
+                book = self._exchange.get_book(instrument.id)
+                mid = book.midpoint()
+                if mid is None:
+                    mid = book.best_bid_price()
+                if mid is None:
+                    mid = book.best_ask_price()
                 if mid is None:
                     raise RuntimeError("Cannot apply rollover interest, no market prices")
                 mid_prices[instrument.id] = Price(mid, precision=instrument.price_precision)

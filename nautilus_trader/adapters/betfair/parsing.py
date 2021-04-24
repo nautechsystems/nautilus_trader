@@ -230,6 +230,8 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                 price, volume = upd
             deltas.append(
                 OrderBookDelta(
+                    instrument_id=instrument.id,
+                    level=OrderBookLevel.L2,
                     delta_type=OrderBookDeltaType.DELETE
                     if volume == 0
                     else OrderBookDeltaType.UPDATE,
@@ -240,7 +242,6 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                         volume=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
-                    instrument_id=instrument.id,
                     timestamp_ns=timestamp_ns,
                 )
             )

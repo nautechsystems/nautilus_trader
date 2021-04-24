@@ -25,11 +25,6 @@ from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaType
 from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaTypeParser
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevelParser
-from nautilus_trader.model.tick cimport TradeTick
-
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
@@ -266,15 +261,15 @@ cdef class OrderBook:
         # Use `update` instead of `add` (when book has been cleared they're equivalent) to make work for L1 Orderbook
         for bid in snapshot.bids:
             order = Order(
-                price=Price(bid[0], precision=self.price_precision),
-                volume=Quantity(bid[1], precision=self.size_precision),
+                price=bid[0],
+                volume=bid[1],
                 side=OrderSide.BUY
             )
             self.update(order=order)
         for ask in snapshot.asks:
             order = Order(
-                price=Price(ask[0], precision=self.price_precision),
-                volume=Quantity(ask[1], precision=self.size_precision),
+                price=ask[0],
+                volume=ask[1],
                 side=OrderSide.SELL
             )
             self.update(order=order)
@@ -524,6 +519,14 @@ cdef class OrderBook:
             return None
 
     cpdef midpoint(self):
+        """
+        Return the mid point if a market exists.
+
+        Returns
+        -------
+        double or None
+
+        """
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level and top_ask_level:
@@ -531,7 +534,22 @@ cdef class OrderBook:
         else:
             return None
 
-    cpdef str pprint(self, int num_levels=3, show='volume'):
+    cpdef str pprint(self, int num_levels=3, show="volume"):
+        """
+        Print the order book in a clear format.
+
+        Parameters
+        ----------
+        num_levels : int
+            The number of levels to print.
+        show : str
+            The data to show.
+
+        Returns
+        -------
+        str
+
+        """
         levels = [(lvl.price(), lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]]
         levels = list(reversed(sorted(levels, key=itemgetter(0))))
         data = [
@@ -558,15 +576,24 @@ cdef class OrderBook:
 
     @property
     def timestamp_ns(self):
+        """
+        The Unix timestamp (nanos) of the last update.
+
+        Returns
+        -------
+        int64
+
+        """
         return self.last_update_timestamp_ns
 
     cpdef int trade_side(self, TradeTick trade):
-        """Given a TradeTick, determine which side of the book the trade occurred """
+        """
+        Given a TradeTick, determine which side of the book the trade occurred."""
         if self.best_bid_price() and trade.price <= self.best_bid_price():
             return OrderSide.BUY
         elif self.best_ask_price() and trade.price >= self.best_ask_price():
             return OrderSide.SELL
-        return 0
+        return 0  # Invalid trade tick
 
 
 cdef class L3OrderBook(OrderBook):

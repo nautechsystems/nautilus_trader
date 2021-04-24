@@ -126,7 +126,7 @@ def test_market_update(betfair_data_client, data_engine):
     assert result == expected
     # Ensure order prices are coming through as probability
     update_op = data_engine.events[0].deltas[0]
-    assert update_op.order.price == Price("0.21277")
+    assert update_op.order.price == 0.21277
 
 
 # TODO - waiting for market status implementation
@@ -183,8 +183,8 @@ def test_orderbook_repr(betfair_data_client, data_engine):
     ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
     ob.apply_snapshot(ob_snap)
     print(ob.pprint())
-    assert ob.best_ask_price() == Price("0.58824")
-    assert ob.best_bid_price() == Price("0.58480")
+    assert ob.best_ask_price() == 0.58824
+    assert ob.best_bid_price() == 0.58480
 
 
 def test_orderbook_updates(betfair_data_client):

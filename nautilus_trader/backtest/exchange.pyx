@@ -197,6 +197,131 @@ cdef class SimulatedExchange:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.id})"
 
+    cpdef Price best_bid_price(self, InstrumentId instrument_id):
+        """
+        Return the best bid price for the given instrument identifier (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the price.
+
+        Returns
+        -------
+        Price or None
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef OrderBook order_book = self._books.get(instrument_id)
+        if order_book is None:
+            return None
+        best_bid_price = order_book.best_bid_price()
+        if best_bid_price is None:
+            return None
+        return Price(best_bid_price, order_book.price_precision)
+
+    cpdef Price best_ask_price(self, InstrumentId instrument_id):
+        """
+        Return the best ask price for the given instrument identifier (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the price.
+
+        Returns
+        -------
+        Price or None
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef OrderBook order_book = self._books.get(instrument_id)
+        if order_book is None:
+            return None
+        best_ask_price = order_book.best_ask_price()
+        if best_ask_price is None:
+            return None
+        return Price(best_ask_price, order_book.price_precision)
+
+    cpdef object get_xrate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type,
+    ):
+        """
+        Return the exchange rate for the given parameters.
+
+        Parameters
+        ----------
+        from_currency : Currency
+            The currency to convert from.
+        to_currency : Currency
+            The currency to convert to.
+        price_type : PriceType
+            The price type to use for the calculation.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
+        return self.xrate_calculator.get_rate(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            price_type=price_type,
+            bid_quotes=self._build_current_bid_rates(),
+            ask_quotes=self._build_current_ask_rates(),
+        )
+
+    cpdef OrderBook get_book(self, InstrumentId instrument_id):
+        """
+        Return the order book for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the price.
+
+        Returns
+        -------
+        OrderBook
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef Instrument instrument
+        cdef OrderBook book = self._books.get(instrument_id)
+        if book is None:
+            instrument = self.instruments.get(instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"Cannot create OrderBook: "
+                                   f"no instrument for {instrument_id.value}")
+            book = OrderBook.create(
+                instrument_id=instrument_id,
+                level=self.exchange_order_book_level,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
+            )
+            self._books[instrument_id] = book
+
+        return book
+
+    cpdef dict get_books(self):
+        """
+        Return all order books with the exchange.
+
+        Returns
+        -------
+        dict[InstrumentId, OrderBook]
+
+        """
+        return self._books.copy()
+
     cpdef dict get_working_orders(self):
         """
         Return the working orders inside the exchange.
@@ -245,6 +370,27 @@ cdef class SimulatedExchange:
         """
         Initialize the account by generating an `AccountState` event.
         """
+        self.exec_client.handle_event(self._generate_account_event())
+
+    cpdef void adjust_account(self, Money adjustment) except *:
+        """
+        Adjust the account at the exchange with the given adjustment.
+
+        Parameters
+        ----------
+        adjustment : Money
+            The adjustment for the account.
+
+        """
+        Condition.not_none(adjustment, "adjustment")
+
+        if self.is_frozen_account:
+            return  # Nothing to adjust
+
+        balance = self.account_balances[adjustment.currency]
+        self.account_balances[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
+
+        # Generate and handle event
         self.exec_client.handle_event(self._generate_account_event())
 
     cpdef void process_order_book(self, OrderBookData data) except *:
@@ -296,20 +442,17 @@ cdef class SimulatedExchange:
             )
             self.get_book(tick.instrument_id).apply(snapshot)
         elif isinstance(tick, TradeTick):
-            print(tick)  # TODO!
             if tick.side == OrderSide.SELL:  # TAKER hit the bid
                 bid = OrderBookOrder(
-                    price=tick.price.as_double(),
-                    volume=tick.size.as_double(),
+                    price=tick.price,
+                    volume=tick.size,
                     side=OrderSide.BUY,
                 )
                 self.get_book(tick.instrument_id).update(bid)
-                book = self.get_book(tick.instrument_id)  # TODO!
-                print(book)  # TODO!
             elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
                 ask = OrderBookOrder(
-                    price=tick.price.as_double(),
-                    volume=tick.size.as_double(),
+                    price=tick.price,
+                    volume=tick.size,
                     side=OrderSide.SELL,
                 )
                 self.get_book(tick.instrument_id).update(ask)
@@ -429,58 +572,6 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void adjust_account(self, Money adjustment) except *:
-        Condition.not_none(adjustment, "adjustment")
-
-        if self.is_frozen_account:
-            return  # Nothing to adjust
-
-        balance = self.account_balances[adjustment.currency]
-        self.account_balances[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
-
-        # Generate and handle event
-        self.exec_client.handle_event(self._generate_account_event())
-
-    cdef inline Price best_bid_price(self, InstrumentId instrument_id):
-        Condition.not_none(instrument_id, "instrument_id")
-
-        cdef OrderBook order_book = self._books.get(instrument_id)
-        # print(order_book)  # TODO!
-        if order_book is None:
-            return None
-        best_bid_price = order_book.best_bid_price()
-        if best_bid_price is None:
-            return None
-        return Price(best_bid_price, order_book.price_precision)
-
-    cdef inline Price best_ask_price(self, InstrumentId instrument_id):
-        Condition.not_none(instrument_id, "instrument_id")
-
-        cdef OrderBook order_book = self._books.get(instrument_id)
-        # print(order_book)  # TODO!
-        if order_book is None:
-            return None
-        best_ask_price = order_book.best_ask_price()
-        if best_ask_price is None:
-            return None
-        return Price(best_ask_price, order_book.price_precision)
-
-    cdef inline object get_xrate(
-        self,
-        Currency from_currency,
-        Currency to_currency,
-        PriceType price_type,
-    ):
-        Condition.not_none(from_currency, "from_currency")
-        Condition.not_none(to_currency, "to_currency")
-        return self.xrate_calculator.get_rate(
-            from_currency=from_currency,
-            to_currency=to_currency,
-            price_type=price_type,
-            bid_quotes=self._build_current_bid_rates(),
-            ask_quotes=self._build_current_ask_rates(),
-        )
-
     cdef inline dict _build_current_bid_rates(self):
         return {
             instrument_id.symbol.value: Decimal(f"{book.best_bid_price():.{book.price_precision}f}")
@@ -492,8 +583,6 @@ cdef class SimulatedExchange:
             instrument_id.symbol.value: Decimal(f"{book.best_ask_price():.{book.price_precision}f}")
             for instrument_id, book in self._books.items() if book.best_ask_price()
         }
-
-# -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline object _get_tick_sizes(self):
         cdef dict slippage_index = {}  # type: dict[InstrumentId, Decimal]
@@ -534,6 +623,8 @@ cdef class SimulatedExchange:
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
+
+# -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline void _submit_order(self, Order order) except *:
         # Generate event
@@ -987,7 +1078,6 @@ cdef class SimulatedExchange:
 
     cdef inline void _match_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_triggered(order.instrument_id, order.side, order.price):
-            # TODO! Left this as is to make tests pass - should we change it?
             self._fill_order(
                 order=order,
                 last_px=self._fill_price_stop(order.instrument_id, order.side, order.price),
@@ -1097,6 +1187,7 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
+    # TODO: Iteratively fill order as levels are taken out
     cdef inline void _check_passive_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
         cdef Price fill_px
         cdef Quantity fill_qty
@@ -1153,6 +1244,8 @@ cdef class SimulatedExchange:
             liquidity_side=liquidity_side,
         )
 
+        cdef Quantity cum_qty = Quantity(order.filled_qty + last_qty, instrument.size_precision)
+
         # Generate event
         cdef OrderFilled fill = OrderFilled(
             account_id=self.exec_client.account_id,
@@ -1165,8 +1258,8 @@ cdef class SimulatedExchange:
             order_side=order.side,
             last_qty=last_qty,
             last_px=last_px,
-            cum_qty=Quantity(order.filled_qty + last_qty),
-            leaves_qty=Quantity(order.quantity - order.filled_qty),
+            cum_qty=cum_qty,
+            leaves_qty=Quantity(order.quantity - cum_qty, instrument.size_precision),
             currency=instrument.quote_currency,
             is_inverse=instrument.is_inverse,
             commission=commission,
@@ -1305,24 +1398,3 @@ cdef class SimulatedExchange:
         )
 
         self.exec_client.handle_event(cancelled)
-
-    cpdef OrderBook get_book(self, InstrumentId instrument_id):
-        cdef Instrument instrument
-        cdef OrderBook book = self._books.get(instrument_id)
-        if book is None:
-            instrument = self.instruments.get(instrument_id)
-            if instrument is None:
-                raise RuntimeError(f"Cannot create OrderBook: "
-                                   f"no instrument for {instrument_id.value}")
-            book = OrderBook.create(
-                instrument_id=instrument_id,
-                level=self.exchange_order_book_level,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
-            )
-            self._books[instrument_id] = book
-
-        return book
-
-    cpdef object books(self):
-        return self._books

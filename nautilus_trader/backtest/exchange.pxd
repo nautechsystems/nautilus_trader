@@ -93,10 +93,17 @@ cdef class SimulatedExchange:
     cdef dict _symbol_ord_count
     cdef int _executions_count
 
+    cpdef Price best_bid_price(self, InstrumentId instrument_id)
+    cpdef Price best_ask_price(self, InstrumentId instrument_id)
+    cpdef object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
+    cpdef OrderBook get_book(self, InstrumentId instrument_id)
+    cpdef dict get_books(self)
     cpdef dict get_working_orders(self)
+
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
+    cpdef void adjust_account(self, Money adjustment) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_modules(self, int64_t now_ns) except *
@@ -112,21 +119,16 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void adjust_account(self, Money adjustment) except *
-
-    cdef inline Price best_bid_price(self, InstrumentId instrument_id)
-    cdef inline Price best_ask_price(self, InstrumentId instrument_id)
-    cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
     cdef inline dict _build_current_bid_rates(self)
     cdef inline dict _build_current_ask_rates(self)
-
-# -- EVENT HANDLING --------------------------------------------------------------------------------
-
     cdef inline object _get_tick_sizes(self)
     cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
     cdef inline VenueOrderId _generate_order_id(self, InstrumentId instrument_id)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
+
+# -- EVENT HANDLING --------------------------------------------------------------------------------
+
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
@@ -171,6 +173,3 @@ cdef class SimulatedExchange:
     cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *
     cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *
-
-    cpdef OrderBook get_book(self, InstrumentId instrument_id)
-    cpdef object books(self)
