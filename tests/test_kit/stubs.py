@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 import asyncio
 from datetime import datetime
+from typing import List
 
 import pytz
 
@@ -24,6 +25,7 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
@@ -52,6 +54,10 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
@@ -61,6 +67,7 @@ from tests.test_kit.mocks import MockLiveExecutionEngine
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
+
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
@@ -155,7 +162,7 @@ class TestStubs:
             Price("1.00004"),
             Price("1.00001"),
             Price("1.00003"),
-            Quantity(100000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -167,7 +174,7 @@ class TestStubs:
             Price("90.004"),
             Price("90.001"),
             Price("90.003"),
-            Quantity(100000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -177,8 +184,8 @@ class TestStubs:
             instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
             bid if bid is not None else Price("90.002"),
             ask if ask is not None else Price("90.005"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -188,20 +195,84 @@ class TestStubs:
             instrument_id if instrument_id is not None else TestStubs.audusd_id(),
             bid if bid is not None else Price("1.00001"),
             ask if ask is not None else Price("1.00003"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 
     @staticmethod
-    def trade_tick_5decimal(instrument_id=None, price=None) -> TradeTick:
+    def trade_tick_5decimal(
+        instrument_id=None, price=None, side=None, quantity=None
+    ) -> TradeTick:
         return TradeTick(
-            instrument_id if instrument_id is not None else TestStubs.audusd_id(),
-            price if price is not None else Price("1.00001"),
-            Quantity(100000),
-            OrderSide.BUY,
+            instrument_id or TestStubs.audusd_id(),
+            price or Price("1.00001"),
+            quantity or Quantity(100000),
+            side or OrderSide.BUY,
             TradeMatchId("123456"),
             0,
+        )
+
+    @staticmethod
+    def order(price: float, side: OrderSide, size=10):
+        return Order(price=price, side=side, volume=size)
+
+    @staticmethod
+    def ladder(reverse: bool, orders: List[Order]):
+        ladder = Ladder(reverse=reverse, price_precision=2, size_precision=2)
+        for order in orders:
+            ladder.add(order)
+        return ladder
+
+    @staticmethod
+    def order_book(
+        instrument_id=None,
+        level=OrderBookLevel.L2,
+        bid_price=10,
+        ask_price=15,
+        bid_levels=3,
+        ask_levels=3,
+        bid_volume=10,
+        ask_volume=10,
+    ) -> OrderBook:
+        order_book = OrderBook.create(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            level=level,
+            price_precision=4,
+            size_precision=4,
+        )
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            bid_price=bid_price,
+            ask_price=ask_price,
+            bid_levels=bid_levels,
+            ask_levels=ask_levels,
+            bid_volume=bid_volume,
+            ask_volume=ask_volume,
+        )
+        order_book.apply_snapshot(snapshot)
+        return order_book
+
+    @staticmethod
+    def order_book_snapshot(
+        instrument_id=None,
+        bid_price=10,
+        ask_price=15,
+        bid_levels=3,
+        ask_levels=3,
+        bid_volume=10,
+        ask_volume=10,
+        level=OrderBookLevel.L2,
+    ) -> OrderBookSnapshot:
+        err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
+        assert bid_price < ask_price, err
+
+        return OrderBookSnapshot(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            level=level,
+            bids=[(bid_price - i, bid_volume * (1 + i)) for i in range(bid_levels)],
+            asks=[(ask_price + i, ask_volume * (1 + i)) for i in range(ask_levels)],
+            timestamp_ns=0,
         )
 
     @staticmethod

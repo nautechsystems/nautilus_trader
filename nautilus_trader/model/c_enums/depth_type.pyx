@@ -12,3 +12,31 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+cdef class DepthTypeParser:
+
+    @staticmethod
+    cdef str to_str(int value):
+        if value == 1:
+            return "VOLUME"
+        elif value == 2:
+            return "EXPOSURE"
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    cdef DepthType from_str(str value) except *:
+        if value == "VOLUME":
+            return DepthType.VOLUME
+        elif value == "EXPOSURE":
+            return DepthType.EXPOSURE
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    def to_str_py(int value):
+        return DepthTypeParser.to_str(value)
+
+    @staticmethod
+    def from_str_py(str value):
+        return DepthTypeParser.from_str(value)

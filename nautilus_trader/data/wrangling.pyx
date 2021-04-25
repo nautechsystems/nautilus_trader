@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import random
 
 import pandas as pd
@@ -61,18 +62,18 @@ cdef class QuoteTickDataWrangler:
         Raises
         ------
         ValueError
-            If data_ticks not type None or DataFrame.
+            If data_quotes not type None or DataFrame.
         ValueError
-            If bid_data not type None or dict.
+            If data_bars_bid not type None or dict.
         ValueError
-            If ask_data not type None or dict.
+            If data_bars_ask not type None or dict.
         ValueError
-            If data_ticks is None and the bars data is None.
+            If all data is empty.
 
         """
-        Condition.type_or_none(data_quotes, pd.DataFrame, "data_ticks")
-        Condition.type_or_none(data_bars_bid, dict, "bid_data")
-        Condition.type_or_none(data_bars_ask, dict, "ask_data")
+        Condition.type_or_none(data_quotes, pd.DataFrame, "data_quotes")
+        Condition.type_or_none(data_bars_bid, dict, "data_bars_bid")
+        Condition.type_or_none(data_bars_ask, dict, "data_bars_ask")
 
         if data_quotes is not None and not data_quotes.empty:
             self._data_quotes = as_utc_index(data_quotes)
@@ -87,7 +88,12 @@ cdef class QuoteTickDataWrangler:
         self.processed_data = []
         self.resolution = BarAggregation.DAY
 
-    def pre_process(self, int instrument_indexer, random_seed=None):
+    def pre_process(
+        self,
+        int instrument_indexer,
+        random_seed=None,
+        default_volume=Decimal(1_000_000),
+    ):
         """
         Pre-process the tick data in preparation for building ticks.
 
@@ -98,6 +104,8 @@ cdef class QuoteTickDataWrangler:
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is None then won't shuffle.
+        default_volume : Decimal
+            The volume per tick if not available from the data.
 
         """
         if random_seed is not None:
@@ -108,10 +116,10 @@ cdef class QuoteTickDataWrangler:
             self.processed_data = self._data_quotes
 
             if "bid_size" not in self.processed_data.columns:
-                self.processed_data["bid_size"] = 1
+                self.processed_data["bid_size"] = default_volume
 
             if "ask_size" not in self.processed_data.columns:
-                self.processed_data["ask_size"] = 1
+                self.processed_data["ask_size"] = default_volume
 
             # Pre-process prices into formatted strings
             price_cols = ["bid", "ask"]
@@ -157,10 +165,10 @@ cdef class QuoteTickDataWrangler:
         bars_ask = as_utc_index(bars_ask)
 
         if "volume" not in bars_bid:
-            bars_bid["volume"] = 4
+            bars_bid["volume"] = default_volume * 4
 
         if "volume" not in bars_ask:
-            bars_ask["volume"] = 4
+            bars_ask["volume"] = default_volume * 4
 
         cdef dict data_open = {
             "bid": bars_bid["open"],
@@ -221,7 +229,7 @@ cdef class QuoteTickDataWrangler:
         # Randomly shift high low prices
         if random_seed is not None:
             random.seed(random_seed)
-            for i in range(0, len(df_ticks_o)):
+            for i in range(0, len(df_ticks_o), 4):
                 if random.getrandbits(1):
                     high = df_ticks_h.iloc[i]
                     low = df_ticks_l.iloc[i]
@@ -308,7 +316,7 @@ cdef class TradeTickDataWrangler:
         self.processed_data = processed_trades
 
     def _create_side_if_not_exist(self):
-        if 'side' in self._data_trades.columns:
+        if "side" in self._data_trades.columns:
             return self._data_trades["side"]
         else:
             return self._data_trades["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")
@@ -387,7 +395,7 @@ cdef class BarDataWrangler:
         self._data = as_utc_index(data)
 
         if "volume" not in self._data:
-            self._data["volume"] = 1
+            self._data["volume"] = 1_000_000
 
     def build_bars_all(self):
         """

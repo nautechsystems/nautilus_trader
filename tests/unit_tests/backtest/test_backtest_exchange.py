@@ -34,6 +34,7 @@ from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
@@ -50,6 +51,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
@@ -155,6 +157,15 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.check_residuals()
         # Assert
         self.assertTrue(True)  # No exceptions raised
+
+    def test_process_quote_tick_sets_market(self):
+        tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.id)
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+        book = self.exchange.get_book(USDJPY_SIM.id)
+        assert book.best_ask_price() == 90.005
+        assert book.best_bid_price() == 90.002
+        # self.assertTrue(book.best_bid_price() and not book.best_ask_price())
 
     def test_check_residuals_with_working_and_oco_orders(self):
         # Arrange
@@ -443,6 +454,56 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(LiquiditySide.TAKER, order.liquidity_side)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
+
+    def test_submit_limit_order_fills_at_correct_price(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("90.010"),  # <-- Limit price above the ask
+            post_only=False,  # <-- Can be liquidity TAKER
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.FILLED, order.state)
+        self.assertEqual(tick.ask, order.avg_px)
+
+    def test_submit_limit_order_fills_at_most_book_volume(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price("90.002"),
+            ask=Price("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity(2_000_000),  # <-- Order volume greater than available ask volume
+            Price("90.010"),
+            post_only=False,  # <-- Can be liquidity TAKER
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(1_000_000, order.filled_qty)
 
     def test_submit_stop_market_order_inside_market_rejects(self):
         # Arrange: Prepare market
@@ -1040,38 +1101,6 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, bracket_order.stop_loss.state)
         self.assertEqual(Price("85.100"), bracket_order.stop_loss.price)
 
-    def test_submit_market_order_with_slippage_fill_model_slips_order(self):
-        # Arrange: Prepare market
-        tick = TestStubs.quote_tick_3decimal(
-            instrument_id=USDJPY_SIM.id,
-            bid=Price("90.002"),
-            ask=Price("90.005"),
-        )
-        self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
-
-        fill_model = FillModel(
-            prob_fill_at_limit=0.0,
-            prob_fill_at_stop=1.0,
-            prob_slippage=1.0,
-            random_seed=None,
-        )
-
-        self.exchange.set_fill_model(fill_model)
-
-        order = self.strategy.order_factory.market(
-            USDJPY_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        # Act
-        self.strategy.submit_order(order)
-
-        # Assert
-        self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Decimal("90.006"), order.avg_px)
-
     def test_order_fills_gets_commissioned(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(
@@ -1107,7 +1136,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         self.strategy.submit_order(top_up_order, position_id)
         self.strategy.submit_order(reduce_order, position_id)
-
+        print(self.strategy.object_storer.get_store())
         account_event1 = self.strategy.object_storer.get_store()[2]
         account_event2 = self.strategy.object_storer.get_store()[6]
         account_event3 = self.strategy.object_storer.get_store()[10]
@@ -1190,7 +1219,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         tick3 = QuoteTick(
             USDJPY_SIM.id,
             Price("96.710"),
-            Price("96.712"),
+            Price("96.711"),
             Quantity(100000),
             Quantity(100000),
             0,
@@ -1290,7 +1319,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity(100000),
-            price=Price("90.000"),
+            price=Price("90.001"),
             trigger=Price("90.006"),
         )
 
@@ -1438,7 +1467,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
-        self.assertEqual(Price("90.100"), order.avg_px)
+        self.assertEqual(Price("90.101"), order.avg_px)
 
     def test_process_quote_tick_fills_buy_limit_entry_with_bracket(self):
         # Arrange: Prepare market
@@ -1574,7 +1603,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("0.99899"),
             Quantity(100000),
-            OrderSide.SELL,  # Lowers bid price
+            OrderSide.BUY,  # Lowers bid price
             TradeMatchId("123456789"),
             0,
         )
@@ -1686,17 +1715,17 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Act 1
         self.strategy.submit_order(order_open)
 
-        reduce_quote = QuoteTick(
+        quote = QuoteTick(
             USDJPY_SIM.id,
             Price("100.003"),
-            Price("100.003"),
+            Price("100.004"),
             Quantity(100000),
             Quantity(100000),
             0,
         )
 
-        self.exchange.process_tick(reduce_quote)
-        self.portfolio.update_tick(reduce_quote)
+        self.exchange.process_tick(quote)
+        self.portfolio.update_tick(quote)
 
         order_reduce = self.strategy.order_factory.market(
             USDJPY_SIM.id,
@@ -1756,8 +1785,8 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.id,
             Price("90.002"),
             Price("90.003"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -1776,9 +1805,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         reduce_quote = QuoteTick(
             USDJPY_SIM.id,
             Price("100.003"),
-            Price("100.003"),
-            Quantity(1),
-            Quantity(1),
+            Price("100.004"),
+            Quantity(1_000_000),
+            Quantity(1_000_000),
             0,
         )
 
@@ -1942,10 +1971,155 @@ class BitmexExchangeTests(unittest.TestCase):
             self.strategy.object_storer.get_store()[6].liquidity_side,
         )
         self.assertEqual(
-            Money("0.00652529", BTC),
+            Money("0.00652526", BTC),
             self.strategy.object_storer.get_store()[2].commission,
         )
         self.assertEqual(
-            Money("-0.00217511", BTC),
+            Money("-0.00217512", BTC),
             self.strategy.object_storer.get_store()[6].commission,
         )
+
+
+class OrderBookExchangeTests(unittest.TestCase):
+    def setUp(self):
+        # Fixture Setup
+        self.clock = TestClock()
+        self.uuid_factory = UUIDFactory()
+        self.logger = Logger(self.clock)
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+            config={
+                "use_previous_close": False
+            },  # To correctly reproduce historical data bars
+        )
+
+        self.data_engine.cache.add_instrument(AUDUSD_SIM)
+        self.data_engine.cache.add_instrument(USDJPY_SIM)
+        self.data_engine.cache.add_order_book(
+            OrderBook.create(
+                instrument_id=USDJPY_SIM.id,
+                level=OrderBookLevel.L2,
+                price_precision=4,
+                size_precision=4,
+            )
+        )
+        self.portfolio.register_cache(self.data_engine.cache)
+
+        self.analyzer = PerformanceAnalyzer()
+        self.trader_id = TraderId("TESTER", "000")
+        self.account_id = AccountId("SIM", "001")
+
+        exec_db = BypassExecutionDatabase(
+            trader_id=self.trader_id,
+            logger=self.logger,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            database=exec_db,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exchange = SimulatedExchange(
+            venue=SIM,
+            oms_type=OMSType.HEDGING,
+            is_frozen_account=False,
+            starting_balances=[Money(1_000_000, USD)],
+            instruments=[AUDUSD_SIM, USDJPY_SIM],
+            modules=[],
+            fill_model=FillModel(),
+            exec_cache=self.exec_engine.cache,
+            clock=self.clock,
+            logger=self.logger,
+            exchange_order_book_level=OrderBookLevel.L2,
+        )
+
+        self.exec_client = BacktestExecClient(
+            exchange=self.exchange,
+            account_id=self.account_id,
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
+
+        self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(self.strategy)
+        self.exec_engine.register_strategy(self.strategy)
+        self.data_engine.start()
+        self.exec_engine.start()
+        self.strategy.start()
+
+    def test_submit_limit_order_aggressive_multiple_levels(self):
+        # Arrange: Prepare market
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book(snapshot)
+
+        # Create order
+        order = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity(2000),
+            price=Price(20),
+            post_only=False,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.FILLED, order.state)
+        self.assertEqual(Decimal("2000.0"), order.filled_qty)  # No slippage
+        self.assertEqual(Decimal("15.33333333333333333333333333"), order.avg_px)
+
+    def test_submit_limit_order_passive_trades(self):
+        # Arrange: Prepare market
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book(snapshot)
+
+        # Create and insert limit order
+        order = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity(1000),
+            price=Price(10),
+        )
+        self.strategy.submit_order(order)
+
+        # Act
+        trade_tick = TestStubs.trade_tick_5decimal(
+            instrument_id=USDJPY_SIM.id,
+            price=Price(10),
+            side=OrderSide.SELL,
+            quantity=Quantity(1500),
+        )
+        self.exchange.process_tick(trade_tick)
+
+        # TODO: Because filled volume is zero
+        # Assert
+        # self.assertEqual(OrderState.FILLED, order.state)
+        # self.assertEqual(Quantity("500.0"), order.filled_qty)  # No slippage
+        # self.assertEqual(Price("10"), order.avg_px)

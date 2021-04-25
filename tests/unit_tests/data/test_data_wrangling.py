@@ -58,7 +58,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process(0, 42)
         ticks = self.tick_builder.processed_data
 
         # Assert
@@ -80,7 +80,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process(0, 42)
         tick_data = self.tick_builder.processed_data
 
         # Assert
@@ -102,14 +102,14 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
             Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name
         )
         self.assertEqual(0, tick_data.iloc[0]["instrument_id"])
-        self.assertEqual("1", tick_data.iloc[0]["bid_size"])
-        self.assertEqual("1", tick_data.iloc[0]["ask_size"])
-        self.assertEqual("1", tick_data.iloc[1]["bid_size"])
-        self.assertEqual("1", tick_data.iloc[1]["ask_size"])
-        self.assertEqual("1", tick_data.iloc[2]["bid_size"])
-        self.assertEqual("1", tick_data.iloc[2]["ask_size"])
-        self.assertEqual("1", tick_data.iloc[3]["bid_size"])
-        self.assertEqual("1", tick_data.iloc[3]["ask_size"])
+        self.assertEqual("1000000", tick_data.iloc[0]["bid_size"])
+        self.assertEqual("1000000", tick_data.iloc[0]["ask_size"])
+        self.assertEqual("1000000", tick_data.iloc[1]["bid_size"])
+        self.assertEqual("1000000", tick_data.iloc[1]["ask_size"])
+        self.assertEqual("1000000", tick_data.iloc[2]["bid_size"])
+        self.assertEqual("1000000", tick_data.iloc[2]["ask_size"])
+        self.assertEqual("1000000", tick_data.iloc[3]["bid_size"])
+        self.assertEqual("1000000", tick_data.iloc[3]["ask_size"])
 
     def test_build_ticks_with_tick_data(self):
         # Arrange
@@ -129,8 +129,8 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(100000, len(ticks))
         self.assertEqual(Price("0.67067"), ticks[0].bid)
         self.assertEqual(Price("0.67070"), ticks[0].ask)
-        self.assertEqual(Quantity("1"), ticks[0].bid_size)
-        self.assertEqual(Quantity("1"), ticks[0].ask_size)
+        self.assertEqual(Quantity("1000000"), ticks[0].bid_size)
+        self.assertEqual(Quantity("1000000"), ticks[0].ask_size)
         self.assertEqual(1580398089820000000, ticks[0].timestamp_ns)
         self.assertEqual(1580504394500999936, ticks[99999].timestamp_ns)
 
@@ -153,8 +153,8 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(115044, len(ticks))
         self.assertEqual(Price("91.715"), ticks[0].bid)
         self.assertEqual(Price("91.717"), ticks[0].ask)
-        self.assertEqual(Quantity("1"), ticks[0].bid_size)
-        self.assertEqual(Quantity("1"), ticks[0].ask_size)
+        self.assertEqual(Quantity("1000000"), ticks[0].bid_size)
+        self.assertEqual(Quantity("1000000"), ticks[0].ask_size)
         self.assertEqual(1359676799700000000, ticks[0].timestamp_ns)
 
 

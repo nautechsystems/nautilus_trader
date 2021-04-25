@@ -33,16 +33,18 @@ def test_betfair_orderbook(betfair_data_client, provider):
     )
     for update in BetfairTestStubs.raw_market_updates():
         for message in on_market_update(instrument_provider=provider, update=update):
-
-            if isinstance(message, OrderBookSnapshot):
-                book.apply_snapshot(message)
-            elif isinstance(message, OrderBookDeltas):
-                book.apply_deltas(message)
-            elif isinstance(message, OrderBookDelta):
-                book.apply_delta(message)
-            elif isinstance(
-                message, (TradeTick, InstrumentStatusEvent, InstrumentClosePrice)
-            ):
-                pass
-            else:
-                raise NotImplementedError(str(type(message)))
+            try:
+                if isinstance(message, OrderBookSnapshot):
+                    book.apply_snapshot(message)
+                elif isinstance(message, OrderBookDeltas):
+                    book.apply_deltas(message)
+                elif isinstance(message, OrderBookDelta):
+                    book.apply_delta(message)
+                elif isinstance(
+                    message, (TradeTick, InstrumentStatusEvent, InstrumentClosePrice)
+                ):
+                    pass
+                else:
+                    raise NotImplementedError(str(type(message)))
+            except Exception as ex:
+                print(str(type(ex)) + " " + str(ex))
