@@ -35,12 +35,12 @@ def bids():
 
 
 def test_init():
-    ladder = Ladder(is_bid=False, price_precision=2, size_precision=2)
+    ladder = Ladder(reverse=False, price_precision=2, size_precision=2)
     assert ladder
 
 
 def test_reverse(asks):
-    assert not asks.reverse()
+    assert not asks.reverse
 
 
 def test_insert():
@@ -49,7 +49,7 @@ def test_insert():
         Order(price=100.0, volume=1.0, side=OrderSide.BUY),
         Order(price=105.0, volume=20.0, side=OrderSide.BUY),
     ]
-    ladder = Ladder(is_bid=False, price_precision=0, size_precision=0)
+    ladder = Ladder(reverse=False, price_precision=0, size_precision=0)
     for order in orders:
         ladder.add(order=order)
     ladder.add(order=Order(price=100.0, volume=10.0, side=OrderSide.BUY))
@@ -61,7 +61,7 @@ def test_insert():
         (101, 10),
         (105, 20),
     ]
-    result = [(level.price(), level.volume()) for level in ladder.levels]
+    result = [(level.price, level.volume()) for level in ladder.levels]
     assert result == expected
 
 
@@ -70,21 +70,21 @@ def test_delete_individual_order(asks):
         Order(price=100.0, volume=10.0, side=OrderSide.BUY, id="1"),
         Order(price=100.0, volume=5.0, side=OrderSide.BUY, id="2"),
     ]
-    ladder = TestStubs.ladder(is_bid=True, orders=orders)
+    ladder = TestStubs.ladder(reverse=True, orders=orders)
     ladder.delete(orders[0])
     assert ladder.volumes() == [5.0]
 
 
 def test_delete_level():
     orders = [Order(price=100.0, volume=10.0, side=OrderSide.BUY)]
-    ladder = TestStubs.ladder(is_bid=True, orders=orders)
+    ladder = TestStubs.ladder(reverse=True, orders=orders)
     ladder.delete(orders[0])
     assert ladder.levels == []
 
 
 def test_update_level():
     order = Order(price=100.0, volume=10.0, side=OrderSide.BUY, id="1")
-    ladder = TestStubs.ladder(is_bid=True, orders=[order])
+    ladder = TestStubs.ladder(reverse=True, orders=[order])
     order.update_volume(volume=20.0)
     ladder.update(order)
     assert ladder.levels[0].volume() == 20
@@ -98,8 +98,8 @@ def test_update_no_volume(bids):
 
 
 def test_top_level(bids, asks):
-    assert bids.top().price() == Price("10")
-    assert asks.top().price() == Price("15")
+    assert bids.top().price == Price("10")
+    assert asks.top().price == Price("15")
 
 
 def test_exposure():
@@ -108,7 +108,7 @@ def test_exposure():
         Order(price=101.0, volume=10.0, side=OrderSide.SELL),
         Order(price=105.0, volume=5.0, side=OrderSide.SELL),
     ]
-    ladder = TestStubs.ladder(is_bid=True, orders=orders)
+    ladder = TestStubs.ladder(reverse=True, orders=orders)
     assert tuple(ladder.exposures()) == (1000.0, 1010.0, 525.0)
 
 

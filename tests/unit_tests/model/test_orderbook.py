@@ -96,10 +96,8 @@ def test_create_level_1_order_book():
     assert isinstance(book, L1OrderBook)
     assert book.level == OrderBookLevel.L1
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
-    assert book.bids.reverse()
-    assert book.bids.is_bid
-    assert not book.asks.reverse()
-    assert not book.asks.is_bid
+    assert book.bids.reverse
+    assert not book.asks.reverse
     assert book.timestamp_ns == 0
 
 
@@ -117,10 +115,8 @@ def test_create_level_2_order_book():
     assert isinstance(book, L2OrderBook)
     assert book.level == OrderBookLevel.L2
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
-    assert book.bids.reverse()
-    assert book.bids.is_bid
-    assert not book.asks.reverse()
-    assert not book.asks.is_bid
+    assert book.bids.reverse
+    assert not book.asks.reverse
 
 
 def test_create_level_3_order_book():
@@ -137,10 +133,8 @@ def test_create_level_3_order_book():
     assert isinstance(book, L3OrderBook)
     assert book.level == OrderBookLevel.L3
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
-    assert book.bids.reverse()
-    assert book.bids.is_bid
-    assert not book.asks.reverse()
-    assert not book.asks.is_bid
+    assert book.bids.reverse
+    assert not book.asks.reverse
 
 
 def test_create_level_fail():
@@ -263,7 +257,7 @@ def test_pprint_full_book(sample_book):
 
 def test_add(empty_l2_book):
     empty_l2_book.add(Order(price=10.0, volume=5.0, side=OrderSide.BUY))
-    assert empty_l2_book.bids.top().price() == 10.0
+    assert empty_l2_book.bids.top().price == 10.0
 
 
 def test_add_l1_fails():
@@ -296,8 +290,8 @@ def test_top(empty_l2_book):
     empty_l2_book.add(Order(price=25.0, volume=5.0, side=OrderSide.SELL))
     empty_l2_book.add(Order(price=30.0, volume=5.0, side=OrderSide.SELL))
     empty_l2_book.add(Order(price=21.0, volume=5.0, side=OrderSide.SELL))
-    assert empty_l2_book.best_bid_level().price() == 20
-    assert empty_l2_book.best_ask_level().price() == 21
+    assert empty_l2_book.best_bid_level().price == 20
+    assert empty_l2_book.best_ask_level().price == 21
 
 
 def test_check_integrity_empty(empty_l2_book):

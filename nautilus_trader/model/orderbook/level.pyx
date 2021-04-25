@@ -28,37 +28,51 @@ cdef class Level:
     A price level on one side of the `OrderBook` with one or more individual orders.
     """
 
-    def __init__(self, list orders=None):
+    def __init__(self, double price):
         """
         Initialize a new instance of the `Level` class.
 
         Parameters
         ----------
-        orders : list[Order]
-            The initial orders for the level.
+        price : double
+            The price for the level.
 
         """
+        self.price = price
         self.orders = []
-        for order in orders or []:
-            self.add(order)
 
+    # TODO: Add epsilon based on price precision
     def __eq__(self, Level other) -> bool:
-        return self.price() == other.price()
+        return self.price == other.price
 
     def __lt__(self, Level other) -> bool:
-        return self.price() < other.price()
+        return self.price < other.price
 
     def __le__(self, Level other) -> bool:
-        return self.price() <= other.price()
+        return self.price <= other.price
 
     def __gt__(self, Level other) -> bool:
-        return self.price() > other.price()
+        return self.price > other.price
 
     def __ge__(self, Level other) -> bool:
-        return self.price() >= other.price()
+        return self.price >= other.price
 
     def __repr__(self) -> str:
-        return f"Level(price={self.price()}, orders={self.orders[:5]})"
+        return f"Level(price={self.price}, orders={self.orders[:5]})"
+
+    cpdef void bulk_add(self, list orders) except *:
+        """
+        Add the list of bulk orders to this level.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The orders to add.
+
+        """
+        cdef Order order
+        for order in orders:
+            self.add(order)
 
     cpdef void add(self, Order order) except *:
         """
@@ -69,10 +83,15 @@ cdef class Level:
         order : Order
             The order to add.
 
+        Raises
+        ------
+        ValueError
+            If order.price is not equal to the levels price.
+
         """
         Condition.not_none(order, "order")
+        Condition.equal(order.price, self.price, "order.price", "self.price")
 
-        self._check_price(order=order)
         self.orders.append(order)
 
     cpdef void update(self, Order order) except *:
@@ -91,15 +110,15 @@ cdef class Level:
 
         """
         Condition.not_none(order, "order")
-        if self.orders:
-            Condition.equal(order.price, self.orders[0].price, "order.price", "self.orders[0].price")
+        Condition.equal(order.price, self.price, "order.price", "self.price")
 
+        cdef Order existing
         if order.volume == 0:
             self.delete(order=order)
         else:
             existing = self.orders[self.orders.index(order)]
             if existing is None:
-                raise KeyError("Cannot update order: order not found.")
+                raise KeyError("Cannot update order: order not found")
             existing.update_volume(volume=order.volume)
 
     cpdef void delete(self, Order order) except *:
@@ -115,20 +134,6 @@ cdef class Level:
         Condition.not_none(order, "order")
 
         self.orders.remove(order)
-
-    cpdef price(self):
-        """
-        Return the price for this level.
-
-        Returns
-        -------
-        double or None
-
-        """
-        if len(self.orders) > 0:
-            return self.orders[0].price
-        else:
-            return None
 
     cpdef double volume(self) except *:
         """
@@ -150,9 +155,4 @@ cdef class Level:
         double
 
         """
-        return self.price() * self.volume()
-
-    cdef inline bint _check_price(self, Order order) except *:
-        if not self.orders:
-            return True
-        return order.price == self.orders[0].price
+        return self.price * self.volume()

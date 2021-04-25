@@ -28,7 +28,7 @@ cdef class Ladder:
     """
     def __init__(
         self,
-        bint is_bid,
+        bint reverse,
         int price_precision,
         int size_precision,
     ):
@@ -37,8 +37,8 @@ cdef class Ladder:
 
         Parameters
         ----------
-        is_bid : bool
-            If the ladder should be represented in reverse order of price.
+        reverse : bool
+            If the ladder should be represented in reverse order of price (bids).
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -55,14 +55,12 @@ cdef class Ladder:
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
 
-        self.is_bid = is_bid
+        self._order_id_level_index = {}  # type: dict[str, Level]
+
+        self.levels = []  # type: list[Level]  # TODO: Make levels private??
+        self.reverse = reverse
         self.price_precision = price_precision
         self.size_precision = size_precision
-        self.levels = []           # type: list[Level]
-        self.order_id_level_index = {}  # type: dict[str, Level]
-
-    cpdef bint reverse(self) except *:
-        return self.is_bid
 
     def __repr__(self) -> str:
         return f"{Ladder.__name__}({self.levels})"
@@ -90,11 +88,12 @@ cdef class Ladder:
             level.add(order=order)
         # New price, create Level
         else:
-            level = Level(orders=[order])
-            price_idx = bisect_double_right(existing_prices, level.price())
+            level = Level(price=order.price)
+            level.add(order)
+            price_idx = bisect_double_right(existing_prices, level.price)
             self.levels.insert(price_idx, level)
 
-        self.order_id_level_index[order.id] = level
+        self._order_id_level_index[order.id] = level
 
     cpdef void update(self, Order order) except *:
         """
@@ -108,15 +107,17 @@ cdef class Ladder:
         """
         Condition.not_none(order, "order")
 
-        if order.id not in self.order_id_level_index:
+        if order.id not in self._order_id_level_index:
             self.add(order=order)
             return
 
         # Find the existing order
-        cdef Level level = self.order_id_level_index[order.id]
-        if order.price == level.price():
+        cdef Level level = self._order_id_level_index[order.id]
+        if order.price == level.price:
             # This update contains a volume update
             level.update(order=order)
+            if not level.orders:
+                self.levels.remove(level)  # <-- TODO: This is new
         else:
             # New price for this order, delete and insert
             self.delete(order=order)
@@ -138,13 +139,13 @@ cdef class Ladder:
         """
         Condition.not_none(order, "order")
 
-        cdef Level level = self.order_id_level_index.get(order.id)
+        cdef Level level = self._order_id_level_index.get(order.id)
         if level is None:
             return
             # TODO: raise KeyError("Cannot delete order: not found at level.")
-        cdef int price_idx = self.prices().index(level.price())
+        cdef int price_idx = self.prices().index(level.price)
         level.delete(order=order)
-        self.order_id_level_index.pop(order.id)
+        self._order_id_level_index.pop(order.id)
         if not level.orders:
             del self.levels[price_idx]
 
@@ -165,7 +166,7 @@ cdef class Ladder:
         if not self.levels:
             return []
         n = n or len(self.levels)
-        return list(reversed(self.levels[-n:])) if self.reverse() else self.levels[:n]
+        return list(reversed(self.levels[-n:])) if self.reverse else self.levels[:n]
 
     cpdef list prices(self):
         """
@@ -176,7 +177,7 @@ cdef class Ladder:
         list[double]
 
         """
-        return [level.price() for level in self.levels]
+        return [level.price for level in self.levels]
 
     cpdef list volumes(self):
         """
@@ -242,10 +243,10 @@ cdef class Ladder:
         cdef double target = order.volume if depth_type == DepthType.VOLUME else order.price * order.volume
         cdef bint completed = False
 
-        for level_idx in reversed(range(len(self.levels))) if self.is_bid else range(len(self.levels)):
-            if self.is_bid and self.levels[level_idx].price() < order.price:
+        for level_idx in reversed(range(len(self.levels))) if self.reverse else range(len(self.levels)):
+            if self.reverse and self.levels[level_idx].price < order.price:
                 break
-            elif not self.is_bid and self.levels[level_idx].price() > order.price:
+            elif not self.reverse and self.levels[level_idx].price > order.price:
                 break
             for order_idx in range(len(self.levels[level_idx].orders)):
                 book_order = self.levels[level_idx].orders[order_idx]
@@ -295,8 +296,8 @@ cdef class Ladder:
         cdef double cumulative_denominator = 0.0
         cdef double current = 0.0
 
-        for level_idx in reversed(range(len(self.levels))) if self.is_bid else range(len(self.levels)):
-            if self.is_bid and self.levels[level_idx].price() < price or not self.is_bid and self.levels[level_idx].price() > price:
+        for level_idx in reversed(range(len(self.levels))) if self.reverse else range(len(self.levels)):
+            if self.reverse and self.levels[level_idx].price < price or not self.reverse and self.levels[level_idx].price > price:
                 break
             for order_idx in range(len(self.levels[level_idx].orders)):
                 order = self.levels[level_idx].orders[order_idx]
@@ -357,7 +358,7 @@ cdef class Ladder:
         cdef double remainder = 0.0
         cdef bint completed = False
 
-        for level_idx in reversed(range(len(self.levels))) if self.is_bid else range(len(self.levels)):
+        for level_idx in reversed(range(len(self.levels))) if self.reverse else range(len(self.levels)):
             if completed:
                 break
             for order_idx in range(len(self.levels[level_idx].orders)):

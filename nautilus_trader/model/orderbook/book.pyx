@@ -81,12 +81,12 @@ cdef class OrderBook:
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.bids = Ladder(
-            is_bid=True,
+            reverse=True,
             price_precision=price_precision,
             size_precision=size_precision,
         )
         self.asks = Ladder(
-            is_bid=False,
+            reverse=False,
             price_precision=price_precision,
             size_precision=size_precision,
         )
@@ -316,7 +316,7 @@ cdef class OrderBook:
         Clear the bids from the book.
         """
         self.bids = Ladder(
-            is_bid=True,
+            reverse=True,
             price_precision=self.price_precision,
             size_precision=self.size_precision,
         )
@@ -326,7 +326,7 @@ cdef class OrderBook:
         Clear the asks from the book.
         """
         self.asks = Ladder(
-            is_bid=False,
+            reverse=False,
             price_precision=self.price_precision,
             size_precision=self.size_precision,
         )
@@ -370,8 +370,8 @@ cdef class OrderBook:
         if top_bid_level is None or top_ask_level is None:
             return
 
-        best_bid = top_bid_level.price()
-        best_ask = top_ask_level.price()
+        best_bid = top_bid_level.price
+        best_ask = top_ask_level.price
         if best_bid is None or best_ask is None:
             return
         assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
@@ -441,7 +441,7 @@ cdef class OrderBook:
         """
         cdef Level top_bid_level = self.bids.top()
         if top_bid_level:
-            return top_bid_level.price()
+            return top_bid_level.price
         else:
             return None
 
@@ -456,7 +456,7 @@ cdef class OrderBook:
         """
         cdef Level top_ask_level = self.asks.top()
         if top_ask_level:
-            return top_ask_level.price()
+            return top_ask_level.price
         else:
             return None
 
@@ -509,7 +509,7 @@ cdef class OrderBook:
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level and top_ask_level:
-            return top_ask_level.price() - top_bid_level.price()
+            return top_ask_level.price - top_bid_level.price
         else:
             return None
 
@@ -525,7 +525,7 @@ cdef class OrderBook:
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level and top_ask_level:
-            return (top_ask_level.price() + top_bid_level.price()) / 2.0
+            return (top_ask_level.price + top_bid_level.price) / 2.0
         else:
             return None
 
@@ -546,7 +546,7 @@ cdef class OrderBook:
 
         """
         cdef list levels = [
-            (lvl.price(), lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]
+            (lvl.price, lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]
         ]
         levels = list(reversed(sorted(levels, key=itemgetter(0))))
         cdef list data = [
@@ -554,14 +554,14 @@ cdef class OrderBook:
                 "bids": [
                     getattr(order, show)
                     for order in level.orders
-                    if level.price() in self.bids.prices()
+                    if level.price in self.bids.prices()
                 ]
                 or None,
-                "price": level.price(),
+                "price": level.price,
                 "asks": [
                     getattr(order, show)
                     for order in level.orders
-                    if level.price() in self.asks.prices()
+                    if level.price in self.asks.prices()
                 ]
                 or None,
             }

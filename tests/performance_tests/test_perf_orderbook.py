@@ -18,19 +18,19 @@ from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
-def run_l3_test(ob, feed):
+def run_l3_test(book, feed):
     for m in feed:
         if m["op"] == "update":
-            ob.update(order=m["order"])
+            book.update(order=m["order"])
         elif m["op"] == "delete":
-            ob.delete(order=m["order"])
-    return ob
+            book.delete(order=m["order"])
+    return book
 
 
 def test_orderbook_updates(benchmark):
     # We only care about the actual updates here, so instantiate orderbook and
     # load updates outside of benchmark
-    ob = L3OrderBook(
+    book = L3OrderBook(
         instrument_id=TestStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
@@ -39,10 +39,10 @@ def test_orderbook_updates(benchmark):
     assert len(feed) == 100048  # 100k updates
 
     # benchmark something
-    ob = benchmark(run_l3_test, ob=ob, feed=feed)
+    book = benchmark(run_l3_test, book=book, feed=feed)
 
     # Assertions from integration test
-    assert ob.best_ask_level().price() == 61405.27923706
-    assert ob.best_ask_level().volume() == 0.12227
-    assert ob.best_bid_level().price() == 61391
-    assert ob.best_bid_level().volume() == 1
+    assert book.best_ask_level().price == 61405.27923706
+    assert book.best_ask_level().volume() == 0.12227
+    assert book.best_bid_level().price == 61391
+    assert book.best_bid_level().volume() == 1

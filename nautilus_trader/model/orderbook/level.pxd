@@ -17,15 +17,15 @@ from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class Level:
+    cdef readonly double price
+    """The levels price.\n\n:returns: `double`"""
     cdef readonly list orders
     """The orders at the level.\n\n:returns: `list[Order]`"""
 
+    cpdef void bulk_add(self, list orders) except *
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
 
-    cpdef price(self)
     cpdef double volume(self) except *
     cpdef double exposure(self)
-
-    cdef inline bint _check_price(self, Order order) except *
