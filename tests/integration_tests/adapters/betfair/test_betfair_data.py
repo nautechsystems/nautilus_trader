@@ -196,6 +196,7 @@ def test_orderbook_updates(betfair_data_client):
         ):
             if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                 continue
+            print(update)
             if isinstance(update, OrderBookSnapshot):
                 order_books[update.instrument_id] = L2OrderBook(
                     instrument_id=update.instrument_id,
@@ -210,20 +211,18 @@ def test_orderbook_updates(betfair_data_client):
             else:
                 raise KeyError
 
-
-# TODO: WIP - Broken bids
-#     book = order_books[list(order_books)[0]]
-#     assert (
-#         book.pprint()
-#         == """bids       price   asks
-# --------  -------  ---------
-#           0.8621   [932.64]
-#           0.8547   [1275.83]
-#           0.8475   [151.96]
-# [147.79]  0.8403
-# [156.74]  0.8333
-# [76.38]   0.8265"""
-#     )
+    book = order_books[list(order_books)[0]]
+    assert (
+        book.pprint()
+        == """bids       price   asks
+--------  -------  ---------
+          0.8621   [932.64]
+          0.8547   [1275.83]
+          0.8475   [151.96]
+[147.79]  0.8403
+[156.74]  0.8333
+[11.19]   0.8197"""
+    )
 
 
 def test_instrument_opening_events(betfair_data_client, data_engine):

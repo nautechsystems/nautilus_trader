@@ -546,7 +546,7 @@ cdef class OrderBook:
 
         """
         cdef list levels = [
-            (lvl.price, lvl) for lvl in self.bids.levels[-num_levels:] + self.asks.levels[:num_levels]
+            (lvl.price, lvl) for lvl in self.bids.depth(num_levels) + self.asks.depth(num_levels)
         ]
         levels = list(reversed(sorted(levels, key=itemgetter(0))))
         cdef list data = [
