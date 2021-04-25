@@ -13,22 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class Ladder:
-    cdef readonly bint reverse
-    """If the ladder is in reverse order.\n\n:returns: `bool`"""
+    cdef dict _order_id_level_index
+
     cdef readonly list levels
     """The ladders levels.\n\n:returns: `list[Level]`"""
-    cdef readonly dict order_id_levels
-    """The ladders levels.\n\n:returns: `dict[str, Level]`"""
+    cdef readonly bint reverse
+    """If the ladder is in reverse order.\n\n:returns: `bool`"""
+    cdef readonly int price_precision
+    """The ladders price precision.\n\n:returns: `int`"""
+    cdef readonly int size_precision
+    """The ladders size precision.\n\n:returns: `int`"""
 
+    cpdef bint reverse(self) except *
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
     cpdef void delete(self, Order order) except *
     cpdef list depth(self, int n=*)
     cpdef list prices(self)
     cpdef list volumes(self)
+    cpdef list exposures(self)
     cpdef Level top(self)
+    cpdef list simulate_order_fills(self, Order order, DepthType depth_type=*)

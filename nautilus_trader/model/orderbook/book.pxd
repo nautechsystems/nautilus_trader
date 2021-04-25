@@ -22,6 +22,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OrderBook:
@@ -68,6 +69,7 @@ cdef class OrderBook:
     cpdef spread(self)
     cpdef midpoint(self)
     cpdef str pprint(self, int num_levels=*, show=*)
+    cpdef int trade_side(self, TradeTick trade)
 
 
 cdef class L3OrderBook(OrderBook):
@@ -86,11 +88,11 @@ cdef class L1OrderBook(OrderBook):
 cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly OrderBookLevel level
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):
-    cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list bids
     """The snapshot bids.\n\n:returns: `list`"""
     cdef readonly list asks
@@ -98,8 +100,6 @@ cdef class OrderBookSnapshot(OrderBookData):
 
 
 cdef class OrderBookDeltas(OrderBookData):
-    cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list deltas
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
 

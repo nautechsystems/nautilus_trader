@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+
 from nautilus_trader.core.uuid import uuid4
+
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 
@@ -49,9 +51,15 @@ cdef class Order:
         self.side = side
         self.id = id or str(uuid4())
 
+    def __eq__(self, Order other) -> bool:
+        return self.id == other.id
+
+    def __repr__(self) -> str:
+        return f"{Order.__name__}({self.price}, {self.volume}, {OrderSideParser.to_str(self.side)}, {self.id})"
+
     cpdef void update_price(self, double price) except *:
         """
-        Update the orders price.
+        Update the orders price to the given price.
 
         Parameters
         ----------
@@ -63,7 +71,7 @@ cdef class Order:
 
     cpdef void update_volume(self, double volume) except *:
         """
-        Update the orders volume.
+        Update the orders volume to the given volume.
 
         Parameters
         ----------
@@ -85,8 +93,27 @@ cdef class Order:
         """
         self.id = value
 
-    def __eq__(self, Order other):
-        return self.id == other.id
+    cpdef double exposure(self):
+        """
+        Return the total exposure for this order (price * volume).
 
-    def __repr__(self):
-        return f"Order({self.price}, {self.volume}, {OrderSideParser.to_str(self.side)}, {self.id})"
+        Returns
+        -------
+        double
+
+        """
+        return self.price * self.volume
+
+    cpdef double signed_volume(self):
+        """
+        Return the signed volume of the order (negative for SELL).
+
+        Returns
+        -------
+        double
+
+        """
+        if self.side == OrderSide.BUY:
+            return self.volume * 1.0
+        else:
+            return self.volume * -1.0

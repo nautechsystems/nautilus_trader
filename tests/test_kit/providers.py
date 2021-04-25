@@ -103,7 +103,11 @@ class TestDataProvider:
                 updates.append(
                     {
                         "op": "update",
-                        "order": Order(price=row[side], volume=1e9, side=order_side),
+                        "order": Order(
+                            price=Price(row[side], precision=6),
+                            volume=Quantity(1e9, precision=2),
+                            side=order_side,
+                        ),
                     }
                 )
         return updates
@@ -128,8 +132,8 @@ class TestDataProvider:
                 "timestamp": d["remote_timestamp"],
                 "op": op,
                 "order": Order(
-                    price=order_like["price"],
-                    volume=abs(order_like["volume"]),
+                    price=Price(order_like["price"], precision=6),
+                    volume=Quantity(abs(order_like["volume"]), precision=4),
                     # Betting sides are reversed
                     side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
                     id=str(order_like["order_id"]),
@@ -165,8 +169,8 @@ class TestDataProvider:
                     yield dict(
                         op="delete",
                         order=Order(
-                            price=data["price"],
-                            volume=abs(data["volume"]),
+                            price=Price(data["price"], precision=10),
+                            volume=Quantity(abs(data["volume"]), precision=10),
                             side=side,
                             id=str(data["order_id"]),
                         ),
@@ -175,8 +179,8 @@ class TestDataProvider:
                     yield dict(
                         op="update",
                         order=Order(
-                            price=data["price"],
-                            volume=abs(data["volume"]),
+                            price=Price(data["price"], precision=10),
+                            volume=Quantity(abs(data["volume"]), precision=10),
                             side=side,
                             id=str(data["order_id"]),
                         ),

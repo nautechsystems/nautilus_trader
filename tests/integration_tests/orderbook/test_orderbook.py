@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
@@ -21,7 +21,7 @@ from tests.test_kit.stubs import TestStubs
 
 
 def test_l3_feed():
-    ob = L3OrderBook(
+    book = L3OrderBook(
         instrument_id=TestStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
@@ -32,24 +32,24 @@ def test_l3_feed():
     i = 0
     for i, m in enumerate(TestDataProvider.l3_feed()):  # noqa (B007)
         if m["op"] == "update":
-            ob.update(order=m["order"])
+            book.update(order=m["order"])
             try:
-                ob.check_integrity()
+                book.check_integrity()
             except AssertionError:
-                ob.delete(order=m["order"])
+                book.delete(order=m["order"])
                 skip_deletes.append(m["order"].id)
         elif m["op"] == "delete" and m["order"].id not in skip_deletes:
-            ob.delete(order=m["order"])
-        ob.check_integrity()
+            book.delete(order=m["order"])
+        book.check_integrity()
     assert i == 100_047
-    assert ob.best_ask_level().price() == 61405.27923706
-    assert ob.best_ask_level().volume() == 0.12227
-    assert ob.best_bid_level().price() == 61391
-    assert ob.best_bid_level().volume() == 1
+    assert book.best_ask_level().price == 61405.27923706
+    assert book.best_ask_level().volume() == 0.12227
+    assert book.best_bid_level().price == Price(61391)
+    assert book.best_bid_level().volume() == 1
 
 
 def test_l2_feed():
-    ob = L2OrderBook(
+    book = L2OrderBook(
         instrument_id=TestStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
@@ -66,15 +66,15 @@ def test_l2_feed():
         if not m or (i, m["order"].id) in skip:
             continue
         if m["op"] == "update":
-            ob.update(order=m["order"])
+            book.update(order=m["order"])
         elif m["op"] == "delete":
-            ob.delete(order=m["order"])
-        ob.check_integrity()
+            book.delete(order=m["order"])
+        book.check_integrity()
     assert i == 68462
 
 
 def test_l1_orderbook():
-    ob = L1OrderBook(
+    book = L1OrderBook(
         instrument_id=TestStubs.audusd_id(),
         price_precision=5,
         size_precision=0,
@@ -83,8 +83,8 @@ def test_l1_orderbook():
         # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
         # print("")
         if m["op"] == "update":
-            ob.update(order=m["order"])
+            book.update(order=m["order"])
         else:
             raise KeyError
-        ob.check_integrity()
+        book.check_integrity()
     assert i == 1999

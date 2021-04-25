@@ -66,7 +66,7 @@ if __name__ == "__main__":
         bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
         fast_ema_period=10,
         slow_ema_period=20,
-        trade_size=Decimal(100),
+        trade_size=Decimal("0.05"),
         order_id_tag="001",
     )
 

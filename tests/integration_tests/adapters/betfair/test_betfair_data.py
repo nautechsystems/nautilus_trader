@@ -180,7 +180,7 @@ async def test_request_search_instruments(betfair_data_client, data_engine, uuid
 def test_orderbook_repr(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
     ob_snap = data_engine.events[14]
-    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 2, 2)
+    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
     ob.apply_snapshot(ob_snap)
     print(ob.pprint())
     assert ob.best_ask_price() == 0.58824
@@ -196,11 +196,12 @@ def test_orderbook_updates(betfair_data_client):
         ):
             if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                 continue
+            print(update)
             if isinstance(update, OrderBookSnapshot):
                 order_books[update.instrument_id] = L2OrderBook(
                     instrument_id=update.instrument_id,
-                    price_precision=2,
-                    size_precision=2,
+                    price_precision=4,
+                    size_precision=4,
                 )
                 order_books[update.instrument_id].apply_snapshot(update)
             elif isinstance(update, OrderBookDeltas):
@@ -209,9 +210,10 @@ def test_orderbook_updates(betfair_data_client):
                 pass
             else:
                 raise KeyError
-    ob = order_books[list(order_books)[0]]
+
+    book = order_books[list(order_books)[0]]
     assert (
-        ob.pprint()
+        book.pprint()
         == """bids       price   asks
 --------  -------  ---------
           0.8621   [932.64]
@@ -219,7 +221,7 @@ def test_orderbook_updates(betfair_data_client):
           0.8475   [151.96]
 [147.79]  0.8403
 [156.74]  0.8333
-[76.38]   0.8265"""
+[11.19]   0.8197"""
     )
 
 
