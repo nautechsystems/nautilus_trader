@@ -1161,23 +1161,23 @@ cdef class SimulatedExchange:
                 return False  # No market
             return bid < price or (bid == price and self.fill_model.is_stop_filled())
 
-    cdef inline tuple _determine_limit_price_and_volume(self, PassiveOrder order):
+    cdef inline list _determine_limit_price_and_volume(self, PassiveOrder order):
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, volume=order.quantity, side=order.side)
         if order.side == OrderSide.BUY:
-            return book.asks.simulate_order_fill(order=submit_order, depth_type=DepthType.VOLUME)
+            return book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         else:  # => OrderSide.SELL
-            return book.bids.simulate_order_fill(order=submit_order, depth_type=DepthType.VOLUME)
+            return book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
 
-    cdef inline tuple _determine_market_price_and_volume(self, MarketOrder order):
+    cdef inline list _determine_market_price_and_volume(self, MarketOrder order):
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef Price price = Price(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, volume=order.quantity, side=order.side)
 
         if order.side == OrderSide.BUY:
-            return book.asks.simulate_order_fill(order=submit_order)
+            return book.asks.simulate_order_fills(order=submit_order)
         else:  # => OrderSide.SELL
-            return book.bids.simulate_order_fill(order=submit_order)
+            return book.bids.simulate_order_fills(order=submit_order)
 
     cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop):
         if side == OrderSide.BUY:
@@ -1189,30 +1189,30 @@ cdef class SimulatedExchange:
 
     # TODO: Iteratively fill order as levels are taken out
     cdef inline void _check_passive_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
-        cdef Price fill_px
-        cdef Quantity fill_qty
-        fill_px, fill_qty = self._determine_limit_price_and_volume(order)
-        if fill_qty == 0:
+        cdef list fills
+        order_fills = self._determine_limit_price_and_volume(order)
+        if not order_fills:
             return
-        self._fill_order(
-            order=order,
-            last_px=fill_px,
-            last_qty=min(order.quantity, fill_qty),
-            liquidity_side=liquidity_side,
-        )
+        for fill_px, fill_qty in order_fills:
+            self._fill_order(
+                order=order,
+                last_px=fill_px,
+                last_qty=min(order.quantity, fill_qty),
+                liquidity_side=liquidity_side,
+            )
 
     cdef inline void _check_market_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
-        cdef Price fill_px
-        cdef Quantity fill_qty
-        fill_px, fill_qty = self._determine_market_price_and_volume(order)
-        if fill_qty == 0:
+        cdef list order_fills
+        order_fills = self._determine_market_price_and_volume(order)
+        if not order_fills:
             return
-        self._fill_order(
-            order=order,
-            last_px=fill_px,
-            last_qty=fill_qty,
-            liquidity_side=liquidity_side,
-        )
+        for fill_px, fill_qty in order_fills:
+            self._fill_order(
+                order=order,
+                last_px=fill_px,
+                last_qty=fill_qty,
+                liquidity_side=liquidity_side,
+            )
 
     cdef inline void _fill_order(
         self,
