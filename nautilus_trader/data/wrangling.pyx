@@ -62,18 +62,18 @@ cdef class QuoteTickDataWrangler:
         Raises
         ------
         ValueError
-            If data_ticks not type None or DataFrame.
+            If data_quotes not type None or DataFrame.
         ValueError
-            If bid_data not type None or dict.
+            If data_bars_bid not type None or dict.
         ValueError
-            If ask_data not type None or dict.
+            If data_bars_ask not type None or dict.
         ValueError
-            If data_ticks is None and the bars data is None.
+            If all data is empty.
 
         """
-        Condition.type_or_none(data_quotes, pd.DataFrame, "data_ticks")
-        Condition.type_or_none(data_bars_bid, dict, "bid_data")
-        Condition.type_or_none(data_bars_ask, dict, "ask_data")
+        Condition.type_or_none(data_quotes, pd.DataFrame, "data_quotes")
+        Condition.type_or_none(data_bars_bid, dict, "data_bars_bid")
+        Condition.type_or_none(data_bars_ask, dict, "data_bars_ask")
 
         if data_quotes is not None and not data_quotes.empty:
             self._data_quotes = as_utc_index(data_quotes)

@@ -59,28 +59,42 @@ cdef class SimulatedExchange:
     cdef LoggerAdapter _log
 
     cdef readonly Venue id
+    """The exchange identifier.\n\n:returns: `Venue`"""
     cdef readonly OMSType oms_type
+    """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly OrderBookLevel exchange_order_book_level
+    """The exchange default order book level.\n\n:returns: `OrderBookLevel`"""
     cdef readonly ExecutionCache exec_cache
+    """The execution cache wired to the exchange.\n\n:returns: `ExecutionCache`"""
     cdef readonly BacktestExecClient exec_client
+    """The execution client wired to the exchange.\n\n:returns: `BacktestExecClient`"""
 
     cdef readonly bint is_frozen_account
+    """If the account for the exchange is frozen.\n\n:returns: `bool`"""
     cdef readonly list starting_balances
+    """The account starting balances for each backtest run.\n\n:returns: `bool`"""
     cdef readonly Currency default_currency
+    """The account default currency.\n\n:returns: `Currency` or None"""
     cdef readonly dict account_balances
+    """The current account balances.\n\n:returns: `dict[Currency, Money]`"""
     cdef readonly dict account_balances_free
+    """The current account balances free.\n\n:returns: `dict[Currency, Money]`"""
     cdef readonly dict account_balances_locked
+    """The current account balances locked.\n\n:returns: `dict[Currency, Money]`"""
     cdef readonly dict total_commissions
+    """The total commissions generated with the exchange.\n\n:returns: `dict[Currency, Money]`"""
 
     cdef readonly ExchangeRateCalculator xrate_calculator
+    """The exchange rate calculator for the exchange.\n\n:returns: `ExchangeRateCalculator`"""
     cdef readonly FillModel fill_model
+    """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly list modules
-
+    """The simulation modules registered with the exchange.\n\n:returns: `list[SimulationModule]`"""
     cdef readonly dict instruments
-    cdef readonly dict data_ticks
+    """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
     cdef dict _books
-    cdef dict _slippages
+    cdef dict _slippages_L1
 
     cdef dict _instrument_orders
     cdef dict _working_orders
@@ -96,6 +110,7 @@ cdef class SimulatedExchange:
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
+    cpdef dict get_tick_sizes(self)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
     cpdef dict get_working_orders(self)
@@ -121,7 +136,6 @@ cdef class SimulatedExchange:
 
     cdef inline dict _build_current_bid_rates(self)
     cdef inline dict _build_current_ask_rates(self)
-    cdef inline object _get_tick_sizes(self)
     cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
     cdef inline VenueOrderId _generate_order_id(self, InstrumentId instrument_id)
     cdef inline ExecutionId _generate_execution_id(self)
@@ -162,12 +176,11 @@ cdef class SimulatedExchange:
     cdef inline bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef inline bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
     cdef inline list _determine_limit_price_and_volume(self, PassiveOrder order)
-    cdef inline list _determine_market_price_and_volume(self, MarketOrder order)
-    cdef inline Price _fill_price_stop(self, InstrumentId instrument_id, OrderSide side, Price stop)
+    cdef inline list _determine_market_price_and_volume(self, Order order)
 
 # --------------------------------------------------------------------------------------------------
-    cdef inline void _check_passive_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
-    cdef inline void _check_market_fill_order(self, Order order, LiquiditySide liquidity_side) except *
+    cdef inline void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
+    cdef inline void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef inline void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
     cdef inline void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
     cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *

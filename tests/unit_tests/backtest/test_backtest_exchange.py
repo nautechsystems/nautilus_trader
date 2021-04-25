@@ -1219,7 +1219,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         tick3 = QuoteTick(
             USDJPY_SIM.id,
             Price("96.710"),
-            Price("96.712"),
+            Price("96.711"),
             Quantity(100000),
             Quantity(100000),
             0,
@@ -2090,7 +2090,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Decimal("2000.0"), order.filled_qty)  # No slippage
-        self.assertEqual(Decimal("15.5"), order.avg_px)
+        self.assertEqual(Decimal("15.33333333333333333333333333"), order.avg_px)
 
     def test_submit_limit_order_passive_trades(self):
         # Arrange: Prepare market

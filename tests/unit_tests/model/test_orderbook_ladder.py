@@ -15,10 +15,8 @@
 
 import pytest
 
-from nautilus_trader.model.enums import DepthType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.stubs import TestStubs
@@ -110,62 +108,6 @@ def test_exposure():
     ]
     ladder = TestStubs.ladder(reverse=True, orders=orders)
     assert tuple(ladder.exposures()) == (525.0, 1000.0, 1010.0)
-
-
-def test_depth_at_price_no_trade(bids, asks):
-    result = asks.depth_at_price(price=Price(12))
-    assert result == (Price("0"), Quantity("0"))
-
-    result = bids.depth_at_price(price=Price(12))
-    assert result == (Price("0"), Quantity("0"))
-
-
-def test_depth_at_price_middle(bids, asks):
-    result = asks.depth_at_price(price=Price("15.5"))
-    assert result == (15, 10)
-    result = asks.depth_at_price(price=Price(16))
-    assert result == (Price("15.6667"), 30)
-    result = bids.depth_at_price(price=Price("9.1"))
-    assert result == (10.0, 10.0)
-
-
-def test_depth_at_price_all_levels(bids, asks):
-    result = asks.depth_at_price(price=Price(20))
-    assert result == (Price("16.3333"), 60)
-
-    result = bids.depth_at_price(price=Price(1))
-    assert result == (Price("8.6667"), 60)
-
-
-def test_depth_at_price_exposure(bids, asks):
-    result = asks.depth_at_price(price=Price("15.1"), depth_type=DepthType.EXPOSURE)
-    assert result == (15, 150)
-
-    result = bids.depth_at_price(price=Price(1), depth_type=DepthType.EXPOSURE)
-    assert result == (Price("8.7308"), 520)
-
-
-def test_volume_fill_price_amounts(bids, asks):
-    assert asks.volume_fill_price(Quantity(11)) == (Price("15.0909"), 11)
-    assert asks.volume_fill_price(Quantity(10)) == (15.0, 10)
-    assert asks.volume_fill_price(Quantity(30)) == (Price("15.6667"), 30)
-
-    assert bids.volume_fill_price(Quantity(11)) == (Price("9.9091"), 11)
-    assert bids.volume_fill_price(Quantity(10)) == (10.0, 10)
-    assert bids.volume_fill_price(Quantity(30)) == (Price("9.3333"), 30)
-
-
-def test_volume_fill_price_partial(asks):
-    assert asks.volume_fill_price(Quantity(100)) == (
-        Price("16.3333"),
-        Quantity("60.0000"),
-    )
-
-
-def test_exposure_fill_price(asks):
-    result = asks.exposure_fill_price(exposure=200)
-    print(result)
-    assert result == (Price("15.2500"), Quantity("200.0000"))
 
 
 def test_repr(asks):

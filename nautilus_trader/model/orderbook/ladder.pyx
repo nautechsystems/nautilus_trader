@@ -95,6 +95,7 @@ cdef class Ladder:
 
             if self.reverse:
                 self.levels.append(level)
+                # TODO: heapq._siftdown_max is temporary before custom data structure
                 heapq._siftdown_max(self.levels, 0, len(self.levels) - 1)
             else:
                 price_idx = bisect_double_right(existing_prices, level.price)

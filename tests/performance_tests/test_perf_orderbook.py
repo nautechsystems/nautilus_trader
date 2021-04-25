@@ -44,5 +44,5 @@ def test_orderbook_updates(benchmark):
     # Assertions from integration test
     assert book.best_ask_level().price == 61405.27923706
     assert book.best_ask_level().volume() == 0.12227
-    assert book.best_bid_level().price == 61391
-    assert book.best_bid_level().volume() == 1
+    assert book.best_bid_level().price == 61390.0
+    assert book.best_bid_level().volume() == 0.04
