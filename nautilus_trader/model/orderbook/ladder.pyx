@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import heapq
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
@@ -79,19 +81,24 @@ cdef class Ladder:
 
         cdef list existing_prices = self.prices()
 
-        # Level exists, add new order
         cdef int price_idx
         cdef Level level
         if order.price in existing_prices:
+            # Level exists, add new order
             price_idx = existing_prices.index(order.price)
             level = self.levels[price_idx]
             level.add(order=order)
-        # New price, create Level
         else:
+            # New price, create Level
             level = Level(price=order.price)
             level.add(order)
-            price_idx = bisect_double_right(existing_prices, level.price)
-            self.levels.insert(price_idx, level)
+
+            if self.reverse:
+                self.levels.append(level)
+                heapq._siftdown_max(self.levels, 0, len(self.levels) - 1)
+            else:
+                price_idx = bisect_double_right(existing_prices, level.price)
+                self.levels.insert(price_idx, level)
 
         self._order_id_level_index[order.id] = level
 
@@ -117,7 +124,7 @@ cdef class Ladder:
             # This update contains a volume update
             level.update(order=order)
             if not level.orders:
-                self.levels.remove(level)  # <-- TODO: This is new
+                self.levels.remove(level)
         else:
             # New price for this order, delete and insert
             self.delete(order=order)
@@ -166,7 +173,7 @@ cdef class Ladder:
         if not self.levels:
             return []
         n = n or len(self.levels)
-        return list(reversed(self.levels[-n:])) if self.reverse else self.levels[:n]
+        return self.levels[:n]
 
     cpdef list prices(self):
         """
@@ -243,7 +250,7 @@ cdef class Ladder:
         cdef double target = order.volume if depth_type == DepthType.VOLUME else order.price * order.volume
         cdef bint completed = False
 
-        for level_idx in reversed(range(len(self.levels))) if self.reverse else range(len(self.levels)):
+        for level_idx in range(len(self.levels)):
             if self.reverse and self.levels[level_idx].price < order.price:
                 break
             elif not self.reverse and self.levels[level_idx].price > order.price:
@@ -296,7 +303,7 @@ cdef class Ladder:
         cdef double cumulative_denominator = 0.0
         cdef double current = 0.0
 
-        for level_idx in reversed(range(len(self.levels))) if self.reverse else range(len(self.levels)):
+        for level_idx in range(len(self.levels)):
             if self.reverse and self.levels[level_idx].price < price or not self.reverse and self.levels[level_idx].price > price:
                 break
             for order_idx in range(len(self.levels[level_idx].orders)):
@@ -358,7 +365,7 @@ cdef class Ladder:
         cdef double remainder = 0.0
         cdef bint completed = False
 
-        for level_idx in reversed(range(len(self.levels))) if self.reverse else range(len(self.levels)):
+        for level_idx in range(len(self.levels)):
             if completed:
                 break
             for order_idx in range(len(self.levels[level_idx].orders)):

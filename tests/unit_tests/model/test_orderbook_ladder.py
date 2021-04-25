@@ -109,7 +109,7 @@ def test_exposure():
         Order(price=105.0, volume=5.0, side=OrderSide.SELL),
     ]
     ladder = TestStubs.ladder(reverse=True, orders=orders)
-    assert tuple(ladder.exposures()) == (1000.0, 1010.0, 525.0)
+    assert tuple(ladder.exposures()) == (525.0, 1000.0, 1010.0)
 
 
 def test_depth_at_price_no_trade(bids, asks):
