@@ -94,7 +94,7 @@ cdef class SimulatedExchange:
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
     cdef dict _books
-    cdef dict _slippages_L1
+    cdef dict _tick_sizes
 
     cdef dict _instrument_orders
     cdef dict _working_orders

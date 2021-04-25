@@ -183,7 +183,7 @@ cdef class SimulatedExchange:
             self._instrument_indexer[instrument.id] = index
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
-        self._slippages_L1 = self.get_tick_sizes()
+        self._tick_sizes = self.get_tick_sizes()
         self._books = {}                # type: dict[InstrumentId, OrderBook]
         self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
         self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
@@ -441,10 +441,13 @@ cdef class SimulatedExchange:
 
         self._clock.set_time(tick.timestamp_ns)
 
-        cdef OrderBookSnapshot snapshot
+        cdef OrderBook book = self.get_book(tick.instrument_id)
+
         # Update market bid and ask
+        cdef OrderBookSnapshot snapshot
+        cdef OrderBookOrder bid
+        cdef OrderBookOrder ask
         if isinstance(tick, QuoteTick):
-            # Turn quote tick into a snapshot
             snapshot = OrderBookSnapshot(
                 instrument_id=tick.instrument_id,
                 level=self.exchange_order_book_level,
@@ -452,7 +455,7 @@ cdef class SimulatedExchange:
                 asks=[(tick.ask, tick.ask_size)],
                 timestamp_ns=tick.timestamp_ns,
             )
-            self.get_book(tick.instrument_id).apply(snapshot)
+            book.apply_snapshot(snapshot)
         elif isinstance(tick, TradeTick):
             if tick.side == OrderSide.SELL:  # TAKER hit the bid
                 bid = OrderBookOrder(
@@ -460,15 +463,14 @@ cdef class SimulatedExchange:
                     volume=tick.size,
                     side=OrderSide.BUY,
                 )
-                self.get_book(tick.instrument_id).update(bid)
+                book.update(bid)
             elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
                 ask = OrderBookOrder(
                     price=tick.price,
                     volume=tick.size,
                     side=OrderSide.SELL,
                 )
-                self.get_book(tick.instrument_id).update(ask)
-            # tick.side must be BUY or SELL (condition checked in TradeTick)
+                book.update(ask)
         else:
             raise RuntimeError("not market data")  # Design-time error
 
@@ -1208,13 +1210,27 @@ cdef class SimulatedExchange:
                 fill_px = order.price  # TODO: Temporary strategy for market moving through price
             if self.exchange_order_book_level == OrderBookLevel.L1 and self.fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px + self._slippages_L1[order.instrument_id])
+                    fill_px = Price(fill_px + self._tick_sizes[order.instrument_id])
                 else:  # => OrderSide.SELL
-                    fill_px = Price(fill_px - self._slippages_L1[order.instrument_id])
+                    fill_px = Price(fill_px - self._tick_sizes[order.instrument_id])
             self._fill_order(
                 order=order,
                 last_px=fill_px,
                 last_qty=fill_qty,
+                liquidity_side=liquidity_side,
+            )
+
+        # For L1 fill remaining size at next tick price
+        if self.exchange_order_book_level == OrderBookLevel.L1 and order.is_working_c():
+            fill_px = fills[-1][0]
+            if order.side == OrderSide.BUY:
+                fill_px = Price(fill_px + self._tick_sizes[order.instrument_id])
+            else:  # => OrderSide.SELL
+                fill_px = Price(fill_px - self._tick_sizes[order.instrument_id])
+            self._fill_order(
+                order=order,
+                last_px=fill_px,
+                last_qty=Quantity(order.quantity - order.filled_qty),
                 liquidity_side=liquidity_side,
             )
 
