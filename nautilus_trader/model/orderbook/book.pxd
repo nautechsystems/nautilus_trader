@@ -23,6 +23,8 @@ from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
 
 
 cdef class OrderBook:
@@ -82,6 +84,9 @@ cdef class L2OrderBook(OrderBook):
 
 
 cdef class L1OrderBook(OrderBook):
+    cpdef void update_top(self, Tick tick) except *
+    cdef inline void _update_quote_tick(self, QuoteTick tick)
+    cdef inline void _update_trade_tick(self, TradeTick tick)
     cdef inline Order _process_order(self, Order order)
 
 

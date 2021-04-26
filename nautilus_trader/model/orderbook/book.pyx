@@ -30,6 +30,8 @@ from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class OrderBook:
@@ -313,7 +315,7 @@ cdef class OrderBook:
 
     cpdef void clear_bids(self) except *:
         """
-        Clear the bids from the book.
+        Clear the bids from the order book.
         """
         self.bids = Ladder(
             reverse=True,
@@ -323,7 +325,7 @@ cdef class OrderBook:
 
     cpdef void clear_asks(self) except *:
         """
-        Clear the asks from the book.
+        Clear the asks from the order book.
         """
         self.asks = Ladder(
             reverse=False,
@@ -333,7 +335,7 @@ cdef class OrderBook:
 
     cpdef void clear(self) except *:
         """
-        Clear the entire orderbook.
+        Clear the entire order book.
         """
         self.clear_bids()
         self.clear_asks()
@@ -710,7 +712,7 @@ cdef class L2OrderBook(OrderBook):
 
         """
         # For a L2OrderBook, ensure only one order per level in addition to
-        # normal orderbook checks.
+        # normal order book checks.
         self._check_integrity()
 
         cdef Level level
@@ -803,6 +805,60 @@ cdef class L1OrderBook(OrderBook):
             self.clear_bids()
         self._update(order=self._process_order(order=order))
 
+    cpdef void update_top(self, Tick tick) except *:
+        """
+        Update the order book with the given tick.
+        
+        Parameters
+        ----------
+        tick : Tick
+            The tick to update with.
+
+        """
+        if isinstance(tick, QuoteTick):
+            self._update_quote_tick(tick)
+        elif isinstance(tick, TradeTick):
+            self._update_trade_tick(tick)
+
+    cdef inline void _update_quote_tick(self, QuoteTick tick):
+        # Update market bid
+        cdef Order bid = None
+        cdef Level top_bids = self.bids.top()
+        if top_bids:
+            if not top_bids.orders:
+                top_bids.orders[0] = Order(tick.bid, tick.bid_size)
+            else:
+                bid = top_bids[0]
+                bid.update_price(tick.bid)
+                bid.update_volume(tick.bid_size)
+
+        # Update market ask
+        cdef Order ask = None
+        cdef Level top_asks = self.asks.top()
+        if top_asks and top_asks.orders:
+            if not top_asks.orders:
+                top_asks.orders[0] = Order(tick.ask, tick.ask_size)
+            else:
+                ask = top_asks[0]
+                ask.update_price(tick.ask)
+                ask.update_volume(tick.ask_size)
+
+    cdef inline void _update_trade_tick(self, TradeTick tick):
+        cdef Level top = None
+        if tick.side == OrderSide.SELL:  # TAKER hit the bid
+            top = self.bids.top()
+        elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
+            top = self.asks.top()
+
+        cdef Order order = None
+        if top:
+            if not top.orders:
+                top.orders[0] = Order(tick.price, tick.size)
+            else:
+                order = top.orders[0]
+                order.update_price(tick.price)
+                order.update_volume(tick.size)
+
     cpdef void delete(self, Order order) except *:
         """
         Delete the given order in the book.
@@ -828,7 +884,7 @@ cdef class L1OrderBook(OrderBook):
 
         """
         # For a L1OrderBook, ensure only one level per side in addition to
-        # normal orderbook checks.
+        # normal order book checks.
         self._check_integrity()
         assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
         assert len(self.asks.levels) <= 1, "Number of ask levels > 1"

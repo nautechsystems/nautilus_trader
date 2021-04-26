@@ -20,6 +20,7 @@ from nautilus_trader.model.orderbook.order cimport Order
 
 cdef class Ladder:
     cdef dict _order_id_level_index
+    cdef Level _top
 
     cdef readonly list levels
     """The ladders levels.\n\n:returns: `list[Level]`"""
