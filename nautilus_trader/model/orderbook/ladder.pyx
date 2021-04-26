@@ -256,6 +256,8 @@ cdef class Ladder:
                 break
             elif not self.reverse and self.levels[level_idx].price > order.price:
                 break
+            elif completed:
+                break
             for order_idx in range(len(self.levels[level_idx].orders)):
                 book_order = self.levels[level_idx].orders[order_idx]
                 current = book_order.volume if depth_type == DepthType.VOLUME else book_order.exposure()
@@ -268,6 +270,7 @@ cdef class Ladder:
                     ))
                     cumulative_denominator += remainder
                     completed = True
+                    break
                 else:
                     # Add this order and continue
                     fills.append((
