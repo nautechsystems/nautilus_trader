@@ -29,9 +29,9 @@ from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
-from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OrderBook:
@@ -808,7 +808,7 @@ cdef class L1OrderBook(OrderBook):
     cpdef void update_top(self, Tick tick) except *:
         """
         Update the order book with the given tick.
-        
+
         Parameters
         ----------
         tick : Tick
@@ -821,43 +821,20 @@ cdef class L1OrderBook(OrderBook):
             self._update_trade_tick(tick)
 
     cdef inline void _update_quote_tick(self, QuoteTick tick):
-        # Update market bid
-        cdef Order bid = None
-        cdef Level top_bids = self.bids.top()
-        if top_bids:
-            if not top_bids.orders:
-                top_bids.orders[0] = Order(tick.bid, tick.bid_size)
-            else:
-                bid = top_bids[0]
-                bid.update_price(tick.bid)
-                bid.update_volume(tick.bid_size)
-
-        # Update market ask
-        cdef Order ask = None
-        cdef Level top_asks = self.asks.top()
-        if top_asks and top_asks.orders:
-            if not top_asks.orders:
-                top_asks.orders[0] = Order(tick.ask, tick.ask_size)
-            else:
-                ask = top_asks[0]
-                ask.update_price(tick.ask)
-                ask.update_volume(tick.ask_size)
+        self._update_bid(tick.bid, tick.bid_size)
+        self._update_ask(tick.ask, tick.ask_size)
 
     cdef inline void _update_trade_tick(self, TradeTick tick):
-        cdef Level top = None
         if tick.side == OrderSide.SELL:  # TAKER hit the bid
-            top = self.bids.top()
+            self._update_bid(tick.price, tick.size)
         elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
-            top = self.asks.top()
+            self._update_ask(tick.price, tick.size)
 
-        cdef Order order = None
-        if top:
-            if not top.orders:
-                top.orders[0] = Order(tick.price, tick.size)
-            else:
-                order = top.orders[0]
-                order.update_price(tick.price)
-                order.update_volume(tick.size)
+    cdef inline void _update_bid(self, double price, double size):
+        self.update(self._process_order(Order(price, size, OrderSide.BUY)))
+
+    cdef inline void _update_ask(self, double price, double size):
+        self.update(self._process_order(Order(price, size, OrderSide.SELL)))
 
     cpdef void delete(self, Order order) except *:
         """
