@@ -1124,7 +1124,7 @@ cdef class SimulatedExchange:
                 return False  # No market
             return order_price >= ask  # Match with LIMIT sells
         else:  # => OrderSide.SELL
-            bid = self.best_ask_price(instrument_id)
+            bid = self.best_bid_price(instrument_id)
             if bid is None:  # No market
                 return False
             return order_price <= bid  # Match with LIMIT buys
@@ -1265,6 +1265,7 @@ cdef class SimulatedExchange:
         )
 
         cdef Quantity cum_qty = Quantity(order.filled_qty + last_qty, instrument.size_precision)
+        cdef Quantity leaves_qty = Quantity(order.quantity - cum_qty, instrument.size_precision)
 
         # Generate event
         cdef OrderFilled fill = OrderFilled(
@@ -1279,7 +1280,7 @@ cdef class SimulatedExchange:
             last_qty=last_qty,
             last_px=last_px,
             cum_qty=cum_qty,
-            leaves_qty=Quantity(order.quantity - cum_qty, instrument.size_precision),
+            leaves_qty=leaves_qty,
             currency=instrument.quote_currency,
             is_inverse=instrument.is_inverse,
             commission=commission,

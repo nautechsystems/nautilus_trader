@@ -2092,7 +2092,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(Decimal("2000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.33333333333333333333333333"), order.avg_px)
 
-    def test_submit_limit_order_passive_trades(self):
+    def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
         snapshot = TestStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
@@ -2100,26 +2100,73 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
 
-        # Create and insert limit order
+        # Act
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(1000),
-            price=Price(10),
+            quantity=Quantity(7000),
+            price=Price(20),
+            post_only=False,
+        )
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(Quantity("6000.0"), order.filled_qty)  # No slippage
+        self.assertEqual(Decimal("15.93333333333333333333333333"), order.avg_px)
+
+    def test_passive_post_only_insert(self):
+        # Arrange: Prepare market
+        # Market is 10 @ 15
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book(snapshot)
+
+        # Act
+        order = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity(2000),
+            price=Price(14),
+            post_only=True,
+        )
+        self.strategy.submit_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.ACCEPTED, order.state)
+
+    def test_passive_partial_fill(self):
+        # Arrange: Prepare market
+        # Market is 10 @ 15
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book(snapshot)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity(2000),
+            price=Price(14),
+            post_only=False,
         )
         self.strategy.submit_order(order)
 
         # Act
-        trade_tick = TestStubs.trade_tick_5decimal(
-            instrument_id=USDJPY_SIM.id,
-            price=Price(10),
-            side=OrderSide.SELL,
-            quantity=Quantity(1500),
+        tick1 = TradeTick(
+            USDJPY_SIM.id,
+            Price("14.0"),
+            Quantity(1000),
+            OrderSide.SELL,
+            TradeMatchId("123456789"),
+            0,
         )
-        self.exchange.process_tick(trade_tick)
+        self.exchange.process_tick(tick1)
 
-        # TODO: Because filled volume is zero
         # Assert
-        # self.assertEqual(OrderState.FILLED, order.state)
-        # self.assertEqual(Quantity("500.0"), order.filled_qty)  # No slippage
-        # self.assertEqual(Price("10"), order.avg_px)
+        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(Quantity("1000.0"), order.filled_qty)  # No slippage
+        self.assertEqual(Decimal("14.0"), order.avg_px)
