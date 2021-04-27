@@ -237,3 +237,4 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         # 04/02/21  5405726 function calls (5368038 primitive calls) in 7.196 seconds (performance check)
         # 24/04/21  5375115 function calls (5337643 primitive calls) in 10.553 seconds (order book in exchanges)
         # 24/04/21  5375115 function calls (5337643 primitive calls) in 10.009 seconds (order book optimizations)
+        # 26/04/21  5405727 function calls (5368039 primitive calls) in 7.469 seconds (order book optimizations)
