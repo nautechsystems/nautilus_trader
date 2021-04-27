@@ -237,6 +237,7 @@ cdef class OrderBook:
         cdef OrderBookDelta delta
         for delta in deltas.deltas:
             self._apply_delta(delta)
+        self.last_update_timestamp_ns = delta.timestamp_ns
 
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
         """
