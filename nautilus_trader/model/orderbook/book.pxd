@@ -22,6 +22,8 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
 
 
@@ -82,6 +84,16 @@ cdef class L2OrderBook(OrderBook):
 
 
 cdef class L1OrderBook(OrderBook):
+    cdef Order _top_bid
+    cdef Order _top_ask
+    cdef Level _top_bid_level
+    cdef Level _top_ask_level
+
+    cpdef void update_top(self, Tick tick) except *
+    cdef inline void _update_quote_tick(self, QuoteTick tick)
+    cdef inline void _update_trade_tick(self, TradeTick tick)
+    cdef inline void _update_bid(self, double price, double size)
+    cdef inline void _update_ask(self, double price, double size)
     cdef inline Order _process_order(self, Order order)
 
 

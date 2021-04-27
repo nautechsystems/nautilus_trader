@@ -29,6 +29,8 @@ from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
 
 
@@ -212,8 +214,6 @@ cdef class OrderBook:
 
         self._apply_delta(delta)
 
-        self.last_update_timestamp_ns = delta.timestamp_ns
-
     cpdef void apply_deltas(self, OrderBookDeltas deltas) except *:
         """
         Apply the bulk deltas to the order book.
@@ -313,7 +313,7 @@ cdef class OrderBook:
 
     cpdef void clear_bids(self) except *:
         """
-        Clear the bids from the book.
+        Clear the bids from the order book.
         """
         self.bids = Ladder(
             reverse=True,
@@ -323,7 +323,7 @@ cdef class OrderBook:
 
     cpdef void clear_asks(self) except *:
         """
-        Clear the asks from the book.
+        Clear the asks from the order book.
         """
         self.asks = Ladder(
             reverse=False,
@@ -333,7 +333,7 @@ cdef class OrderBook:
 
     cpdef void clear(self) except *:
         """
-        Clear the entire orderbook.
+        Clear the entire order book.
         """
         self.clear_bids()
         self.clear_asks()
@@ -345,6 +345,8 @@ cdef class OrderBook:
             self.update(order=delta.order)
         elif delta.type == OrderBookDeltaType.DELETE:
             self.delete(order=delta.order)
+
+        self.last_update_timestamp_ns = delta.timestamp_ns
 
     cdef inline void _add(self, Order order) except *:
         if order.side == OrderSide.BUY:
@@ -497,6 +499,7 @@ cdef class OrderBook:
             f"timestamp: {pd.Timestamp(self.last_update_timestamp_ns)}\n\n"
             f"{self.pprint()}"
         )
+
     cpdef spread(self):
         """
         Return the top of book spread (if no bids or asks then returns None).
@@ -710,7 +713,7 @@ cdef class L2OrderBook(OrderBook):
 
         """
         # For a L2OrderBook, ensure only one order per level in addition to
-        # normal orderbook checks.
+        # normal order book checks.
         self._check_integrity()
 
         cdef Level level
@@ -721,7 +724,7 @@ cdef class L2OrderBook(OrderBook):
         # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the base class.
-        order.id = str(order.price)
+        order.id = f"{order.price:.{self.price_precision}f}"
         return order
 
     cdef inline void _remove_if_exists(self, Order order) except *:
@@ -766,6 +769,11 @@ cdef class L1OrderBook(OrderBook):
             size_precision=size_precision,
         )
 
+        self._top_bid = None
+        self._top_ask = None
+        self._top_bid_level = None
+        self._top_ask_level = None
+
     cpdef void add(self, Order order) except *:
         """
         NotImplemented (Use `update(order)` for L1OrderBook).
@@ -788,7 +796,7 @@ cdef class L1OrderBook(OrderBook):
         # and ask updates at the same time), its quite probable that the last
         # bid is now the ask price we are trying to insert (or vice versa). We
         # just need to add some extra protection against this if we are calling
-        # `check_integrity` on each individual update .
+        # `check_integrity` on each individual update.
         if (
             order.side == OrderSide.BUY
             and self.best_ask_level()
@@ -802,6 +810,59 @@ cdef class L1OrderBook(OrderBook):
         ):
             self.clear_bids()
         self._update(order=self._process_order(order=order))
+
+    cpdef void update_top(self, Tick tick) except *:
+        """
+        Update the order book with the given tick.
+
+        Parameters
+        ----------
+        tick : Tick
+            The tick to update with.
+
+        """
+        if isinstance(tick, QuoteTick):
+            self._update_quote_tick(tick)
+        elif isinstance(tick, TradeTick):
+            self._update_trade_tick(tick)
+
+    cdef inline void _update_quote_tick(self, QuoteTick tick):
+        self._update_bid(tick.bid, tick.bid_size)
+        self._update_ask(tick.ask, tick.ask_size)
+
+    cdef inline void _update_trade_tick(self, TradeTick tick):
+        if tick.side == OrderSide.SELL:  # TAKER hit the bid
+            self._update_bid(tick.price, tick.size)
+            if self._top_ask and self._top_bid.price >= self._top_ask.price:
+                self._top_ask.price == self._top_bid.price
+                self._top_ask_level.price == self._top_bid.price
+        elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
+            self._update_ask(tick.price, tick.size)
+            if self._top_bid and self._top_ask.price <= self._top_bid.price:
+                self._top_bid.price == self._top_ask.price
+                self._top_bid_level.price == self._top_ask.price
+
+    cdef inline void _update_bid(self, double price, double size):
+        if self._top_bid is None:
+            bid = self._process_order(Order(price, size, OrderSide.BUY))
+            self._add(bid)
+            self._top_bid = bid
+            self._top_bid_level = self.bids.top()
+        else:
+            self._top_bid_level.price = price
+            self._top_bid.update_price(price)
+            self._top_bid.update_volume(size)
+
+    cdef inline void _update_ask(self, double price, double size):
+        if self._top_ask is None:
+            ask = self._process_order(Order(price, size, OrderSide.SELL))
+            self._add(ask)
+            self._top_ask = ask
+            self._top_ask_level = self.asks.top()
+        else:
+            self._top_ask_level.price = price
+            self._top_ask.update_price(price)
+            self._top_ask.update_volume(size)
 
     cpdef void delete(self, Order order) except *:
         """
@@ -828,7 +889,7 @@ cdef class L1OrderBook(OrderBook):
 
         """
         # For a L1OrderBook, ensure only one level per side in addition to
-        # normal orderbook checks.
+        # normal order book checks.
         self._check_integrity()
         assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
         assert len(self.asks.levels) <= 1, "Number of ask levels > 1"

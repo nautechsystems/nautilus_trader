@@ -153,7 +153,7 @@ class TradingNodeOperationTests(unittest.TestCase):
         run = threading.Thread(target=self.node.start, daemon=True)
         run.start()
 
-        time.sleep(1)  # Allow node to start
+        time.sleep(2)  # Allow node to start
 
         # Act
         # Assert
@@ -165,10 +165,10 @@ class TradingNodeOperationTests(unittest.TestCase):
         run = threading.Thread(target=self.node.start, daemon=True)
         run.start()
 
-        time.sleep(1)  # Allow node to start
+        time.sleep(2)  # Allow node to start
         self.loop.call_soon_threadsafe(self.node.stop)
 
-        time.sleep(1)  # Allow node to stop
+        time.sleep(3)  # Allow node to stop
 
         # Act
         # Assert
@@ -179,11 +179,11 @@ class TradingNodeOperationTests(unittest.TestCase):
         run = threading.Thread(target=self.node.start, daemon=True)
         run.start()
 
-        time.sleep(1)  # Allow node to start
+        time.sleep(2)  # Allow node to start
         self.loop.call_soon_threadsafe(self.node.stop)
 
         # Allow node to stop
-        time.sleep(1)
+        time.sleep(3)
 
         self.node.dispose()
 
