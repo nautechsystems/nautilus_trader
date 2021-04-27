@@ -84,6 +84,11 @@ cdef class L2OrderBook(OrderBook):
 
 
 cdef class L1OrderBook(OrderBook):
+    cdef Order _top_bid
+    cdef Order _top_ask
+    cdef Level _top_bid_level
+    cdef Level _top_ask_level
+
     cpdef void update_top(self, Tick tick) except *
     cdef inline void _update_quote_tick(self, QuoteTick tick)
     cdef inline void _update_trade_tick(self, TradeTick tick)

@@ -769,6 +769,11 @@ cdef class L1OrderBook(OrderBook):
             size_precision=size_precision,
         )
 
+        self._top_bid = None
+        self._top_ask = None
+        self._top_bid_level = None
+        self._top_ask_level = None
+
     cpdef void add(self, Order order) except *:
         """
         NotImplemented (Use `update(order)` for L1OrderBook).
@@ -791,7 +796,7 @@ cdef class L1OrderBook(OrderBook):
         # and ask updates at the same time), its quite probable that the last
         # bid is now the ask price we are trying to insert (or vice versa). We
         # just need to add some extra protection against this if we are calling
-        # `check_integrity` on each individual update .
+        # `check_integrity` on each individual update.
         if (
             order.side == OrderSide.BUY
             and self.best_ask_level()
@@ -828,14 +833,36 @@ cdef class L1OrderBook(OrderBook):
     cdef inline void _update_trade_tick(self, TradeTick tick):
         if tick.side == OrderSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
+            if self._top_ask and self._top_bid.price >= self._top_ask.price:
+                self._top_ask.price == self._top_bid.price
+                self._top_ask_level.price == self._top_bid.price
         elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
             self._update_ask(tick.price, tick.size)
+            if self._top_bid and self._top_ask.price <= self._top_bid.price:
+                self._top_bid.price == self._top_ask.price
+                self._top_bid_level.price == self._top_ask.price
 
     cdef inline void _update_bid(self, double price, double size):
-        self.update(self._process_order(Order(price, size, OrderSide.BUY)))
+        if self._top_bid is None:
+            bid = self._process_order(Order(price, size, OrderSide.BUY))
+            self._add(bid)
+            self._top_bid = bid
+            self._top_bid_level = self.bids.top()
+        else:
+            self._top_bid_level.price = price
+            self._top_bid.update_price(price)
+            self._top_bid.update_volume(size)
 
     cdef inline void _update_ask(self, double price, double size):
-        self.update(self._process_order(Order(price, size, OrderSide.SELL)))
+        if self._top_ask is None:
+            ask = self._process_order(Order(price, size, OrderSide.SELL))
+            self._add(ask)
+            self._top_ask = ask
+            self._top_ask_level = self.asks.top()
+        else:
+            self._top_ask_level.price = price
+            self._top_ask.update_price(price)
+            self._top_ask.update_volume(size)
 
     cpdef void delete(self, Order order) except *:
         """

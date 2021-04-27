@@ -58,9 +58,8 @@ cdef class Ladder:
         Condition.not_negative_int(size_precision, "size_precision")
 
         self._order_id_level_index = {}  # type: dict[str, Level]
-        self._top = None
 
-        self.levels = []  # type: list[Level]
+        self.levels = []  # type: list[Level]  # TODO: Make levels private??
         self.reverse = reverse
         self.price_precision = price_precision
         self.size_precision = size_precision
@@ -102,7 +101,6 @@ cdef class Ladder:
                 price_idx = bisect_double_right(existing_prices, level.price)
                 self.levels.insert(price_idx, level)
 
-        self._top = self.levels[0]
         self._order_id_level_index[order.id] = level
 
     cpdef void update(self, Order order) except *:
@@ -128,8 +126,6 @@ cdef class Ladder:
             level.update(order=order)
             if not level.orders:
                 self.levels.remove(level)
-            if not self._top.orders:
-                self._top = None
         else:
             # New price for this order, delete and insert
             self.delete(order=order)
@@ -160,9 +156,6 @@ cdef class Ladder:
         self._order_id_level_index.pop(order.id)
         if not level.orders:
             del self.levels[price_idx]
-
-        if not self._top.orders:
-            self._top = None
 
     cpdef list depth(self, int n=1):
         """
@@ -225,7 +218,11 @@ cdef class Ladder:
         Level or None
 
         """
-        return self._top
+        cdef list top = self.depth(1)
+        if top:
+            return top[0]
+        else:
+            return None
 
     cpdef list simulate_order_fills(self, Order order, DepthType depth_type=DepthType.VOLUME):
         """
