@@ -60,7 +60,7 @@ cdef class Ladder:
         self._order_id_level_index = {}  # type: dict[str, Level]
         self._top = None
 
-        self.levels = []  # type: list[Level]  # TODO: Make levels private??
+        self.levels = []  # type: list[Level]
         self.reverse = reverse
         self.price_precision = price_precision
         self.size_precision = size_precision
@@ -245,24 +245,19 @@ cdef class Ladder:
         """
         Condition.not_none(order, "order")
 
-        cdef int level_idx = 0
-        cdef int order_idx = 0
-        cdef Order book_order
         cdef list fills = []
         cdef double cumulative_denominator = 0.0
         cdef double current = 0.0
         cdef double target = order.volume if depth_type == DepthType.VOLUME else order.price * order.volume
-        cdef bint completed = False
+        cdef Level level
+        cdef Order book_order
 
-        for level_idx in range(len(self.levels)):
-            if self.reverse and self.levels[level_idx].price < order.price:
+        for level in self.levels:
+            if self.reverse and level.price < order.price:
                 break
-            elif not self.reverse and self.levels[level_idx].price > order.price:
+            elif not self.reverse and level.price > order.price:
                 break
-            elif completed:
-                break
-            for order_idx in range(len(self.levels[level_idx].orders)):
-                book_order = self.levels[level_idx].orders[order_idx]
+            for book_order in level.orders:
                 current = book_order.volume if depth_type == DepthType.VOLUME else book_order.exposure()
                 if (cumulative_denominator + current) >= target:
                     # This order has filled us, calc and return
@@ -272,8 +267,7 @@ cdef class Ladder:
                         Quantity(remainder, precision=self.size_precision),
                     ))
                     cumulative_denominator += remainder
-                    completed = True
-                    break
+                    return fills
                 else:
                     # Add this order and continue
                     fills.append((
@@ -281,4 +275,5 @@ cdef class Ladder:
                         Quantity(current, precision=self.size_precision),
                     ))
                     cumulative_denominator += current
+
         return fills

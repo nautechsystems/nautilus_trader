@@ -214,8 +214,6 @@ cdef class OrderBook:
 
         self._apply_delta(delta)
 
-        self.last_update_timestamp_ns = delta.timestamp_ns
-
     cpdef void apply_deltas(self, OrderBookDeltas deltas) except *:
         """
         Apply the bulk deltas to the order book.
@@ -237,7 +235,6 @@ cdef class OrderBook:
         cdef OrderBookDelta delta
         for delta in deltas.deltas:
             self._apply_delta(delta)
-        self.last_update_timestamp_ns = delta.timestamp_ns
 
     cpdef void apply_snapshot(self, OrderBookSnapshot snapshot) except *:
         """
@@ -348,6 +345,8 @@ cdef class OrderBook:
             self.update(order=delta.order)
         elif delta.type == OrderBookDeltaType.DELETE:
             self.delete(order=delta.order)
+
+        self.last_update_timestamp_ns = delta.timestamp_ns
 
     cdef inline void _add(self, Order order) except *:
         if order.side == OrderSide.BUY:
@@ -500,6 +499,7 @@ cdef class OrderBook:
             f"timestamp: {pd.Timestamp(self.last_update_timestamp_ns)}\n\n"
             f"{self.pprint()}"
         )
+
     cpdef spread(self):
         """
         Return the top of book spread (if no bids or asks then returns None).
@@ -724,7 +724,7 @@ cdef class L2OrderBook(OrderBook):
         # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the base class.
-        order.id = str(order.price)
+        order.id = f"{order.price:.{self.price_precision}f}"
         return order
 
     cdef inline void _remove_if_exists(self, Order order) except *:

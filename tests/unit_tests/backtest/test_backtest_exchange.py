@@ -161,13 +161,18 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertTrue(True)  # No exceptions raised
 
     def test_process_quote_tick_sets_market(self):
+        # Arrange
         tick = TestStubs.quote_tick_3decimal(USDJPY_SIM.id)
+
         self.data_engine.process(tick)
+
+        # Act
         self.exchange.process_tick(tick)
+
+        # Assert
         book = self.exchange.get_book(USDJPY_SIM.id)
         assert book.best_ask_price() == 90.005
         assert book.best_bid_price() == 90.002
-        # self.assertTrue(book.best_bid_price() and not book.best_ask_price())
 
     def test_check_residuals_with_working_and_oco_orders(self):
         # Arrange
@@ -2139,6 +2144,8 @@ class OrderBookExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
 
+    # TODO - Need to discuss how we are going to support passive quotes trading now
+    @pytest.mark.skip
     def test_passive_partial_fill(self):
         # Arrange: Prepare market
         # Market is 10 @ 15
