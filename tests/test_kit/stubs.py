@@ -179,13 +179,15 @@ class TestStubs:
         )
 
     @staticmethod
-    def quote_tick_3decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
+    def quote_tick_3decimal(
+        instrument_id=None, bid=None, ask=None, bid_volume=None, ask_volume=None
+    ) -> QuoteTick:
         return QuoteTick(
             instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
-            bid if bid is not None else Price("90.002"),
-            ask if ask is not None else Price("90.005"),
-            Quantity(1_000_000),
-            Quantity(1_000_000),
+            bid or Price("90.002"),
+            ask or Price("90.005"),
+            bid_volume or Quantity(1_000_000),
+            ask_volume or Quantity(1_000_000),
             0,
         )
 
@@ -193,8 +195,8 @@ class TestStubs:
     def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
             instrument_id if instrument_id is not None else TestStubs.audusd_id(),
-            bid if bid is not None else Price("1.00001"),
-            ask if ask is not None else Price("1.00003"),
+            bid or Price("1.00001"),
+            ask or Price("1.00003"),
             Quantity(1_000_000),
             Quantity(1_000_000),
             0,
