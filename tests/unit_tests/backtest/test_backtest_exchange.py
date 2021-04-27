@@ -17,6 +17,8 @@ from datetime import timedelta
 from decimal import Decimal
 import unittest
 
+import pytest
+
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -2138,6 +2140,42 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, order.state)
 
     def test_passive_partial_fill(self):
+        # Arrange: Prepare market
+        # Market is 10 @ 15
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book(snapshot)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity(2000),
+            price=Price(14),
+            post_only=False,
+        )
+        self.strategy.submit_order(order)
+
+        # Act
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price("15"),
+            bid_volume=Quantity(1000),
+            ask=Price("16"),
+            ask_volume=Quantity(1000),
+        )
+        # New tick will be in cross with our order
+        self.exchange.process_tick(tick)
+
+        # Assert
+        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
+        self.assertEqual(Quantity("1000.0"), order.filled_qty)  # No slippage
+        self.assertEqual(Decimal("15.0"), order.avg_px)
+
+    # TODO - Need to discuss how we are going to support passive quotes trading now
+    @pytest.mark.skip
+    def test_passive_fill_on_trade_tick(self):
         # Arrange: Prepare market
         # Market is 10 @ 15
         snapshot = TestStubs.order_book_snapshot(
