@@ -67,12 +67,9 @@ from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.orderbook.order cimport Order as OrderBookOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
@@ -442,37 +439,8 @@ cdef class SimulatedExchange:
         self._clock.set_time(tick.timestamp_ns)
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
-
-        # Update market bid and ask
-        cdef OrderBookSnapshot snapshot
-        cdef OrderBookOrder bid
-        cdef OrderBookOrder ask
-        if isinstance(tick, QuoteTick):
-            snapshot = OrderBookSnapshot(
-                instrument_id=tick.instrument_id,
-                level=self.exchange_order_book_level,
-                bids=[(tick.bid, tick.bid_size)],
-                asks=[(tick.ask, tick.ask_size)],
-                timestamp_ns=tick.timestamp_ns,
-            )
-            book.apply_snapshot(snapshot)
-        elif isinstance(tick, TradeTick):
-            if tick.side == OrderSide.SELL:  # TAKER hit the bid
-                bid = OrderBookOrder(
-                    price=tick.price,
-                    volume=tick.size,
-                    side=OrderSide.BUY,
-                )
-                book.update(bid)
-            elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
-                ask = OrderBookOrder(
-                    price=tick.price,
-                    volume=tick.size,
-                    side=OrderSide.SELL,
-                )
-                book.update(ask)
-        else:
-            raise RuntimeError("not market data")  # Design-time error
+        if book.level == OrderBookLevel.L1:
+            book.update_top(tick)
 
         self._iterate_matching_engine(
             tick.instrument_id,
@@ -1168,6 +1136,7 @@ cdef class SimulatedExchange:
     cdef inline list _determine_limit_price_and_volume(self, PassiveOrder order):
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, volume=order.quantity, side=order.side)
+
         if order.side == OrderSide.BUY:
             return book.asks.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
         else:  # => OrderSide.SELL
