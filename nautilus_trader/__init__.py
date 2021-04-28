@@ -25,4 +25,7 @@ import toml
 PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
 PYPROJECT_PATH = PACKAGE_ROOT.strip("nautilus_trader") + "/pyproject.toml"  # noqa
 
-__version__ = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
+try:
+    __version__ = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
+except FileNotFoundError:
+    __version__ = "dev"
