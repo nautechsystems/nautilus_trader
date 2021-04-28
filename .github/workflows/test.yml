@@ -31,6 +31,10 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel poetry nox
 
+      # Test pip installation
+      - name: Test pip installation
+        run: pip install .[docs]
+
       # Setup Poetry caching
       - name: Get Poetry cache dir
         id: poetry-cache
