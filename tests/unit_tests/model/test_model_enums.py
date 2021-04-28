@@ -61,7 +61,7 @@ class TestAggressorSide:
         # Act
         # Assert
         with pytest.raises(ValueError):
-            AggressorSideParser.to_str_py(0)
+            AggressorSideParser.to_str_py(-1)
 
         with pytest.raises(ValueError):
             AggressorSideParser.from_str_py("")
@@ -69,6 +69,7 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [AggressorSide.UNKNOWN, "UNKNOWN"],
             [AggressorSide.BUY, "BUY"],
             [AggressorSide.SELL, "SELL"],
         ],
@@ -76,7 +77,7 @@ class TestAggressorSide:
     def test_aggressor_side_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderSideParser.to_str_py(enum)
+        result = AggressorSideParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -84,6 +85,7 @@ class TestAggressorSide:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["UNKNOWN", AggressorSide.UNKNOWN],
             ["BUY", AggressorSide.BUY],
             ["SELL", AggressorSide.SELL],
         ],

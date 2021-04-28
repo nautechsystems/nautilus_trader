@@ -31,9 +31,9 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.data import Data
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -1272,7 +1272,7 @@ class DataEngineTests(unittest.TestCase):
             ETHUSDT_BINANCE.id,
             Price("1050.00000"),
             Quantity(100),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
         )
@@ -1319,7 +1319,7 @@ class DataEngineTests(unittest.TestCase):
             ETHUSDT_BINANCE.id,
             Price("1050.00000"),
             Quantity(100),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
         )

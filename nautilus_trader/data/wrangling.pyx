@@ -23,8 +23,8 @@ from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -310,7 +310,7 @@ cdef class TradeTickDataWrangler:
         processed_trades = pd.DataFrame(index=self._data_trades.index)
         processed_trades["price"] = self._data_trades["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
         processed_trades["quantity"] = self._data_trades["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
-        processed_trades["side"] = self._create_side_if_not_exist()
+        processed_trades["aggressor_side"] = self._create_side_if_not_exist()
         processed_trades["match_id"] = self._data_trades["trade_id"].apply(str)
         processed_trades["instrument_id"] = instrument_indexer
         self.processed_data = processed_trades
@@ -341,7 +341,7 @@ cdef class TradeTickDataWrangler:
             instrument_id=self.instrument.id,
             price=Price(values[0]),
             size=Quantity(values[1]),
-            side=OrderSideParser.from_str(values[2]),
+            aggressor_side=AggressorSideParser.from_str(values[2]),
             match_id=TradeMatchId(values[3]),
             timestamp_ns=secs_to_nanos(timestamp),
         )

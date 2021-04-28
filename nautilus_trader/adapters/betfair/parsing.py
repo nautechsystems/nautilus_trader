@@ -44,6 +44,7 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -211,7 +212,7 @@ def _handle_market_trades(runner, instrument, timestamp_ns):
             instrument_id=instrument.id,
             price=Price(price_to_probability(price, force=True)),
             size=Quantity(volume, precision=4),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.UNKNOWN,
             match_id=TradeMatchId(trade_id),
             timestamp_ns=timestamp_ns,
         )

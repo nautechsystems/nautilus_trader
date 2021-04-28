@@ -16,8 +16,8 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.data cimport Data
@@ -223,7 +223,7 @@ cdef class TradeTick(Tick):
         InstrumentId instrument_id not None,
         Price price not None,
         Quantity size not None,
-        OrderSide side,
+        AggressorSide aggressor_side,
         TradeMatchId match_id not None,
         int64_t timestamp_ns,
     ):
@@ -238,8 +238,8 @@ cdef class TradeTick(Tick):
             The price of the trade.
         size : Quantity
             The size of the trade.
-        side : OrderSide (Enum)
-            The side of the trade.
+        aggressor_side : AggressorSide (Enum)
+            The aggressor side of the trade.
         match_id : TradeMatchId
             The trade match identifier.
         timestamp_ns : int64
@@ -250,14 +250,14 @@ cdef class TradeTick(Tick):
 
         self.price = price
         self.size = size
-        self.side = side
+        self.aggressor_side = aggressor_side
         self.match_id = match_id
 
     def __str__(self) -> str:
         return (f"{self.instrument_id},"
                 f"{self.price},"
                 f"{self.size},"
-                f"{OrderSideParser.to_str(self.side)},"
+                f"{AggressorSideParser.to_str(self.aggressor_side)},"
                 f"{self.match_id},"
                 f"{self.timestamp_ns}")
 
@@ -278,7 +278,7 @@ cdef class TradeTick(Tick):
             instrument_id,
             Price(pieces[0]),
             Quantity(pieces[1]),
-            OrderSideParser.from_str(pieces[2]),
+            AggressorSideParser.from_str(pieces[2]),
             TradeMatchId(pieces[3]),
             int(pieces[4]),
         )
@@ -318,6 +318,6 @@ cdef class TradeTick(Tick):
         """
         return (f"{self.price},"
                 f"{self.size},"
-                f"{OrderSideParser.to_str(self.side)},"
+                f"{AggressorSideParser.to_str(self.aggressor_side)},"
                 f"{self.match_id},"
                 f"{self.timestamp_ns}")
