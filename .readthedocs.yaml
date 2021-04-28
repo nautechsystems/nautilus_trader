@@ -4,7 +4,7 @@ sphinx:
   configuration: docs/source/conf.py
 
 python:
-  version: 3.9
+  version: 3.8
   install:
     - method: pip
       path: .
