@@ -28,6 +28,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -204,13 +205,13 @@ class TestStubs:
 
     @staticmethod
     def trade_tick_5decimal(
-        instrument_id=None, price=None, side=None, quantity=None
+        instrument_id=None, price=None, aggressor_side=None, quantity=None
     ) -> TradeTick:
         return TradeTick(
             instrument_id or TestStubs.audusd_id(),
             price or Price("1.00001"),
             quantity or Quantity(100000),
-            side or OrderSide.BUY,
+            aggressor_side or AggressorSide.BUY,
             TradeMatchId("123456"),
             0,
         )

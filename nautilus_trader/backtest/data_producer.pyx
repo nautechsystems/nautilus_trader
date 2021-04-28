@@ -40,9 +40,9 @@ from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
@@ -351,7 +351,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_prices = trade_ticks_slice["price"].values
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
-            self._trade_sides = trade_ticks_slice["side"].values
+            self._trade_sides = trade_ticks_slice["aggressor_side"].values
             self._trade_timestamps = np.asarray(
                 [dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index],
                 dtype=np.int64,
@@ -506,7 +506,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             instrument_id=self._instrument_index[self._trade_instruments[index]],
             price=Price(self._trade_prices[index]),
             size=Quantity(self._trade_sizes[index]),
-            side=OrderSideParser.from_str(self._trade_sides[index]),
+            aggressor_side=AggressorSideParser.from_str(self._trade_sides[index]),
             match_id=TradeMatchId(self._trade_match_ids[index]),
             timestamp_ns=self._trade_timestamps[index],
         )

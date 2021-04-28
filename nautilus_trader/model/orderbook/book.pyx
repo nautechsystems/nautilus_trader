@@ -19,6 +19,7 @@ import pandas as pd
 from tabulate import tabulate
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaType
@@ -831,12 +832,12 @@ cdef class L1OrderBook(OrderBook):
         self._update_ask(tick.ask, tick.ask_size)
 
     cdef inline void _update_trade_tick(self, TradeTick tick):
-        if tick.side == OrderSide.SELL:  # TAKER hit the bid
+        if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
             if self._top_ask and self._top_bid.price >= self._top_ask.price:
                 self._top_ask.price == self._top_bid.price
                 self._top_ask_level.price == self._top_bid.price
-        elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
+        elif tick.aggressor_side == AggressorSide.BUY:  # TAKER lifted the offer
             self._update_ask(tick.price, tick.size)
             if self._top_bid and self._top_ask.price <= self._top_bid.price:
                 self._top_bid.price == self._top_ask.price

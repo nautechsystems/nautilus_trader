@@ -24,8 +24,8 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
@@ -397,7 +397,7 @@ class MarketDataClientTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00050"),
             Quantity(1),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456"),
             0,
         )

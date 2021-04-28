@@ -34,6 +34,7 @@ from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderBookLevel
@@ -1571,7 +1572,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00000"),
             Quantity(100000),
-            OrderSide.SELL,
+            AggressorSide.SELL,
             TradeMatchId("123456789"),
             0,
         )
@@ -1580,7 +1581,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00001"),
             Quantity(100000),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456790"),
             0,
         )
@@ -1610,7 +1611,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("0.99899"),
             Quantity(100000),
-            OrderSide.BUY,  # Lowers bid price
+            AggressorSide.BUY,  # Lowers bid price
             TradeMatchId("123456789"),
             0,
         )

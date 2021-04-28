@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
@@ -216,7 +216,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00000"),
             Quantity(50000),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             1000,
         )
@@ -225,7 +225,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00000"),
             Quantity(50000),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             2000,
         )
@@ -234,7 +234,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00000"),
             Quantity(50000),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             3000,
         )
@@ -251,7 +251,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00000"),
             Quantity(50000),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
         )
@@ -284,7 +284,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00000"),
             Quantity(10000),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
         )
@@ -303,7 +303,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.id,
             Price("1.00000"),
             Quantity(10000),
-            OrderSide.BUY,
+            AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
         )

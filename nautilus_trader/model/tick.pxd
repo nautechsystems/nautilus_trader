@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -50,8 +50,8 @@ cdef class TradeTick(Tick):
     """The tick traded price.\n\n:returns: `Price`"""
     cdef readonly Quantity size
     """The tick traded size.\n\n:returns: `Quantity`"""
-    cdef readonly OrderSide side
-    """ The tick traded side.\n\n:returns: `OrderSide` (Enum)"""
+    cdef readonly AggressorSide aggressor_side
+    """ The tick aggressor side.\n\n:returns: `AggressorSide` (Enum)"""
     cdef readonly TradeMatchId match_id
     """The tick trade match identifier.\n\n:returns: `TradeMatchId`"""
 

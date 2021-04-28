@@ -21,8 +21,8 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.data.wrangling import TradeTickDataWrangler
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -205,7 +205,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(69806, len(ticks))
         self.assertEqual(Price("423.760"), ticks[0].price)
         self.assertEqual(Quantity("2.67900"), ticks[0].size)
-        self.assertEqual(OrderSide.SELL, ticks[0].side)
+        self.assertEqual(AggressorSide.SELL, ticks[0].aggressor_side)
         self.assertEqual(TradeMatchId("148568980"), ticks[0].match_id)
         self.assertEqual(1597399200223000064, ticks[0].timestamp_ns)
 
@@ -353,6 +353,6 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
         self.assertEqual(9999, len(ticks))
         self.assertEqual(Price("9682.00"), ticks[0].price)
         self.assertEqual(Quantity("0.132000"), ticks[0].size)
-        self.assertEqual(OrderSide.BUY, ticks[0].side)
+        self.assertEqual(AggressorSide.BUY, ticks[0].aggressor_side)
         self.assertEqual(TradeMatchId("42377944"), ticks[0].match_id)
         self.assertEqual(1582329602418379008, ticks[0].timestamp_ns)
