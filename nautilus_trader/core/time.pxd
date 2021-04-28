@@ -15,8 +15,6 @@
 
 """
 Cython implementation of (parts of) the standard library time module.
-
-
 """
 
 from libc.stdint cimport int64_t

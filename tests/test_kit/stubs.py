@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 from datetime import datetime
 from typing import List
@@ -67,7 +68,6 @@ from tests.test_kit.mocks import MockLiveExecutionEngine
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
-
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
