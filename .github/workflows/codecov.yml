@@ -47,10 +47,6 @@ jobs:
       - name: Install Redis
         run: sudo apt-get install redis-server
 
-      # Run docs build
-      - name: Run docs build
-        run: nox -s build_docs --reuse-existing-virtualenvs
-
       # Run coverage
       - name: Run coverage
         run: |
