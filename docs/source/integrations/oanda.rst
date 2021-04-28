@@ -25,7 +25,7 @@ Execution
 Factory
 -------
 
-.. automodule:: nautilus_trader.adapters.oanda.factory
+.. automodule:: nautilus_trader.adapters.oanda.factories
    :show-inheritance:
    :inherited-members:
    :members:
