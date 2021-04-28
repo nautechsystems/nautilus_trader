@@ -22,15 +22,6 @@ Clock
    :members:
    :member-order: bysource
 
-Commands
---------
-
-.. automodule:: nautilus_trader.common.commands
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Component
 ---------
 
