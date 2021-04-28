@@ -91,7 +91,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
 The documentation for the latest version of the package can be found at:
 
-> https://docs.nautilus-trader.io
+> https://docs.nautilustrader.io
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
 
