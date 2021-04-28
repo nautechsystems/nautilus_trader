@@ -63,7 +63,7 @@ pygments_style = "sphinx"
 add_module_names = False
 todo_include_todos = False
 
-autosummary_generate = False
+autosummary_generate = True
 autodoc_member_order = "bysource"
 numpydoc_show_class_members = True
 
