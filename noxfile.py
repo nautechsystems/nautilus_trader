@@ -62,7 +62,7 @@ def annotations(session: Session) -> None:
 @nox.session
 def build_docs(session: Session) -> None:
     """Build documentation."""
-    _setup_poetry(session)
+    _setup_poetry(session, "-E", "docs")
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 
