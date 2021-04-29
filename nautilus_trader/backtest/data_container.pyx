@@ -240,9 +240,9 @@ cdef class BacktestDataContainer:
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the bar data.
-        aggregation : BarAggregation (Enum)
+        aggregation : BarAggregation
             The bar aggregation of the data.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type of the data.
         data : pd.DataFrame
             The bar data to add.

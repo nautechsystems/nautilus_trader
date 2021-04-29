@@ -57,7 +57,7 @@ cdef class OrderBook:
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         price_precision : int
             The price precision for the book.
@@ -112,7 +112,7 @@ cdef class OrderBook:
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         price_precision : int
             The price precision for the book.
@@ -922,7 +922,7 @@ cdef class OrderBookData(Data):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         timestamp_ns : int64
             The Unix timestamp (nanos) of the snapshot.
@@ -954,7 +954,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         bids : list
             The bids for the snapshot.
@@ -997,7 +997,7 @@ cdef class OrderBookDeltas(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         deltas : list[OrderBookDelta]
             The list of order book changes.

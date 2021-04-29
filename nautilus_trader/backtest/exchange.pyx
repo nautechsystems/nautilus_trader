@@ -99,7 +99,7 @@ cdef class SimulatedExchange:
         ----------
         venue : Venue
             The venue to simulate for the backtest.
-        oms_type : OMSType (Enum)
+        oms_type : OMSType
             The order management system type used by the exchange (HEDGING or NETTING).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).

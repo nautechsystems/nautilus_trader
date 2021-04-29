@@ -48,7 +48,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
             The period for the slow moving average (> 0 & > fast_sma).
         ma_type : MovingAverageType
             The moving average type for the calculations.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The specified price type for extracting values from quote ticks.
 
         Raises

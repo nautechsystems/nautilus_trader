@@ -232,7 +232,7 @@ cdef class Ladder:
         ----------
         order : Order
             The order to simulate.
-        depth_type : DepthType (Enum)
+        depth_type : DepthType
             The depth type to simulate.
 
         Returns

@@ -50,7 +50,7 @@ cdef class ExchangeRateCalculator:
             The currency to convert from.
         to_currency : Currency
             The currency to convert to.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type for conversion.
         bid_quotes : dict
             The dictionary of currency pair bid quotes dict[Symbol, Decimal].
