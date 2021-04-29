@@ -43,7 +43,9 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 @pytest.mark.asyncio
 @pytest.mark.skip  # Only runs locally, comment to run
 async def test_betfair_data_client(betfair_data_client, data_engine):
-    """ Local test only, ensure we can connect to betfair and receive some market data """
+    """
+    Local test only, ensure we can connect to betfair and receive some market data
+    """
     betfair_client = betfairlightweight.APIClient(
         username=os.environ["BETFAIR_USERNAME"],
         password=os.environ["BETFAIR_PW"],

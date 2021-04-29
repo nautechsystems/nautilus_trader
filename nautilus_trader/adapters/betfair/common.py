@@ -110,7 +110,9 @@ all_prices = np.asarray(np.asarray(list(price_probability_map)) / 100.0)
 
 
 def round_probability(probability, side):
-    """ If we have a probability in between two prices, round to the better price """
+    """
+    If we have a probability in between two prices, round to the better price
+    """
     if probability in all_probabilities:
         return probability
     idx = all_probabilities.searchsorted(probability)
@@ -125,7 +127,9 @@ def round_probability(probability, side):
 
 
 def round_price(price, side):
-    """ If we have a probability in between two prices, round to the better price """
+    """
+    If we have a probability in between two prices, round to the better price
+    """
     if price in all_prices:
         return price
     else:
