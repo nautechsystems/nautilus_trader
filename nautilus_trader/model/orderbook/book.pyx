@@ -721,20 +721,19 @@ cdef class L2OrderBook(OrderBook):
         for level in self.bids.levels + self.asks.levels:
             assert len(level.orders) == 1, f"Number of orders on {level} > 1"
 
-    cdef inline Order _process_order(self, Order order):
+    cdef inline void _process_order(self, Order order):
         # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the base class.
         order.id = f"{order.price:.{self.price_precision}f}"
-        return order
 
     cdef inline void _remove_if_exists(self, Order order) except *:
         # For a L2OrderBook, an order update means a whole level update. If this
         # level exists, remove it so we can insert the new level.
         if order.side == OrderSide.BUY and order.price in self.bids.prices():
-            self.delete(order)
+            self._delete(order)
         elif order.side == OrderSide.SELL and order.price in self.asks.prices():
-            self.delete(order)
+            self._delete(order)
 
 
 cdef class L1OrderBook(OrderBook):
