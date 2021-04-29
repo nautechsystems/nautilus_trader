@@ -31,7 +31,7 @@ cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The order book instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel`"""
     cdef readonly int price_precision
     """The order book price precision.\n\n:returns: `int`"""
     cdef readonly int size_precision
@@ -101,7 +101,7 @@ cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -118,6 +118,6 @@ cdef class OrderBookDeltas(OrderBookData):
 
 cdef class OrderBookDelta(OrderBookData):
     cdef readonly OrderBookDeltaType type
-    """The type of change (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookDeltaType (Enum)`"""
+    """The type of change (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookDeltaType`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""

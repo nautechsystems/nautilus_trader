@@ -322,12 +322,12 @@ cdef class Position:
 
         Parameters
         ----------
-        side : OrderSide (Enum)
+        side : OrderSide
             The order side
 
         Returns
         -------
-        PositionSide (Enum)
+        PositionSide
 
         """
         return Position.side_from_order_side_c(side)
