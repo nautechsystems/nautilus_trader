@@ -27,6 +27,7 @@ from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaTypePar
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevelParser
 from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
@@ -94,63 +95,47 @@ cdef class OrderBook:
             size_precision=size_precision,
         )
         self.last_update_timestamp_ns = 0
-        self.last_update_id = 0
-
-        # TODO: Id updates
 
     @staticmethod
     def create(
-        InstrumentId instrument_id,
+        Instrument instrument,
         OrderBookLevel level,
-        int price_precision,
-        int size_precision,
     ):
         """
         Create a new order book with the given parameters.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the book.
+        instrument : Instrument
+            The instrument for the book.
         level : OrderBookLevel
             The order book level (L1, L2, L3).
-        price_precision : int
-            The price precision for the book.
-        size_precision : int
-            The size precision for the book.
 
         Returns
         -------
         OrderBook
 
-        Raises
-        ------
-        ValueError
-            If price_precision is negative (< 0).
-        ValueError
-            If size_precision is negative (< 0).
-
         """
-        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(instrument, "instrument")
         Condition.in_range_int(level, 1, 3, "level")
 
         if level == OrderBookLevel.L1:
             return L1OrderBook(
-                instrument_id=instrument_id,
-                price_precision=price_precision,
-                size_precision=size_precision,
+                instrument_id=instrument.id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
         elif level == OrderBookLevel.L2:
             return L2OrderBook(
-                instrument_id=instrument_id,
-                price_precision=price_precision,
-                size_precision=size_precision,
+                instrument_id=instrument.id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
         elif level == OrderBookLevel.L3:
             return L3OrderBook(
-                instrument_id=instrument_id,
-                price_precision=price_precision,
-                size_precision=size_precision,
+                instrument_id=instrument.id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
 
     cpdef void add(self, Order order) except *:
