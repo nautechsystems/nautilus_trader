@@ -98,7 +98,7 @@ tests_no_zope = ["coverage[toml] (>=5.0.2)", "hypothesis", "pympler", "pytest (>
 
 [[package]]
 name = "babel"
-version = "2.9.0"
+version = "2.9.1"
 description = "Internationalization utilities"
 category = "main"
 optional = true
@@ -147,7 +147,7 @@ d = ["aiohttp (>=3.3.2)", "aiohttp-cors"]
 
 [[package]]
 name = "ccxt"
-version = "1.49.4"
+version = "1.49.9"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -1196,7 +1196,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "653f22df9128cf9de4d2e6c0ac107f1f0547233a5771bddd90f2f1fb6a2b76c2"
+content-hash = "90095e7fdf9cb5096a3c2057d13dd9be6f40fb7802c4ce2f70d9888c06e5701c"
 
 [metadata.files]
 aiodns = [
@@ -1271,8 +1271,8 @@ attrs = [
     {file = "attrs-20.3.0.tar.gz", hash = "sha256:832aa3cde19744e49938b91fea06d69ecb9e649c93ba974535d08ad92164f700"},
 ]
 babel = [
-    {file = "Babel-2.9.0-py2.py3-none-any.whl", hash = "sha256:9d35c22fcc79893c3ecc85ac4a56cde1ecf3f19c540bba0922308a6c06ca6fa5"},
-    {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
+    {file = "Babel-2.9.1-py2.py3-none-any.whl", hash = "sha256:ab49e12b91d937cd11f0b67cb259a57ab4ad2b59ac7a3b41d6c06c0ac5b0def9"},
+    {file = "Babel-2.9.1.tar.gz", hash = "sha256:bc0c176f9f6a994582230df350aa6e05ba2ebe4b3ac317eab29d9be5d2768da0"},
 ]
 betfairlightweight = [
     {file = "betfairlightweight-2.12.1-py3-none-any.whl", hash = "sha256:60d5ce569ff05263da083e8c3d85e168fd8cd4ee4b49336f5d99edc52935efcc"},
@@ -1282,8 +1282,8 @@ black = [
     {file = "black-20.8b1.tar.gz", hash = "sha256:1c02557aa099101b9d21496f8a914e9ed2222ef70336404eeeac8edba836fbea"},
 ]
 ccxt = [
-    {file = "ccxt-1.49.4-py2.py3-none-any.whl", hash = "sha256:7f3405a1b4a7f0d50399ee8f0aa8f147d232449e8b261570cab15ab89517dd75"},
-    {file = "ccxt-1.49.4.tar.gz", hash = "sha256:d2e4c74803902c767a4109a85d09f67bacc3a3e8f7c5b10140c54319e6f32e3e"},
+    {file = "ccxt-1.49.9-py2.py3-none-any.whl", hash = "sha256:37f2163810ad6061c85a7f9ad0e5b82d2510bacc5f295f9b428f93bbfea02119"},
+    {file = "ccxt-1.49.9.tar.gz", hash = "sha256:d32b1e676681e5dd3b1ec0cce81c1f7aefec0ce0b2d8a17ef55bb074721988b8"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
