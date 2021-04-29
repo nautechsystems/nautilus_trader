@@ -30,10 +30,11 @@ from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD = TestStubs.audusd_id()
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 @pytest.fixture(scope="function")
@@ -75,7 +76,7 @@ def test_instantiate_base_class_directly_raises_value_error():
     # Assert
     with pytest.raises(RuntimeError):
         OrderBook(
-            instrument_id=AUDUSD,
+            instrument_id=AUDUSD_SIM.id,
             level=OrderBookLevel.L2,
             price_precision=5,
             size_precision=0,
@@ -85,9 +86,8 @@ def test_instantiate_base_class_directly_raises_value_error():
 def test_create_level_1_order_book():
     # Arrange
     # Act
-    book = OrderBook.create(
-        instrument_id=AUDUSD,
-        level=OrderBookLevel.L1,
+    book = L1OrderBook(
+        instrument_id=AUDUSD_SIM.id,
         price_precision=2,
         size_precision=2,
     )
@@ -105,10 +105,8 @@ def test_create_level_2_order_book():
     # Arrange
     # Act
     book = OrderBook.create(
-        instrument_id=AUDUSD,
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L2,
-        price_precision=2,
-        size_precision=2,
     )
 
     # Assert
@@ -123,10 +121,8 @@ def test_create_level_3_order_book():
     # Arrange
     # Act
     book = OrderBook.create(
-        instrument_id=AUDUSD,
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L3,
-        price_precision=2,
-        size_precision=2,
     )
 
     # Assert
@@ -143,20 +139,16 @@ def test_create_level_fail():
     # Assert
     with pytest.raises(ValueError):
         OrderBook.create(
-            instrument_id=AUDUSD,
+            instrument=AUDUSD_SIM,
             level=0,
-            price_precision=2,
-            size_precision=2,
         )
 
 
 def test_best_bid_or_ask_price_with_no_orders_returns_none():
     # Arrange
     book = OrderBook.create(
-        instrument_id=AUDUSD,
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L2,
-        price_precision=2,
-        size_precision=2,
     )
 
     # Act
@@ -168,10 +160,8 @@ def test_best_bid_or_ask_price_with_no_orders_returns_none():
 def test_best_bid_or_ask_qty_with_no_orders_returns_none():
     # Arrange
     book = OrderBook.create(
-        instrument_id=AUDUSD,
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L2,
-        price_precision=2,
-        size_precision=2,
     )
 
     # Act
@@ -183,10 +173,8 @@ def test_best_bid_or_ask_qty_with_no_orders_returns_none():
 def test_spread_with_no_orders_returns_none():
     # Arrange
     book = OrderBook.create(
-        instrument_id=AUDUSD,
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L2,
-        price_precision=2,
-        size_precision=2,
     )
 
     # Act
@@ -197,10 +185,8 @@ def test_spread_with_no_orders_returns_none():
 def test_add_orders_to_book():
     # Arrange
     book = OrderBook.create(
-        instrument_id=AUDUSD,
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L2,
-        price_precision=2,
-        size_precision=2,
     )
 
     # Act
@@ -217,10 +203,8 @@ def test_add_orders_to_book():
 
 def test_repr():
     book = OrderBook.create(
-        instrument_id=AUDUSD,
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L2,
-        price_precision=2,
-        size_precision=2,
     )
 
     # Act
@@ -262,10 +246,8 @@ def test_add(empty_l2_book):
 
 def test_add_l1_fails():
     book = OrderBook.create(
-        instrument_id=TestStubs.audusd_id(),
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L1,
-        price_precision=5,
-        size_precision=0,
     )
     with pytest.raises(NotImplementedError):
         book.add(TestStubs.order(price=10.0, side=OrderSide.BUY))
@@ -273,10 +255,8 @@ def test_add_l1_fails():
 
 def test_delete_l1():
     book = OrderBook.create(
-        instrument_id=TestStubs.audusd_id(),
+        instrument=AUDUSD_SIM,
         level=OrderBookLevel.L1,
-        price_precision=5,
-        size_precision=0,
     )
     order = TestStubs.order(price=10.0, side=OrderSide.BUY)
     book.update(order)

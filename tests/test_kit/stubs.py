@@ -65,6 +65,7 @@ from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
+from tests.test_kit.providers import TestInstrumentProvider
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -229,7 +230,7 @@ class TestStubs:
 
     @staticmethod
     def order_book(
-        instrument_id=None,
+        instrument=None,
         level=OrderBookLevel.L2,
         bid_price=10,
         ask_price=15,
@@ -238,14 +239,13 @@ class TestStubs:
         bid_volume=10,
         ask_volume=10,
     ) -> OrderBook:
+        instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
         order_book = OrderBook.create(
-            instrument_id=instrument_id or TestStubs.audusd_id(),
+            instrument=instrument,
             level=level,
-            price_precision=4,
-            size_precision=4,
         )
         snapshot = TestStubs.order_book_snapshot(
-            instrument_id=instrument_id or TestStubs.audusd_id(),
+            instrument_id=instrument.id,
             bid_price=bid_price,
             ask_price=ask_price,
             bid_levels=bid_levels,
