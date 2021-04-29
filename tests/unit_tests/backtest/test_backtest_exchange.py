@@ -2013,10 +2013,8 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.data_engine.cache.add_instrument(USDJPY_SIM)
         self.data_engine.cache.add_order_book(
             OrderBook.create(
-                instrument_id=USDJPY_SIM.id,
+                instrument=USDJPY_SIM,
                 level=OrderBookLevel.L2,
-                price_precision=4,
-                size_precision=4,
             )
         )
         self.portfolio.register_cache(self.data_engine.cache)

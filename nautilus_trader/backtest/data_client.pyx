@@ -304,7 +304,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -333,7 +333,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.

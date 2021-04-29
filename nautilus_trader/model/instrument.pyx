@@ -357,7 +357,7 @@ cdef class Instrument(Data):
 
         Parameters
         ----------
-        side : PositionSide (Enum)
+        side : PositionSide
             The currency position side.
         quantity : Quantity
             The currency position quantity.
@@ -404,7 +404,7 @@ cdef class Instrument(Data):
             The transaction quantity.
         last_px : Decimal or Price
             The transaction price.
-        liquidity_side : LiquiditySide (Enum)
+        liquidity_side : LiquiditySide
             The liquidity side for the transaction.
 
         Returns

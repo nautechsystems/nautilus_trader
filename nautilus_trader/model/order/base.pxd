@@ -67,15 +67,15 @@ cdef class Order:
     cdef readonly InstrumentId instrument_id
     """The order instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide side
-    """The order side.\n\n:returns: `OrderSide` (Enum)"""
+    """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
-    """The order type.\n\n:returns: `OrderType` (Enum)"""
+    """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t timestamp_ns
     """The Unix timestamp (nanos) of order initialization.\n\n:returns: `int64`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce` (Enum)"""
+    """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t execution_ns
@@ -129,7 +129,7 @@ cdef class PassiveOrder(Order):
     cdef readonly Price price
     """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly LiquiditySide liquidity_side
-    """The order liquidity side.\n\n:returns: `LiquiditySide` (Enum)"""
+    """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly datetime expire_time
     """The order expire time.\n\n:returns: `datetime` or None"""
     cdef readonly int64_t expire_time_ns

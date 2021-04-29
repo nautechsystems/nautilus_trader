@@ -64,13 +64,13 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly OrderSide order_side
-    """The order side.\n\n:returns: `OrderSide` (Enum)"""
+    """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
-    """The order type.\n\n:returns: `OrderType` (Enum)"""
+    """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce` (Enum)"""
+    """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
 
@@ -174,7 +174,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly InstrumentId instrument_id
     """The order instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide order_side
-    """The order side.\n\n:returns: `OrderSide` (Enum)"""
+    """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly Quantity last_qty
     """The fill quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price last_px
@@ -190,7 +190,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Money commission
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
-    """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide` (Enum)"""
+    """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t execution_ns
     """The Unix timestamp (nanos) of the execution.\n\n:returns: `int64`"""
     cdef readonly dict info

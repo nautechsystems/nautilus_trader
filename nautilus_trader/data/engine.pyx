@@ -627,10 +627,8 @@ cdef class DataEngine(Component):
                                 f"no instrument found in cache.")
                 return
             order_book = OrderBook.create(
-                instrument_id=instrument_id,
+                instrument=instrument,
                 level=metadata[LEVEL],
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
             )
 
             self.cache.add_order_book(order_book)
@@ -677,10 +675,8 @@ cdef class DataEngine(Component):
                                 f"no instrument found in cache.")
                 return
             order_book = OrderBook.create(
-                instrument_id=instrument_id,
+                instrument=instrument,
                 level=metadata[LEVEL],
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
             )
 
             self.cache.add_order_book(order_book)

@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.116.1"
+version = "1.117.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -34,7 +34,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 betfairlightweight = {extras = ["speed"], version = "^2.12.1"}
-ccxt = "^1.49.4"
+ccxt = "^1.49.9"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 ib_insync = "^0.9.66"
@@ -88,29 +88,3 @@ filterwarnings = [
 ]
 
 # TODO (move .coveragerc here once we're on coverage 5.x)
-
-#################
-# Style configs #
-#################
-#[tool.isort]
-#src_paths = ["examples", "nautilus_trader", "scripts", "tests", "tools", "build.py", "noxfile.py"]
-#atomic = true
-#combine_as_imports = true
-#ensure_newline_before_comments = true
-#force_grid_wrap = false
-#force_single_line = true
-#force_sort_within_sections = true
-#include_trailing_comma = true
-#known_first_party = ["examples", "nautilus_trader", "tests"]
-#known_third_party = ["redis"]
-#lexicographical = true
-#line_length = 88
-#lines_after_imports = 2
-#lines_between_types = 1
-#multi_line_output = 3
-#single_line_exclusions = "typing"
-#use_parentheses = true
-
-[tool.black]
-target-version = ["py37", "py38"]
-include = '\.pyi?$'

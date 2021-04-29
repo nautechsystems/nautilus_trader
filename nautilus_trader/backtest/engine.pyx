@@ -315,7 +315,7 @@ cdef class BacktestEngine:
         ----------
         venue : Venue
             The venue for the exchange.
-        oms_type : OMSType (Enum)
+        oms_type : OMSType
             The order management system type for the exchange. If HEDGING and
             no position_id for an order then will generate a new position_id.
         starting_balances : list[Money]

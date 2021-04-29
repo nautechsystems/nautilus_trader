@@ -113,9 +113,9 @@ def test_exposure():
 
 def test_repr(asks):
     expected = (
-        "Ladder([Level(price=15.0, orders=[Order(15.0, 10.0, SELL, 15.0000)]), "
-        "Level(price=16.0, orders=[Order(16.0, 20.0, SELL, 16.0000)]), Level(price=17.0, "
-        "orders=[Order(17.0, 30.0, SELL, 17.0000)])])"
+        "Ladder([Level(price=15.0, orders=[Order(15.0, 10.0, SELL, 15.00000)]), "
+        "Level(price=16.0, orders=[Order(16.0, 20.0, SELL, 16.00000)]), Level(price=17.0, "
+        "orders=[Order(17.0, 30.0, SELL, 17.00000)])])"
     )
 
     assert str(asks) == expected

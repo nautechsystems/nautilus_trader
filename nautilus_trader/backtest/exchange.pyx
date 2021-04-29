@@ -99,7 +99,7 @@ cdef class SimulatedExchange:
         ----------
         venue : Venue
             The venue to simulate for the backtest.
-        oms_type : OMSType (Enum)
+        oms_type : OMSType
             The order management system type used by the exchange (HEDGING or NETTING).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
@@ -180,7 +180,6 @@ cdef class SimulatedExchange:
             self._instrument_indexer[instrument.id] = index
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
-        self._tick_sizes = self.get_tick_sizes()
         self._books = {}                # type: dict[InstrumentId, OrderBook]
         self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
         self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
@@ -276,17 +275,6 @@ cdef class SimulatedExchange:
             ask_quotes=self._build_current_ask_rates(),
         )
 
-    cpdef dict get_tick_sizes(self):
-        """
-        Returns the a map of tick sizes for the exchanges instruments.
-
-        Returns
-        -------
-        dict[InstrumentId, Decimal]
-
-        """
-        return {inst_id: inst.tick_size for inst_id, inst in self.instruments.items()}
-
     cpdef OrderBook get_book(self, InstrumentId instrument_id):
         """
         Return the order book for the given instrument identifier.
@@ -311,10 +299,8 @@ cdef class SimulatedExchange:
                 raise RuntimeError(f"Cannot create OrderBook: "
                                    f"no instrument for {instrument_id.value}")
             book = OrderBook.create(
-                instrument_id=instrument_id,
+                instrument=instrument,
                 level=self.exchange_order_book_level,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
             )
             self._books[instrument_id] = book
 
@@ -832,10 +818,7 @@ cdef class SimulatedExchange:
         self._accept_order(order)
 
         # Immediately fill marketable order
-        self._aggressively_fill_order(
-            order=order,
-            liquidity_side=LiquiditySide.TAKER,
-        )
+        self._aggressively_fill_order(order, LiquiditySide.TAKER)
 
     cdef inline void _process_limit_order(self, LimitOrder order) except *:
         if order.is_post_only:
@@ -855,10 +838,7 @@ cdef class SimulatedExchange:
 
         # Check for immediate fill
         if not order.is_post_only and self._is_limit_matched(order.instrument_id, order.side, order.price):
-            self._passively_fill_order(
-                order=order,
-                liquidity_side=LiquiditySide.TAKER,
-            )
+            self._passively_fill_order(order, LiquiditySide.TAKER)  # Fills as liquidity taker
 
     cdef inline void _process_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.price):
@@ -908,12 +888,8 @@ cdef class SimulatedExchange:
                 )
                 return  # Cannot update order
             else:
-                # Immediate fill as TAKER
                 self._generate_order_updated(order, qty, price)
-                self._passively_fill_order(
-                    order=order,
-                    liquidity_side=LiquiditySide.TAKER,
-                )
+                self._passively_fill_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
                 return  # Filled
 
         self._generate_order_updated(order, qty, price)
@@ -971,12 +947,8 @@ cdef class SimulatedExchange:
                     )
                     return  # Cannot update order
                 else:
-                    # Immediate fill as TAKER
                     self._generate_order_updated(order, qty, price)
-                    self._passively_fill_order(
-                        order=order,
-                        liquidity_side=LiquiditySide.TAKER,
-                    )
+                    self._passively_fill_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
                     return  # Filled
 
             self._generate_order_updated(order, qty, price)
@@ -1045,45 +1017,35 @@ cdef class SimulatedExchange:
 
     cdef inline void _match_limit_order(self, LimitOrder order) except *:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
-            self._passively_fill_order(
-                order=order,
-                liquidity_side=LiquiditySide.MAKER,
-            )
+            self._passively_fill_order(order, LiquiditySide.MAKER)
 
     cdef inline void _match_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_triggered(order.instrument_id, order.side, order.price):
-            self._aggressively_fill_order(
-                order=order,
-                liquidity_side=LiquiditySide.TAKER,  # Triggered stop places market order
-            )
+            self._aggressively_fill_order(order, LiquiditySide.TAKER)  # Triggered stop places market order
 
     cdef inline void _match_stop_limit_order(self, StopLimitOrder order) except *:
         if order.is_triggered:
             if self._is_limit_matched(order.instrument_id, order.side, order.price):
-                self._passively_fill_order(
-                    order=order,
-                    liquidity_side=LiquiditySide.MAKER,
-                )
+                self._passively_fill_order(order, LiquiditySide.MAKER)
         else:  # Order not triggered
             if self._is_stop_triggered(order.instrument_id, order.side, order.trigger):
                 self._trigger_order(order)
 
-                # Check for immediate fill
-                if self._is_limit_marketable(order.instrument_id, order.side, order.price):
-                    if order.is_post_only:  # Would be liquidity taker
-                        self._delete_order(order)  # Remove order from working orders
-                        bid = self.best_bid_price(order.instrument_id)
-                        ask = self.best_ask_price(order.instrument_id)
-                        self._reject_order(
-                            order,
-                            f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
-                            f"limit px of {order.price} would have been a TAKER: bid={bid}, ask={ask}",
-                        )
-                    else:
-                        self._passively_fill_order(
-                            order=order,
-                            liquidity_side=LiquiditySide.TAKER,
-                        )
+            # Check for immediate fill
+            if not self._is_limit_marketable(order.instrument_id, order.side, order.price):
+                return
+
+            if order.is_post_only:  # Would be liquidity taker
+                self._delete_order(order)  # Remove order from working orders
+                bid = self.best_bid_price(order.instrument_id)
+                ask = self.best_ask_price(order.instrument_id)
+                self._reject_order(
+                    order,
+                    f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
+                    f"limit px of {order.price} would have been a TAKER: bid={bid}, ask={ask}",
+                )
+            else:
+                self._passively_fill_order(order, LiquiditySide.TAKER)  # Fills as TAKER
 
     cdef inline bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price order_price) except *:
         if side == OrderSide.BUY:
@@ -1178,10 +1140,11 @@ cdef class SimulatedExchange:
             if order.type == OrderType.STOP_MARKET:
                 fill_px = order.price  # TODO: Temporary strategy for market moving through price
             if self.exchange_order_book_level == OrderBookLevel.L1 and self.fill_model.is_slipped():
+                instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
                 if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px + self._tick_sizes[order.instrument_id])
+                    fill_px = Price(fill_px + instrument.tick_size)
                 else:  # => OrderSide.SELL
-                    fill_px = Price(fill_px - self._tick_sizes[order.instrument_id])
+                    fill_px = Price(fill_px - instrument.tick_size)
             self._fill_order(
                 order=order,
                 last_px=fill_px,
@@ -1189,13 +1152,14 @@ cdef class SimulatedExchange:
                 liquidity_side=liquidity_side,
             )
 
-        # For L1 fill remaining size at next tick price
+        # TODO: For L1 fill remaining size at next tick price (temporary)
         if self.exchange_order_book_level == OrderBookLevel.L1 and order.is_working_c():
             fill_px = fills[-1][0]
+            instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
             if order.side == OrderSide.BUY:
-                fill_px = Price(fill_px + self._tick_sizes[order.instrument_id])
+                fill_px = Price(fill_px + instrument.tick_size)
             else:  # => OrderSide.SELL
-                fill_px = Price(fill_px - self._tick_sizes[order.instrument_id])
+                fill_px = Price(fill_px - instrument.tick_size)
             self._fill_order(
                 order=order,
                 last_px=fill_px,

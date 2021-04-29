@@ -77,7 +77,7 @@ cdef class StopLimitOrder(PassiveOrder):
             The strategy identifier associated with the order.
         instrument_id : InstrumentId
             The order instrument_id.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).
@@ -85,7 +85,7 @@ cdef class StopLimitOrder(PassiveOrder):
             The order limit price.
         trigger : Price
             The order stop trigger price.
-        time_in_force : TimeInForce (Enum)
+        time_in_force : TimeInForce
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time.

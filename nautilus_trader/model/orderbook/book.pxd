@@ -31,7 +31,7 @@ cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The order book instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel`"""
     cdef readonly int price_precision
     """The order book price precision.\n\n:returns: `int`"""
     cdef readonly int size_precision
@@ -42,8 +42,6 @@ cdef class OrderBook:
     """The order books asks.\n\n:returns: `Ladder`"""
     cdef readonly int64_t last_update_timestamp_ns
     """The Unix timestamp (nanos) of the last update.\n\n:returns: `int64`"""
-    cdef readonly int64_t last_update_id
-    """The identifier of the last update.\n\n:returns: `int64`"""
 
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
@@ -101,7 +99,7 @@ cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -118,6 +116,6 @@ cdef class OrderBookDeltas(OrderBookData):
 
 cdef class OrderBookDelta(OrderBookData):
     cdef readonly OrderBookDeltaType type
-    """The type of change (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookDeltaType (Enum)`"""
+    """The type of change (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookDeltaType`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""

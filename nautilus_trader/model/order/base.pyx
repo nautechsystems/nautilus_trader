@@ -233,7 +233,7 @@ cdef class Order:
 
         Returns
         -------
-        OrderState (Enum)
+        OrderState
 
         """
         return self.state_c()
@@ -408,7 +408,7 @@ cdef class Order:
 
         Parameters
         ----------
-        side : OrderSide (Enum)
+        side : OrderSide
             The original order side.
 
         Returns
@@ -430,7 +430,7 @@ cdef class Order:
 
         Parameters
         ----------
-        side : PositionSide (Enum)
+        side : PositionSide
             The position side to flatten.
 
         Returns
@@ -585,15 +585,15 @@ cdef class PassiveOrder(Order):
             The strategy identifier associated with the order.
         instrument_id : InstrumentId
             The order instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The order side (BUY or SELL).
-        order_type : OrderType (Enum)
+        order_type : OrderType
             The order type.
         quantity : Quantity
             The order quantity (> 0).
         price : Price
             The order price.
-        time_in_force : TimeInForce (Enum)
+        time_in_force : TimeInForce
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time - applicable to GTD orders only.

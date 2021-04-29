@@ -166,13 +166,13 @@ cdef class OrderInitialized(OrderEvent):
             The strategy identifier associated with the order.
         instrument_id : InstrumentId
             The order instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The order side.
-        order_type : OrderType (Enum)
+        order_type : OrderType
             The order type.
         quantity : Quantity
             The order quantity.
-        time_in_force : TimeInForce (Enum)
+        time_in_force : TimeInForce
             The order time-in-force.
         event_id : UUID
             The event identifier.
@@ -912,7 +912,7 @@ cdef class OrderFilled(OrderEvent):
             The strategy identifier associated with the order.
         instrument_id : InstrumentId
             The instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The execution order side.
         last_qty : Quantity
             The fill quantity for this execution.
@@ -928,7 +928,7 @@ cdef class OrderFilled(OrderEvent):
             If quantity is expressed in quote currency.
         commission : Money
             The fill commission.
-        liquidity_side : LiquiditySide (Enum)
+        liquidity_side : LiquiditySide
             The execution liquidity side.
         execution_ns : int64
             The Unix timestamp (nanos) of the execution.

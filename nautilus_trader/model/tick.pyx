@@ -118,7 +118,7 @@ cdef class QuoteTick(Tick):
 
         Parameters
         ----------
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type to extraction.
 
         Returns
@@ -141,7 +141,7 @@ cdef class QuoteTick(Tick):
 
         Parameters
         ----------
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type for extraction.
 
         Returns
@@ -238,7 +238,7 @@ cdef class TradeTick(Tick):
             The price of the trade.
         size : Quantity
             The size of the trade.
-        aggressor_side : AggressorSide (Enum)
+        aggressor_side : AggressorSide
             The aggressor side of the trade.
         match_id : TradeMatchId
             The trade match identifier.
