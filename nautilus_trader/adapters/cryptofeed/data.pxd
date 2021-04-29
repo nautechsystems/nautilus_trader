@@ -17,7 +17,7 @@ from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class CryptoFeedDataClient(CCXTDataClient):
+cdef class CryptofeedDataClient(CCXTDataClient):
     cdef object _subscriber
 
     cdef dict _market_id_to_instrument
