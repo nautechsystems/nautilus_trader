@@ -64,7 +64,7 @@ from nautilus_trader.model.order.base cimport PassiveOrder
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
-
+# region Desc=CCXTExecutionClient
 cdef class CCXTExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for the unified CCXT Pro API.
@@ -682,8 +682,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._cached_orders.pop(venue_order_id, None)
         self._cached_filled.pop(venue_order_id, None)
         self._log.debug(f"De-cached {repr(venue_order_id)}.")
+# endregion
 
-
+# region Desc=BinanceCCXTExecutionClient
 cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
     """
     Provides a CCXT pro execution client for the Binance exchange.
@@ -784,8 +785,9 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
                 reason=str(ex),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
+# endregion
 
-
+# region Desc=BitmexCCXTExecutionClient
 cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
     """
     Provides a CCXT Pro execution client for the Bitmex exchange.
@@ -889,3 +891,4 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
                 reason=str(ex),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
+#endregion
