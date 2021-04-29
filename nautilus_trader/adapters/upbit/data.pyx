@@ -627,17 +627,6 @@ cdef class UpbitDataClient(LiveMarketDataClient):
             correlation_id
         ))
 
-    def _schedule_request_bars(self, list item):
-        bar_type, from_datetime, to_datetime, limit, correlation_id = item
-        self._log.info(f"throttling ... {bar_type.instrument_id}")
-        self._loop.create_task(self._request_bars(
-            bar_type,
-            from_datetime,
-            to_datetime,
-            limit,
-            correlation_id
-        ))
-
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
