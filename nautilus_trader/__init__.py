@@ -28,4 +28,4 @@ PYPROJECT_PATH = PACKAGE_ROOT.strip("nautilus_trader") + "/pyproject.toml"  # no
 try:
     __version__ = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
 except FileNotFoundError:
-    __version__ = "dev"
+    __version__ = "latest"
