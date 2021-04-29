@@ -79,7 +79,7 @@ cdef class L3OrderBook(OrderBook):
 
 
 cdef class L2OrderBook(OrderBook):
-    cdef inline Order _process_order(self, Order order)
+    cdef inline void _process_order(self, Order order)
     cdef inline void _remove_if_exists(self, Order order) except *
 
 
