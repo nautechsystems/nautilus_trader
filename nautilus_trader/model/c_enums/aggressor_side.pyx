@@ -17,7 +17,9 @@ cdef class AggressorSideParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
+        if value == 0:
+            return "UNKNOWN"
+        elif value == 1:
             return "BUY"
         elif value == 2:
             return "SELL"
@@ -26,7 +28,9 @@ cdef class AggressorSideParser:
 
     @staticmethod
     cdef AggressorSide from_str(str value) except *:
-        if value == "BUY":
+        if value == "UNKNOWN":
+            return AggressorSide.UNKNOWN
+        elif value == "BUY":
             return AggressorSide.BUY
         elif value == "SELL":
             return AggressorSide.SELL

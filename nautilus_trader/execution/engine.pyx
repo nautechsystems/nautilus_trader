@@ -111,6 +111,9 @@ cdef class ExecutionEngine(Component):
             config = {}
         super().__init__(clock, logger, name="ExecEngine")
 
+        if config:
+            self._log.info(f"Config: {config}.")
+
         self._clients = {}     # type: dict[ClientId, ExecutionClient]
         self._strategies = {}  # type: dict[StrategyId, TradingStrategy]
         self._pos_id_generator = PositionIdGenerator(
@@ -594,7 +597,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *:
         cdef ClientOrderId entry_id = bracket_order.entry.client_order_id
         cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.client_order_id
-        cdef ClientOrderId take_profit_id
+        cdef ClientOrderId take_profit_id = None
         if bracket_order.take_profit:
             take_profit_id = bracket_order.take_profit.client_order_id
 
@@ -674,7 +677,6 @@ cdef class ExecutionEngine(Component):
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self.cache.order(event.client_order_id)
-        cdef str event_str
         if order is None:
             self._log.warning(f"{repr(event.client_order_id)} was not found in cache "
                               f"for {repr(event.venue_order_id)} to apply {event}.")

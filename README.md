@@ -5,6 +5,7 @@
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
+![docs-status](https://img.shields.io/netlify/b89a9b0d-d308-4dd3-9a3e-e9c0845ef175?label=docs)
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
@@ -90,7 +91,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 
 The documentation for the latest version of the package can be found at:
 
-> https://docs.nautilus-trader.io
+> https://docs.nautilustrader.io
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
 

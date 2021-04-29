@@ -639,8 +639,6 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void _stream_prices(self, InstrumentId instrument_id, event: threading.Event) except *:
         cdef dict res
-        cdef dict best_bid
-        cdef dict best_ask
         cdef QuoteTick tick
         try:
             params = {

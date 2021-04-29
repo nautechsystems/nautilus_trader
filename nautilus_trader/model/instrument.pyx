@@ -60,7 +60,6 @@ cdef class Instrument(Data):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        dict financing not None,
         int64_t timestamp_ns,
         dict info=None,
     ):
@@ -113,8 +112,6 @@ cdef class Instrument(Data):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        financing : dict[str, object]
-            The financing information for the instrument.
         timestamp_ns : int64
             The Unix timestamp (nanos) the instrument was created/updated at.
         info : dict[str, object], optional
@@ -360,7 +357,7 @@ cdef class Instrument(Data):
 
         Parameters
         ----------
-        side : PositionSide (Enum)
+        side : PositionSide
             The currency position side.
         quantity : Quantity
             The currency position quantity.
@@ -407,7 +404,7 @@ cdef class Instrument(Data):
             The transaction quantity.
         last_px : Decimal or Price
             The transaction price.
-        liquidity_side : LiquiditySide (Enum)
+        liquidity_side : LiquiditySide
             The liquidity side for the transaction.
 
         Returns
@@ -520,7 +517,6 @@ cdef class Future(Instrument):
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),
-            financing={},
             timestamp_ns=timestamp_ns,
             info={},
         )
@@ -610,7 +606,6 @@ cdef class BettingInstrument(Instrument):
             margin_maint=Decimal(0),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
-            financing=dict(),
             timestamp_ns=timestamp_ns,
             info=dict(),  # TODO - Add raw response?
         )
@@ -627,5 +622,4 @@ cdef class BettingInstrument(Instrument):
             "selection_name",
             "selection_handicap",
         )
-        cdef str k
         return Symbol(value="|".join([str(getattr(self, k)) for k in keys]))

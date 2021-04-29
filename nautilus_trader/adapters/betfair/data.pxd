@@ -20,13 +20,18 @@ from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
+cdef enum SubscriptionStatus:
+    UNSUBSCRIBED = 0
+    PENDING_STARTUP = 1
+    RUNNING = 2
+
+
 cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
     cdef object _stream
-    cdef BetfairInstrumentProvider _instrument_provider
-
     cdef set _subscribed_market_ids
-    cdef object _update_instruments_task
+    cdef SubscriptionStatus subscription_status
+    cdef BetfairInstrumentProvider _instrument_provider
 
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cdef inline void _log_betfair_error(self, ex, str method_name) except *

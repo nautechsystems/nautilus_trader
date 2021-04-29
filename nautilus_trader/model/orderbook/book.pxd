@@ -22,13 +22,16 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The order book instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel`"""
     cdef readonly int price_precision
     """The order book price precision.\n\n:returns: `int`"""
     cdef readonly int size_precision
@@ -39,8 +42,6 @@ cdef class OrderBook:
     """The order books asks.\n\n:returns: `Ladder`"""
     cdef readonly int64_t last_update_timestamp_ns
     """The Unix timestamp (nanos) of the last update.\n\n:returns: `int64`"""
-    cdef readonly int64_t last_update_id
-    """The identifier of the last update.\n\n:returns: `int64`"""
 
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *
@@ -68,6 +69,7 @@ cdef class OrderBook:
     cpdef spread(self)
     cpdef midpoint(self)
     cpdef str pprint(self, int num_levels=*, show=*)
+    cpdef int trade_side(self, TradeTick trade)
 
 
 cdef class L3OrderBook(OrderBook):
@@ -75,22 +77,32 @@ cdef class L3OrderBook(OrderBook):
 
 
 cdef class L2OrderBook(OrderBook):
-    cdef inline Order _process_order(self, Order order)
+    cdef inline void _process_order(self, Order order)
     cdef inline void _remove_if_exists(self, Order order) except *
 
 
 cdef class L1OrderBook(OrderBook):
+    cdef Order _top_bid
+    cdef Order _top_ask
+    cdef Level _top_bid_level
+    cdef Level _top_ask_level
+
+    cpdef void update_top(self, Tick tick) except *
+    cdef inline void _update_quote_tick(self, QuoteTick tick)
+    cdef inline void _update_trade_tick(self, TradeTick tick)
+    cdef inline void _update_bid(self, double price, double size)
+    cdef inline void _update_ask(self, double price, double size)
     cdef inline Order _process_order(self, Order order)
 
 
 cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    cdef readonly OrderBookLevel level
+    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):
-    cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list bids
     """The snapshot bids.\n\n:returns: `list`"""
     cdef readonly list asks
@@ -98,14 +110,12 @@ cdef class OrderBookSnapshot(OrderBookData):
 
 
 cdef class OrderBookDeltas(OrderBookData):
-    cdef readonly OrderBookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `OrderBookLevel (Enum)`"""
     cdef readonly list deltas
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
 
 
 cdef class OrderBookDelta(OrderBookData):
     cdef readonly OrderBookDeltaType type
-    """The type of change (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookDeltaType (Enum)`"""
+    """The type of change (ADD, UPDATED, DELETE).\n\n:returns: `OrderBookDeltaType`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""

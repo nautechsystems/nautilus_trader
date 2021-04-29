@@ -75,7 +75,7 @@ cdef class MarketOrder(Order):
             The strategy identifier associated with the order.
         instrument_id : InstrumentId
             The order instrument_id.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).

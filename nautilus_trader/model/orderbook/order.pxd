@@ -20,7 +20,7 @@ cdef class Order:
     cdef readonly double price
     """The orders price.\n\n:returns: `double`"""
     cdef readonly double volume
-    """The orders volume.\n\n:returns: `volume`"""
+    """The orders volume.\n\n:returns: `double`"""
     cdef readonly OrderSide side
     """The orders side.\n\n:returns: `OrderSide`"""
     cdef readonly str id
@@ -29,3 +29,5 @@ cdef class Order:
     cpdef void update_price(self, double price) except *
     cpdef void update_volume(self, double volume) except *
     cpdef void update_id(self, str value) except *
+    cpdef double exposure(self)
+    cpdef double signed_volume(self)

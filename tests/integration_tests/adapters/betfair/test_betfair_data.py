@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import os
 
@@ -31,6 +32,7 @@ from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -41,7 +43,9 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 @pytest.mark.asyncio
 @pytest.mark.skip  # Only runs locally, comment to run
 async def test_betfair_data_client(betfair_data_client, data_engine):
-    """ Local test only, ensure we can connect to betfair and receive some market data """
+    """
+    Local test only, ensure we can connect to betfair and receive some market data
+    """
     betfair_client = betfairlightweight.APIClient(
         username=os.environ["BETFAIR_USERNAME"],
         password=os.environ["BETFAIR_PW"],
@@ -179,7 +183,7 @@ async def test_request_search_instruments(betfair_data_client, data_engine, uuid
 def test_orderbook_repr(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
     ob_snap = data_engine.events[14]
-    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 2, 2)
+    ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
     ob.apply_snapshot(ob_snap)
     print(ob.pprint())
     assert ob.best_ask_price() == 0.58824
@@ -195,11 +199,12 @@ def test_orderbook_updates(betfair_data_client):
         ):
             if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                 continue
+            print(update)
             if isinstance(update, OrderBookSnapshot):
                 order_books[update.instrument_id] = L2OrderBook(
                     instrument_id=update.instrument_id,
-                    price_precision=2,
-                    size_precision=2,
+                    price_precision=4,
+                    size_precision=4,
                 )
                 order_books[update.instrument_id].apply_snapshot(update)
             elif isinstance(update, OrderBookDeltas):
@@ -208,9 +213,10 @@ def test_orderbook_updates(betfair_data_client):
                 pass
             else:
                 raise KeyError
-    ob = order_books[list(order_books)[0]]
+
+    book = order_books[list(order_books)[0]]
     assert (
-        ob.pprint()
+        book.pprint()
         == """bids       price   asks
 --------  -------  ---------
           0.8621   [932.64]
@@ -218,7 +224,7 @@ def test_orderbook_updates(betfair_data_client):
           0.8475   [151.96]
 [147.79]  0.8403
 [156.74]  0.8333
-[76.38]   0.8265"""
+[11.19]   0.8197"""
     )
 
 
@@ -298,3 +304,26 @@ def test_instrument_closing_events(data_engine, betfair_data_client):
         isinstance(messages[3], InstrumentClosePrice)
         and messages[3].close_type == InstrumentCloseType.EXPIRED
     )
+
+
+#  TODO - Awaiting a response from betfair
+@pytest.mark.skip
+def test_duplicate_trades(betfair_data_client):
+    messages = []
+    for update in BetfairTestStubs.raw_market_updates(
+        market="1.180305278", runner1="2696769", runner2="4297085"
+    ):
+        messages.extend(
+            on_market_update(
+                instrument_provider=betfair_data_client.instrument_provider(),
+                update=update,
+            )
+        )
+        if update["pt"] >= 1615222877785:
+            break
+    trades = [
+        m
+        for m in messages
+        if isinstance(m, TradeTick) and m.price == Price("0.69930", 5)
+    ]
+    assert len(trades) == 5

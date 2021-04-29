@@ -116,7 +116,8 @@ class OandaDataClientTests(unittest.TestCase):
     #         # Arrange
     #         # Act
     #         self.data_engine.start()  # Also connects client
-    #         await asyncio.sleep(0.3)
+    #         self.client.connect()
+    #         await asyncio.sleep(1)
     #
     #         # Assert
     #         self.assertTrue(self.client.is_connected)
@@ -237,11 +238,10 @@ class OandaDataClientTests(unittest.TestCase):
         async def run_test():
             # Arrange
             self.data_engine.start()  # Also starts client
-            await asyncio.sleep(0.5)
 
             # Act
             self.client.request_instrument(AUDUSD, uuid4())
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
             # Assert
             # Instruments additionally requested on start
@@ -261,7 +261,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Act
             self.client.request_instruments(uuid4())
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
             # Assert
             # Instruments additionally requested on start
@@ -312,7 +312,7 @@ class OandaDataClientTests(unittest.TestCase):
             self.data_engine.send(request)
 
             # Allow time for request to be sent, processed and response returned
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(1)
 
             # Assert
             self.assertEqual(1, self.data_engine.response_count)

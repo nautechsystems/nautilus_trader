@@ -241,6 +241,8 @@ cdef class BacktestEngine:
                     clock=self._test_clock,
                     logger=self._test_logger,
                 )
+            else:
+                raise RuntimeError(f"DataClient type invalid, was {client_type}")
 
             self._data_engine.register_client(data_client)
 
@@ -313,7 +315,7 @@ cdef class BacktestEngine:
         ----------
         venue : Venue
             The venue for the exchange.
-        oms_type : OMSType (Enum)
+        oms_type : OMSType
             The order management system type for the exchange. If HEDGING and
             no position_id for an order then will generate a new position_id.
         starting_balances : list[Money]
@@ -535,7 +537,6 @@ cdef class BacktestEngine:
         self.trader.start()
 
         cdef Data data
-        cdef Venue venue
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()

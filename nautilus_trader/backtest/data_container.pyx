@@ -87,7 +87,6 @@ cdef class BacktestDataContainer:
             self.clients[client_id] = BacktestDataClient
 
         # Add data
-        cdef GenericData x
         self.generic_data = sorted(
             self.generic_data + data,
             key=lambda x: x.timestamp_ns,
@@ -124,7 +123,6 @@ cdef class BacktestDataContainer:
             self.clients[client_id] = BacktestMarketDataClient
 
         # Add data
-        cdef OrderBookData x
         self.order_book_data = sorted(
             self.order_book_data + data,
             key=lambda x: x.timestamp_ns,
@@ -242,9 +240,9 @@ cdef class BacktestDataContainer:
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the bar data.
-        aggregation : BarAggregation (Enum)
+        aggregation : BarAggregation
             The bar aggregation of the data.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type of the data.
         data : pd.DataFrame
             The bar data to add.

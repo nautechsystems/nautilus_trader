@@ -43,25 +43,6 @@ class TestQueue:
         assert queue.qsize() == 1
         assert not queue.empty()
 
-    def test_peek_when_no_items_returns_none(self):
-        # Arrange
-        queue = Queue()
-
-        # Act
-        # Assert
-        assert queue.peek() is None
-
-    def test_peek_when_items_returns_expected_front_of_queue(self):
-        # Arrange
-        queue = Queue()
-        queue.put_nowait("A")
-        queue.put_nowait("B")
-        queue.put_nowait("C")
-
-        # Act
-        # Assert
-        assert queue.peek() == "A"
-
     def test_get_nowait(self):
         # Arrange
         queue = Queue()
@@ -165,3 +146,47 @@ class TestQueue:
             assert item == "A"
 
         self.loop.run_until_complete(run_test())
+
+    def test_peek_when_no_items_returns_none(self):
+        # Arrange
+        queue = Queue()
+
+        # Act
+        # Assert
+        assert queue.peek() is None
+
+    def test_peek_when_items_returns_expected_front_of_queue(self):
+        # Arrange
+        queue = Queue()
+        queue.put_nowait("A")
+        queue.put_nowait("B")
+        queue.put_nowait("C")
+
+        # Act
+        # Assert
+        assert queue.peek() == "A"
+
+    def test_as_list_when_no_items_returns_empty_list(self):
+        # Arrange
+        queue = Queue()
+
+        # Act
+        result = queue.to_list()
+
+        # Assert
+        assert result == []
+
+    def test_as_list_when_items_returns_expected_list(self):
+        # Arrange
+        queue = Queue()
+        queue.put_nowait("A")
+        queue.put_nowait("B")
+        queue.put_nowait("C")
+
+        # Act
+        result = queue.to_list()
+
+        # Assert
+        assert result == ["A", "B", "C"]
+        assert queue.get_nowait() == "A"  # <-- confirm copy
+        assert result == ["A", "B", "C"]

@@ -68,7 +68,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
     expected = {
         "market_id": "1.179082386",
         "customer_ref": command.id.value.replace("-", ""),
-        "customer_strategy_ref": command.strategy_id.value[:15],
+        "customer_strategy_ref": "Test-1",
         "instructions": [
             {
                 "orderType": "LIMIT",
@@ -81,7 +81,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
                     "size": 10.0,
                     "minFillSize": 0,
                 },
-                "customerOrderRef": command.order.client_order_id.value,
+                "customerOrderRef": "O-20210410-022422-001-001",
             }
         ],
     }

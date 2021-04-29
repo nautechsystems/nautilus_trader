@@ -29,8 +29,8 @@ from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
@@ -282,7 +282,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(1),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
         )
@@ -355,7 +355,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(1),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
         )
@@ -364,7 +364,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00002"),
             size=Quantity(1),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
         )
@@ -373,7 +373,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00000"),
             size=Quantity(1),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
         )
@@ -419,7 +419,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("0.66947"), last_bar.high)
         self.assertEqual(Price("0.669355"), last_bar.low)
         self.assertEqual(Price("0.66945"), last_bar.close)
-        self.assertEqual(Quantity(100), last_bar.volume)
+        self.assertEqual(Quantity(100000000), last_bar.volume)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -489,7 +489,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(1),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
         )
@@ -562,7 +562,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(3000),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
         )
@@ -571,7 +571,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00002"),
             size=Quantity(4000),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
         )
@@ -580,7 +580,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00000"),
             size=Quantity(3000),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
         )
@@ -670,7 +670,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00001"),
             size=Quantity(2000),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
         )
@@ -679,7 +679,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00002"),
             size=Quantity(3000),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
         )
@@ -688,7 +688,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("1.00000"),
             size=Quantity(25000),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
         )
@@ -730,7 +730,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
-        wrangler.pre_process(instrument_indexer=0)
+        wrangler.pre_process(instrument_indexer=0, default_volume=1)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -759,7 +759,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             data=TestDataProvider.ethusdt_trades(),
         )
 
-        wrangler.pre_process(0)
+        wrangler.pre_process(instrument_indexer=0)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -815,7 +815,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("15000.00"),
             size=Quantity("3.5"),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
         )
@@ -890,7 +890,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("20.00001"),
             size=Quantity("3000.00"),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
         )
@@ -899,7 +899,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("20.00002"),
             size=Quantity("4000.00"),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
         )
@@ -908,7 +908,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             instrument_id=AUDUSD_SIM.id,
             price=Price("20.00000"),
             size=Quantity("5000.00"),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
         )
@@ -948,7 +948,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
-        wrangler.pre_process(instrument_indexer=0)
+        wrangler.pre_process(instrument_indexer=0, default_volume=1)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -958,10 +958,10 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Assert
         last_bar = bar_store.get_store()[-1]
         self.assertEqual(67, len(bar_store.get_store()))
-        # self.assertEqual(Price("0.66921"), last_bar.open)  # TODO: WIP - Check subtle differences
-        # self.assertEqual(Price("0.669485"), last_bar.high)
-        # self.assertEqual(Price("0.669205"), last_bar.low)
-        # self.assertEqual(Price("0.669475"), last_bar.close)
+        self.assertEqual(Price("0.669205"), last_bar.open)
+        self.assertEqual(Price("0.669485"), last_bar.high)
+        self.assertEqual(Price("0.669205"), last_bar.low)
+        self.assertEqual(Price("0.669475"), last_bar.close)
         self.assertEqual(Quantity(1494), last_bar.volume)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
@@ -985,16 +985,16 @@ class ValueBarAggregatorTests(unittest.TestCase):
             aggregator.handle_trade_tick(tick)
 
         # Assert
-        # last_bar = bar_store.get_store()[-1]
-        # self.assertEqual(7962, len(bar_store.get_store()))  # TODO: WIP - Check subtle differences
-        # self.assertEqual(Price("426.86"), last_bar.open)
-        # self.assertEqual(Price("426.94"), last_bar.high)
-        # self.assertEqual(Price("426.83"), last_bar.low)
-        # self.assertEqual(Price("426.94"), last_bar.close)
-        # self.assertEqual(Quantity(23), last_bar.volume)
+        last_bar = bar_store.get_store()[-1]
+        self.assertEqual(7969, len(bar_store.get_store()))
+        self.assertEqual(Price("426.93"), last_bar.open)
+        self.assertEqual(Price("427.00"), last_bar.high)
+        self.assertEqual(Price("426.83"), last_bar.low)
+        self.assertEqual(Price("426.88"), last_bar.close)
+        self.assertEqual(Quantity(24), last_bar.volume)
 
 
-class TimeBarAggregatorTests(unittest.TestCase):
+class TestTimeBarAggregator(unittest.TestCase):
     def test_instantiate_given_invalid_bar_spec_raises_value_error(self):
         # Arrange
         clock = TestClock()
@@ -1016,26 +1016,26 @@ class TimeBarAggregatorTests(unittest.TestCase):
             Logger(clock),
         )
 
-    # TODO: WIP - Change to nanos
-    # @parameterized.expand(
+    # @pytest.mark.parametrize(  # TODO(cs): parametrize not working
+    #     "bar_spec,expected",
     #     [
     #         [
     #             BarSpecification(10, BarAggregation.SECOND, PriceType.MID),
-    #             datetime(1970, 1, 1, 0, 0, 10, tzinfo=pytz.utc),
+    #             dt_to_unix_nanos(datetime(1970, 1, 1, 0, 0, 10, tzinfo=pytz.utc)),
     #         ],
     #         [
     #             BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-    #             datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc),
+    #             dt_to_unix_nanos(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc)),
     #         ],
     #         [
     #             BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
-    #             datetime(1970, 1, 1, 1, 0, tzinfo=pytz.utc),
+    #             dt_to_unix_nanos(datetime(1970, 1, 1, 1, 0, tzinfo=pytz.utc)),
     #         ],
     #         [
     #             BarSpecification(1, BarAggregation.DAY, PriceType.MID),
-    #             datetime(1970, 1, 2, 0, 0, tzinfo=pytz.utc),
+    #             dt_to_unix_nanos(datetime(1970, 1, 2, 0, 0, tzinfo=pytz.utc)),
     #         ],
-    #     ]
+    #     ],
     # )
     # def test_instantiate_with_various_bar_specs(self, bar_spec, expected):
     #     # Arrange

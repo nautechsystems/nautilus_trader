@@ -134,11 +134,11 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce (Enum), optional
+        time_in_force : TimeInForce, optional
             The orders time-in-force. Often not applicable for market orders.
 
         Returns
@@ -185,13 +185,13 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce (Enum), optional
+        time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders).
@@ -253,13 +253,13 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce (Enum), optional
+        time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders).
@@ -314,7 +314,7 @@ cdef class OrderFactory:
         ----------
         instrument_id : InstrumentId
             The orders instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
@@ -322,7 +322,7 @@ cdef class OrderFactory:
             The orders limit price.
         trigger : Price
             The orders stop trigger price.
-        time_in_force : TimeInForce (Enum), optional
+        time_in_force : TimeInForce, optional
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders).
@@ -386,9 +386,9 @@ cdef class OrderFactory:
             The stop-loss child order stop price.
         take_profit : Price
             The take-profit child order limit price.
-        sl_tif : TimeInForce (Enum), optional
+        sl_tif : TimeInForce, optional
             The stop-loss orders time-in-force (DAY or GTC).
-        tp_tif : TimeInForce (Enum), optional
+        tp_tif : TimeInForce, optional
             The take-profit orders time-in-force (DAY or GTC).
 
         Returns

@@ -24,14 +24,11 @@ PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # Skipping the build copy prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
-# if INTERPRETER_32BIT_MODE is enabled, include additional macros for numpy compilation.
-INTERPRETER_32BIT_MODE = platform.architecture() == ("32bit", "WindowsPE")
 
 print(
     f"DEBUG_MODE={DEBUG_MODE}, "
     f"PROFILING_MODE={PROFILING_MODE}, "
     f"ANNOTATION_MODE={ANNOTATION_MODE}, "
-    f"INTERPRETER_32BIT_MODE={INTERPRETER_32BIT_MODE}"
 )
 
 ##########################
@@ -46,7 +43,7 @@ if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
 Options.fast_fail = True  # Abort compilation on first error
 Options.warning_errors = True  # Treat compiler warnings as errors
-# **Options.extra_warnings,  TODO: Extra warnings will require manual linting.
+Options.extra_warnings = True
 
 CYTHON_COMPILER_DIRECTIVES = {
     "language_level": "3",
@@ -55,6 +52,10 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
     # "always_allow_keywords": False,  TODO: Performance profiling needed (faster calling)
+    "warn.maybe_uninitialized": True,  # Warns about use of variables that are uninitialized
+    # "warn.unused": True,  TODO: Determine fix for Unused entry 'genexpr'
+    # "warn.unused_arg": True,  TODO: Closer investigation required
+    # "warn.unused_result": True,  TODO: Closer investigation required
 }
 
 
@@ -62,14 +63,13 @@ def _build_extensions() -> List[Extension]:
     # Build Extensions to feed into cythonize()
     # Profiling requires special macro directives
     define_macros = []
-    if not INTERPRETER_32BIT_MODE:
-        # With the Windows 32-bit interpreter, there is a numpy-cython
-        # compatibility issue - see:
-        # https://github.com/nautechsystems/nautilus_trader/issues/257
-        define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
     if PROFILING_MODE or ANNOTATION_MODE:
         define_macros.append(("CYTHON_TRACE", "1"))
 
+    # Regarding the compiler warning: #warning "Using deprecated NumPy API,
+    # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
+    # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
+    # From the Cython docs: "For the time being, it is just a warning that you can ignore."
     return [
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],

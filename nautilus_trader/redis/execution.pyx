@@ -156,7 +156,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return orders
 
         cdef bytes key_bytes
-        cdef ClientOrderId order_id
+        cdef ClientOrderId client_order_id
         cdef Order order
         for key_bytes in order_keys:
             client_order_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
@@ -413,7 +413,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         for key, value in state.items():
             pipe.hset(name=self._key_strategies + strategy.id.value + ":State", key=key, value=value)
             self._log.debug(f"Saving {strategy.id} state {{ {key}: {value} }}")
-        cdef list reply = pipe.execute()
+        pipe.execute()
 
         self._log.debug(f"Saved strategy state for {strategy.id.value}.")
 

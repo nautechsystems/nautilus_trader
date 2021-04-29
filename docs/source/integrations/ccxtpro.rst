@@ -25,7 +25,7 @@ Execution
 Factory
 -------
 
-.. automodule:: nautilus_trader.adapters.ccxt.factory
+.. automodule:: nautilus_trader.adapters.ccxt.factories
    :show-inheritance:
    :inherited-members:
    :members:

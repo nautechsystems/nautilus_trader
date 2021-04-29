@@ -53,17 +53,16 @@ def coverage(session: Session) -> None:
 
 
 @nox.session
-def coverage_and_annotation(session: Session) -> None:
-    """Annotate with coverage."""
-    _setup_poetry(session, env={"PROFILING_MODE": "true"})
-    _run_coverage(session)
+def annotations(session: Session) -> None:
+    """Generate Cython annotation HTMLs."""
+    _setup_poetry(session)
     session.run("poetry", "install", env={"ANNOTATION_MODE": "true"})
 
 
 @nox.session
 def build_docs(session: Session) -> None:
     """Build documentation."""
-    _setup_poetry(session)
+    _setup_poetry(session, "-E", "docs")
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 

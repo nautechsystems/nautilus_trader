@@ -93,7 +93,7 @@ class TestDecimalPerformance(PerformanceHarness):
 
     def test_make_decimal(self):
         self.benchmark.pedantic(
-            target=Decimal,
+            target=BaseDecimal,
             args=("1.23456",),
             iterations=100_000,
             rounds=1,
