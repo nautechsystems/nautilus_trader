@@ -243,7 +243,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             timestamp_ns=millis_to_nanos(millis=response["timestamp"]),
         )
 
-    async def generate_exec_reports(self, VenueOrderId venue_order_id, Symbol symbol, datetime since=None):
+    async def generate_exec_reports(
+        self,
+        VenueOrderId venue_order_id,
+        Symbol symbol,
+        datetime since=None,
+    ):
         """
         Generate a list of execution reports.
 
