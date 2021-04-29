@@ -306,7 +306,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 commission_amount=Decimal(fill["fee"]["cost"]),
                 commission_currency=fill["fee"]["currency"],
                 liquidity_side=LiquiditySide.TAKER if fill["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-                execution_is=millis_to_nanos(millis=fill["timestamp"]),
+                execution_ns=millis_to_nanos(millis=fill["timestamp"]),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
             reports.append(report)
