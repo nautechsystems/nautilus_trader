@@ -94,8 +94,6 @@ cdef class SimulatedExchange:
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
     cdef dict _books
-    cdef dict _tick_sizes
-
     cdef dict _instrument_orders
     cdef dict _working_orders
     cdef dict _position_index
@@ -110,7 +108,6 @@ cdef class SimulatedExchange:
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
-    cpdef dict get_tick_sizes(self)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
     cpdef dict get_working_orders(self)
@@ -179,6 +176,7 @@ cdef class SimulatedExchange:
     cdef inline list _determine_market_price_and_volume(self, Order order)
 
 # --------------------------------------------------------------------------------------------------
+
     cdef inline void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
     cdef inline void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef inline void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
