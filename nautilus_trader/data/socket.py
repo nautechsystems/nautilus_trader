@@ -73,7 +73,9 @@ class SocketClient:
         await self.connect()
 
     async def post_connection(self):
-        """ Overridable hook for any post-connection duties, i.e. sending further connection messages """
+        """
+        Overridable hook for any post-connection duties, i.e. sending further connection messages
+        """
         await asyncio.sleep(0)
 
     async def send(self, raw):
