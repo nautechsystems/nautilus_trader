@@ -29,9 +29,7 @@ cdef class Serializer:
         return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
 
     cdef inline str convert_snake_to_camel(self, str value):
-        cdef list pieces = value.split('_')
-        cdef str x
-        return ''.join(x.title() for x in pieces)
+        return ''.join(x.title() for x in value.split('_'))
 
     cpdef str py_convert_camel_to_snake(self, str value):
         return self.convert_camel_to_snake(value)

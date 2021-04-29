@@ -46,7 +46,7 @@ cdef class Currency:
             The currency ISO 4217 code.
         name : str
             The currency name.
-        currency_type : CurrencyType (Enum)
+        currency_type : CurrencyType
             The currency type.
 
         Raises

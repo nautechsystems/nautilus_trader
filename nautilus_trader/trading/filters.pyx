@@ -119,7 +119,7 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime next_start
+        cdef datetime next_start = None
 
         # Local days session start
         if session == ForexSession.SYDNEY:
@@ -177,7 +177,7 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime prev_start
+        cdef datetime prev_start = None
 
         # Local days session start
         if session == ForexSession.SYDNEY:
@@ -235,7 +235,7 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime next_end
+        cdef datetime next_end = None
 
         # Local days session end
         if session == ForexSession.SYDNEY:
@@ -293,7 +293,7 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime prev_end
+        cdef datetime prev_end = None
 
         # Local days session end
         if session == ForexSession.SYDNEY:

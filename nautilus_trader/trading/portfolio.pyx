@@ -592,12 +592,6 @@ cdef class Portfolio(PortfolioFacade):
 
         market_value: Decimal = Decimal(0)
 
-        cdef Currency currency
-        if account.default_currency is not None:
-            currency = account.default_currency
-        else:
-            currency = instrument.base_currency
-
         cdef Position position
         cdef Price last
         for position in positions_open:
@@ -730,7 +724,6 @@ cdef class Portfolio(PortfolioFacade):
         return self._net_positions.get(instrument_id, Decimal(0))
 
     cdef inline set _instruments_open_for_venue(self, Venue venue):
-        cdef Position position
         cdef set positions_open = self._positions_open.get(venue)
         if positions_open is None:
             return set()

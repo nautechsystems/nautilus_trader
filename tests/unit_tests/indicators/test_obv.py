@@ -73,7 +73,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(indicator.has_inputs)
-        self.assertEqual(100000, indicator.value)
+        self.assertEqual(1000000, indicator.value)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

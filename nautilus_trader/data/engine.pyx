@@ -110,6 +110,9 @@ cdef class DataEngine(Component):
             config = {}
         super().__init__(clock, logger, name="DataEngine")
 
+        if config:
+            self._log.info(f"Config: {config}.")
+
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}                    # type: dict[ClientId, DataClient]
         self._correlation_index = {}          # type: dict[UUID, callable]
@@ -624,10 +627,8 @@ cdef class DataEngine(Component):
                                 f"no instrument found in cache.")
                 return
             order_book = OrderBook.create(
-                instrument_id=instrument_id,
+                instrument=instrument,
                 level=metadata[LEVEL],
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
             )
 
             self.cache.add_order_book(order_book)
@@ -674,10 +675,8 @@ cdef class DataEngine(Component):
                                 f"no instrument found in cache.")
                 return
             order_book = OrderBook.create(
-                instrument_id=instrument_id,
+                instrument=instrument,
                 level=metadata[LEVEL],
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
             )
 
             self.cache.add_order_book(order_book)
@@ -1214,7 +1213,7 @@ cdef class DataEngine(Component):
             self._log.error(f"Callback not found for correlation_id {correlation_id}.")
             return
 
-        cdef TimeBarAggregator
+        cdef TimeBarAggregator aggregator
         if partial is not None:
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.type)

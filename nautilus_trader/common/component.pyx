@@ -138,7 +138,7 @@ cdef class Component:
 
         Returns
         -------
-        ComponentState (Enum)
+        ComponentState
 
         """
         return self.state_c()

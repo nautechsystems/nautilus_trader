@@ -169,6 +169,17 @@ cdef class Queue:
             return None
         return self._queue[0]
 
+    cpdef list to_list(self):
+        """
+        Return a copy of the items in the queue.
+
+        Returns
+        -------
+        list[object]
+
+        """
+        return list(self._queue)
+
     @types.coroutine
     def _sleep0(self):
         yield  # Skip one event loop run cycle

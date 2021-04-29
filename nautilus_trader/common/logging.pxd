@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
@@ -96,10 +99,13 @@ cpdef void log_memory(LoggerAdapter logger) except *
 cdef class LiveLogger(Logger):
     cdef object _loop
     cdef object _run_task
+    cdef timedelta _blocked_log_interval
     cdef Queue _queue
 
     cdef readonly bint is_running
     """If the logger is running an event loop task.\n\n:returns: `bool`"""
+    cdef readonly datetime last_blocked
+    """The timestamp (UTC) the logger last blocked.\n\n:returns: `datetime` or None"""
 
     cpdef void start(self) except *
     cpdef void stop(self) except *

@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from collections import defaultdict
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
@@ -23,9 +22,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef object _stream
     cdef str _account_currency
-    cpdef public dict venue_order_id_to_client_order_id
-    cpdef public set pending_update_order_client_ids
-    cpdef public object published_executions
+    cdef public dict venue_order_id_to_client_order_id
+    cdef public set pending_update_order_client_ids
+    cdef public object published_executions
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

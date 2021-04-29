@@ -24,6 +24,8 @@ from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -116,39 +118,57 @@ class TestBacktestDataContainer:
 
         deltas = [
             OrderBookDelta(
-                OrderBookDeltaType.ADD,
-                Order(13.0, 40, OrderSide.SELL),
                 instrument_id=AUDUSD_SIM.id,
+                level=OrderBookLevel.L2,
+                delta_type=OrderBookDeltaType.ADD,
+                order=Order(
+                    price=Price("13.0"), volume=Quantity("40"), side=OrderSide.SELL
+                ),
                 timestamp_ns=0,
             ),
             OrderBookDelta(
-                OrderBookDeltaType.ADD,
-                Order(12.0, 30, OrderSide.SELL),
                 instrument_id=AUDUSD_SIM.id,
+                level=OrderBookLevel.L2,
+                delta_type=OrderBookDeltaType.ADD,
+                order=Order(
+                    price=Price("12.0"), volume=Quantity("30"), side=OrderSide.SELL
+                ),
                 timestamp_ns=0,
             ),
             OrderBookDelta(
-                OrderBookDeltaType.ADD,
-                Order(11.0, 20, OrderSide.SELL),
                 instrument_id=AUDUSD_SIM.id,
+                level=OrderBookLevel.L2,
+                delta_type=OrderBookDeltaType.ADD,
+                order=Order(
+                    price=Price("11.0"), volume=Quantity("20"), side=OrderSide.SELL
+                ),
                 timestamp_ns=0,
             ),
             OrderBookDelta(
-                OrderBookDeltaType.ADD,
-                Order(10.0, 20, OrderSide.BUY),
                 instrument_id=AUDUSD_SIM.id,
+                level=OrderBookLevel.L2,
+                delta_type=OrderBookDeltaType.ADD,
+                order=Order(
+                    price=Price("10.0"), volume=Quantity("20"), side=OrderSide.BUY
+                ),
                 timestamp_ns=0,
             ),
             OrderBookDelta(
-                OrderBookDeltaType.ADD,
-                Order(9.0, 30, OrderSide.BUY),
                 instrument_id=AUDUSD_SIM.id,
+                level=OrderBookLevel.L2,
+                delta_type=OrderBookDeltaType.ADD,
+                order=Order(
+                    price=Price("9.0"), volume=Quantity("30"), side=OrderSide.BUY
+                ),
                 timestamp_ns=0,
             ),
             OrderBookDelta(
-                OrderBookDeltaType.ADD,
-                Order(0.0, 40, OrderSide.BUY),
                 instrument_id=AUDUSD_SIM.id,
+                level=OrderBookLevel.L2,
+                delta_type=OrderBookDeltaType.ADD,
+                order=Order(
+                    price=Price("0.0"), volume=Quantity("40"), side=OrderSide.BUY
+                ),
                 timestamp_ns=0,
             ),
         ]

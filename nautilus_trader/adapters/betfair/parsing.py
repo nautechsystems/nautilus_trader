@@ -44,6 +44,7 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -76,7 +77,9 @@ uuid_factory = UUIDFactory()
 
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
-    """ Convert a SubmitOrder command into the data required by betfairlightweight """
+    """
+    Convert a SubmitOrder command into the data required by betfairlightweight
+    """
 
     order = command.order  # type: LimitOrder
     return {
@@ -101,7 +104,11 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
                 ),
-                customer_order_ref=order.client_order_id.value,
+                # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
+                # length the strategy might be or what characters users might append
+                customer_order_ref=order.client_order_id.value.rsplit(
+                    "-" + command.strategy_id.value, maxsplit=1
+                )[0],
             )
         ],
     }
@@ -113,7 +120,9 @@ def order_update_to_betfair(
     side: OrderSide,
     instrument: BettingInstrument,
 ):
-    """ Convert an UpdateOrder command into the data required by betfairlightweight """
+    """
+    Convert an UpdateOrder command into the data required by betfairlightweight
+    """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
@@ -129,7 +138,9 @@ def order_update_to_betfair(
 
 
 def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):
-    """ Convert a SubmitOrder command into the data required by betfairlightweight """
+    """
+    Convert a SubmitOrder command into the data required by betfairlightweight
+    """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
@@ -185,19 +196,12 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
         timestamp_ns=timestamp_ns,
     )
     updates.append(snapshot)
-
-    # Trade Ticks
-    for price, volume in selection.get("trd", []):
-        trade_id = hash_json((timestamp_ns, price, volume))
-        tick = TradeTick(
-            instrument_id=instrument.id,
-            price=Price(price_to_probability(price, force=True)),
-            size=Quantity(volume, precision=4),
-            side=OrderSide.BUY,
-            match_id=TradeMatchId(trade_id),
-            timestamp_ns=timestamp_ns,
+    if "trd" in selection:
+        updates.extend(
+            _handle_market_trades(
+                runner=selection, instrument=instrument, timestamp_ns=timestamp_ns
+            )
         )
-        updates.append(tick)
 
     return updates
 
@@ -209,21 +213,12 @@ def _handle_market_trades(runner, instrument, timestamp_ns):
             continue
         # Betfair doesn't publish trade ids, so we make our own
         # TODO - should we use clk here for ID instead of the hash?
-        trade_id = hash_json(
-            data=(
-                timestamp_ns,
-                instrument.market_id,
-                str(runner["id"]),
-                str(runner.get("hc", "0.0")),
-                price,
-                volume,
-            )
-        )
+        trade_id = hash_json(data=(timestamp_ns, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
             price=Price(price_to_probability(price, force=True)),
             size=Quantity(volume, precision=4),
-            side=OrderSide.BUY,
+            aggressor_side=AggressorSide.UNKNOWN,
             match_id=TradeMatchId(trade_id),
             timestamp_ns=timestamp_ns,
         )
@@ -242,6 +237,8 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                 price, volume = upd
             deltas.append(
                 OrderBookDelta(
+                    instrument_id=instrument.id,
+                    level=OrderBookLevel.L2,
                     delta_type=OrderBookDeltaType.DELETE
                     if volume == 0
                     else OrderBookDeltaType.UPDATE,
@@ -249,10 +246,9 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                         price=price_to_probability(
                             price, side=B2N_MARKET_STREAM_SIDE[side]
                         ),
-                        volume=volume,
+                        volume=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
-                    instrument_id=instrument.id,
                     timestamp_ns=timestamp_ns,
                 )
             )
@@ -440,11 +436,12 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
                     runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
                 )
             )
-            updates.extend(
-                _handle_market_trades(
-                    runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+            if "trd" in runner:
+                updates.extend(
+                    _handle_market_trades(
+                        runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                    )
                 )
-            )
     if book_updates:
         updates.extend(_merge_order_book_deltas(book_updates))
     return updates

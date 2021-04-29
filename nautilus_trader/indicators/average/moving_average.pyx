@@ -55,7 +55,7 @@ cdef class MovingAverage(Indicator):
             The rolling window period for the indicator (> 0).
         params : list
             The initialization parameters for the indicator.
-        price_type : PriceType (Enum), optional
+        price_type : PriceType, optional
             The specified price type for extracting values from quote ticks.
 
         """

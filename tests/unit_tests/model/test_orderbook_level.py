@@ -13,65 +13,65 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.orderbook.level import Level
 from nautilus_trader.model.orderbook.order import Order
 
 
-@pytest.fixture
-def empty_level():
-    return Level()
+def test_init():
+    level = Level(price=10.0)
+    assert len(level.orders) == 0
 
 
-def test_init(empty_level):
-    assert len(empty_level.orders) == 0
-
-
-def test_add(empty_level):
-    order = Order(price=10, volume=100, side=OrderSide.BUY, id="1")
-    empty_level.add(order=order)
-    assert len(empty_level.orders) == 1
+def test_add():
+    level = Level(price=10.0)
+    order = Order(price=10.0, volume=100.0, side=OrderSide.BUY, id="1")
+    level.add(order=order)
+    assert len(level.orders) == 1
 
 
 def test_update():
-    order = Order(price=10, volume=100, side=OrderSide.BUY)
-    level = Level(orders=[order])
-    assert level.volume() == 100
-    order.update_volume(volume=50)
+    level = Level(price=10.0)
+    order = Order(price=10.0, volume=100.0, side=OrderSide.BUY)
+    level.add(order)
+    assert level.volume() == 100.0
+    order.update_volume(volume=50.0)
     level.update(order=order)
-    assert level.volume() == 50
+    assert level.volume() == 50.0
 
 
-# def test_init_orders():
-#     orders = [Order(price=100, volume=10, side=OrderSide.SELL, id='1'),
-#               Order(price=100, volume=1, side=OrderSide.SELL, id='2')]
-#     l = Level(orders=orders)
-#     assert len(l.orders) == 2
-#     assert l.order_index == {'1': 0, '2': 1}
-#
-#
-# def test_add():
-#     l = Level(orders=[Order(price=100, volume=10, side=OrderSide.BUY), Order(price=100, volume=1, side=OrderSide.BUY)])
-#     assert l.volume == 11
-#     l.add(order=Order(price=100, volume=5, side=OrderSide.BUY))
-#     assert l.volume == 16
-#
-#
-# def test_delete_order():
-#     l = Level(orders=[Order(price=100, volume=100, side=OrderSide.BUY, id="1")])
-#     l.delete(order=Order(price=100, volume=20, side=OrderSide.BUY))
-#     assert l.volume == 80
-#
-#
-# def test_zero_volume_level():
-#     l = Level(orders=[Order(price=10, volume=0, side=OrderSide.BUY)])
-#     assert l.volume == 0
-#
-#
-# def test_equality():
-#     assert not Level(orders=[Order(price=10, volume=0, side=OrderSide.BUY)]) == None
-#     assert not Level(orders=[Order(price=10, volume=0, side=OrderSide.BUY)]) == Level(
-#         orders=[Order(price=10, volume=1, side=OrderSide.SELL)]
-#     )
+def test_delete_order():
+    level = Level(price=100.0)
+    orders = [
+        Order(price=100.0, volume=50.0, side=OrderSide.BUY, id="1"),
+        Order(price=100.0, volume=50.0, side=OrderSide.BUY, id="2"),
+    ]
+    level.bulk_add(orders=orders)
+    level.delete(order=orders[1])
+    assert level.volume() == 50.0
+
+
+def test_zero_volume_level():
+    level = Level(price=10.0)
+    level.bulk_add(orders=[Order(price=10.0, volume=0.0, side=OrderSide.BUY)])
+    assert level.volume() == 0.0
+
+
+def test_level_comparison():
+    level1 = Level(price=10.0)
+    level2 = Level(price=11.0)
+
+    level1.add(Order(price=10.0, volume=0.0, side=OrderSide.BUY))
+    level2.add(Order(price=11.0, volume=0.0, side=OrderSide.BUY))
+
+    assert level2 >= level1
+    assert level1 < level2
+    assert level1 != level2
+
+
+def test_level_repr():
+    level = Level(price=10.0)
+    level.add(Order(price=10.0, volume=0.0, side=OrderSide.BUY, id="1"))
+
+    expected = "Level(price=10.0, orders=[Order(10.0, 0.0, BUY, 1)])"
+    assert str(level) == expected

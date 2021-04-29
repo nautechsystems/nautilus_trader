@@ -406,7 +406,7 @@ cdef class DataCache(DataCacheFacade):
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the price.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type for the query.
 
         Returns
@@ -689,7 +689,7 @@ cdef class DataCache(DataCacheFacade):
             The currency to convert from.
         to_currency : Currency
             The currency to convert to.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type for the exchange rate.
 
         Returns

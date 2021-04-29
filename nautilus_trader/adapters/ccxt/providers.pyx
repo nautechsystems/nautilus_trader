@@ -231,7 +231,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             margin_maint=Decimal(),        # Margin trading not implemented
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            financing={},
             timestamp_ns=unix_timestamp_ns(),
             info=values,
         )

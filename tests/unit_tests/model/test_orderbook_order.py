@@ -34,13 +34,13 @@ def test_order_id():
 
 def test_update_price():
     order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
-    order.update_price(price=90)
+    order.update_price(price=90.0)
     assert order.price == 90.0
 
 
 def test_update_volume():
     order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
-    order.update_volume(volume=5)
+    order.update_volume(volume=5.0)
     assert order.volume == 5.0
 
 
@@ -50,17 +50,17 @@ def test_update_id():
     assert order.id == "2"
 
 
-# def test_exposure():
-#     order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
-#     assert order.exposure == 1000
+def test_signed_volume():
+    order = Order(price=10.0, volume=1.0, side=OrderSide.BUY)
+    assert order.volume == 1 and order.signed_volume() == 1.0
+
+    order = Order(price=10.0, volume=5.0, side=OrderSide.SELL)
+    assert order.volume == 5 and order.signed_volume() == -5.0
+
+    order = Order(price=10.0, volume=0.0, side=OrderSide.SELL)
+    assert order.volume == 0.0 and order.signed_volume() == 0.0
 
 
-# def test_signed_volume():
-#     order = Order(price=10, volume=1, side=BID)
-#     assert order.volume == 1 and order.signed_volume == 1
-#
-#     order = Order(price=10, volume=5, side=ASK)
-#     assert order.volume == 5 and order.signed_volume == -5.0
-#
-#     order = Order(price=10, volume=0, side=ASK)
-#     assert order.volume == 0 and order.signed_volume == 0
+def test_exposure():
+    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY)
+    assert order.exposure() == 1000.0

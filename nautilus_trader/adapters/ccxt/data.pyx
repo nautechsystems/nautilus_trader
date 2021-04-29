@@ -33,9 +33,10 @@ from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
@@ -285,7 +286,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel (Enum)
+        level : OrderBookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -821,7 +822,6 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                     trade["price"],
                     trade["amount"],
                     trade["side"],
-                    trade["takerOrMaker"],
                     trade["id"],
                     self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
                     price_precision,
@@ -840,23 +840,17 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         InstrumentId instrument_id,
         double price,
         double amount,
-        str order_side,
-        str liquidity_side,
+        str aggressor_side,
         str trade_match_id,
         int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *:
-        # Determine liquidity side
-        cdef OrderSide side = OrderSide.BUY if order_side == "buy" else OrderSide.SELL
-        if liquidity_side == "maker":
-            side = OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.BUY
-
         cdef TradeTick tick = TradeTick(
             instrument_id,
             Price(price, price_precision),
             Quantity(amount, size_precision),
-            side,
+            AggressorSideParser.from_str(aggressor_side.upper()) ,
             TradeMatchId(trade_match_id),
             timestamp_ns,
         )
@@ -1152,7 +1146,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             instrument_id,
             Price(trade['price'], price_precision),
             Quantity(trade['amount'], size_precision),
-            OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
+            AggressorSide.BUY if trade["side"] == "buy" else AggressorSide.SELL,
             TradeMatchId(trade["id"]),
             self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
         )

@@ -26,7 +26,7 @@ cdef class Currency:
     cdef readonly str name
     """The currency name.\n\n:returns: `str`"""
     cdef readonly CurrencyType currency_type
-    """The currency type (FIAT or CRYPTO).\n\n:returns: `CurrencyType` (Enum)"""
+    """The currency type (FIAT or CRYPTO).\n\n:returns: `CurrencyType`"""
 
     @staticmethod
     cdef Currency from_str_c(str code)

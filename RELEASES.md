@@ -1,3 +1,24 @@
+# NautilusTrader 1.117.0 Beta - Release Notes
+
+The major thrust of this release is added support for order book data in
+backtests. The `SimulatedExchange` now maintains order books of each instrument
+and will accurately simulate market impact with L2/L3 data. For quote and trade
+tick data a L1 order book is used as a proxy. A future release will include 
+improved fill modelling assumptions and customizations.
+
+## Breaking Changes
+- `OrderBook.create` now takes `Instrument` and `OrderBookLevel`.
+
+## Enhancements
+- `SimulatedExchange` now maintains order books internally.
+- `LiveLogger` now exhibits better blocking behavior and logging.
+
+## Fixes
+- Various patches to the `Betfair` adapter.
+- Documentation builds.
+
+---
+
 # NautilusTrader 1.116.1 Beta - Release Notes
 
 Announcing official Windows 64-bit support.

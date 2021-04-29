@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport timedelta
+
 import asyncio
+from collections import defaultdict
 import platform
 from platform import python_version
 import sys
@@ -117,9 +120,9 @@ cdef class Logger:
             The trader identifier for the logger.
         system_id : UUID, optional
             The systems unique instantiation identifier.
-        level_stdout : LogLevel (Enum)
+        level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel (Enum)
+        level_raw : LogLevel
             The minimum log level for the raw log record sink.
         bypass_logging : bool
             If the logger should be bypassed.
@@ -260,7 +263,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -293,7 +296,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -327,7 +330,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -361,7 +364,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -395,7 +398,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -539,9 +542,9 @@ cdef class LiveLogger(Logger):
             The trader identifier for the logger.
         system_id : UUID, optional
             The systems unique instantiation identifier.
-        level_stdout : LogLevel (Enum)
+        level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel (Enum)
+        level_raw : LogLevel
             The minimum log level for the raw log record sink.
         bypass_logging : bool
             If the logger should be bypassed.
@@ -560,9 +563,11 @@ cdef class LiveLogger(Logger):
 
         self._loop = loop
         self._queue = Queue(maxsize=maxsize)
-
         self._run_task = None
+        self._blocked_log_interval = timedelta(seconds=1)
+
         self.is_running = False
+        self.last_blocked = None
 
     cdef void log_c(self, dict record) except *:
         """
@@ -586,23 +591,41 @@ cdef class LiveLogger(Logger):
             try:
                 self._queue.put_nowait(record)
             except asyncio.QueueFull:
+                now = self._clock.utc_now()
                 next_msg = self._queue.peek().get("msg")
-                # TODO: WIP
-                # spamming = next_msg == record.get("msg")
-                # if spamming:
-                #     return
 
-                blocking = self.create_record(
-                    level=LogLevel.WARNING,
-                    color=LogColor.YELLOW,
-                    component=type(self).__name__,
-                    msg=f"Blocking on `_queue.put` as queue full at "
-                        f"{self._queue.qsize()} items. "
-                        f"Next msg = '{next_msg}'.",
-                )
+                # Log blocking message once a second
+                if (
+                    self.last_blocked is None
+                    or now >= self.last_blocked + self._blocked_log_interval
+                ):
+                    self.last_blocked = now
 
-                self._log(blocking)
-                self._loop.create_task(self._queue.put(record))  # Blocking until qsize reduces
+                    messages = [r["msg"] for r in self._queue.to_list()]
+                    message_types = defaultdict(lambda: 0)
+                    for msg in messages:
+                        message_types[msg] += 1
+                    sorted_types = sorted(
+                        message_types.items(),
+                        key=lambda kv: kv[1],
+                        reverse=True,
+                    )
+
+                    blocked_msg = '\n'.join([f"'{kv[0]}' [x{kv[1]}]" for kv in sorted_types])
+                    blocking_record = self.create_record(
+                        level=LogLevel.WARNING,
+                        color=LogColor.YELLOW,
+                        component=type(self).__name__,
+                        msg=f"Blocking full log queue at "
+                            f"{self._queue.qsize()} items. "
+                            f"\nNext msg = '{next_msg}'.\n{blocked_msg}",
+                    )
+
+                    self._log(blocking_record)
+
+                # If not spamming then add record to event loop
+                if next_msg != record.get("msg"):
+                    self._loop.create_task(self._queue.put(record))  # Blocking until qsize reduces
         else:
             # If event loop is not running then pass message directly to the
             # base class to log.

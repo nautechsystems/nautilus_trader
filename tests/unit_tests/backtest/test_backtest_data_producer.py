@@ -154,5 +154,5 @@ class TestBacktestDataProducer:
         assert next_data.instrument_id == USDJPY_SIM.id
         assert str(next_data.bid) == "91.715"
         assert str(next_data.ask) == "91.717"
-        assert str(next_data.bid_size) == "1"
-        assert str(next_data.ask_size) == "1"
+        assert str(next_data.bid_size) == "1000000"
+        assert str(next_data.ask_size) == "1000000"
