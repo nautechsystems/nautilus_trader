@@ -20,6 +20,7 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -48,7 +49,7 @@ class AnalyzerTests(unittest.TestCase):
     def test_get_daily_returns_when_no_data_returns_empty_series(self):
         # Arrange
         # Act
-        result = self.analyzer.get_daily_returns()
+        result = self.analyzer.daily_returns()
 
         # Assert
         self.assertTrue(result.empty)
@@ -56,7 +57,7 @@ class AnalyzerTests(unittest.TestCase):
     def test_get_realized_pnls_when_no_data_returns_none(self):
         # Arrange
         # Act
-        result = self.analyzer.get_realized_pnls()
+        result = self.analyzer.realized_pnls()
 
         # Assert
         self.assertIsNone(result)
@@ -64,7 +65,7 @@ class AnalyzerTests(unittest.TestCase):
     def test_get_realized_pnls_with_currency_when_no_data_returns_none(self):
         # Arrange
         # Act
-        result = self.analyzer.get_realized_pnls(AUD)
+        result = self.analyzer.realized_pnls(AUD)
 
         # Assert
         self.assertIsNone(result)
@@ -94,7 +95,7 @@ class AnalyzerTests(unittest.TestCase):
         self.analyzer.add_return(t9, 0.26)
         self.analyzer.add_return(t10, -0.10)
         self.analyzer.add_return(t10, -0.10)
-        result = self.analyzer.get_daily_returns()
+        result = self.analyzer.daily_returns()
 
         # Assert
         self.assertEqual(10, len(result))
@@ -168,7 +169,7 @@ class AnalyzerTests(unittest.TestCase):
         self.analyzer.add_positions([position1, position2])
 
         # Act
-        result = self.analyzer.get_realized_pnls()
+        result = self.analyzer.realized_pnls(USD)
 
         # Assert
         self.assertEqual(2, len(result))
