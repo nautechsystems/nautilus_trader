@@ -100,7 +100,7 @@ if __name__ == "__main__":
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-asset or multi-asset accounts
+    # Add starting balances for single-currency or multi-currency accounts
     engine.add_exchange(
         venue=Venue("SIM"),
         oms_type=OMSType.NETTING,

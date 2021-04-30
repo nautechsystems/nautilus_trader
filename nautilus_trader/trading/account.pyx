@@ -262,7 +262,7 @@ cdef class Account:
         """
         Return the current account balance.
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -295,7 +295,7 @@ cdef class Account:
         """
         Return the account balance free.
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -328,7 +328,7 @@ cdef class Account:
         """
         Return the account balance locked.
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -361,7 +361,7 @@ cdef class Account:
         """
         Return the current account unrealized PnL.
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -401,7 +401,7 @@ cdef class Account:
         """
         Return the account equity (`balance + unrealized_pnl`).
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -466,7 +466,7 @@ cdef class Account:
         """
         Return the current initial margin.
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -499,7 +499,7 @@ cdef class Account:
         """
         Return the current maintenance margin.
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------
@@ -534,7 +534,7 @@ cdef class Account:
 
         (`equity - initial_margin - maint_margin`).
 
-        For multi-asset accounts, specify the currency for the query.
+        For multi-currency accounts, specify the currency for the query.
 
         Parameters
         ----------

@@ -148,38 +148,67 @@ cdef class PerformanceAnalyzer:
         self._realized_pnls = {}
         self._daily_returns = pd.Series(dtype=float64)
 
-    cpdef object get_realized_pnls(self, Currency currency=None):
+    cpdef object realized_pnls(self, Currency currency=None):
         """
-        Return the returns data.
+        Return the realized PnL for the portfolio.
+
+        For multi-currency portfolios, specify the currency for the result.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the result.
 
         Returns
         -------
         pd.Series or None
 
+        Raises
+        ------
+        ValueError
+            If currency is None when analyzing multi-currency portfolios.
+
         """
         if not self._realized_pnls:
             return None
         if currency is None:
-            return next(iter(self._realized_pnls.values()))
+            Condition.true(len(self._account_balances) == 1, "currency was None for multi-currency portfolio")
+            currency = next(iter(self._account_balances.keys()))
+
         return self._realized_pnls.get(currency)
 
     cpdef double total_pnl(self, Currency currency=None) except *:
         """
         Return the total PnL for the portfolio.
 
+        For multi-currency portfolios, specify the currency for the result.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the result.
+
         Returns
         -------
         double
 
+        Raises
+        ------
+        ValueError
+            If currency is None when analyzing multi-currency portfolios.
+        ValueError
+            If currency is not contained in the tracked account balances.
+
         """
         if not self._account_balances:
-            return 0.
+            return 0.0
         if currency is None:
-            account_balance = next(iter(self._account_balances.values()))
-            account_balance_starting = next(iter(self._account_balances_starting.values()))
-        else:
-            account_balance = self._account_balances[currency]
-            account_balance_starting = self._account_balances_starting[currency]
+            Condition.true(len(self._account_balances) == 1, "currency was None for multi-currency portfolio")
+            currency = next(iter(self._account_balances.keys()))
+        Condition.is_in(currency, self._account_balances, "currency", "self._account_balances")
+
+        account_balance = self._account_balances[currency]
+        account_balance_starting = self._account_balances_starting[currency]
 
         return float(account_balance - account_balance_starting)
 
@@ -187,21 +216,39 @@ cdef class PerformanceAnalyzer:
         """
         Return the percentage change of the total PnL for the portfolio.
 
+        For multi-currency accounts, specify the currency for the result.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the result.
+
         Returns
         -------
         double
 
+        Raises
+        ------
+        ValueError
+            If currency is None when analyzing multi-currency portfolios.
+        ValueError
+            If currency is not contained in the tracked account balances.
+
         """
+        if not self._account_balances:
+            return 0.0
         if currency is None:
-            account_balance = next(iter(self._account_balances.values()))
-            account_balance_starting = next(iter(self._account_balances_starting.values()))
-        else:
-            account_balance = self._account_balances[currency]
-            account_balance_starting = self._account_balances_starting[currency]
+            Condition.true(len(self._account_balances) == 1, "currency was None for multi-currency portfolio")
+            currency = next(iter(self._account_balances.keys()))
+        Condition.is_in(currency, self._account_balances, "currency", "self._account_balances")
+
+        account_balance = self._account_balances[currency]
+        account_balance_starting = self._account_balances_starting[currency]
 
         if account_balance_starting.as_decimal() == 0:
             # Protect divide by zero
-            return 0.
+            return 0.0
+
         current = account_balance
         starting = account_balance_starting
         difference = current - starting
@@ -212,14 +259,19 @@ cdef class PerformanceAnalyzer:
         """
         Return the maximum winner for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
         return max(realized_pnls)
 
@@ -227,14 +279,19 @@ cdef class PerformanceAnalyzer:
         """
         Return the maximum loser for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
         return min(realized_pnls)
 
@@ -242,18 +299,23 @@ cdef class PerformanceAnalyzer:
         """
         Return the minimum winner for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
-        cdef list winners = [x for x in realized_pnls if x > 0.]
+        cdef list winners = [x for x in realized_pnls if x > 0.0]
         if realized_pnls is None or not winners:
-            return 0.
+            return 0.0
 
         return min(np.asarray(winners, dtype=np.float64))
 
@@ -261,18 +323,23 @@ cdef class PerformanceAnalyzer:
         """
         Return the minimum loser for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
-        cdef list losers = [x for x in realized_pnls if x <= 0.]
+        cdef list losers = [x for x in realized_pnls if x <= 0.0]
         if not losers:
-            return 0.
+            return 0.0
 
         return max(np.asarray(losers, dtype=np.float64))  # max is least loser
 
@@ -280,12 +347,17 @@ cdef class PerformanceAnalyzer:
         """
         Return the average winner for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
@@ -300,12 +372,17 @@ cdef class PerformanceAnalyzer:
         """
         Return the average loser for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
@@ -320,17 +397,22 @@ cdef class PerformanceAnalyzer:
         """
         Return the win rate (after commission) for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
-        cdef list winners = [x for x in realized_pnls if x > 0.]
-        cdef list losers = [x for x in realized_pnls if x <= 0.]
+        cdef list winners = [x for x in realized_pnls if x > 0.0]
+        cdef list losers = [x for x in realized_pnls if x <= 0.0]
 
         return len(winners) / float(max(1, (len(winners) + len(losers))))
 
@@ -338,27 +420,33 @@ cdef class PerformanceAnalyzer:
         """
         Return the expectancy for the portfolio.
 
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the analysis.
+
         Returns
         -------
         double
 
         """
-        realized_pnls = self.get_realized_pnls(currency)
+        realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
-            return 0.
+            return 0.0
 
         cdef double win_rate = self.win_rate()
         cdef double loss_rate = 1.0 - win_rate
 
         return (self.avg_winner() * win_rate) + (self.avg_loser() * loss_rate)
 
-    cpdef object get_daily_returns(self):
+    cpdef object daily_returns(self):
         """
         Return the returns data.
 
         Returns
         -------
         pd.Series
+
         """
         return self._daily_returns
 

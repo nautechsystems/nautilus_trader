@@ -228,7 +228,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         # 27/11/20  4294514 function calls (4268761 primitive calls) in 5.822 seconds (remove redundant methods)
         # 29/11/20  4374015 function calls (4348306 primitive calls) in 5.753 seconds (performance check)
         # 09/12/20  4294769 function calls (4268911 primitive calls) in 5.858 seconds (performance check)
-        # 14/12/20  5685767 function calls (5648057 primitive calls) in 6.484 seconds (multi-asset accounts)
+        # 14/12/20  5685767 function calls (5648057 primitive calls) in 6.484 seconds (multi-currency accounts)
         # 01/01/21  5657521 function calls (5615526 primitive calls) in 6.960 seconds (performance check)
         # 03/01/21  5518555 function calls (5480845 primitive calls) in 6.529 seconds (make handlers c methods)
         # 31/01/21  5408449 function calls (5370737 primitive calls) in 6.890 seconds (refactor execution engine)
