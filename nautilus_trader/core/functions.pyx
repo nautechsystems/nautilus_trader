@@ -21,7 +21,6 @@ import cython
 cimport numpy as np
 from libc.math cimport pow
 from libc.math cimport sqrt
-from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 
