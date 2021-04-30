@@ -1,13 +1,10 @@
 codecov:
   branch: master
-  notify:
-    after_n_builds: 10
-comment: false
 
 coverage:
   precision: 2
   round: down
-  range: "60...95"
+  range: "60...100"
   status:
     project:
       default:
@@ -15,6 +12,3 @@ coverage:
     patch:
       default:
         target: "50"
-
-github_checks:
-  annotations: false
