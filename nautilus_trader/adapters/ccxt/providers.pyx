@@ -126,8 +126,13 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):
+        cdef:
+            dict precisions
+            str asset_type_str
+            bint is_inverse
+
         # Precisions
-        cdef dict precisions = values["precision"]
+        precisions = values["precision"]
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
             price_precision = precisions.get("price")
             size_precision = precisions.get("amount", 8)
@@ -144,7 +149,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                                f"SIGNIFICANT_DIGITS precision which is not "
                                f"currently supported in this version.")
 
-        cdef str asset_type_str = values.get("type")
+        asset_type_str = values.get("type")
+
         if asset_type_str is not None:
             asset_type = AssetTypeParser.from_str(asset_type_str.upper())
         else:
@@ -206,7 +212,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         else:
             taker_fee = Decimal(taker_fee)
 
-        cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
+        is_inverse = values.get("info", {}).get("isInverse", False)
 
         return Instrument(
             instrument_id=instrument_id,
