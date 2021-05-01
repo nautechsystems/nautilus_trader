@@ -56,6 +56,13 @@ cdef class DataCache(DataCacheFacade):
         config : dict[str, object], optional
             The configuration options.
 
+        Raises
+        ------
+        ValueError
+            If config 'tick_capacity' is not positive.
+        ValueError
+            If config 'bar_capacity' is not positive.
+
         """
         if config is None:
             config = {}
@@ -315,16 +322,32 @@ cdef class DataCache(DataCacheFacade):
         """
         return sorted(list(self._instruments.keys()))
 
-    cpdef list instruments(self):
+    cpdef list instruments(self, Venue venue=None):
         """
         Return all instruments held by the data cache.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue filter for the query.
 
         Returns
         -------
         list[Instrument]
 
         """
-        return list(self._instruments.values())
+        cdef list instruments = []
+
+        cdef InstrumentId instrument_id
+        cdef Instrument instrument
+        for instrument_id, instrument in self._instruments.items():
+            if venue is None:
+                instruments.append(instrument)
+            else:
+                if instrument.id.venue == venue:
+                    instruments.append(instrument)
+
+        return instruments
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """

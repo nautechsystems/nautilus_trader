@@ -104,10 +104,14 @@ cdef class Trader(Component):
         self.id = trader_id
         self.analyzer = PerformanceAnalyzer()
 
-        self.initialize_strategies(
-            strategies=strategies,
-            warn_no_strategies=warn_no_strategies,
-        )
+        if strategies:
+            self.initialize_strategies(
+                strategies=strategies,
+                warn_no_strategies=warn_no_strategies,
+            )
+        else:
+            if warn_no_strategies:
+                self._log.warning(f"No strategies to initialize.")
 
     cdef list strategies_c(self):
         return self._strategies
@@ -200,10 +204,7 @@ cdef class Trader(Component):
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
-        if warn_no_strategies and not strategies:
-            self._log.warning(f"No strategies to initialize.")
-        else:
-            self._log.info(f"Initializing strategies...")
+        self._log.info(f"Initializing strategies...")
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:

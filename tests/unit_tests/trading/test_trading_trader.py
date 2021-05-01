@@ -65,6 +65,7 @@ class TraderTests(unittest.TestCase):
             logger=logger,
             config={"use_previous_close": False},
         )
+        self.data_engine.process(USDJPY_SIM)
 
         self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
@@ -95,7 +96,6 @@ class TraderTests(unittest.TestCase):
         )
 
         self.data_client = BacktestMarketDataClient(
-            instruments=[USDJPY_SIM],
             client_id=ClientId("SIM"),
             engine=self.data_engine,
             clock=clock,

@@ -24,6 +24,7 @@ from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class ExecutionClient:
@@ -35,6 +36,8 @@ cdef class ExecutionClient:
 
     cdef readonly ClientId id
     """The clients identifier.\n\n:returns: `ClientId`"""
+    cdef readonly Venue venue
+    """The clients venue.\n\n:returns: `Venue`"""
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
     cdef readonly bint is_connected

@@ -1,3 +1,24 @@
+# NautilusTrader 1.118.0 Beta - Release Notes
+
+This release simplifies the backtesting workflow by removing the need for the 
+intermediate `BacktestDataContainer`.
+
+## Breaking Changes
+- Removed redundant `BacktestDataContainer`.
+- `BacktestEngine` constructor simplified.
+- `BacktestMarketDataClient` no longer needs instruments.
+- Rename `PerformanceAnalyzer` `.get_realized_pnls` to `.realized_pnls`.
+
+## Enhancements
+- Re-engineered `BacktestDataEngine` to take data directly.
+
+## Fixes
+- Multi-currency account terminology.
+- Windows wheel packaging.
+- Windows path errors.
+
+---
+
 # NautilusTrader 1.117.0 Beta - Release Notes
 
 The major thrust of this release is added support for order book data in
