@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import USD
@@ -34,26 +33,22 @@ USDJPY_SIM = TestStubs.usdjpy_id()
 class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
+        self.engine = BacktestEngine(use_data_cache=True)
+
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        data = BacktestDataContainer()
-        data.add_instrument(usdjpy)
-        data.add_bars(
+
+        self.engine.add_instrument(usdjpy)
+        self.engine.add_bars(
             usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid()[:2000],
         )
-        data.add_bars(
+        self.engine.add_bars(
             usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.usdjpy_1min_ask()[:2000],
-        )
-
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            use_data_cache=True,
         )
 
         self.engine.add_exchange(
@@ -70,6 +65,7 @@ class TestBacktestEngine:
     def test_initialization(self):
         # Arrange
         # Act
+        self.engine.run(strategies=[TradingStrategy("000")])
         # Assert
         assert len(self.engine.trader.strategy_states()) == 1
 

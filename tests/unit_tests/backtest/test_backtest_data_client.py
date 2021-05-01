@@ -45,9 +45,9 @@ class TestBacktestDataClient:
             clock=self.clock,
             logger=self.logger,
         )
+        self.data_engine.process(USDJPY_SIM)
 
         self.client = BacktestMarketDataClient(
-            instruments=[USDJPY_SIM],
             client_id=ClientId("SIM"),
             engine=self.data_engine,
             clock=TestClock(),

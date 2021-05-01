@@ -27,7 +27,6 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
@@ -75,38 +74,84 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
     def __init__(
         self,
-        BacktestDataContainer data not None,
         Logger logger not None,
+        list instruments=None,
+        list generic_data=None,
+        list order_book_data=None,
+        dict quote_ticks=None,
+        dict trade_ticks=None,
+        dict bars_bid=None,
+        dict bars_ask=None,
     ):
         """
         Initialize a new instance of the `BacktestDataProducer` class.
 
         Parameters
         ----------
-        data : BacktestDataContainer
-            The data for the producer.
+        instruments : list[Instrument]
+            The instruments for backtesting.
+        generic_data : list[GenericData]
+            The generic data for backtesting.
+        order_book_data : list[OrderBookData]
+            The order book data for backtesting.
+        quote_ticks : dict[InstrumentId, pd.DataFrame]
+            The quote tick data for backtesting.
+        trade_ticks : dict[InstrumentId, pd.DataFrame]
+            The trade tick data for backtesting.
+        bars_bid : dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+            The bid bar data for backtesting.
+        bars_ask : dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+            The ask bar data for backtesting.
         logger : Logger
             The logger for the component.
 
         """
+        if instruments is None:
+            instruments = []
+        if generic_data is None:
+            generic_data = []
+        if order_book_data is None:
+            order_book_data = []
+        if quote_ticks is None:
+            quote_ticks = {}
+        if trade_ticks is None:
+            trade_ticks = {}
+        if bars_bid is None:
+            bars_bid = {}
+        if bars_ask is None:
+            bars_ask = {}
+
         self._log = LoggerAdapter(
             component=type(self).__name__,
             logger=logger,
         )
 
-        # Check data integrity
-        data.check_integrity()
-
         # Save instruments
-        self._instruments = list(data.instruments.values())
+        self._instruments = instruments
         cdef int instrument_counter = 0
         self._instrument_index = {}
 
         # Merge data stream
         self._stream = sorted(
-            data.generic_data + data.order_book_data,
+            generic_data + order_book_data,
             key=lambda x: x.timestamp_ns,
         )
+
+        # Check bar data integrity
+        for instrument in self._instruments:
+            # Check symmetry of bid ask bar data
+            if bars_bid is None:
+                bid_bars_keys = None
+            else:
+                bid_bars_keys = bars_bid.get(instrument.id, {}).keys()
+
+            if bars_ask is None:
+                ask_bars_keys = None
+            else:
+                ask_bars_keys = bars_ask.get(instrument.id, {}).keys()
+
+            if bid_bars_keys != ask_bars_keys:
+                raise RuntimeError(f"Bar data mismatch for {instrument.id}")
 
         # Prepare tick data
         self._quote_tick_data = pd.DataFrame()
@@ -116,6 +161,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self.execution_resolutions = []
 
         cdef double ts_total = unix_timestamp()
+
         for instrument in self._instruments:
             instrument_id = instrument.id
             self._log.info(f"Preparing {instrument_id} data...")
@@ -126,13 +172,13 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
             # Process quote tick data
             # -----------------------
-            if data.has_quote_data(instrument_id):
+            if instrument_id in quote_ticks or instrument_id in bars_bid:
                 ts = unix_timestamp()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
-                    data_quotes=data.quote_ticks.get(instrument_id),
-                    data_bars_bid=data.bars_bid.get(instrument_id),
-                    data_bars_ask=data.bars_ask.get(instrument_id),
+                    data_quotes=quote_ticks.get(instrument_id),
+                    data_bars_bid=bars_bid.get(instrument_id),
+                    data_bars_ask=bars_ask.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
@@ -146,11 +192,11 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
             # Process trade tick data
             # -----------------------
-            if data.has_trade_data(instrument_id):
+            if instrument_id in trade_ticks:
                 ts = unix_timestamp()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
-                    data=data.trade_ticks.get(instrument_id),
+                    data=trade_ticks.get(instrument_id),
                 )
 
                 # noinspection PyUnresolvedReferences
@@ -162,11 +208,12 @@ cdef class BacktestDataProducer(DataProducerFacade):
                                f"{unix_timestamp() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
-            if instrument_id in data.books:
-                execution_resolution = "ORDER_BOOK"
-
-            if execution_resolution is None:
-                raise RuntimeError(f"No execution level data for {instrument_id}")
+            # TODO: Execution resolution
+            # if instrument_id in data.books:
+            #     execution_resolution = "ORDER_BOOK"
+            #
+            # if execution_resolution is None:
+            #     raise RuntimeError(f"No execution level data for {instrument_id}")
 
             # Increment counter for indexing the next instrument
             instrument_counter += 1

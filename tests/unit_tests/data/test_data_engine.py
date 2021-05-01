@@ -82,11 +82,13 @@ class DataEngineTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
+        self.data_engine.process(BTCUSDT_BINANCE)
+        self.data_engine.process(ETHUSDT_BINANCE)
+        self.data_engine.process(XBTUSD_BITMEX)
 
         self.portfolio.register_cache(self.data_engine.cache)
 
         self.binance_client = BacktestMarketDataClient(
-            instruments=[BTCUSDT_BINANCE, ETHUSDT_BINANCE],
             client_id=ClientId(BINANCE.value),
             engine=self.data_engine,
             clock=self.clock,
@@ -94,7 +96,6 @@ class DataEngineTests(unittest.TestCase):
         )
 
         self.bitmex_client = BacktestMarketDataClient(
-            instruments=[XBTUSD_BITMEX],
             client_id=ClientId(BITMEX.value),
             engine=self.data_engine,
             clock=self.clock,
@@ -554,7 +555,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process(data)  # Invalid
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        self.assertEqual(4, self.data_engine.data_count)
 
     def test_process_data_places_data_on_queue(self):
         # Arrange
@@ -564,7 +565,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process(tick)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        self.assertEqual(4, self.data_engine.data_count)
 
     def test_execute_subscribe_instrument_then_adds_handler(self):
         # Arrange

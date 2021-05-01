@@ -28,7 +28,6 @@ sys.path.insert(
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.bar import BarSpecification
@@ -45,6 +44,13 @@ from tests.test_kit.providers import TestDataProvider
 
 
 if __name__ == "__main__":
+    # Build the backtest engine
+    engine = BacktestEngine(
+        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
+        # exec_db_type="redis",
+        # bypass_logging=True
+    )
+
     # Setup trading instruments
     # Requires an internet connection for the instrument loader
     # Alternatively use the TestInstrumentProvider in the test kit
@@ -55,29 +61,9 @@ if __name__ == "__main__":
     instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
     ETHUSDT_BINANCE = instruments.find(instrument_id)
 
-    # Setup data container
-    data = BacktestDataContainer()
-    data.add_instrument(ETHUSDT_BINANCE)
-    data.add_trade_ticks(ETHUSDT_BINANCE.id, TestDataProvider.ethusdt_trades())
-
-    # Instantiate your strategy
-    strategy = EMACross(
-        instrument_id=ETHUSDT_BINANCE.id,
-        bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-        fast_ema_period=10,
-        slow_ema_period=20,
-        trade_size=Decimal("0.05"),
-        order_id_tag="001",
-    )
-
-    # Build the backtest engine
-    engine = BacktestEngine(
-        data=data,
-        strategies=[strategy],  # List of 'any' number of strategies
-        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # exec_db_type="redis",
-        # bypass_logging=True
-    )
+    # Setup data
+    engine.add_instrument(ETHUSDT_BINANCE)
+    engine.add_trade_ticks(ETHUSDT_BINANCE.id, TestDataProvider.ethusdt_trades())
 
     # Create a fill model (optional)
     fill_model = FillModel(
@@ -96,10 +82,20 @@ if __name__ == "__main__":
         fill_model=fill_model,
     )
 
+    # Instantiate your strategy
+    strategy = EMACross(
+        instrument_id=ETHUSDT_BINANCE.id,
+        bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
+        fast_ema_period=10,
+        slow_ema_period=20,
+        trade_size=Decimal("0.05"),
+        order_id_tag="001",
+    )
+
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)
-    engine.run()
+    engine.run(strategies=[strategy])
 
     # Optionally view reports
     with pd.option_context(
@@ -113,6 +109,9 @@ if __name__ == "__main__":
         print(engine.trader.generate_account_report(BINANCE))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
+
+    # For repeated backtest runs make sure to reset the engine
+    engine.reset()
 
     # Good practice to dispose of the object
     engine.dispose()

@@ -434,10 +434,10 @@ cdef class PerformanceAnalyzer:
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef double win_rate = self.win_rate()
+        cdef double win_rate = self.win_rate(currency)
         cdef double loss_rate = 1.0 - win_rate
 
-        return (self.avg_winner() * win_rate) + (self.avg_loser() * loss_rate)
+        return (self.avg_winner(currency) * win_rate) + (self.avg_loser(currency) * loss_rate)
 
     cpdef object daily_returns(self):
         """

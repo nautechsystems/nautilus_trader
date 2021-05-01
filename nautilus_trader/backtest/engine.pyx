@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# cython: always_allow_keywords=False
-
+import pandas as pd
 import pytz
 
 from cpython.datetime cimport datetime
@@ -23,7 +22,6 @@ from libc.stdint cimport int64_t
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
-from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
 from nautilus_trader.backtest.data_producer cimport CachedProducer
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -45,17 +43,23 @@ from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
+from nautilus_trader.model.data cimport GenericData
 
 from nautilus_trader.core.functions import get_size_of  # Not cimport
 
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
@@ -74,68 +78,58 @@ cdef class BacktestEngine:
 
     def __init__(
         self,
-        BacktestDataContainer data not None,
         TraderId trader_id=None,
-        list strategies=None,
-        int tick_capacity=1000,
-        int bar_capacity=1000,
-        bint use_data_cache=False,
+        dict data_config=None,
+        dict exec_config=None,
+        dict risk_config=None,
         str exec_db_type not None="in-memory",
         bint exec_db_flush=True,
-        dict risk_config=None,
+        bint use_data_cache=False,
         bint bypass_logging=False,
         int level_stdout=LogLevel.INFO,
-        bint calculate_data_size=True
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
 
         Parameters
         ----------
-        data : BacktestDataContainer
-            The data for the backtest engine.
         trader_id : TraderId, optional
             The trader identifier.
-        strategies : list[TradingStrategy], optional
-            The initial strategies for the backtest engine.
-        tick_capacity : int, optional
-            The length for the data engines internal ticks deque (> 0).
-        bar_capacity : int, optional
-            The length for the data engines internal bars deque (> 0).
-        use_data_cache : bool, optional
-            If use cache for DataProducer (increased performance with repeated backtests on same data).
+        data_config : dict[str, object]
+            The configuration for the data engine.
+        exec_config : dict[str, object]
+            The configuration for the execution engine.
+        risk_config : dict[str, object]
+            The configuration for the risk engine.
         exec_db_type : str, optional
             The type for the execution cache (can be the default 'in-memory' or redis).
         exec_db_flush : bool, optional
             If the execution cache should be flushed on each run.
-        risk_config : dict[str, object]
-            The configuration for the risk engine.
+        use_data_cache : bool, optional
+            If use cache for DataProducer (increased performance with repeated backtests on same data).
         bypass_logging : bool, optional
             If logging should be bypassed.
         level_stdout : int, optional
             The minimum log level for logging messages to stdout.
 
-        Raises
-        ------
-        ValueError
-            If tick_capacity is not positive (> 0).
-        ValueError
-            If bar_capacity is not positive (> 0).
-        TypeError
-            If strategies contains a type other than TradingStrategy.
-
         """
-        Condition.positive_int(tick_capacity, "tick_capacity")
-        Condition.positive_int(bar_capacity, "bar_capacity")
-        Condition.valid_string(exec_db_type, "exec_db_type")
         if trader_id is None:
             trader_id = TraderId("BACKTESTER", "000")
-        if strategies is None:
-            strategies = []
-        if risk_config is None:
-            risk_config = {}
-        Condition.list_type(strategies, TradingStrategy, "strategies")
+        Condition.valid_string(exec_db_type, "exec_db_type")
 
+        # Options
+        self._exec_db_flush = exec_db_flush
+        self._use_data_cache = use_data_cache
+
+        # Data
+        self._generic_data = []             # type: list[GenericData]
+        self._order_book_data = []          # type: list[OrderBookData]
+        self._quote_ticks = {}              # type: dict[InstrumentId, pd.DataFrame]
+        self._trade_ticks = {}              # type: dict[InstrumentId, pd.DataFrame]
+        self._bars_bid = {}                 # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self._bars_ask = {}                 # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+
+        # Setup components
         self._clock = LiveClock()
         self.created_time = self._clock.utc_now()
 
@@ -167,9 +161,6 @@ cdef class BacktestEngine:
         self._log.info("=================================================================")
         self._log.info("Building engine...")
 
-        # Setup execution database
-        self._exec_db_flush = exec_db_flush
-
         if exec_db_type == "in-memory":
             exec_db = BypassExecutionDatabase(
                 trader_id=trader_id,
@@ -198,59 +189,26 @@ cdef class BacktestEngine:
             logger=self._test_logger,
         )
 
+        self._data_producer = None  # Instantiated on first run
+
+        if data_config is None:
+            data_config = {}
+        data_config["use_previous_close"] = False  # Ensures bars match historical data
         self._data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self._test_clock,
             logger=self._test_logger,
-            config={'use_previous_close': False},  # Ensures bars match historical data
+            config=data_config,
         )
 
         self.portfolio.register_cache(self._data_engine.cache)
-
-        self._data_producer = BacktestDataProducer(
-            data=data,
-            logger=self._test_logger,
-        )
-
-        # Prepare instruments
-        for instrument in self._data_producer.instruments():
-            self._data_engine.process(instrument)
-
-        if use_data_cache:
-            self._data_producer = CachedProducer(self._data_producer)
-
-        # Create data clients
-        for client_id, client_type in data.clients.items():
-            if client_type == BacktestDataClient:
-                data_client = BacktestDataClient(
-                    client_id=client_id,
-                    engine=self._data_engine,
-                    clock=self._test_clock,
-                    logger=self._test_logger,
-                )
-            elif client_type == BacktestMarketDataClient:
-                instruments = []
-                for instrument in data.instruments.values():
-                    if instrument.id.venue.client_id == client_id:
-                        instruments.append(instrument)
-
-                data_client = BacktestMarketDataClient(
-                    instruments=instruments,
-                    client_id=client_id,
-                    engine=self._data_engine,
-                    clock=self._test_clock,
-                    logger=self._test_logger,
-                )
-            else:
-                raise RuntimeError(f"DataClient type invalid, was {client_type}")
-
-            self._data_engine.register_client(data_client)
 
         self._exec_engine = ExecutionEngine(
             database=exec_db,
             portfolio=self.portfolio,
             clock=self._test_clock,
             logger=self._test_logger,
+            config=exec_config,
         )
 
         self._risk_engine = RiskEngine(
@@ -266,7 +224,7 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=trader_id,
-            strategies=strategies,
+            strategies=[],  # Added in `run()`
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
@@ -284,11 +242,8 @@ cdef class BacktestEngine:
 
         self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
-        log_memory(self._log)
-        if calculate_data_size:
-            self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
 
-    cpdef ExecutionEngine get_exec_engine(self):
+    def get_exec_engine(self) -> ExecutionEngine:
         """
         Return the execution engine for the backtest engine (used for testing).
 
@@ -299,7 +254,249 @@ cdef class BacktestEngine:
         """
         return self._exec_engine
 
-    cpdef void add_exchange(
+    def add_generic_data(self, ClientId client_id, list data) -> None:
+        """
+        Add the generic data to the container.
+
+        Parameters
+        ----------
+        client_id : ClientId
+            The data client identifier to associate with the generic data.
+        data : list[GenericData]
+            The data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+
+        """
+        Condition.not_none(client_id, "client_id")
+        Condition.not_none(data, "data")
+        Condition.not_empty(data, "data")
+        Condition.list_type(data, GenericData, "data")
+
+        # Check client has been registered
+        self._add_data_client_if_not_exists(client_id)
+
+        # Add data
+        self._generic_data = sorted(
+            self._generic_data + data,
+            key=lambda x: x.timestamp_ns,
+        )
+
+    def add_instrument(self, Instrument instrument) -> None:
+        """
+        Add the instrument to the backtest engine.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(instrument.id.venue.client_id)
+
+        # Add data
+        self._data_engine.process(instrument)
+
+    def add_order_book_data(self, list data) -> None:
+        """
+        Add the order book data to the backtest engine.
+
+        Parameters
+        ----------
+        data : list[OrderBookData]
+            The order book data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+        ValueError
+            If instrument_id is not contained in the data cache.
+
+        """
+        Condition.not_none(data, "data")
+        Condition.not_empty(data, "data")
+        Condition.list_type(data, OrderBookData, "snapshots")
+        Condition.true(
+            data[0].instrument_id in self._data_engine.cache.instrument_ids(),
+            "Instrument for given data not found in the data cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_data_client_if_not_exists(data[0].instrument_id.venue.client_id)
+
+        # Add data
+        self._order_book_data = sorted(
+            self._order_book_data + data,
+            key=lambda x: x.timestamp_ns,
+        )
+
+    def add_quote_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
+        """
+        Add the quote tick data to the backtest engine.
+
+        The format of the dataframe is expected to be a DateTimeIndex (times are
+        assumed to be UTC, and are converted to tz-aware in pre-processing).
+
+        With index column named 'timestamp', and 'bid', 'ask' data columns.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the quote tick data.
+        data : pd.DataFrame
+            The quote tick data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+        ValueError
+            If instrument_id is not contained in the data cache.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(data, "data")
+        Condition.type(data, pd.DataFrame, "data")
+        Condition.false(data.empty, "data was empty")
+        Condition.true(
+            instrument_id in self._data_engine.cache.instrument_ids(),
+            "Instrument for given data not found in the data cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+
+        # Add data
+        self._quote_ticks[instrument_id] = data
+        self._quote_ticks = dict(sorted(self._quote_ticks.items()))
+
+    def add_trade_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
+        """
+        Add the trade tick data to the backtest engine.
+
+        The format of the dataframe is expected to be a DateTimeIndex (times are
+        assumed to be UTC, and are converted to tz-aware in pre-processing).
+
+        With index column named 'timestamp', and 'trade_id', 'price', 'quantity',
+        'buyer_maker' data columns.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the trade tick data.
+        data : pd.DataFrame
+            The trade tick data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+        ValueError
+            If instrument_id is not contained in the data cache.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(data, "data")
+        Condition.type(data, pd.DataFrame, "data")
+        Condition.false(data.empty, "data was empty")
+        Condition.true(
+            instrument_id in self._data_engine.cache.instrument_ids(),
+            "Instrument for given data not found in the data cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+
+        # Add data
+        self._trade_ticks[instrument_id] = data
+        self._trade_ticks = dict(sorted(self._trade_ticks.items()))
+
+    def add_bars(
+        self,
+        InstrumentId instrument_id,
+        BarAggregation aggregation,
+        PriceType price_type,
+        data: pd.DataFrame
+    ) -> None:
+        """
+        Add the bar data to the backtest engine.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the bar data.
+        aggregation : BarAggregation
+            The bar aggregation of the data.
+        price_type : PriceType
+            The price type of the data.
+        data : pd.DataFrame
+            The bar data to add.
+
+        Raises
+        ------
+        ValueError
+            If price_type is LAST.
+        ValueError
+            If data is empty.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(data, "data")
+        Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
+        Condition.false(data.empty, "data was empty")
+        Condition.true(
+            instrument_id in self._data_engine.cache.instrument_ids(),
+            "Instrument for given data not found in the data cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+
+        # Add data
+        if price_type == PriceType.BID:
+            if instrument_id not in self._bars_bid:
+                self._bars_bid[instrument_id] = {}
+                self._bars_bid = dict(sorted(self._bars_bid.items()))
+            self._bars_bid[instrument_id][aggregation] = data
+            self._bars_bid[instrument_id] = dict(sorted(self._bars_bid[instrument_id].items()))
+        elif price_type == PriceType.ASK:
+            if instrument_id not in self._bars_ask:
+                self._bars_ask[instrument_id] = {}
+                self._bars_ask = dict(sorted(self._bars_ask.items()))
+            self._bars_ask[instrument_id][aggregation] = data
+            self._bars_ask[instrument_id] = dict(sorted(self._bars_ask[instrument_id].items()))
+
+        cdef dict shapes = {}  # type: dict[BarAggregation, tuple]
+        cdef dict indices = {}  # type: dict[BarAggregation, DatetimeIndex]
+        for instrument_id, data in self._bars_bid.items():
+            for aggregation, dataframe in data.items():
+                if aggregation not in shapes:
+                    shapes[aggregation] = dataframe.shape
+                if aggregation not in indices:
+                    indices[aggregation] = dataframe.index
+                if dataframe.shape != shapes[aggregation]:
+                    raise RuntimeError(f"{dataframe} bid ask shape is not equal")
+                if not all(dataframe.index == indices[aggregation]):
+                    raise RuntimeError(f"{dataframe} bid ask index is not equal")
+        for instrument_id, data in self._bars_ask.items():
+            for aggregation, dataframe in data.items():
+                if dataframe.shape != shapes[aggregation]:
+                    raise RuntimeError(f"{dataframe} bid ask shape is not equal")
+                if not all(dataframe.index == indices[aggregation]):
+                    raise RuntimeError(f"{dataframe} bid ask index is not equal")
+
+    def add_exchange(
         self,
         Venue venue,
         OMSType oms_type,
@@ -307,7 +504,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
-    ) except *:
+    ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
 
@@ -344,21 +541,13 @@ cdef class BacktestEngine:
         Condition.list_type(modules, SimulationModule, "modules")
         Condition.type_or_none(fill_model, FillModel, "fill_model")
 
-        account_id = AccountId(venue.value, "001")
-
-        # Gather instruments for exchange
-        instruments = []
-        for instrument in self._data_engine.cache.instruments():
-            if instrument.id.venue == venue:
-                instruments.append(instrument)
-
         # Create exchange
         exchange = SimulatedExchange(
             venue=venue,
             oms_type=oms_type,
             is_frozen_account=is_frozen_account,
             starting_balances=starting_balances,
-            instruments=instruments,
+            instruments=self._data_engine.cache.instruments(venue),
             modules=modules,
             exec_cache=self._exec_engine.cache,
             fill_model=fill_model,
@@ -371,7 +560,7 @@ cdef class BacktestEngine:
         # Create execution client for exchange
         exec_client = BacktestExecClient(
             exchange=exchange,
-            account_id=account_id,
+            account_id=AccountId(venue.value, "001"),
             engine=self._exec_engine,
             clock=self._test_clock,
             logger=self._test_logger,
@@ -380,7 +569,7 @@ cdef class BacktestEngine:
         exchange.register_client(exec_client)
         self._exec_engine.register_client(exec_client)
 
-    cpdef void reset(self) except *:
+    def reset(self) -> None:
         """
         Reset the backtest engine.
 
@@ -414,7 +603,7 @@ cdef class BacktestEngine:
 
         self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
+    def dispose(self) -> None:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
 
@@ -432,7 +621,7 @@ cdef class BacktestEngine:
         self._exec_engine.dispose()
         self._risk_engine.dispose()
 
-    cpdef void change_fill_model(self, Venue venue, FillModel model) except *:
+    def change_fill_model(self, Venue venue, FillModel model) -> None:
         """
         Change the fill model for the exchange of the given venue.
 
@@ -450,12 +639,12 @@ cdef class BacktestEngine:
 
         self._exchanges[venue].set_fill_model(model)
 
-    cpdef void run(
+    def run(
         self,
         datetime start=None,
         datetime stop=None,
         list strategies=None,
-    ) except *:
+    ) -> None:
         """
         Run a backtest from the start datetime to the stop datetime.
 
@@ -476,6 +665,24 @@ cdef class BacktestEngine:
             If the stop is >= the start datetime.
 
         """
+        if self._data_producer is None:
+            self._data_producer = BacktestDataProducer(
+                logger=self._test_logger,
+                instruments=self._data_engine.cache.instruments(),
+                generic_data=self._generic_data,
+                order_book_data=self._order_book_data,
+                quote_ticks=self._quote_ticks,
+                trade_ticks=self._trade_ticks,
+                bars_bid=self._bars_bid,
+                bars_ask=self._bars_ask,
+            )
+
+            if self._use_data_cache:
+                self._data_producer = CachedProducer(self._data_producer)
+
+        log_memory(self._log)
+        self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
+
         # Setup start datetime
         if start is None:
             start = self._data_producer.min_timestamp
@@ -664,3 +871,23 @@ cdef class BacktestEngine:
             self._log.info("-----------------------------------------------------------------")
             for statistic in self.analyzer.get_performance_stats_returns_formatted():
                 self._log.info(statistic)
+
+    def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
+        if client_id not in self._data_engine.registered_clients:
+            client = BacktestDataClient(
+                client_id=client_id,
+                engine=self._data_engine,
+                clock=self._test_clock,
+                logger=self._test_logger,
+            )
+            self._data_engine.register_client(client)
+
+    def _add_market_data_client_if_not_exists(self, ClientId client_id) -> None:
+        if client_id not in self._data_engine.registered_clients:
+            client = BacktestMarketDataClient(
+                client_id=client_id,
+                engine=self._data_engine,
+                clock=self._test_clock,
+                logger=self._test_logger,
+            )
+            self._data_engine.register_client(client)
