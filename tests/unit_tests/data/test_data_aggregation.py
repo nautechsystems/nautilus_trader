@@ -924,12 +924,16 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("20.00002"), bar_store.get_store()[0].high)
         self.assertEqual(Price("20.00001"), bar_store.get_store()[0].low)
         self.assertEqual(Price("20.00002"), bar_store.get_store()[0].close)
-        # self.assertEqual(Quantity("5000.00"), bar_store.get_store()[0].volume)  # TODO: WIP - intermittent?
+        self.assertEqual(
+            Quantity("5000.00"), bar_store.get_store()[0].volume
+        )  # TODO: WIP - intermittent?
         self.assertEqual(Price("20.00002"), bar_store.get_store()[1].open)
         self.assertEqual(Price("20.00002"), bar_store.get_store()[1].high)
         self.assertEqual(Price("20.00000"), bar_store.get_store()[1].low)
         self.assertEqual(Price("20.00000"), bar_store.get_store()[1].close)
-        # self.assertEqual(Quantity("5000.00"), bar_store.get_store()[1].volume)  # TODO: WIP - intermittent?
+        self.assertEqual(
+            Quantity("4999.99"), bar_store.get_store()[1].volume
+        )  # TODO: WIP - intermittent?
         self.assertEqual(
             Decimal("40000.11000"), aggregator.get_cumulative_value()
         )  # TODO: WIP - Should be 40000
@@ -1016,7 +1020,8 @@ class TestTimeBarAggregator(unittest.TestCase):
             Logger(clock),
         )
 
-    # @pytest.mark.parametrize(  # TODO(cs): parametrize not working
+    # TODO(cs): parametrize not working??
+    # @pytest.mark.parametrize(
     #     "bar_spec,expected",
     #     [
     #         [
