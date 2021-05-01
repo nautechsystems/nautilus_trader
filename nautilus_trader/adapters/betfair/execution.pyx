@@ -58,7 +58,7 @@ from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.base import Order
+from nautilus_trader.model.orders.base import Order
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -476,11 +476,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     ) -> List[ExecutionReport]:
         self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
         return await generate_trades_list(self, venue_order_id, symbol, since)
-
-# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
-
-    def _handle_event_py(self, event: Event):
-        self._engine.process(event)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

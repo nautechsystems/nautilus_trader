@@ -29,8 +29,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy

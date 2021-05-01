@@ -34,7 +34,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 

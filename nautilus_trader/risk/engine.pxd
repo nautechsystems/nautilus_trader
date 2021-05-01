@@ -23,7 +23,7 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 

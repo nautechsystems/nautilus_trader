@@ -28,9 +28,9 @@ from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookUpdate
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -109,20 +109,20 @@ class BetfairTestStrategy(TradingStrategy):
                 level=OrderBookLevel.L2,
             )
 
-    def on_order_book_delta(self, data: OrderBookUpdate):
+    def on_order_book_delta(self, delta: OrderBookDelta):
         """
         Actions to be performed when the strategy is running and receives an order book.
 
         Parameters
         ----------
-        order_book : OrderBook
+        delta : OrderBookDelta
             The order book received.
 
         """
         # self.log.debug(
         #     f"Received {repr(order_book)}"
         # )  # For debugging (must add a subscription)
-        self.book.apply(data)
+        self.book.apply(delta)
         if self.book.spread():
             self.update_midpoint(order_book=self.book)
             self.log.info(f"on_order_book {self._in_flight}")

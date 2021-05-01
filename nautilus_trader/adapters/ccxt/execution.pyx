@@ -58,8 +58,8 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60

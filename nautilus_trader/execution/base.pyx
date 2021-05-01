@@ -18,7 +18,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.account cimport Account
 
 

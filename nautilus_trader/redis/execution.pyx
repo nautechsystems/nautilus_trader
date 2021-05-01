@@ -26,11 +26,11 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.limit cimport LimitOrder
-from nautilus_trader.model.order.market cimport MarketOrder
-from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
-from nautilus_trader.model.order.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
+from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer

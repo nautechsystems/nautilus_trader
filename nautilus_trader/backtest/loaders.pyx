@@ -78,7 +78,7 @@ cdef class CSVBarDataLoader:
         )
 
 
-cdef datetime _ts_parser(str time_in_secs):
+cdef inline datetime _ts_parser(str time_in_secs):
     return datetime.utcfromtimestamp(int(time_in_secs) / 1_000_000.0)
 
 
@@ -142,6 +142,7 @@ cdef class TardisQuoteDataLoader:
         df = df[['symbol', 'ask_size', 'ask', 'bid_size', 'bid']]
 
         return df
+
 
 cdef class ParquetTickDataLoader:
     """
