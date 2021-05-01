@@ -30,7 +30,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.limit import LimitOrder
+from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests import TESTS_PACKAGE_ROOT

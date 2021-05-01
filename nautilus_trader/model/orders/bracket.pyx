@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.identifiers cimport BracketOrderId
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.limit cimport LimitOrder
-from nautilus_trader.model.order.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 
 
 cdef class BracketOrder:

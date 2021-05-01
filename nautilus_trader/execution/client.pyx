@@ -25,6 +25,7 @@ from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.orders.base cimport Order
 
 
 cdef class ExecutionClient:
@@ -133,12 +134,10 @@ cdef class ExecutionClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
-
-    def _handle_event_py(self, Event event):
-        self._engine.process(event)
-
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
+
+    # cpdef void generate_order_cancelled(self, Order order) except *:
+    #     pass
 
     cdef void _handle_event(self, Event event) except *:
         self._engine.process(event)

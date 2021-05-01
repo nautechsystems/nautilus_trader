@@ -13,22 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.order.base cimport PassiveOrder
+from libc.stdint cimport int64_t
+
+from nautilus_trader.model.identifiers cimport BracketOrderId
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 
 
-cdef class StopLimitOrder(PassiveOrder):
-    cdef readonly Price trigger
-    """The trigger stop price for the order.\n\n:returns: `Price`"""
-    cdef readonly bint is_triggered
-    """If the order has been triggered.\n\n:returns: `bool`"""
-    cdef readonly bint is_post_only
-    """If the order will only make liquidity.\n\n:returns: `bool`"""
-    cdef readonly bint is_reduce_only
-    """If the order will only reduce an open position.\n\n:returns: `bool`"""
-    cdef readonly bint is_hidden
-    """If the order is hidden from the public book.\n\n:returns: `bool`"""
-
-    @staticmethod
-    cdef StopLimitOrder create(OrderInitialized init)
+cdef class BracketOrder:
+    cdef readonly BracketOrderId id
+    """The bracket order identifier.\n\n:returns: `BracketOrderId`"""
+    cdef readonly Order entry
+    """The entry order.\n\n:returns: `Order`"""
+    cdef readonly StopMarketOrder stop_loss
+    """The stop-loss order.\n\n:returns: `StopMarketOrder`"""
+    cdef readonly LimitOrder take_profit
+    """The take-profit order.\n\n:returns: `LimitOrder`"""
+    cdef readonly int64_t timestamp_ns
+    """The Unix timestamp (nanos) of the bracket order.\n\n:returns: `int64`"""
