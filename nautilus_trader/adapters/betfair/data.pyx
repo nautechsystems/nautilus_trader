@@ -135,7 +135,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
 
-        self._log.debug(f"DataEngine has {len(self._engine.cache.instruments())} instruments")
+        self._log.debug(f"DataEngine has {len(self._engine.cache.instruments(BETFAIR_VENUE))} Betfair instruments")
 
         # Schedule a heartbeat in 10s to give us a little more time to load instruments
         self._log.debug("scheduling heartbeat")

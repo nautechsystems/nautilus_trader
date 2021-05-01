@@ -49,7 +49,8 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client identifier. It is assumed that the client_id will equal
+            the venue identifier.
         account_id : AccountId
             The account identifier for the client.
         engine : ExecutionEngine
@@ -77,6 +78,7 @@ cdef class ExecutionClient:
         self._config = config
 
         self.id = client_id
+        self.venue = Venue(client_id.value)  # Assumption that ClientId == Venue
         self.account_id = account_id
         self.is_connected = False
 

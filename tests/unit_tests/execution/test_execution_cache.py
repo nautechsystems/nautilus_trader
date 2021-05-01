@@ -16,7 +16,6 @@
 from decimal import Decimal
 import unittest
 
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -773,31 +772,28 @@ class ExecutionCacheTests(unittest.TestCase):
 class ExecutionCacheIntegrityCheckTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.venue = Venue("SIM")
+        self.engine = BacktestEngine(
+            bypass_logging=True,  # Uncomment this to see integrity check failure messages
+        )
+
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        data = BacktestDataContainer()
-        data.add_instrument(self.usdjpy)
-        data.add_bars(
+
+        self.engine.add_instrument(self.usdjpy)
+        self.engine.add_bars(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        data.add_bars(
+        self.engine.add_bars(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,  # Uncomment this to see integrity check failure messages
-        )
-
         self.engine.add_exchange(
-            venue=self.venue,
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             modules=[],
