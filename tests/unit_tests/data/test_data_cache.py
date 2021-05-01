@@ -170,6 +170,30 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual([instrument.id], result)
 
+    def test_instrument_ids_given_same_venue_returns_expected_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instrument_ids(venue=instrument.venue)
+
+        # Assert
+        self.assertEqual([instrument.id], result)
+
+    def test_instrument_ids_given_different_venue_returns_empty_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instrument_ids(venue=SIM)
+
+        # Assert
+        self.assertEqual([], result)
+
     def test_instruments_when_one_instrument_returns_expected_list(self):
         # Arrange
         instrument = TestInstrumentProvider.ethusdt_binance()
@@ -181,6 +205,30 @@ class DataCacheTests(unittest.TestCase):
 
         # Assert
         self.assertEqual([instrument], result)
+
+    def test_instruments_given_same_venue_returns_expected_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instruments(venue=instrument.venue)
+
+        # Assert
+        self.assertEqual([instrument], result)
+
+    def test_instruments_given_different_venue_returns_empty_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instruments(venue=SIM)
+
+        # Assert
+        self.assertEqual([], result)
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
