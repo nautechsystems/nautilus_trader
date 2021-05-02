@@ -92,6 +92,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
 
         client = client_cls(internal_config)
+        client.set_sandbox_mode(config.get("sandbox_mode", False))
 
         # Check required CCXT methods are available
         if not client.has.get("fetchTrades", False):
@@ -180,6 +181,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
 
         client = client_cls(internal_config)
+        client.set_sandbox_mode(config.get("sandbox_mode", False))
 
         # Check required CCXT methods are available
         if not client.has.get("fetchTrades", False):
