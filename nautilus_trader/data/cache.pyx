@@ -79,10 +79,10 @@ cdef class DataCache(DataCacheFacade):
 
         # Cached data
         self._instruments = {}  # type: dict[InstrumentId, Instrument]
-        self._quote_ticks = {}  # type: dict[InstrumentId, list[QuoteTick]]
-        self._trade_ticks = {}  # type: dict[InstrumentId, list[TradeTick]]
+        self._quote_ticks = {}  # type: dict[InstrumentId, deque[QuoteTick]]
+        self._trade_ticks = {}  # type: dict[InstrumentId, deque[TradeTick]]
         self._order_books = {}  # type: dict[InstrumentId, OrderBook]
-        self._bars = {}         # type: dict[BarType, list[Bar]]
+        self._bars = {}         # type: dict[BarType, deque[Bar]]
 
         self._log.info("Initialized.")
 
@@ -312,15 +312,21 @@ cdef class DataCache(DataCacheFacade):
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef list instrument_ids(self):
+    cpdef list instrument_ids(self, Venue venue=None):
         """
         Return all instrument identifiers held by the data cache.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue filter for the query.
 
         Returns
         -------
         list[InstrumentId]
+
         """
-        return sorted(list(self._instruments.keys()))
+        return sorted([x for x in self._instruments.keys() if venue is None or venue == x.venue])
 
     cpdef list instruments(self, Venue venue=None):
         """
@@ -336,18 +342,7 @@ cdef class DataCache(DataCacheFacade):
         list[Instrument]
 
         """
-        cdef list instruments = []
-
-        cdef InstrumentId instrument_id
-        cdef Instrument instrument
-        for instrument_id, instrument in self._instruments.items():
-            if venue is None:
-                instruments.append(instrument)
-            else:
-                if instrument.id.venue == venue:
-                    instruments.append(instrument)
-
-        return instruments
+        return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """

@@ -44,18 +44,18 @@ from tests.test_kit.providers import TestDataProvider
 
 
 if __name__ == "__main__":
+    # Setup trading instruments
+    # Requires an internet connection for the instrument loader
+    # Alternatively use the TestInstrumentProvider in the test kit
+    print("Loading instruments...")
+    instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
+
     # Build the backtest engine
     engine = BacktestEngine(
         use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
         # exec_db_type="redis",
         # bypass_logging=True
     )
-
-    # Setup trading instruments
-    # Requires an internet connection for the instrument loader
-    # Alternatively use the TestInstrumentProvider in the test kit
-    print("Loading instruments...")
-    instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
 
     BINANCE = Venue("BINANCE")
     instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)

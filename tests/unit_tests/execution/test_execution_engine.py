@@ -48,7 +48,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.bracket import BracketOrder
+from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
@@ -1901,15 +1901,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.assertEqual(-50000, position_flipped.relative_qty)
         self.assertEqual(50000, position_flipped.last_event.last_qty)
-        self.assertEqual(150000, position_flipped.last_event.cum_qty)
-        self.assertEqual(0, position_flipped.last_event.leaves_qty)
-        self.assertEqual(
-            Quantity(100000),
-            self.cache.order(order1.client_order_id).last_event.cum_qty,
-        )
-        self.assertEqual(
-            0, self.cache.order(order1.client_order_id).last_event.leaves_qty
-        )
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))
@@ -1994,15 +1985,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.assertEqual(50000, position_flipped.relative_qty)
         self.assertEqual(50000, position_flipped.last_event.last_qty)
-        self.assertEqual(150000, position_flipped.last_event.cum_qty)
-        self.assertEqual(0, position_flipped.last_event.leaves_qty)
-        self.assertEqual(
-            Quantity(100000),
-            self.cache.order(order1.client_order_id).last_event.cum_qty,
-        )
-        self.assertEqual(
-            0, self.cache.order(order1.client_order_id).last_event.leaves_qty
-        )
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))

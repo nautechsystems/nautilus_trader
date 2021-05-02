@@ -61,13 +61,13 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
-from nautilus_trader.model.order.bracket cimport BracketOrder
-from nautilus_trader.model.order.limit cimport LimitOrder
-from nautilus_trader.model.order.market cimport MarketOrder
-from nautilus_trader.model.order.stop_limit cimport StopLimitOrder
-from nautilus_trader.model.order.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
+from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
@@ -574,8 +574,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[LAST_QTY] = str(event.last_qty)
             package[LAST_PX] = str(event.last_px)
-            package[CUM_QTY] = str(event.cum_qty)
-            package[LEAVES_QTY] = str(event.leaves_qty)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
             package[COMMISSION_AMOUNT] = str(event.commission)
@@ -765,8 +763,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 Quantity(unpacked[LAST_QTY]),
                 Price(unpacked[LAST_PX]),
-                Quantity(unpacked[CUM_QTY]),
-                Quantity(unpacked[LEAVES_QTY]),
                 Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
                 Money(unpacked[COMMISSION_AMOUNT], commission_currency),

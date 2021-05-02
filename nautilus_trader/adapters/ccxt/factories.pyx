@@ -16,6 +16,8 @@
 import os
 
 from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
+from nautilus_trader.adapters.ccxt.execution cimport BinanceCCXTExecutionClient
+from nautilus_trader.adapters.ccxt.execution cimport BitmexCCXTExecutionClient
 from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
@@ -92,6 +94,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
 
         client = client_cls(internal_config)
+        client.set_sandbox_mode(config.get("sandbox_mode", False))
 
         # Check required CCXT methods are available
         if not client.has.get("fetchTrades", False):
@@ -180,6 +183,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
 
         client = client_cls(internal_config)
+        client.set_sandbox_mode(config.get("sandbox_mode", False))
 
         # Check required CCXT methods are available
         if not client.has.get("fetchTrades", False):
@@ -200,10 +204,27 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         account_id = AccountId(client.name.upper(), account_id_env_var)
 
         # Create client
-        return CCXTExecutionClient(
-            client=client,
-            account_id=account_id,
-            engine=engine,
-            clock=clock,
-            logger=logger,
-        )
+        if client.name.upper() == "BINANCE":
+            return BinanceCCXTExecutionClient(
+                client=client,
+                account_id=account_id,
+                engine=engine,
+                clock=clock,
+                logger=logger,
+            )
+        elif client.name.upper() == "BITMEX":
+            return BitmexCCXTExecutionClient(
+                client=client,
+                account_id=account_id,
+                engine=engine,
+                clock=clock,
+                logger=logger,
+            )
+        else:
+            return CCXTExecutionClient(
+                client=client,
+                account_id=account_id,
+                engine=engine,
+                clock=clock,
+                logger=logger,
+            )

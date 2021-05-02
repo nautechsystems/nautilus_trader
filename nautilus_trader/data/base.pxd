@@ -31,7 +31,7 @@ cdef class DataCacheFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
-    cpdef list instrument_ids(self)
+    cpdef list instrument_ids(self, Venue venue=*)
     cpdef list instruments(self, Venue venue=*)
     cpdef list quote_ticks(self, InstrumentId instrument_id)
     cpdef list trade_ticks(self, InstrumentId instrument_id)

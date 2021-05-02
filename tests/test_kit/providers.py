@@ -16,6 +16,7 @@
 import bz2
 from decimal import Decimal
 import json
+import os
 from typing import List
 
 from pandas import DataFrame
@@ -48,51 +49,58 @@ from tests.test_kit import PACKAGE_ROOT
 class TestDataProvider:
     @staticmethod
     def ethusdt_trades() -> DataFrame:
-        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/binance-ethusdt-trades.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "binance-ethusdt-trades.csv")
+        return CSVTickDataLoader.load(path)
 
     @staticmethod
     def audusd_ticks() -> DataFrame:
-        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/truefx-audusd-ticks.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "truefx-audusd-ticks.csv")
+        return CSVTickDataLoader.load(path)
 
     @staticmethod
     def usdjpy_ticks() -> DataFrame:
-        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/truefx-usdjpy-ticks.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "truefx-usdjpy-ticks.csv")
+        return CSVTickDataLoader.load(path)
 
     @staticmethod
     def gbpusd_1min_bid() -> DataFrame:
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-gbpusd-m1-bid-2012.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-gbpusd-m1-bid-2012.csv")
+        return CSVBarDataLoader.load(path)
 
     @staticmethod
     def gbpusd_1min_ask() -> DataFrame:
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-gbpusd-m1-ask-2012.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-gbpusd-m1-ask-2012.csv")
+        return CSVBarDataLoader.load(path)
 
     @staticmethod
     def usdjpy_1min_bid() -> DataFrame:
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-usdjpy-m1-bid-2013.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-usdjpy-m1-bid-2013.csv")
+        return CSVBarDataLoader.load(path)
 
     @staticmethod
     def usdjpy_1min_ask() -> DataFrame:
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-usdjpy-m1-ask-2013.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "fxcm-usdjpy-m1-ask-2013.csv")
+        return CSVBarDataLoader.load(path)
 
     @staticmethod
     def tardis_trades() -> DataFrame:
-        return TardisTradeDataLoader.load(PACKAGE_ROOT + "/data/tardis_trades.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "tardis_trades.csv")
+        return TardisTradeDataLoader.load(path)
 
     @staticmethod
     def tardis_quotes() -> DataFrame:
-        return TardisQuoteDataLoader.load(PACKAGE_ROOT + "/data/tardis_quotes.csv")
+        path = os.path.join(PACKAGE_ROOT, "data", "tardis_quotes.csv")
+        return TardisQuoteDataLoader.load(path)
 
     @staticmethod
     def parquet_btcusdt_trades() -> DataFrame:
-        return ParquetTickDataLoader.load(
-            PACKAGE_ROOT + "/data/binance-btcusdt-trades.parquet"
-        )
+        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-trades.parquet")
+        return ParquetTickDataLoader.load(path)
 
     @staticmethod
     def parquet_btcusdt_quotes() -> DataFrame:
-        return ParquetTickDataLoader.load(
-            PACKAGE_ROOT + "/data/binance-btcusdt-quotes.parquet"
-        )
+        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-quotes.parquet")
+        return ParquetTickDataLoader.load(path)
 
     @staticmethod
     def l1_feed():

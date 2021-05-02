@@ -15,7 +15,6 @@
 
 from collections import defaultdict
 import datetime
-from decimal import Decimal
 import itertools
 from typing import List, Optional, Union
 
@@ -65,11 +64,11 @@ from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.limit import LimitOrder
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.tick import TradeTick
 
 
@@ -489,10 +488,13 @@ async def generate_trades_list(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
             venue_order_id=VenueOrderId(fill["betId"]),
             execution_id=ExecutionId(fill["lastMatchedDate"]),
-            last_qty=Decimal(fill["sizeSettled"]),
-            last_px=Decimal(fill["priceMatched"]),
-            commission_amount=None,  # Can be None
-            commission_currency=None,  # Can be None
+            last_qty=Quantity(
+                str(fill["sizeSettled"])
+            ),  # TODO: Possibly incorrect precision
+            last_px=Price(
+                str(fill["priceMatched"])
+            ),  # TODO: Possibly incorrect precision
+            commission=None,  # Can be None
             liquidity_side=LiquiditySide.NONE,
             execution_ns=timestamp_ns,
             timestamp_ns=timestamp_ns,

@@ -13,18 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class ExecutionClient:
@@ -57,5 +71,54 @@ cdef class ExecutionClient:
     cpdef void cancel_order(self, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
+
+    cpdef void generate_order_invalid(self, ClientOrderId client_order_id, str reason) except *
+    cpdef void generate_order_submitted(self, ClientOrderId client_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_rejected(self, ClientOrderId client_order_id, str reason, int64_t timestamp_ns) except *
+    cpdef void generate_order_accepted(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_update_rejected(
+        self,
+        ClientOrderId client_order_id,
+        str response,
+        str reason,
+        int64_t timestamp_ns,
+    ) except *
+    cpdef void generate_order_cancel_rejected(
+        self,
+        ClientOrderId client_order_id,
+        str response,
+        str reason,
+        int64_t timestamp_ns,
+    ) except *
+    cpdef void generate_order_updated(
+        self,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        Quantity quantity,
+        Price price,
+        int64_t timestamp_ns,
+        bint venue_order_id_modified=*,
+    ) except *
+    cpdef void generate_order_triggered(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_cancelled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_expired(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_filled(
+        self,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        ExecutionId execution_id,
+        PositionId position_id,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity last_qty,
+        Price last_px,
+        Currency quote_currency,
+        bint is_inverse,
+        Money commission,
+        LiquiditySide liquidity_side,
+        int64_t timestamp_ns,
+    ) except *
+
+# --------------------------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *

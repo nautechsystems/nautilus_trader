@@ -882,8 +882,6 @@ cdef class OrderFilled(OrderEvent):
         OrderSide order_side,
         Quantity last_qty not None,
         Price last_px not None,
-        Quantity cum_qty not None,
-        Quantity leaves_qty not None,
         Currency currency not None,
         bint is_inverse,
         Money commission not None,
@@ -918,10 +916,6 @@ cdef class OrderFilled(OrderEvent):
             The fill quantity for this execution.
         last_px : Price
             The fill price for this execution (not average price).
-        cum_qty : Quantity
-            The cumulative filled quantity for the order.
-        leaves_qty : Quantity
-            The order quantity open for further execution.
         currency : Currency
             The currency of the price.
         is_inverse : bool
@@ -963,8 +957,6 @@ cdef class OrderFilled(OrderEvent):
         self.order_side = order_side
         self.last_qty = last_qty
         self.last_px = last_px
-        self.cum_qty = cum_qty
-        self.leaves_qty = leaves_qty
         self.currency = currency
         self.is_inverse = is_inverse
         self.commission = commission
@@ -983,9 +975,7 @@ cdef class OrderFilled(OrderEvent):
                 f"side={OrderSideParser.to_str(self.order_side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"last_qty={self.last_qty.to_str()}, "
-                f"last_px={self.last_px} {self.currency.code}, "
-                f"cum_qty={self.cum_qty.to_str()}, "
-                f"leaves_qty={self.leaves_qty.to_str()}, "
+                f"last_px={self.last_px}, "
                 f"commission={self.commission.to_str()}, "
                 f"event_id={self.id})")
 

@@ -382,8 +382,6 @@ class TestStubs:
             order_side=order.side,
             last_qty=last_qty,
             last_px=order.price if last_px is None else last_px,
-            cum_qty=Quantity(order.filled_qty + last_qty),
-            leaves_qty=Quantity(max(0, order.quantity - order.filled_qty - last_qty)),
             currency=instrument.quote_currency,
             is_inverse=instrument.is_inverse,
             commission=commission,

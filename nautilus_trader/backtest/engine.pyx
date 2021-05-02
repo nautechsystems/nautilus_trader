@@ -51,8 +51,10 @@ from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -285,6 +287,8 @@ cdef class BacktestEngine:
             key=lambda x: x.timestamp_ns,
         )
 
+        self._log.info(f"Added {len(data)} GenericData points.")
+
     def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the backtest engine.
@@ -302,6 +306,8 @@ cdef class BacktestEngine:
 
         # Add data
         self._data_engine.process(instrument)
+
+        self._log.info(f"Added {instrument.id} Instrument.")
 
     def add_order_book_data(self, list data) -> None:
         """
@@ -322,21 +328,24 @@ cdef class BacktestEngine:
         """
         Condition.not_none(data, "data")
         Condition.not_empty(data, "data")
-        Condition.list_type(data, OrderBookData, "snapshots")
+        Condition.list_type(data, OrderBookData, "data")
+        cdef InstrumentId instrument_id = data[0].instrument_id
         Condition.true(
-            data[0].instrument_id in self._data_engine.cache.instrument_ids(),
+            instrument_id in self._data_engine.cache.instrument_ids(),
             "Instrument for given data not found in the data cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
         # Check client has been registered
-        self._add_data_client_if_not_exists(data[0].instrument_id.venue.client_id)
+        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
 
         # Add data
         self._order_book_data = sorted(
             self._order_book_data + data,
             key=lambda x: x.timestamp_ns,
         )
+
+        self._log.info(f"Added {len(data)} {instrument_id} OrderBookData elements.")
 
     def add_quote_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
         """
@@ -379,6 +388,8 @@ cdef class BacktestEngine:
         self._quote_ticks[instrument_id] = data
         self._quote_ticks = dict(sorted(self._quote_ticks.items()))
 
+        self._log.info(f"Added {len(data)} {instrument_id} QuoteTick data elements.")
+
     def add_trade_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
         """
         Add the trade tick data to the backtest engine.
@@ -420,6 +431,8 @@ cdef class BacktestEngine:
         # Add data
         self._trade_ticks[instrument_id] = data
         self._trade_ticks = dict(sorted(self._trade_ticks.items()))
+
+        self._log.info(f"Added {len(data)} {instrument_id} TradeTick data elements.")
 
     def add_bars(
         self,
@@ -496,6 +509,11 @@ cdef class BacktestEngine:
                 if not all(dataframe.index == indices[aggregation]):
                     raise RuntimeError(f"{dataframe} bid ask index is not equal")
 
+        self._log.info(
+            f"Added {len(data)} {instrument_id} "
+            f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
+            f"Bar data elements.")
+
     def add_exchange(
         self,
         Venue venue,
@@ -568,6 +586,8 @@ cdef class BacktestEngine:
 
         exchange.register_client(exec_client)
         self._exec_engine.register_client(exec_client)
+
+        self._log.info(f"Added {venue} SimulatedExchange.")
 
     def reset(self) -> None:
         """

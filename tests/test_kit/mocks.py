@@ -42,7 +42,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.order.base import Order
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy

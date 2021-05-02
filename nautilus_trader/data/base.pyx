@@ -32,7 +32,7 @@ cdef class DataCacheFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef list instrument_ids(self):
+    cpdef list instrument_ids(self, Venue venue=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
