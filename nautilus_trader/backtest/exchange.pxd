@@ -134,7 +134,7 @@ cdef class SimulatedExchange:
     cdef inline dict _build_current_bid_rates(self)
     cdef inline dict _build_current_ask_rates(self)
     cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
-    cdef inline VenueOrderId _generate_order_id(self, InstrumentId instrument_id)
+    cdef inline VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
 
@@ -143,12 +143,13 @@ cdef class SimulatedExchange:
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
-    cdef inline void _update_order(self, ClientOrderId client_order_id, Quantity qty, Price price) except *
-    cdef inline void _cancel_order(self, ClientOrderId client_order_id) except *
     cdef inline void _reject_cancel(self, ClientOrderId client_order_id, str response, str reason) except *
     cdef inline void _reject_update(self, ClientOrderId client_order_id, str response, str reason) except *
-    cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _trigger_order(self, StopLimitOrder order) except *
+    cdef inline void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef inline void _cancel_order(self, PassiveOrder order) except *
+    cdef inline void _expire_order(self, PassiveOrder order) except *
+
     cdef inline void _process_order(self, Order order) except *
     cdef inline void _process_market_order(self, MarketOrder order) except *
     cdef inline void _process_limit_order(self, LimitOrder order) except *
@@ -157,12 +158,11 @@ cdef class SimulatedExchange:
     cdef inline void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
     cdef inline void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
     cdef inline void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price) except *
-    cdef inline void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
-    cdef inline void _add_order(self, PassiveOrder order) except *
-    cdef inline void _delete_order(self, Order order) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
+    cdef inline void _add_order(self, PassiveOrder order) except *
+    cdef inline void _delete_order(self, Order order) except *
     cdef inline void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
     cdef inline void _match_order(self, PassiveOrder order) except *
     cdef inline void _match_limit_order(self, LimitOrder order) except *

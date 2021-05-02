@@ -322,8 +322,6 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             order.quantity,
             Price("1.00011"),
-            order.quantity,
-            Quantity(),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),

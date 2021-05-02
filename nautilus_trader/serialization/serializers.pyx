@@ -574,8 +574,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[LAST_QTY] = str(event.last_qty)
             package[LAST_PX] = str(event.last_px)
-            package[CUM_QTY] = str(event.cum_qty)
-            package[LEAVES_QTY] = str(event.leaves_qty)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
             package[COMMISSION_AMOUNT] = str(event.commission)
@@ -765,8 +763,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 Quantity(unpacked[LAST_QTY]),
                 Price(unpacked[LAST_PX]),
-                Quantity(unpacked[CUM_QTY]),
-                Quantity(unpacked[LEAVES_QTY]),
                 Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
                 Money(unpacked[COMMISSION_AMOUNT], commission_currency),

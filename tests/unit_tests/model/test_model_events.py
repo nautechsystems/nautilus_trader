@@ -346,8 +346,6 @@ class TestEvents:
             order_side=OrderSide.BUY,
             last_qty=Quantity("0.561000"),
             last_px=Price("15600.12445"),
-            cum_qty=Quantity("0.561000"),
-            leaves_qty=Quantity(0),
             currency=USDT,
             is_inverse=False,
             commission=Money("12.20000000", USDT),
@@ -363,14 +361,14 @@ class TestEvents:
             f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
-            f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
+            f"last_px=15600.12445, "
             f"commission=12.20000000 USDT, event_id={uuid})" == str(event)
         )
         assert (
             f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
-            f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
+            f"last_px=15600.12445, "
             f"commission=12.20000000 USDT, event_id={uuid})" == repr(event)
         )
 

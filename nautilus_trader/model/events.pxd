@@ -179,10 +179,6 @@ cdef class OrderFilled(OrderEvent):
     """The fill quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price last_px
     """The fill price for this execution.\n\n:returns: `Price`"""
-    cdef readonly Quantity cum_qty
-    """The order cumulative filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly Quantity leaves_qty
-    """The order quantity remaining to be filled.\n\n:returns: `Quantity`"""
     cdef readonly Currency currency
     """The currency of the price.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
