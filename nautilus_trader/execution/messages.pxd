@@ -24,6 +24,8 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -58,14 +60,12 @@ cdef class ExecutionReport:
     """The reported venue order identifier.\n\n:returns: `VenueOrderId`"""
     cdef readonly ExecutionId id
     """The reported execution identifier.\n\n:returns: `ExecutionId`"""
-    cdef readonly object last_qty
-    """The reported quantity of the last fill.\n\n:returns: `Decimal`"""
-    cdef readonly object last_px
-    """The reported price of the last fill.\n\n:returns: `Decimal`"""
-    cdef readonly object commission_amount
-    """The reported commission amount.\n\n:returns: `Decimal`"""
-    cdef readonly str commission_currency
-    """The reported commission currency.\n\n:returns: `Decimal`"""
+    cdef readonly Quantity last_qty
+    """The reported quantity of the last fill.\n\n:returns: `Quantity`"""
+    cdef readonly Price last_px
+    """The reported price of the last fill.\n\n:returns: `Price`"""
+    cdef readonly Money commission
+    """The reported commission.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The reported liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t execution_ns

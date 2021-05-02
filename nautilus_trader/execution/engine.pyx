@@ -836,8 +836,6 @@ cdef class ExecutionEngine(Component):
             fill.order_side,
             position.quantity,                       # Fill original position quantity remaining
             fill.last_px,
-            Quantity(fill.cum_qty - difference),     # Adjust cumulative qty by difference
-            Quantity(fill.leaves_qty + difference),  # Adjust leaves qty by difference
             fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent1, fill.commission.currency),
@@ -872,8 +870,6 @@ cdef class ExecutionEngine(Component):
             fill.order_side,
             difference,  # Fill difference from original as above
             fill.last_px,
-            fill.cum_qty,
-            fill.leaves_qty,
             fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent2, fill.commission.currency),

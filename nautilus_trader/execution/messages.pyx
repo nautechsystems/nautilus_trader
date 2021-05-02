@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -107,10 +105,9 @@ cdef class ExecutionReport:
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
-        last_qty not None: Decimal,
-        last_px not None: Decimal,
-        commission_amount: Decimal,  # Can be None
-        str commission_currency,     # Can be None
+        Quantity last_qty not None,
+        Price last_px not None,
+        Money commission,  # Can be None
         LiquiditySide liquidity_side,
         int64_t execution_ns,
         int64_t timestamp_ns,
@@ -126,31 +123,24 @@ cdef class ExecutionReport:
             The venue order identifier.
         execution_id : ExecutionId
             The execution identifier for the trade.
-        last_qty : Decimal
+        last_qty : Quantity
             The quantity of the last fill.
-        last_px : Decimal
+        last_px : Price
             The price of the last fill.
-        commission_amount : Decimal, optional
+        commission : Money, optional
             The commission for the transaction (can be None).
-        commission_currency : str, optional
-            The commission currency for the transaction (can be None).
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
         execution_ns : int64
             The Unix timestamp (nanos) of the execution.
 
         """
-        Condition.type(last_qty, Decimal, "last_qty")
-        Condition.type(last_px, Decimal, "last_qty")
-        Condition.type_or_none(commission_amount, Decimal, "commission_amount")
-
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
         self.id = execution_id
         self.last_qty = last_qty
         self.last_px = last_px
-        self.commission_amount = commission_amount
-        self.commission_currency = commission_currency
+        self.commission = commission
         self.liquidity_side = liquidity_side
         self.execution_ns = execution_ns
         self.timestamp_ns = timestamp_ns
