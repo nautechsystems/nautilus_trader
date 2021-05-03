@@ -22,6 +22,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
+from nautilus_trader.model.currencies import AUD
 
 # from nautilus_trader.model.events import OrderCancelled
 # from nautilus_trader.model.events import OrderFilled
@@ -200,7 +201,7 @@ async def test_connection_account_state(execution_client, exec_engine):
 
 def test_get_account_currency(execution_client):
     currency = execution_client.get_account_currency()
-    assert currency == "AUD"
+    assert currency == AUD
 
 
 def _prefill_venue_order_id_to_client_order_id(raw):
