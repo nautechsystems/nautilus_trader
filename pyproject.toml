@@ -51,6 +51,7 @@ redis = "3.5.3"
 scipy = "^1.6.1"
 tabulate = "^0.8.9"
 uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
+aiohttp = "^3.7.4"
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython

@@ -9,7 +9,7 @@ import orjson
 import pytest
 
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.network.socket_client import SocketClient
+from nautilus_trader.network.tcp_client import SocketClient
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
 
@@ -93,7 +93,7 @@ def logger_adapter() -> LoggerAdapter:
 
 
 @pytest.mark.asyncio
-async def test_example(event_loop, betfair_server, logger_adapter):
+async def test_client_recv(event_loop, betfair_server, logger_adapter):
     lines = []
 
     def record(*args, **kwargs):

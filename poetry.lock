@@ -1196,7 +1196,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "c8f601939d86ba665ab9818d3f89ddc63bb4853a542303c8af68b1f8423ccf29"
+content-hash = "1ed4ec7fcce5dace13d4f6ee53552773e5abdbf0198c496392ef92e73a60b62d"
 
 [metadata.files]
 aiodns = [
