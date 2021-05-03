@@ -48,15 +48,16 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
@@ -281,17 +282,23 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                             f"no ClientOrderId found for {repr(venue_order_id)}.")
             return reports
 
+        cdef InstrumentId instrument_id = InstrumentId(symbol, self.venue)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot reconcile state for {repr(client_order_id)}, "
+                            f"instrument for {instrument_id} not found.")
+            return  # Cannot generate state report
+
         cdef dict fill
         cdef ExecutionReport report
         for fill in fills:
             report = ExecutionReport(
-                execution_id=ExecutionId(str(fill["id"])),
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
-                last_qty=Decimal(fill["amount"]),
-                last_px=Decimal(fill["price"]),
-                commission_amount=Decimal(fill["fee"]["cost"]),
-                commission_currency=fill["fee"]["currency"],
+                execution_id=ExecutionId(str(fill["id"])),
+                last_qty=Quantity(fill["amount"], instrument.size_precision),
+                last_px=Price(fill["price"], instrument.price_precision),
+                commission=self._parse_commission(fill),
                 liquidity_side=LiquiditySide.TAKER if fill["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
                 execution_ns=millis_to_nanos(millis=fill["timestamp"]),
                 timestamp_ns=self._clock.timestamp_ns(),
@@ -600,13 +607,17 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self.generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
 
     cdef inline void _on_exec_report(self, dict event) except *:
-        cdef ClientOrderId client_order_id = ClientOrderId(event["clientOrderId"])
         cdef VenueOrderId venue_order_id = VenueOrderId(event["order"])
+
+        cdef ClientOrderId client_order_id = self._engine.cache.client_order_id(venue_order_id)
+        if client_order_id is None:
+            self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
+            return
 
         cdef Order order = self._engine.cache.order(client_order_id)
         if order is None:
             # If `reconcile_state` has done its job this should never happen
-            self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
+            self._log.error(f"Cannot fill un-cached order with {repr(client_order_id)}.")
             return
 
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
@@ -615,24 +626,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                             f"instrument for {order.instrument_id} not found.")
             return  # Cannot generate state report
 
-        commission_currency = event.get("fee", {}).get("currency")
-
-        # Determine commission
-        cdef Money commission
-        cdef Currency currency
-        if commission_currency is None:
-            commission = Money(0, instrument.quote_currency)
-        else:
-            currency = self._instrument_provider.currency(commission_currency)
-            if currency is None:
-                self._log.error(f"Cannot determine commission for {repr(venue_order_id)}, "
-                                f"currency for {commission_currency} not found.")
-                commission = Money(0, instrument.quote_currency)
-            else:
-                commission = Money(event.get("fee", {}).get("cost", 0), currency)
-
-        last_qty: Decimal = Decimal(f"{event['amount']:.{order.quantity.precision_c()}f}")
-
         self.generate_order_filled(
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
@@ -640,14 +633,29 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             position_id=None,  # Assigned in engine,
             instrument_id=order.instrument_id,
             order_side=order.side,
-            last_qty=last_qty,
-            last_px=event["price"],
+            last_qty=Quantity(event["amount"], instrument.size_precision),
+            last_px=Price(event["price"], instrument.price_precision),
             quote_currency=instrument.quote_currency,
             is_inverse=instrument.is_inverse,
-            commission=commission,
+            commission=self._parse_commission(event),
             liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
             timestamp_ns=(millis_to_nanos(millis=event["timestamp"])),
         )
+
+    cdef inline Money _parse_commission(self, dict event):
+        cdef dict commission = event.get("fee", {})
+        cdef str commission_currency = commission.get("currency")
+        if commission_currency is None:
+            return None
+
+        cdef Currency currency = self._instrument_provider.currency(commission_currency)
+        if currency is None:
+            self._log.error(
+                f"Cannot determine commission: currency {commission_currency} not found.",
+            )
+            return None
+
+        return Money(commission.get("cost", 0), currency)
 
 
 cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
