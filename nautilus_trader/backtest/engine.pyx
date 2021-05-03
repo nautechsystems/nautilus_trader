@@ -755,9 +755,6 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
-        for exchange in self._exchanges.values():
-            exchange.initialize_account()
-
         # Start main components
         self._data_engine.start()
         self._exec_engine.start()
