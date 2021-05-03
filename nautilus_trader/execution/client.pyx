@@ -25,6 +25,7 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelRejected
@@ -159,6 +160,29 @@ cdef class ExecutionClient:
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
+    cpdef void generate_account_state(
+        self,
+        list balances,
+        list balances_free,
+        list balances_locked,
+        dict info=None,
+    ) except *:
+        if info is None:
+            info = {}
+
+        # Generate event
+        cdef AccountState account_state = AccountState(
+            account_id=self.account_id,
+            balances=balances,
+            balances_free=balances_free,
+            balances_locked=balances_locked,
+            info=info,
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
+        )
+
+        self._handle_event(account_state)
+
     cpdef void generate_order_invalid(
         self,
         ClientOrderId client_order_id,
@@ -171,6 +195,7 @@ cdef class ExecutionClient:
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
+
         self._handle_event(invalid)
 
     cpdef void generate_order_submitted(
@@ -185,6 +210,7 @@ cdef class ExecutionClient:
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
+
         self._handle_event(submitted)
 
     cpdef void generate_order_rejected(
@@ -202,6 +228,7 @@ cdef class ExecutionClient:
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
+
         self._handle_event(rejected)
 
     cpdef void generate_order_accepted(
@@ -219,6 +246,7 @@ cdef class ExecutionClient:
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
+
         self._handle_event(accepted)
 
     cpdef void generate_order_update_rejected(

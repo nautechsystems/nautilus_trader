@@ -40,7 +40,6 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -331,9 +330,7 @@ cdef class SimulatedExchange:
         Condition.not_none(client, "client")
 
         self.exec_client = client
-
-        cdef AccountState initial_event = self._generate_account_event()
-        self.exec_client.handle_event(initial_event)
+        self._generate_account_event()
 
         self._log.info(f"Registered {client}.")
 
@@ -350,12 +347,6 @@ cdef class SimulatedExchange:
         self.fill_model = fill_model
 
         self._log.info("Changed fill model.")
-
-    cpdef void initialize_account(self) except *:
-        """
-        Initialize the account by generating an `AccountState` event.
-        """
-        self.exec_client.handle_event(self._generate_account_event())
 
     cpdef void adjust_account(self, Money adjustment) except *:
         """
@@ -376,7 +367,7 @@ cdef class SimulatedExchange:
         self.account_balances[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
 
         # Generate and handle event
-        self.exec_client.handle_event(self._generate_account_event())
+        self._generate_account_event()
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -574,22 +565,6 @@ cdef class SimulatedExchange:
         self._executions_count += 1
         return ExecutionId(f"{self._executions_count}")
 
-    cdef inline AccountState _generate_account_event(self):
-        cdef dict info
-        if self.default_currency is None:
-            info = {}
-        else:
-            info = {"default_currency": self.default_currency.code}
-        return AccountState(
-            account_id=self.exec_client.account_id,
-            balances=list(self.account_balances.values()),
-            balances_free=list(self.account_balances_free.values()),
-            balances_locked=list(self.account_balances_locked.values()),
-            info=info,
-            event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
-        )
-
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline void _reject_order(self, Order order, str reason) except *:
@@ -644,6 +619,20 @@ cdef class SimulatedExchange:
         else:
             self._check_oco_order(order.client_order_id)
         self._clean_up_child_orders(order.client_order_id)
+
+    cdef inline void _generate_account_event(self) except *:
+        cdef dict info
+        if self.default_currency is None:
+            info = {}
+        else:
+            info = {"default_currency": self.default_currency.code}
+        # Generate event
+        self.exec_client.generate_account_state(
+            balances=list(self.account_balances.values()),
+            balances_free=list(self.account_balances_free.values()),
+            balances_locked=list(self.account_balances_locked.values()),
+            info=info,
+        )
 
     cdef inline void _generate_order_submitted(self, Order order) except *:
         # Generate event
