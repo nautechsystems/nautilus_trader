@@ -96,18 +96,6 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
         client = client_cls(internal_config)
         client.set_sandbox_mode(config.get("sandbox_mode", False))
 
-        # Check required CCXT methods are available
-        if not client.has.get("fetchTrades", False):
-            raise RuntimeError(f"CCXT `fetch_trades` not available for {client.name}")
-        if not client.has.get("fetchOHLCV", False):
-            raise RuntimeError(f"CCXT `fetch_ohlcv` not available for {client.name}")
-        if not client.has.get("watchOrderBook", False):
-            raise RuntimeError(f"CCXT `watch_order_book` not available for {client.name}")
-        if not client.has.get("watchTrades", False):
-            raise RuntimeError(f"CCXT `watch_trades` not available for {client.name}")
-        if not client.has.get("watchOHLCV", False):
-            raise RuntimeError(f"CCXT `watch_ohlcv` not available for {client.name}")
-
         # Create client
         return CCXTDataClient(
             client=client,
@@ -188,14 +176,8 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         # Check required CCXT methods are available
         if not client.has.get("fetchTrades", False):
             raise RuntimeError(f"CCXT `fetch_trades` not available for {client.name}")
-        if not client.has.get("fetchOHLCV", False):
-            raise RuntimeError(f"CCXT `fetch_ohlcv` not available for {client.name}")
-        if not client.has.get("watchOrderBook", False):
-            raise RuntimeError(f"CCXT `watch_order_book` not available for {client.name}")
         if not client.has.get("watchTrades", False):
             raise RuntimeError(f"CCXT `watch_trades` not available for {client.name}")
-        if not client.has.get("watchOHLCV", False):
-            raise RuntimeError(f"CCXT `watch_ohlcv` not available for {client.name}")
 
         # Get account identifier env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
