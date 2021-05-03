@@ -35,6 +35,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -125,6 +126,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.venue_order_id_to_client_order_id = {}  # type: Dict[str, ClientOrderId]
         self.pending_update_order_client_ids = set()  # type: Set[(ClientOrderId, VenueOrderId)]
         self.published_executions = defaultdict(list)  # type: Dict[ClientOrderId, ExecutionId]
+        self._account_currency = None
 
     cpdef void connect(self) except *:
         self._loop.create_task(self._connect())
@@ -320,8 +322,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
 # -- ACCOUNT ---------------------------------------------------------------------------------------
 
-    cpdef str get_account_currency(self):
-        return self._instrument_provider.get_account_currency()
+    cpdef Currency get_account_currency(self):
+        if not self._account_currency:
+            self._account_currency = Currency.from_str(self._instrument_provider.get_account_currency())
+        return self._account_currency
 
 # -- DEBUGGING -------------------------------------------------------------------------------------
 
@@ -351,6 +355,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     handicap=str(selection.get("hc", "0.0")),
                 )
                 for order in selection.get("uo", []):
+                    self._log.debug(f"order_update: {order}")
                     client_order_id = await self.wait_for_order(order['id'], timeout_seconds=10.0)
                     if client_order_id is None:
                         continue
@@ -380,7 +385,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     position_id=None,  # Assigned in engine
                                     instrument_id=instrument.id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-                                    last_qty=Decimal(order["sm"]),
+                                    last_qty=Quantity(order["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order["p"]),
                                     # avg_px=Decimal(order['avp']),
                                     quote_currency=instrument.quote_currency,
@@ -404,7 +409,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     position_id=None,  # Assigned in engine
                                     instrument_id=instrument.id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-                                    last_qty=Decimal(order['sm']),
+                                    last_qty=Quantity(order["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order['p']),
                                     quote_currency=instrument.quote_currency,
                                     is_inverse=False,
