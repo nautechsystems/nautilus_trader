@@ -1144,18 +1144,17 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         self.strategy.submit_order(top_up_order, position_id)
         self.strategy.submit_order(reduce_order, position_id)
-        print(self.strategy.object_storer.get_store())
-        account_event1 = self.strategy.object_storer.get_store()[2]
-        account_event2 = self.strategy.object_storer.get_store()[6]
-        account_event3 = self.strategy.object_storer.get_store()[10]
+        fill_event1 = self.strategy.object_storer.get_store()[1]
+        fill_event2 = self.strategy.object_storer.get_store()[4]
+        fill_event3 = self.strategy.object_storer.get_store()[7]
 
         account = self.exec_engine.cache.account_for_venue(Venue("SIM"))
 
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Money(180.01, JPY), account_event1.commission)
-        self.assertEqual(Money(180.01, JPY), account_event2.commission)
-        self.assertEqual(Money(90.00, JPY), account_event3.commission)
+        self.assertEqual(Money(180.01, JPY), fill_event1.commission)
+        self.assertEqual(Money(180.01, JPY), fill_event2.commission)
+        self.assertEqual(Money(90.00, JPY), fill_event3.commission)
         self.assertTrue(Money(999995.00, USD), account.balance())
 
     def test_expire_order(self):
@@ -1972,19 +1971,19 @@ class BitmexExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             LiquiditySide.TAKER,
-            self.strategy.object_storer.get_store()[2].liquidity_side,
+            self.strategy.object_storer.get_store()[1].liquidity_side,
         )
         self.assertEqual(
             LiquiditySide.MAKER,
-            self.strategy.object_storer.get_store()[6].liquidity_side,
+            self.strategy.object_storer.get_store()[5].liquidity_side,
         )
         self.assertEqual(
             Money("0.00652526", BTC),
-            self.strategy.object_storer.get_store()[2].commission,
+            self.strategy.object_storer.get_store()[1].commission,
         )
         self.assertEqual(
             Money("-0.00217512", BTC),
-            self.strategy.object_storer.get_store()[6].commission,
+            self.strategy.object_storer.get_store()[5].commission,
         )
 
 

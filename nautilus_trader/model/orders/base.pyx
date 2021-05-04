@@ -62,7 +62,6 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.INITIALIZED, OrderState.DENIED): OrderState.DENIED,
     (OrderState.INITIALIZED, OrderState.SUBMITTED): OrderState.SUBMITTED,
     (OrderState.SUBMITTED, OrderState.REJECTED): OrderState.REJECTED,
-    (OrderState.SUBMITTED, OrderState.CANCELLED): OrderState.CANCELLED,
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.SUBMITTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.SUBMITTED, OrderState.FILLED): OrderState.FILLED,
@@ -499,10 +498,12 @@ cdef class Order:
             self._fsm.trigger(OrderState.TRIGGERED)
             self._triggered(event)
         elif isinstance(event, OrderFilled):
-            if self.venue_order_id.not_null():
-                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
-            else:
+            # Check identifiers
+            if self.venue_order_id.is_null():
                 self.venue_order_id = event.venue_order_id
+            else:
+                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
+            # Fill order
             if self.filled_qty + event.last_qty < self.quantity:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:

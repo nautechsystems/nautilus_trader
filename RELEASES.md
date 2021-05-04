@@ -4,6 +4,7 @@ This release simplifies the backtesting workflow by removing the need for the
 intermediate `BacktestDataContainer`.
 
 ## Breaking Changes
+- `SimulatedExchange` no longer generates `OrderAccepted` for `MarketOrder`.
 - Removed redundant `BacktestDataContainer`.
 - Removed redundant `OrderFilled.cum_qty`.
 - Removed redundant `OrderFilled.leave_qty`.
@@ -12,7 +13,7 @@ intermediate `BacktestDataContainer`.
 - Rename `PerformanceAnalyzer` `.get_realized_pnls` to `.realized_pnls`.
 
 ## Enhancements
-- Re-engineered `BacktestDataEngine` to take data directly.
+- Re-engineered `BacktestEngine` to take data directly.
 - Simplified `CCXTExecutionClient` by removing redundant 'hot cache'.
 - Consolidated event generation into `ExecutionClient` base class.
 - Refactored `SimulatedExchange` for greater clarity.

@@ -765,8 +765,6 @@ cdef class SimulatedExchange:
             self._reject_order(order, f"no market for {order.instrument_id}")
             return  # Cannot accept order
 
-        self._generate_order_accepted(order)
-
         # Immediately fill marketable order
         self._aggressively_fill_order(order, LiquiditySide.TAKER)
 
@@ -872,28 +870,26 @@ cdef class SimulatedExchange:
         if not order.is_triggered:
             # Amending stop price
             if self._is_stop_marketable(order.instrument_id, order.side, price):
-                self.exec_client.generate_order_update_rejected(
+                self._generate_order_update_rejected(
                     order.client_order_id,
                     "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
                     f"new stop px trigger of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
-                    self._clock.timestamp_ns(),
                 )
                 return  # Cannot update order
         else:
             # Amending limit price
             if self._is_limit_marketable(order.instrument_id, order.side, price):
                 if order.is_post_only:
-                    self.exec_client.generate_order_update_rejected(
+                    self._generate_order_update_rejected(
                         order.client_order_id,
                         "update order",
                         f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order  "
                         f"new limit px of {price} would have been a TAKER: "
                         f"bid={self.best_bid_price(order.instrument_id)}, "
                         f"ask={self.best_ask_price(order.instrument_id)}",
-                        self._clock.timestamp_ns(),
                     )
                     return  # Cannot update order
                 else:
@@ -1147,7 +1143,7 @@ cdef class SimulatedExchange:
         # Generate event
         self.exec_client.generate_order_filled(
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id if order.venue_order_id is not None else self._generate_venue_order_id(order.instrument_id),
+            venue_order_id=order.venue_order_id if order.venue_order_id.not_null() else self._generate_venue_order_id(order.instrument_id),
             execution_id=self._generate_execution_id(),
             position_id=position_id,
             instrument_id=order.instrument_id,
