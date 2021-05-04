@@ -31,7 +31,6 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -114,7 +113,6 @@ cdef class SimulatedExchange:
 
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
-    cpdef void initialize_account(self) except *
     cpdef void adjust_account(self, Money adjustment) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
@@ -136,7 +134,6 @@ cdef class SimulatedExchange:
     cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
     cdef inline VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef inline ExecutionId _generate_execution_id(self)
-    cdef inline AccountState _generate_account_event(self)
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
@@ -145,6 +142,7 @@ cdef class SimulatedExchange:
     cdef inline void _cancel_order(self, PassiveOrder order) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
 
+    cdef inline void _generate_account_event(self) except *
     cdef inline void _generate_order_submitted(self, Order order) except *
     cdef inline void _generate_order_accepted(self, Order order) except *
     cdef inline void _generate_order_rejected(self, Order order, str reason) except *

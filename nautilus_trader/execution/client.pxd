@@ -33,7 +33,6 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
@@ -72,6 +71,7 @@ cdef class ExecutionClient:
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
+    cpdef void generate_account_state(self, list balances, list balances_free, list balances_locked, dict info=*) except *
     cpdef void generate_order_invalid(self, ClientOrderId client_order_id, str reason) except *
     cpdef void generate_order_submitted(self, ClientOrderId client_order_id, int64_t timestamp_ns) except *
     cpdef void generate_order_rejected(self, ClientOrderId client_order_id, str reason, int64_t timestamp_ns) except *
