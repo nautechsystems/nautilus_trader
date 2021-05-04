@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from distutils.version import LooseVersion
 import itertools
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import List
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
+from Cython.Compiler.Version import version as cython_compiler_version
 import numpy as np
 from setuptools import Distribution
 from setuptools import Extension
@@ -65,6 +67,10 @@ def _build_extensions() -> List[Extension]:
     define_macros = []
     if PROFILING_MODE or ANNOTATION_MODE:
         define_macros.append(("CYTHON_TRACE", "1"))
+
+    if LooseVersion(cython_compiler_version) < LooseVersion("3.0"):
+        # https://github.com/nautechsystems/nautilus_trader/issues/303
+        define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
 
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
@@ -167,4 +173,6 @@ if __name__ == "__main__":
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
     print(f"System: {platform.system()} {bits}")
+    print(f"Cython: {cython_compiler_version}")
+
     build({})
