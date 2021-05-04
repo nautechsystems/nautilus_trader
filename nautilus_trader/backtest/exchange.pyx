@@ -1112,7 +1112,7 @@ cdef class SimulatedExchange:
         self._delete_order(order)  # Remove order from working orders (if found)
 
         # Determine position (do not reorder below `generate_order_filled`) as
-        # this will change the logic of what position identifier should be.
+        # this will change the logic of the `position_id`.
         cdef PositionId position_id = None
         if self.oms_type == OMSType.NETTING:
             position_id = PositionId.null_c()
@@ -1251,11 +1251,7 @@ cdef class SimulatedExchange:
             return
 
         # Generate event
-        self.exec_client.generate_order_rejected(
-            order.client_order_id,
-            f"OCO order rejected from {other_oco}",
-            self._clock.timestamp_ns(),
-        )
+        self._generate_order_rejected(order, f"OCO order rejected from {other_oco}")
 
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *:
         # order is the OCO order to cancel
