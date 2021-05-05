@@ -71,6 +71,7 @@ USDT = Currency("USDT", precision=8, iso4217=0, name="Tether", currency_type=Cur
 ZEC = Currency("ZEC", precision=8, iso4217=0, name="Zcash", currency_type=CurrencyType.CRYPTO)
 BRZ = Currency("BRZ", precision=8, iso4217=0, name="Brazilian Digital Token", currency_type=CurrencyType.CRYPTO)
 TRYB = Currency("TRYB", precision=8, iso4217=0, name="BiLira", currency_type=CurrencyType.CRYPTO)
+DOGE = Currency("DOGE", precision=8, iso4217=0, name="DOGE", currency_type=CurrencyType.CRYPTO)
 
 
 _CURRENCY_MAP = {
@@ -126,5 +127,6 @@ _CURRENCY_MAP = {
     "USDT": USDT,
     "ZEC": ZEC,
     "BRZ": BRZ,
-    "TRYB": TRYB
+    "TRYB": TRYB,
+    "DOGE": DOGE
 }
