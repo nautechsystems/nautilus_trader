@@ -113,8 +113,15 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             self._currencies[code] = currency
 
     cdef inline int _tick_size_to_precision(self, double tick_size) except *:
-        cdef tick_size_str = f"{tick_size:f}"
-        return len(tick_size_str.partition('.')[2].rstrip('0'))
+        cdef str tick_size_str
+        if f"{tick_size}".find('e') > -1:
+            # Significant decimal points are lost when
+            # converting scientific notation to format string.
+            tick_size_str = f"{tick_size}"
+            return int(tick_size_str.partition('e-')[2])
+        else:
+            tick_size_str = f"{Decimal(tick_size):f}"
+            return len(tick_size_str.partition('.')[2].rstrip('0'))
 
     cdef inline int _get_precision(self, double value, int mode) except *:
         if mode == 2:  # DECIMAL_PLACE
@@ -126,20 +133,26 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):
+        """
+Instrument('id=DOGE-PERP.FTX, symbol=DOGE-PERP, asset_class=8, asset_type=3, base_currency=DOGE, quote_currency=USD, settlement_currency=USD, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
+Instrument('id=DOGE-0625.FTX, symbol=DOGE-0625, asset_class=8, asset_type=3, base_currency=DOGE, quote_currency=USD, settlement_currency=USD, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
+Instrument('id=DOGE/BTC.FTX, symbol=DOGE/BTC, asset_class=8, asset_type=1, base_currency=DOGE, quote_currency=BTC, settlement_currency=BTC, tick_size=1.0000000000000000209225608301284726753266340892878361046314239501953125E-8, price_precision=0, lot_size=1', size_precision=0')
+Instrument('id=DOGE/USD.FTX, symbol=DOGE/USD, asset_class=8, asset_type=1, base_currency=DOGE, quote_currency=USD, settlement_currency=USD, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
+Instrument('id=DOGE/USDT.FTX, symbol=DOGE/USDT, asset_class=8, asset_type=1, base_currency=DOGE, quote_currency=USDT, settlement_currency=USDT, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
+        """
         cdef:
             dict precisions
             str asset_type_str
             bint is_inverse
-
-        # Precisions
         precisions = values["precision"]
+        # Precisions
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
             price_precision = precisions.get("price")
             size_precision = precisions.get("amount", 8)
             tick_size = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
         elif self._client.precisionMode == 4:  # TICK_SIZE
             tick_size = Decimal(precisions.get("price"))
-            price_precision = self._tick_size_to_precision(tick_size)
+            price_precision = self._tick_size_to_precision(precisions.get("price"))
             size_precision = precisions.get("amount")
             if size_precision is None:
                 size_precision = 0
@@ -148,6 +161,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             raise RuntimeError(f"The {self._client.name} exchange is using "
                                f"SIGNIFICANT_DIGITS precision which is not "
                                f"currently supported in this version.")
+
 
         asset_type_str = values.get("type")
 
