@@ -222,6 +222,7 @@ cdef class UpdateOrder(TradingCommand):
         AccountId account_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
         Quantity quantity not None,
         Price price not None,
         UUID command_id not None,
@@ -241,7 +242,9 @@ cdef class UpdateOrder(TradingCommand):
         instrument_id : InstrumentId
             The instrument identifier for the command.
         client_order_id : VenueOrderId
-            The client order identifier.
+            The client order identifier to update.
+        venue_order_id : VenueOrderId
+            The venue order identifier to update.
         quantity : Quantity
             The quantity for the order (update optional).
         price : Price
@@ -262,6 +265,7 @@ cdef class UpdateOrder(TradingCommand):
         )
 
         self.client_order_id = client_order_id
+        self.venue_order_id = venue_order_id
         self.quantity = quantity
         self.price = price
 
@@ -272,6 +276,7 @@ cdef class UpdateOrder(TradingCommand):
                 f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"command_id={self.id})")

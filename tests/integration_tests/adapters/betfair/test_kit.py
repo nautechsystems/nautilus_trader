@@ -466,6 +466,7 @@ class BetfairTestStubs(TestStubs):
             instrument_id=instrument_id,
             client_order_id=client_order_id
             or ClientOrderId("O-20210410-022422-001-001-1"),
+            venue_order_id=VenueOrderId("001"),
             quantity=Quantity(50),
             price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),

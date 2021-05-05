@@ -1,7 +1,8 @@
 # NautilusTrader 1.118.0 Beta - Release Notes
 
 This release simplifies the backtesting workflow by removing the need for the 
-intermediate `BacktestDataContainer`.
+intermediate `BacktestDataContainer`. There has also been some simplifications
+for `OrderFill` events, as well as additional order states and events.
 
 ## Breaking Changes
 - Cancelled renamed to canceled for standardization.
@@ -14,6 +15,11 @@ intermediate `BacktestDataContainer`.
 - Rename `PerformanceAnalyzer` `.get_realized_pnls` to `.realized_pnls`.
 
 ## Enhancements
+- Added `OrderState.PENDING_CANCEL`.
+- Added `OrderState.PENDING_REPLACE`.
+- Added `OrderPendingReplace` event.
+- Added `OrderPendingCancel` event.
+- Modified the `Order` FSM and event handling for the above.
 - Re-engineered `BacktestEngine` to take data directly.
 - Simplified `CCXTExecutionClient` by removing redundant 'hot cache'.
 - Consolidated event generation into `ExecutionClient` base class.

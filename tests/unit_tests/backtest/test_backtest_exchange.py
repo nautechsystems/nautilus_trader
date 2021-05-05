@@ -743,6 +743,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             account_id=self.account_id,
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=VenueOrderId("001"),
             quantity=Quantity(100000),
             price=Price("1.00000"),
             command_id=self.uuid_factory.generate(),

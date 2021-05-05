@@ -930,6 +930,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.account_id,
             order.instrument_id,
             order.client_order_id,
+            order.venue_order_id,
             Quantity(200000),
             order.price,
             self.uuid_factory.generate(),
@@ -2033,6 +2034,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_pending_replace(order))
 
         # Get order, check venue_order_id
         cached_order = self.cache.order(order.client_order_id)

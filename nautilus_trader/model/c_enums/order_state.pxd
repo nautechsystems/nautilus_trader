@@ -24,8 +24,10 @@ cpdef enum OrderState:
     CANCELED = 7,
     EXPIRED = 8,
     TRIGGERED = 9,
-    PARTIALLY_FILLED = 10,
-    FILLED = 11,
+    PENDING_CANCEL = 10,
+    PENDING_REPLACE = 11,
+    PARTIALLY_FILLED = 12,
+    FILLED = 13,
 
 
 cdef class OrderStateParser:

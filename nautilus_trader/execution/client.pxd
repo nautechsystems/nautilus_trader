@@ -73,22 +73,24 @@ cdef class ExecutionClient:
 
     cpdef void generate_account_state(self, list balances, list balances_free, list balances_locked, dict info=*) except *
     cpdef void generate_order_invalid(self, ClientOrderId client_order_id, str reason) except *
-    cpdef void generate_order_submitted(self, ClientOrderId client_order_id, int64_t timestamp_ns) except *
-    cpdef void generate_order_rejected(self, ClientOrderId client_order_id, str reason, int64_t timestamp_ns) except *
-    cpdef void generate_order_accepted(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_submitted(self, ClientOrderId client_order_id, int64_t submitted_ns) except *
+    cpdef void generate_order_rejected(self, ClientOrderId client_order_id, str reason, int64_t rejected_ns) except *
+    cpdef void generate_order_accepted(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t accepted_ns) except *
+    cpdef void generate_order_pending_replace(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t pending_ns) except *
+    cpdef void generate_order_pending_cancel(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t pending_ns) except *
     cpdef void generate_order_update_rejected(
         self,
         ClientOrderId client_order_id,
-        str response,
+        str response_to,
         str reason,
-        int64_t timestamp_ns,
+        int64_t rejected_ns,
     ) except *
     cpdef void generate_order_cancel_rejected(
         self,
         ClientOrderId client_order_id,
-        str response,
+        str response_to,
         str reason,
-        int64_t timestamp_ns,
+        int64_t rejected_ns,
     ) except *
     cpdef void generate_order_updated(
         self,
@@ -96,12 +98,12 @@ cdef class ExecutionClient:
         VenueOrderId venue_order_id,
         Quantity quantity,
         Price price,
-        int64_t timestamp_ns,
+        int64_t updated_ns,
         bint venue_order_id_modified=*,
     ) except *
-    cpdef void generate_order_triggered(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
-    cpdef void generate_order_canceled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
-    cpdef void generate_order_expired(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_canceled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t canceled_ns) except *
+    cpdef void generate_order_triggered(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t triggered_ns) except *
+    cpdef void generate_order_expired(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t expired_ns) except *
     cpdef void generate_order_filled(
         self,
         ClientOrderId client_order_id,
@@ -116,7 +118,7 @@ cdef class ExecutionClient:
         bint is_inverse,
         Money commission,
         LiquiditySide liquidity_side,
-        int64_t timestamp_ns,
+        int64_t execution_ns,
     ) except *
 
 # --------------------------------------------------------------------------------------------------

@@ -244,6 +244,7 @@ class TestBacktestExecClientTests:
             self.account_id,
             order.instrument_id,
             order.client_order_id,
+            order.venue_order_id,
             Quantity(100),
             Price("1010.00"),
             self.uuid_factory.generate(),

@@ -1470,6 +1470,7 @@ cdef class TradingStrategy(Component):
             order.account_id,
             order.instrument_id,
             order.client_order_id,
+            order.venue_order_id,
             quantity,
             price,
             self.uuid_factory.generate(),

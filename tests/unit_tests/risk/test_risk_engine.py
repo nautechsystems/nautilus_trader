@@ -279,6 +279,7 @@ class TestRiskEngine:
             self.account_id,
             order.instrument_id,
             order.client_order_id,
+            order.venue_order_id,
             order.quantity,
             Price("1.00010"),
             self.uuid_factory.generate(),
