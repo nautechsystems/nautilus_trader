@@ -358,7 +358,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 commission=exec_report.commission,
                 is_inverse=instrument.is_inverse,
                 liquidity_side=exec_report.liquidity_side,
-                timestamp_ns=exec_report.execution_ns,
+                execution_ns=exec_report.execution_ns,
             )
 
         return True

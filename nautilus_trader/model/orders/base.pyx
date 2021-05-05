@@ -37,6 +37,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
@@ -44,9 +45,12 @@ from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderPendingCancel
+from nautilus_trader.model.events cimport OrderPendingReplace
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -65,16 +69,30 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.SUBMITTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.SUBMITTED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.ACCEPTED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
+    (OrderState.ACCEPTED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.ACCEPTED, OrderState.CANCELED): OrderState.CANCELED,
-    (OrderState.ACCEPTED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.ACCEPTED, OrderState.TRIGGERED): OrderState.TRIGGERED,
+    (OrderState.ACCEPTED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PENDING_REPLACE, OrderState.ACCEPTED): OrderState.ACCEPTED,
+    (OrderState.PENDING_REPLACE, OrderState.CANCELED): OrderState.CANCELED,
+    (OrderState.PENDING_REPLACE, OrderState.TRIGGERED): OrderState.TRIGGERED,
+    (OrderState.PENDING_REPLACE, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.PENDING_REPLACE, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.PENDING_REPLACE, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PENDING_CANCEL, OrderState.CANCELED): OrderState.CANCELED,
+    (OrderState.PENDING_CANCEL, OrderState.FILLED): OrderState.FILLED,
     (OrderState.TRIGGERED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.TRIGGERED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
+    (OrderState.TRIGGERED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.TRIGGERED, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.TRIGGERED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.TRIGGERED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.TRIGGERED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
+    (OrderState.PARTIALLY_FILLED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.PARTIALLY_FILLED, OrderState.CANCELED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
@@ -116,6 +134,7 @@ cdef class Order:
             trigger_parser=OrderStateParser.to_str,  # order_state_to_str correct here
             state_parser=OrderStateParser.to_str,
         )
+        self._rollback_state = OrderState.INITIALIZED
 
         self.client_order_id = init.client_order_id
         self.venue_order_id = VenueOrderId.null_c()
@@ -456,6 +475,8 @@ cdef class Order:
         Raises
         ------
         ValueError
+            If self.client_order_id is not equal to event.client_order_id.
+        ValueError
             If self.venue_order_id and event.venue_order_id are both not 'NULL', and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
@@ -484,8 +505,18 @@ cdef class Order:
         elif isinstance(event, OrderAccepted):
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
+        elif isinstance(event, OrderPendingReplace):
+            self._rollback_state = <OrderState>self._fsm.state
+            self._fsm.trigger(OrderState.PENDING_REPLACE)
+        elif isinstance(event, OrderPendingCancel):
+            self._rollback_state = <OrderState>self._fsm.state
+            self._fsm.trigger(OrderState.PENDING_CANCEL)
+        elif isinstance(event, OrderUpdateRejected):
+            self._fsm.trigger(self._rollback_state)
+        elif isinstance(event, OrderCancelRejected):
+            self._fsm.trigger(self._rollback_state)
         elif isinstance(event, OrderUpdated):
-            Condition.true(self._fsm.state in _UPDATABLE_STATES, "state was invalid for updating")
+            self._fsm.trigger(self._rollback_state)
             self._updated(event)
         elif isinstance(event, OrderCanceled):
             self._fsm.trigger(OrderState.CANCELED)

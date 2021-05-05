@@ -51,6 +51,7 @@ cdef class Order:
     cdef list _events
     cdef list _execution_ids
     cdef FiniteStateMachine _fsm
+    cdef OrderState _rollback_state
 
     cdef readonly ClientOrderId client_order_id
     """The client order identifier.\n\n:returns: `ClientOrderId`"""

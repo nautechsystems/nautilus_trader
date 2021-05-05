@@ -173,8 +173,8 @@ class TestEvents:
         event = OrderRejected(
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
-            rejected_ns=0,
             reason="INSUFFICIENT_MARGIN",
+            rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -217,9 +217,9 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            rejected_ns=0,
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
+            rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -243,9 +243,9 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            rejected_ns=0,
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
+            rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )

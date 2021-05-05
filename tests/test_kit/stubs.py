@@ -38,6 +38,8 @@ from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingReplace
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
@@ -333,8 +335,30 @@ class TestStubs:
         return OrderRejected(
             TestStubs.account_id(),
             order.client_order_id,
-            0,
             "ORDER_REJECTED",
+            0,
+            uuid4(),
+            0,
+        )
+
+    @staticmethod
+    def event_order_pending_replace(order) -> OrderPendingReplace:
+        return OrderPendingReplace(
+            TestStubs.account_id(),
+            order.client_order_id,
+            order.venue_order_id,
+            0,
+            uuid4(),
+            0,
+        )
+
+    @staticmethod
+    def event_order_pending_cancel(order) -> OrderPendingCancel:
+        return OrderPendingCancel(
+            TestStubs.account_id(),
+            order.client_order_id,
+            order.venue_order_id,
+            0,
             uuid4(),
             0,
         )

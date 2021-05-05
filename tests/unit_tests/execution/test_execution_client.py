@@ -157,6 +157,7 @@ class ExecutionClientTests(unittest.TestCase):
             self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
+            VenueOrderId("001"),
             Quantity(120000),
             Price("1.00000"),
             self.uuid_factory.generate(),
@@ -183,7 +184,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Assert
         self.assertRaises(NotImplementedError, self.client.cancel_order, command)
 
-    # TODO!
+    # TODO: WIP
     # def test_handle_event_sends_to_execution_engine(self):
     #     # Arrange
     #     order = self.order_factory.market(

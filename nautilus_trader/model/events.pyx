@@ -41,6 +41,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
 
+# These imports are currently being skipped from sorting as isort 5.8 was breaking on them
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType  # isort:skip
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser  # isort:skip
 
@@ -177,7 +178,7 @@ cdef class OrderInitialized(OrderEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+            The Unix timestamp (nanos) when the order was initialized.
         options : dict[str, str]
             The order initialization options. Contains mappings for specific
             order parameters.
@@ -369,8 +370,8 @@ cdef class OrderRejected(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
-        int64_t rejected_ns,
         str reason not None,
+        int64_t rejected_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -383,10 +384,10 @@ cdef class OrderRejected(OrderEvent):
             The account identifier.
         client_order_id : ClientOrderId
             The client order identifier.
-        rejected_ns : int64
-            The order rejected time.
         reason : datetime
             The order rejected reason.
+        rejected_ns : int64
+            The Unix timestamp (nanos) when the order was rejected.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -407,8 +408,8 @@ cdef class OrderRejected(OrderEvent):
         )
 
         self.account_id = account_id
-        self.rejected_ns = rejected_ns
         self.reason = reason
+        self.rejected_ns = rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -452,7 +453,7 @@ cdef class OrderAccepted(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         accepted_ns : int64
-            The order accepted time.
+            The Unix timestamp (nanos) when the order was accepted.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -461,7 +462,7 @@ cdef class OrderAccepted(OrderEvent):
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -483,6 +484,122 @@ cdef class OrderAccepted(OrderEvent):
                 f"event_id={self.id})")
 
 
+cdef class OrderPendingReplace(OrderEvent):
+    """
+    Represents an event where a `UpdateOrder` command has been sent to the
+    trading venue.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
+        int64_t pending_ns,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `OrderPendingReplace` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        client_order_id : ClientOrderId
+            The client order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
+        pending_ns : datetime
+            The Unix timestamp (nanos) when the replace was pending.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        Raises
+        ------
+        ValueError
+            If venue_order_id has a 'NULL' value.
+
+        """
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
+        super().__init__(
+            client_order_id,
+            venue_order_id,
+            event_id,
+            timestamp_ns,
+        )
+
+        self.account_id = account_id
+        self.pending_ns = pending_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"client_order_id={self.client_order_id}, "
+                f"pending_ns={self.pending_ns}, "
+                f"event_id={self.id})")
+
+
+cdef class OrderPendingCancel(OrderEvent):
+    """
+    Represents an event where a `CancelOrder` command has been sent to the
+    trading venue.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
+        int64_t pending_ns,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `OrderPendingCancel` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        client_order_id : ClientOrderId
+            The client order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
+        pending_ns : datetime
+            The Unix timestamp (nanos) when the cancel was pending.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        Raises
+        ------
+        ValueError
+            If venue_order_id has a 'NULL' value.
+
+        """
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
+        super().__init__(
+            client_order_id,
+            venue_order_id,
+            event_id,
+            timestamp_ns,
+        )
+
+        self.account_id = account_id
+        self.pending_ns = pending_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"client_order_id={self.client_order_id}, "
+                f"pending_ns={self.pending_ns}, "
+                f"event_id={self.id})")
+
+
 cdef class OrderUpdateRejected(OrderEvent):
     """
     Represents an event where an `UpdateOrder` command has been rejected by the
@@ -494,9 +611,9 @@ cdef class OrderUpdateRejected(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t rejected_ns,
         str response_to not None,
         str reason not None,
+        int64_t rejected_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -511,12 +628,12 @@ cdef class OrderUpdateRejected(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        rejected_ns : datetime
-            The order update rejected time.
         response_to : str
             The order update rejected response.
         reason : str
             The order update rejected reason.
+        rejected_ns : datetime
+            The Unix timestamp (nanos) when the order update was rejected.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -524,8 +641,6 @@ cdef class OrderUpdateRejected(OrderEvent):
 
         Raises
         ------
-        ValueError
-            If order_id has a 'NULL' value.
         ValueError
             If rejected_response_to is not a valid string.
         ValueError
@@ -542,9 +657,9 @@ cdef class OrderUpdateRejected(OrderEvent):
         )
 
         self.account_id = account_id
-        self.rejected_ns = rejected_ns
         self.response_to = response_to
         self.reason = reason
+        self.rejected_ns = rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -566,9 +681,9 @@ cdef class OrderCancelRejected(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t rejected_ns,
         str response_to not None,
         str reason not None,
+        int64_t rejected_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -583,12 +698,12 @@ cdef class OrderCancelRejected(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        rejected_ns : datetime
-            The order cancel rejected time.
         response_to : str
             The order cancel rejected response.
         reason : str
             The order cancel rejected reason.
+        rejected_ns : datetime
+            The Unix timestamp (nanos) when the order cancel was rejected.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -596,8 +711,6 @@ cdef class OrderCancelRejected(OrderEvent):
 
         Raises
         ------
-        ValueError
-            If order_id has a 'NULL' value.
         ValueError
             If rejected_response_to is not a valid string.
         ValueError
@@ -614,9 +727,9 @@ cdef class OrderCancelRejected(OrderEvent):
         )
 
         self.account_id = account_id
-        self.rejected_ns = rejected_ns
         self.response_to = response_to
         self.reason = reason
+        self.rejected_ns = rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -624,63 +737,6 @@ cdef class OrderCancelRejected(OrderEvent):
                 f"client_order_id={self.client_order_id}, "
                 f"response_to={self.response_to}, "
                 f"reason='{self.reason}', "
-                f"event_id={self.id})")
-
-
-cdef class OrderCanceled(OrderEvent):
-    """
-    Represents an event where an order has been canceled at the trading venue.
-    """
-
-    def __init__(
-        self,
-        AccountId account_id not None,
-        ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
-        int64_t canceled_ns,
-        UUID event_id not None,
-        int64_t timestamp_ns,
-    ):
-        """
-        Initialize a new instance of the `OrderCanceled` class.
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account identifier.
-        client_order_id : ClientOrderId
-            The client order identifier.
-        venue_order_id : VenueOrderId
-            The venue order identifier.
-        canceled_ns : int64
-            The event order canceled time.
-        event_id : UUID
-            The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
-
-        Raises
-        ------
-        ValueError
-            If order_id has a 'NULL' value.
-
-        """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
-        super().__init__(
-            client_order_id,
-            venue_order_id,
-            event_id,
-            timestamp_ns,
-        )
-
-        self.account_id = account_id
-        self.canceled_ns = canceled_ns
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
 
 
@@ -716,7 +772,7 @@ cdef class OrderUpdated(OrderEvent):
         price : Price
             The orders current price.
         updated_ns : int64
-            The updated time.
+            The Unix timestamp (nanos) when the order was updated.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -725,7 +781,7 @@ cdef class OrderUpdated(OrderEvent):
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -751,9 +807,9 @@ cdef class OrderUpdated(OrderEvent):
                 f"event_id={self.id})")
 
 
-cdef class OrderExpired(OrderEvent):
+cdef class OrderCanceled(OrderEvent):
     """
-    Represents an event where an order has expired at the trading venue.
+    Represents an event where an order has been canceled at the trading venue.
     """
 
     def __init__(
@@ -761,12 +817,12 @@ cdef class OrderExpired(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t expired_ns,
+        int64_t canceled_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderExpired` class.
+        Initialize a new instance of the `OrderCanceled` class.
 
         Parameters
         ----------
@@ -776,8 +832,8 @@ cdef class OrderExpired(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        expired_ns : int64
-            The order expired time.
+        canceled_ns : int64
+            The Unix timestamp (nanos) when order was canceled.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -786,7 +842,7 @@ cdef class OrderExpired(OrderEvent):
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -798,7 +854,7 @@ cdef class OrderExpired(OrderEvent):
         )
 
         self.account_id = account_id
-        self.expired_ns = expired_ns
+        self.canceled_ns = canceled_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -834,7 +890,7 @@ cdef class OrderTriggered(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         triggered_ns : int64
-            The order triggered time.
+            The Unix timestamp (nanos) when the order was triggered.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -843,7 +899,7 @@ cdef class OrderTriggered(OrderEvent):
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -856,6 +912,63 @@ cdef class OrderTriggered(OrderEvent):
 
         self.account_id = account_id
         self.triggered_ns = triggered_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"client_order_id={self.client_order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
+                f"event_id={self.id})")
+
+
+cdef class OrderExpired(OrderEvent):
+    """
+    Represents an event where an order has expired at the trading venue.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
+        int64_t expired_ns,
+        UUID event_id not None,
+        int64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the `OrderExpired` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        client_order_id : ClientOrderId
+            The client order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
+        expired_ns : int64
+            The Unix timestamp (nanos) when the order expired.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : int64
+            The Unix timestamp (nanos) of the event initialization.
+
+        Raises
+        ------
+        ValueError
+            If venue_order_id has a 'NULL' value.
+
+        """
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
+        super().__init__(
+            client_order_id,
+            venue_order_id,
+            event_id,
+            timestamp_ns,
+        )
+
+        self.account_id = account_id
+        self.expired_ns = expired_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -925,7 +1038,7 @@ cdef class OrderFilled(OrderEvent):
         liquidity_side : LiquiditySide
             The execution liquidity side.
         execution_ns : int64
-            The Unix timestamp (nanos) of the execution.
+            The Unix timestamp (nanos) when the order was filled.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -936,7 +1049,7 @@ cdef class OrderFilled(OrderEvent):
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
