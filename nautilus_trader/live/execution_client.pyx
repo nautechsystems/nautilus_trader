@@ -314,9 +314,9 @@ cdef class LiveExecutionClient(ExecutionClient):
             self._log.info("Generating OrderExpired event...", color=LogColor.BLUE)
             self.generate_order_expired(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
-        elif report.order_state == OrderState.CANCELLED:
-            self._log.info("Generating OrderCancelled event...", color=LogColor.BLUE)
-            self.generate_order_cancelled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
+        elif report.order_state == OrderState.CANCELED:
+            self._log.info("Generating OrderCanceled event...", color=LogColor.BLUE)
+            self.generate_order_canceled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
         elif report.order_state == OrderState.ACCEPTED:
             if order.state_c() == OrderState.SUBMITTED:

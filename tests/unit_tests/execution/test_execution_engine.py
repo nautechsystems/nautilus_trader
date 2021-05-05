@@ -33,7 +33,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -977,7 +977,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
-        cancelled = OrderCancelled(
+        canceled = OrderCanceled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
@@ -987,10 +987,10 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.process(cancelled)
+        self.exec_engine.process(canceled)
 
-        # Assert (order was found and OrderCancelled event was applied)
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        # Assert (order was found and OrderCanceled event was applied)
+        self.assertEqual(OrderState.CANCELED, order.state)
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
         self,
@@ -1028,7 +1028,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
-        cancelled = OrderCancelled(
+        canceled = OrderCanceled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
@@ -1038,7 +1038,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.process(cancelled)
+        self.exec_engine.process(canceled)
 
         # Assert (order was not found, engine did not crash)
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -1077,7 +1077,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
-        cancelled = OrderCancelled(
+        canceled = OrderCanceled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
@@ -1087,11 +1087,11 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.process(cancelled)
-        self.exec_engine.process(cancelled)
+        self.exec_engine.process(canceled)
+        self.exec_engine.process(canceled)
 
-        # Assert (order was found and OrderCancelled event was applied)
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        # Assert (order was found and OrderCanceled event was applied)
+        self.assertEqual(OrderState.CANCELED, order.state)
         self.assertEqual(4, order.event_count)
 
     def test_handle_order_fill_event_with_no_strategy_id_correctly_handles_fill(self):

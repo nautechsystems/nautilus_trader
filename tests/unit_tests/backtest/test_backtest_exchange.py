@@ -713,7 +713,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.cancel_order(order)
 
         # Assert
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        self.assertEqual(OrderState.CANCELED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
 
     def test_cancel_stop_order_when_order_does_not_exist_generates_cancel_reject(self):
@@ -1675,7 +1675,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, entry.state)
         self.assertEqual(OrderState.FILLED, bracket.stop_loss.state)
-        self.assertEqual(OrderState.CANCELLED, bracket.take_profit.state)
+        self.assertEqual(OrderState.CANCELED, bracket.take_profit.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
 
     def test_realized_pnl_contains_commission(self):

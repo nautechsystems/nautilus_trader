@@ -627,9 +627,9 @@ cdef class OrderCancelRejected(OrderEvent):
                 f"event_id={self.id})")
 
 
-cdef class OrderCancelled(OrderEvent):
+cdef class OrderCanceled(OrderEvent):
     """
-    Represents an event where an order has been cancelled at the trading venue.
+    Represents an event where an order has been canceled at the trading venue.
     """
 
     def __init__(
@@ -637,12 +637,12 @@ cdef class OrderCancelled(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t cancelled_ns,
+        int64_t canceled_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderCancelled` class.
+        Initialize a new instance of the `OrderCanceled` class.
 
         Parameters
         ----------
@@ -652,8 +652,8 @@ cdef class OrderCancelled(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        cancelled_ns : int64
-            The event order cancelled time.
+        canceled_ns : int64
+            The event order canceled time.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
@@ -674,7 +674,7 @@ cdef class OrderCancelled(OrderEvent):
         )
 
         self.account_id = account_id
-        self.cancelled_ns = cancelled_ns
+        self.canceled_ns = canceled_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("

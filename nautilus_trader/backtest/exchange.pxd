@@ -150,7 +150,7 @@ cdef class SimulatedExchange:
     cdef inline void _generate_order_update_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
     cdef inline void _generate_order_triggered(self, StopLimitOrder order) except *
     cdef inline void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
-    cdef inline void _generate_order_cancelled(self, PassiveOrder order) except *
+    cdef inline void _generate_order_canceled(self, PassiveOrder order) except *
     cdef inline void _generate_order_expired(self, PassiveOrder order) except *
 
     cdef inline void _process_order(self, Order order) except *

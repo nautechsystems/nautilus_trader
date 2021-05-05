@@ -210,7 +210,7 @@ cdef class LiveRiskEngine(RiskEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except CancelledError:
             if self.qsize() > 0:
-                self._log.warning(f"Running cancelled "
+                self._log.warning(f"Running canceled "
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")

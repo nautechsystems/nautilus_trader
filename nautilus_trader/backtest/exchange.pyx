@@ -601,7 +601,7 @@ cdef class SimulatedExchange:
             # Will raise KeyError if not found by `pop`.
             instrument_orders.pop(order.client_order_id)
 
-        self._generate_order_cancelled(order)
+        self._generate_order_canceled(order)
         self._check_oco_order(order.client_order_id)
 
     cdef inline void _expire_order(self, PassiveOrder order) except *:
@@ -708,9 +708,9 @@ cdef class SimulatedExchange:
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_cancelled(self, PassiveOrder order) except *:
+    cdef inline void _generate_order_canceled(self, PassiveOrder order) except *:
         # Generate event
-        self.exec_client.generate_order_cancelled(
+        self.exec_client.generate_order_canceled(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             timestamp_ns=self._clock.timestamp_ns(),
@@ -1162,7 +1162,7 @@ cdef class SimulatedExchange:
         # Work any bracket child orders
         if order.client_order_id in self._child_orders:
             for child_order in self._child_orders[order.client_order_id]:
-                if not child_order.is_completed:  # The order may already be cancelled or rejected
+                if not child_order.is_completed:  # The order may already be canceled or rejected
                     self._process_order(child_order)
             del self._child_orders[order.client_order_id]
 
@@ -1256,4 +1256,4 @@ cdef class SimulatedExchange:
             return
 
         # Generate event
-        self._generate_order_cancelled(order)
+        self._generate_order_canceled(order)

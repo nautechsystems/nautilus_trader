@@ -396,7 +396,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                 )
                                 self.published_executions[client_order_id].append(execution_id)
 
-                    # Execution complete, this order is fulled match or cancelled
+                    # Execution complete, this order is fulled match or canceled
                     elif order["status"] == "EC":
                         if order["sm"] != 0:
                             execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
@@ -420,13 +420,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                 )
                         if any([order[x] != 0 for x in ("sc", "sl", "sv")]):
                             cancel_qty = sum([order[k] for k in ("sc", "sl", "sv")])
-                            assert order['sm'] + cancel_qty == order["s"], f"Size matched + cancelled != total: {order}"
+                            assert order['sm'] + cancel_qty == order["s"], f"Size matched + canceled != total: {order}"
                             # If this is the result of a UpdateOrder, we don't want to emit a cancel
                             key = (ClientOrderId(order.get("rfo")), VenueOrderId(order["id"]))
                             self._log.debug(f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}")
                             if key not in self.pending_update_order_client_ids:
-                                # The remainder of this order has been cancelled
-                                self.generate_order_cancelled(
+                                # The remainder of this order has been canceled
+                                self.generate_order_canceled(
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     timestamp_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),

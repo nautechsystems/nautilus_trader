@@ -30,7 +30,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelRejected
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
@@ -632,9 +632,9 @@ class TestMsgPackEventSerializer:
         # Assert
         assert deserialized == event
 
-    def test_serialize_and_deserialize_order_cancelled_events(self):
+    def test_serialize_and_deserialize_order_canceled_events(self):
         # Arrange
-        event = OrderCancelled(
+        event = OrderCanceled(
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),

@@ -35,7 +35,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
@@ -392,8 +392,8 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_cancelled(order) -> OrderCancelled:
-        return OrderCancelled(
+    def event_order_canceled(order) -> OrderCanceled:
+        return OrderCanceled(
             TestStubs.account_id(),
             order.client_order_id,
             order.venue_order_id,

@@ -29,7 +29,7 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelRejected
-from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
@@ -351,23 +351,23 @@ cdef class ExecutionClient:
 
         self._handle_event(triggered)
 
-    cpdef void generate_order_cancelled(
+    cpdef void generate_order_canceled(
         self,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         int64_t timestamp_ns,
     ) except *:
         # Generate event
-        cdef OrderCancelled cancelled = OrderCancelled(
+        cdef OrderCanceled canceled = OrderCanceled(
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            cancelled_ns=timestamp_ns,
+            canceled_ns=timestamp_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(cancelled)
+        self._handle_event(canceled)
 
     cpdef void generate_order_expired(
         self,
