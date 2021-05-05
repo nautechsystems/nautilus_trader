@@ -336,7 +336,7 @@ cdef class Clock:
         Notes
         -----
         Logs a warning if a timer with the given name is not found (it may have
-        already been cancelled).
+        already been canceled).
 
         """
         Condition.valid_string(name, "name")

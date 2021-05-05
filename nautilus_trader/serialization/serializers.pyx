@@ -42,7 +42,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelRejected
-from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
@@ -546,11 +546,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[REJECTED_TIMESTAMP] = event.rejected_ns
             package[RESPONSE_TO] = event.response_to
             package[REASON] = event.reason
-        elif isinstance(event, OrderCancelled):
+        elif isinstance(event, OrderCanceled):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[CANCELLED_TIMESTAMP] = event.cancelled_ns
+            package[CANCELED_TIMESTAMP] = event.canceled_ns
         elif isinstance(event, OrderUpdated):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.client_order_id.value
@@ -699,12 +699,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 timestamp_ns,
             )
-        elif event_type == OrderCancelled.__name__:
-            return OrderCancelled(
+        elif event_type == OrderCanceled.__name__:
+            return OrderCanceled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 VenueOrderId(unpacked[VENUE_ORDER_ID]),
-                unpacked[CANCELLED_TIMESTAMP],
+                unpacked[CANCELED_TIMESTAMP],
                 event_id,
                 timestamp_ns,
             )

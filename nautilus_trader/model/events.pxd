@@ -130,11 +130,11 @@ cdef class OrderCancelRejected(OrderEvent):
     """The reason for order cancel rejection.\n\n:returns: `str`"""
 
 
-cdef class OrderCancelled(OrderEvent):
+cdef class OrderCanceled(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t cancelled_ns
-    """The order cancelled time.\n\n:returns: `int64`"""
+    cdef readonly int64_t canceled_ns
+    """The order canceled time.\n\n:returns: `int64`"""
 
 
 cdef class OrderUpdated(OrderEvent):

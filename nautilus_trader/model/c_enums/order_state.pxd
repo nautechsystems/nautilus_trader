@@ -21,7 +21,7 @@ cpdef enum OrderState:
     SUBMITTED = 4,
     ACCEPTED = 5,
     REJECTED = 6,
-    CANCELLED = 7,
+    CANCELED = 7,
     EXPIRED = 8,
     TRIGGERED = 9,
     PARTIALLY_FILLED = 10,

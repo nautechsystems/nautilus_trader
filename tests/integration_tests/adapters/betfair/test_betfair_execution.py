@@ -24,11 +24,11 @@ from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.currencies import AUD
 
-# from nautilus_trader.model.events import OrderCancelled
+# from nautilus_trader.model.events import OrderCanceled
 # from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
@@ -331,7 +331,7 @@ async def test_order_stream_cancel_after_update_doesnt_emit_event(
 #     assert len(exec_engine.events) == 3
 #     assert isinstance(exec_engine.events[0], OrderFilled)
 #     assert isinstance(exec_engine.events[1], OrderFilled)
-#     assert isinstance(exec_engine.events[2], OrderCancelled)
+#     assert isinstance(exec_engine.events[2], OrderCanceled)
 
 
 # TODO
@@ -400,9 +400,9 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
     events = exec_engine.events
     assert isinstance(events[0], OrderAccepted)
     assert isinstance(events[1], OrderAccepted)
-    # First order example, partial fill followed by remainder cancelled
+    # First order example, partial fill followed by remainder canceled
     assert isinstance(events[2], OrderFilled)
-    assert isinstance(events[3], OrderCancelled)
+    assert isinstance(events[3], OrderCanceled)
     # Second order example, partial fill followed by remainder filled
     assert (
         isinstance(events[4], OrderFilled)

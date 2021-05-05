@@ -162,13 +162,13 @@ class TestLiveExecutionClient:
             await asyncio.sleep(0)  # Process queue
             self.engine.process(TestStubs.event_order_accepted(order))
             await asyncio.sleep(0)  # Process queue
-            self.engine.process(TestStubs.event_order_cancelled(order))
+            self.engine.process(TestStubs.event_order_canceled(order))
             await asyncio.sleep(0)  # Process queue
 
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
-                order_state=OrderState.CANCELLED,
+                order_state=OrderState.CANCELED,
                 filled_qty=Quantity(0),
                 timestamp_ns=0,
             )

@@ -100,7 +100,7 @@ cdef class ExecutionClient:
         bint venue_order_id_modified=*,
     ) except *
     cpdef void generate_order_triggered(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
-    cpdef void generate_order_cancelled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
+    cpdef void generate_order_canceled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
     cpdef void generate_order_expired(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t timestamp_ns) except *
     cpdef void generate_order_filled(
         self,

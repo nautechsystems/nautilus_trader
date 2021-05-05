@@ -37,7 +37,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
@@ -65,17 +65,17 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.SUBMITTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.SUBMITTED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.ACCEPTED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.ACCEPTED, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.ACCEPTED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.ACCEPTED, OrderState.TRIGGERED): OrderState.TRIGGERED,
     (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
     (OrderState.TRIGGERED, OrderState.REJECTED): OrderState.REJECTED,
-    (OrderState.TRIGGERED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.TRIGGERED, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.TRIGGERED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.TRIGGERED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.TRIGGERED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.CANCELED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
@@ -197,7 +197,7 @@ cdef class Order:
         return self._fsm.state == OrderState.INVALID \
             or self._fsm.state == OrderState.DENIED \
             or self._fsm.state == OrderState.REJECTED \
-            or self._fsm.state == OrderState.CANCELLED \
+            or self._fsm.state == OrderState.CANCELED \
             or self._fsm.state == OrderState.EXPIRED \
             or self._fsm.state == OrderState.FILLED
 
@@ -372,7 +372,7 @@ cdef class Order:
 
         An order is considered completed when its state can no longer change.
         The possible states of completed orders include; `INVALID`, `DENIED`,
-        `REJECTED`, `CANCELLED`, `EXPIRED` and `FILLED`.
+        `REJECTED`, `CANCELED`, `EXPIRED` and `FILLED`.
 
         Returns
         -------
@@ -487,9 +487,9 @@ cdef class Order:
         elif isinstance(event, OrderUpdated):
             Condition.true(self._fsm.state in _UPDATABLE_STATES, "state was invalid for updating")
             self._updated(event)
-        elif isinstance(event, OrderCancelled):
-            self._fsm.trigger(OrderState.CANCELLED)
-            self._cancelled(event)
+        elif isinstance(event, OrderCanceled):
+            self._fsm.trigger(OrderState.CANCELED)
+            self._canceled(event)
         elif isinstance(event, OrderExpired):
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
@@ -532,7 +532,7 @@ cdef class Order:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
-    cdef void _cancelled(self, OrderCancelled event) except *:
+    cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
 
     cdef void _expired(self, OrderExpired event) except *:

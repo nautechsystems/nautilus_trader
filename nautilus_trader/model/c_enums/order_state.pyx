@@ -30,7 +30,7 @@ cdef class OrderStateParser:
         elif value == 6:
             return "REJECTED"
         elif value == 7:
-            return "CANCELLED"
+            return "CANCELED"
         elif value == 8:
             return "EXPIRED"
         elif value == 9:
@@ -56,8 +56,8 @@ cdef class OrderStateParser:
             return OrderState.ACCEPTED
         elif value == "REJECTED":
             return OrderState.REJECTED
-        elif value == "CANCELLED":
-            return OrderState.CANCELLED
+        elif value == "CANCELED":
+            return OrderState.CANCELED
         elif value == "EXPIRED":
             return OrderState.EXPIRED
         elif value == "TRIGGERED":

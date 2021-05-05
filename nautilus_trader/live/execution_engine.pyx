@@ -310,7 +310,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except asyncio.CancelledError:
             if not self._queue.empty():
-                self._log.warning(f"Running cancelled "
+                self._log.warning(f"Running canceled "
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")

@@ -24,7 +24,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -86,7 +86,7 @@ class BetfairTestStrategy(TradingStrategy):
 
     def on_event(self, event: Event):
         self.log.info(f"on_event: {event}")
-        if isinstance(event, (OrderAccepted, OrderUpdated, OrderCancelled)):
+        if isinstance(event, (OrderAccepted, OrderUpdated, OrderCanceled)):
             self._in_flight.remove(event.client_order_id)
         self.trigger()
 

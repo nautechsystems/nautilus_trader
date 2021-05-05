@@ -678,7 +678,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
 
-    def test_apply_order_cancelled_event(self):
+    def test_apply_order_canceled_event(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -690,10 +690,10 @@ class OrderTests(unittest.TestCase):
         order.apply(TestStubs.event_order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_cancelled(order))
+        order.apply(TestStubs.event_order_canceled(order))
 
         # Assert
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        self.assertEqual(OrderState.CANCELED, order.state)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
 

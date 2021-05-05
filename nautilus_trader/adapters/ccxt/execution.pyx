@@ -226,7 +226,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         elif status == "closed":
             state = OrderState.FILLED
         elif status == "canceled":
-            state = OrderState.CANCELLED
+            state = OrderState.CANCELED
         elif status == "expired":
             state = OrderState.EXPIRED
         else:
@@ -624,7 +624,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if status == "open" and event["filled"] == 0:
             self.generate_order_accepted(client_order_id, venue_order_id, timestamp_ns)
         elif status == "canceled":
-            self.generate_order_cancelled(client_order_id, venue_order_id, timestamp_ns)
+            self.generate_order_canceled(client_order_id, venue_order_id, timestamp_ns)
         elif status == "expired":
             self.generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
 

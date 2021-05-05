@@ -4,6 +4,7 @@ This release simplifies the backtesting workflow by removing the need for the
 intermediate `BacktestDataContainer`.
 
 ## Breaking Changes
+- Cancelled renamed to canceled for standardization.
 - `SimulatedExchange` no longer generates `OrderAccepted` for `MarketOrder`.
 - Removed redundant `BacktestDataContainer`.
 - Removed redundant `OrderFilled.cum_qty`.
