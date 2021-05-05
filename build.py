@@ -174,5 +174,6 @@ if __name__ == "__main__":
     bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
     print(f"System: {platform.system()} {bits}")
     print(f"Cython: {cython_compiler_version}")
+    print(f"NumPy:  {np.__version__}")
 
     build({})
