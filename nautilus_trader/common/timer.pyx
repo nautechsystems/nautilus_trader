@@ -287,15 +287,7 @@ cdef class TestTimer(Timer):
         -------
         list[TimeEvent]
 
-        Raises
-        ------
-        ValueError
-            If to_time is < the timers next event time.
-
         """
-        # Ensure monotonic
-        Condition.true(to_time_ns >= self.next_time_ns, "to_time_ns was < self.next_time_ns")
-
         cdef list events = []  # type: list[TimeEvent]
         while not self.is_expired and to_time_ns >= self.next_time_ns:
             events.append(self.pop_event(
