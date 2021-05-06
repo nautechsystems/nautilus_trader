@@ -68,7 +68,7 @@ def _build_extensions() -> List[Extension]:
     if PROFILING_MODE or ANNOTATION_MODE:
         define_macros.append(("CYTHON_TRACE", "1"))
 
-    if LooseVersion(cython_compiler_version) < LooseVersion("3.0"):
+    if LooseVersion("3.0a6") <= LooseVersion(cython_compiler_version):
         # https://github.com/nautechsystems/nautilus_trader/issues/303
         define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
 
