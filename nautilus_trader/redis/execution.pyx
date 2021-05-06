@@ -18,7 +18,9 @@ import redis
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
@@ -39,6 +41,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef str _UTF8 = 'utf-8'
+cdef str _CURRENCIES = 'Currencies'
 cdef str _ACCOUNTS = 'Accounts'
 cdef str _TRADER = 'Trader'
 cdef str _ORDERS = 'Orders'
@@ -90,6 +93,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Database keys
         self._key_trader     = f"{_TRADER}-{trader_id.value}"        # noqa
+        self._key_currencies = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
         self._key_accounts   = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
         self._key_orders     = f"{self._key_trader}:{_ORDERS}:"      # noqa
         self._key_positions  = f"{self._key_trader}:{_POSITIONS}:"   # noqa
@@ -112,6 +116,33 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._log.debug("Flushing database....")
         self._redis.flushdb()
         self._log.info("Flushed database.")
+
+    cpdef dict load_currencies(self):
+        """
+        Load all currencies from the execution database.
+
+        Returns
+        -------
+        dict[str, Currency]
+
+        """
+        cdef dict currencies = {}
+
+        cdef list currency_keys = self._redis.keys(f"{self._key_currencies}*")
+        if not currency_keys:
+            return currencies
+
+        cdef bytes key_bytes
+        cdef str currency_code
+        cdef Currency currency
+        for key_bytes in currency_keys:
+            currency_code = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            currency = self.load_currency(currency_code)
+
+            if currency is not None:
+                currencies[currency.code] = currency
+
+        return currencies
 
     cpdef dict load_accounts(self):
         """
@@ -193,6 +224,33 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 positions[position.id] = position
 
         return positions
+
+    cpdef Currency load_currency(self, str code):
+        """
+        Load the currency associated with the given currency code (if found)
+
+        Parameters
+        ----------
+        code : str
+            The currency code to load.
+
+        Returns
+        -------
+        Currency or None
+
+        """
+        Condition.not_none(code, "code")
+
+        cdef dict c_hash = self._redis.hgetall(name=self._key_currencies + code)
+        cdef dict c_map = {k.decode('utf-8'): v for k, v in c_hash.items()}
+
+        return Currency(
+            code=code,
+            precision=int(c_map["precision"]),
+            iso4217=int(c_map["iso4217"]),
+            name=c_map["name"].decode("utf-8"),
+            currency_type=CurrencyTypeParser.from_str(c_map["currency_type"].decode("utf-8")),
+        )
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -329,6 +387,33 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self._redis.delete(self._key_strategies + strategy_id.value)
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
+
+    cpdef void add_currency(self, Currency currency) except *:
+        """
+        Add the given currency to the execution cache.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to add.
+
+        """
+        Condition.not_none(currency, "currency")
+
+        cdef dict currency_map = {
+            "precision": currency.precision,
+            "iso4217": currency.iso4217,
+            "name": currency.name,
+            "currency_type": CurrencyTypeParser.to_str(currency.currency_type)
+        }
+
+        # Command pipeline
+        pipe = self._redis.pipeline()
+        for key, value in currency_map.items():
+            pipe.hset(name=self._key_currencies + currency.code, key=key, value=value)
+        pipe.execute()
+
+        self._log.debug(f"Added currency {currency.code}.")
 
     cpdef void add_account(self, Account account) except *:
         """

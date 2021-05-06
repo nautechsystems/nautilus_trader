@@ -109,7 +109,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         instrument : Instrument
-            The received instrument to add.
+            The instrument to add.
 
         """
         self._instruments[instrument.id] = instrument
