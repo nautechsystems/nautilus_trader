@@ -16,7 +16,6 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime
-from decimal import Decimal
 from functools import partial
 from typing import Dict, List, Optional, Set
 
@@ -35,7 +34,9 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+
 from nautilus_trader.model.currency import Currency
+
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
