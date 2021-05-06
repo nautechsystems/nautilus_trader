@@ -54,6 +54,10 @@ cdef class ExecutionDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef dict load_currencies(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef dict load_accounts(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -63,6 +67,10 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict load_positions(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Currency load_currency(self, str code):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -83,6 +91,10 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_currency(self, Currency currency) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -139,6 +151,9 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
         # NO-OP
         pass
 
+    cpdef dict load_currencies(self):
+        return {}
+
     cpdef dict load_accounts(self):
         return {}
 
@@ -147,6 +162,9 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
 
     cpdef dict load_positions(self):
         return {}
+
+    cpdef Currency load_currency(self, str code):
+        return None
 
     cpdef Account load_account(self, AccountId account_id):
         return None
@@ -161,6 +179,10 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
         return {}
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
+        # NO-OP
+        pass
+
+    cpdef void add_currency(self, Currency currency) except *:
         # NO-OP
         pass
 

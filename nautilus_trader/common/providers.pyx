@@ -82,6 +82,17 @@ cdef class InstrumentProvider:
         """
         return self._instruments.copy()
 
+    cpdef dict currencies(self):
+        """
+        Return all currencies held by the instrument provider.
+
+        Returns
+        -------
+        dict[str, Currency]
+
+        """
+        return self._currencies.copy()
+
     cpdef Currency currency(self, str code):
         """
         Return the currency with the given code (if found).

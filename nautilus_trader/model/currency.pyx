@@ -90,50 +90,50 @@ cdef class Currency:
                 f"type={CurrencyTypeParser.to_str(self.currency_type)})")
 
     @staticmethod
-    cdef Currency from_str_c(str code, bint force_crypto=False):
-        cdef Currency currency = _CURRENCY_MAP.get(code)
-        if currency is None and force_crypto:
-            currency = Currency(
-                code=code,
-                precision=8,
-                iso4217=0,
-                name=code,
-                currency_type=CurrencyType.CRYPTO,
-            )
-        return currency
+    cdef void register_c(Currency currency, bint overwrite=False):
+        if not overwrite and currency.code in _CURRENCY_MAP:
+            return
+        _CURRENCY_MAP[currency.code] = currency
 
     @staticmethod
-    def from_str(str code, bint force_crypto=False):
+    cdef Currency from_str_c(str code):
+        return _CURRENCY_MAP.get(code)
+
+    @staticmethod
+    def register(Currency currency, bint overwrite=False):
+        """
+        Register the given currency.
+
+        Will override the internal currency map.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to register
+        overwrite : bool
+            If the currency in the internal currency map should be overwritten.
+
+        """
+        Condition.not_none(currency, "currency")
+
+        return Currency.register_c(currency, overwrite)
+
+    @staticmethod
+    def from_str(str code):
         """
         Parse a currency from the given string (if found).
-
-        If not found and `force_crypto` is set `True`, then will return a crypto
-        currency with precision 8 and name equal to the given code.
-
-        In normal trading operations it should not be necessary to use
-        `force_crypto`. Instead, the `InstrumentProvider` should handle the
-        proper instantiation of available currencies upon connection
 
         Parameters
         ----------
         code : str
             The code of the currency to get.
-        force_crypto : bool
-            If an unknown crypto should be returned if code is not found in the
-            internal currency map.
 
         Returns
         -------
         Currency or None
 
-        Warnings
-        --------
-        If `force_crypto` is set to `True` then a `Currency` will always be
-        returned - which may not be what you expect depending on the `code`
-        input.
-
         """
-        return Currency.from_str_c(code, force_crypto=force_crypto)
+        return Currency.from_str_c(code)
 
     @staticmethod
     cdef bint is_fiat_c(str code):
