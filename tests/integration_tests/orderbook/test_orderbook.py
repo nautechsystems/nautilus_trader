@@ -64,9 +64,11 @@ def test_l2_feed():
     ]
     i = 0
     for i, m in enumerate(TestDataProvider.l2_feed()):
-        if not m or (i, m["order"].id) in skip:
+        if not m or m["op"] == "trade":
+            pass
+        elif (i, m["order"].id) in skip:
             continue
-        if m["op"] == "update":
+        elif m["op"] == "update":
             book.update(order=m["order"])
         elif m["op"] == "delete":
             book.delete(order=m["order"])
