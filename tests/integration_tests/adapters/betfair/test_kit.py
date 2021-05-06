@@ -406,13 +406,13 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def raw_market_updates_instruments(
-        market="1.166811431", runner1="60424", runner2="237478"
+        market="1.166811431", runner1="60424", runner2="237478", currency="GBP"
     ):
         updates = BetfairTestStubs.raw_market_updates(
             market=market, runner1=runner1, runner2=runner2
         )
         market_def = updates[0]["mc"][0]
-        instruments = make_instruments(market_def, "AUD")
+        instruments = make_instruments(market_def, currency)
         return instruments
 
     @staticmethod

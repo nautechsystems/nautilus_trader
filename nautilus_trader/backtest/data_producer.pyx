@@ -192,21 +192,27 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
             # Process trade tick data
             # -----------------------
-            if instrument_id in trade_ticks and isinstance(trade_ticks[instrument_id], pd.DataFrame):
-                ts = unix_timestamp()  # Time data processing
-                trade_wrangler = TradeTickDataWrangler(
-                    instrument=instrument,
-                    data=trade_ticks.get(instrument_id),
-                )
+            if instrument_id in trade_ticks:
+                if isinstance(trade_ticks[instrument_id], pd.DataFrame):
+                    ts = unix_timestamp()  # Time data processing
+                    trade_wrangler = TradeTickDataWrangler(
+                        instrument=instrument,
+                        data=trade_ticks.get(instrument_id),
+                    )
 
-                # noinspection PyUnresolvedReferences
-                trade_wrangler.pre_process(instrument_counter)
-                trade_tick_frames.append(trade_wrangler.processed_data)
+                    # noinspection PyUnresolvedReferences
+                    trade_wrangler.pre_process(instrument_counter)
+                    trade_tick_frames.append(trade_wrangler.processed_data)
 
-                execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
-                self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
-                               f"{unix_timestamp() - ts:.3f}s.")
-                del trade_wrangler  # Dump processing artifact
+                    execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
+                    self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
+                                   f"{unix_timestamp() - ts:.3f}s.")
+                    del trade_wrangler  # Dump processing artifact
+                elif isinstance(trade_ticks[instrument_id], list):
+                    # We have a list of TradeTick objects
+                    self._stream = sorted(
+                        self._stream + trade_ticks[instrument_id], key=lambda x: x.timestamp_ns,
+                    )
 
             # TODO: Execution resolution
             # if instrument_id in data.books:

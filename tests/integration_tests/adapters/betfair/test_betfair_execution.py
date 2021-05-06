@@ -89,7 +89,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
             }
         ],
     }
-    result = mock_place_orders.call_args.kwargs
+    result = mock_place_orders.call_args[1]
     assert result == expected
 
 

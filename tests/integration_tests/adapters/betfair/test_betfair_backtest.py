@@ -48,6 +48,8 @@ def test_betfair_backtest(instrument_provider):
     # Create engine
     engine = BacktestEngine(level_stdout=LogLevel.ERROR)
 
+    all_data = all_data[15000:]
+
     # Filter and add to engine
     for instrument in instruments[:1]:
         engine.add_instrument(instrument)
