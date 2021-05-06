@@ -46,9 +46,7 @@ def test_betfair_backtest(instrument_provider):
     all_data = BetfairTestStubs.parsed_market_updates(instrument_provider)
 
     # Create engine
-    engine = BacktestEngine(level_stdout=LogLevel.ERROR)
-
-    all_data = all_data[15000:]
+    engine = BacktestEngine(level_stdout=LogLevel.DEBUG)
 
     # Filter and add to engine
     for instrument in instruments[:1]:
@@ -71,7 +69,7 @@ def test_betfair_backtest(instrument_provider):
     engine.add_exchange(
         venue=BETFAIR_VENUE,
         oms_type=OMSType.NETTING,
-        starting_balances=[Money(10_000, GBP)],
+        starting_balances=[Money(100_000, GBP)],
         order_book_level=OrderBookLevel.L2,
     )
 
