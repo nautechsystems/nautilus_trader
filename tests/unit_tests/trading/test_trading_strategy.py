@@ -1868,7 +1868,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
+        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[0].state)
         self.assertEqual(
             order.client_order_id,
             strategy.execution.orders_completed()[0].client_order_id,
@@ -1971,8 +1971,8 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIn(order1, strategy.execution.orders())
         self.assertIn(order2, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[1].state)
+        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[0].state)
+        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[1].state)
         self.assertIn(order1, strategy.execution.orders_completed())
         self.assertIn(order2, strategy.execution.orders_completed())
 

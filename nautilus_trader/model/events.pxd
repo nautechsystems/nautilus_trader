@@ -95,10 +95,10 @@ cdef class OrderSubmitted(OrderEvent):
 cdef class OrderRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t rejected_ns
-    """The order rejected time.\n\n:returns: `int64`"""
     cdef readonly str reason
     """The reason the order was rejected.\n\n:returns: `str`"""
+    cdef readonly int64_t rejected_ns
+    """The order rejected time.\n\n:returns: `int64`"""
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -108,33 +108,40 @@ cdef class OrderAccepted(OrderEvent):
     """The order accepted time.\n\n:returns: `int64`"""
 
 
+cdef class OrderPendingReplace(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly int64_t pending_ns
+    """The timestamp from which the replace was pending.\n\n:returns: `int64`"""
+
+
+cdef class OrderPendingCancel(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly int64_t pending_ns
+    """The timestamp from which the cancel was pending.\n\n:returns: `int64`"""
+
+
 cdef class OrderUpdateRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t rejected_ns
-    """The requests rejected time of the event.\n\n:returns: `int64`"""
     cdef readonly str response_to
     """The update rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order update rejection.\n\n:returns: `str`"""
+    cdef readonly int64_t rejected_ns
+    """The requests rejected time of the event.\n\n:returns: `int64`"""
 
 
 cdef class OrderCancelRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t rejected_ns
-    """The requests rejected time of the event.\n\n:returns: `int64`"""
     cdef readonly str response_to
     """The cancel rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order cancel rejection.\n\n:returns: `str`"""
-
-
-cdef class OrderCancelled(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t cancelled_ns
-    """The order cancelled time.\n\n:returns: `int64`"""
+    cdef readonly int64_t rejected_ns
+    """The requests rejected time of the event.\n\n:returns: `int64`"""
 
 
 cdef class OrderUpdated(OrderEvent):
@@ -148,11 +155,11 @@ cdef class OrderUpdated(OrderEvent):
     """The order updated time.\n\n:returns: `int64`"""
 
 
-cdef class OrderExpired(OrderEvent):
+cdef class OrderCanceled(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t expired_ns
-    """The order expired time.\n\n:returns: `int64`"""
+    cdef readonly int64_t canceled_ns
+    """The order canceled time.\n\n:returns: `int64`"""
 
 
 cdef class OrderTriggered(OrderEvent):
@@ -160,6 +167,13 @@ cdef class OrderTriggered(OrderEvent):
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t triggered_ns
     """The order triggered time.\n\n:returns: `int64`"""
+
+
+cdef class OrderExpired(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly int64_t expired_ns
+    """The order expired time.\n\n:returns: `int64`"""
 
 
 cdef class OrderFilled(OrderEvent):

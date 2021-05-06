@@ -17,8 +17,6 @@ import asyncio
 
 from cpython.datetime cimport datetime
 
-from decimal import Decimal
-
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
@@ -225,7 +223,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         Condition.not_none(active_orders, "active_orders")
 
-        self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
+        self._log.info(f"Generating ExecutionMassStatus for {self.id}...", LogColor.BLUE)
 
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,
@@ -309,20 +307,20 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         if report.order_state == OrderState.REJECTED:
             # No VenueOrderId would have been assigned from the exchange
-            self._log.info("Generating OrderRejected event...", color=LogColor.GREEN)
+            self._log.info("Generating OrderRejected event...", color=LogColor.BLUE)
             self.generate_order_rejected(report.client_order_id, "unknown", report.timestamp_ns)
             return True
         elif report.order_state == OrderState.EXPIRED:
-            self._log.info("Generating OrderExpired event...", color=LogColor.GREEN)
+            self._log.info("Generating OrderExpired event...", color=LogColor.BLUE)
             self.generate_order_expired(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
-        elif report.order_state == OrderState.CANCELLED:
-            self._log.info("Generating OrderCancelled event...", color=LogColor.GREEN)
-            self.generate_order_cancelled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
+        elif report.order_state == OrderState.CANCELED:
+            self._log.info("Generating OrderCanceled event...", color=LogColor.BLUE)
+            self.generate_order_canceled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
         elif report.order_state == OrderState.ACCEPTED:
             if order.state_c() == OrderState.SUBMITTED:
-                self._log.info("Generating OrderAccepted event...", color=LogColor.GREEN)
+                self._log.info("Generating OrderAccepted event...", color=LogColor.BLUE)
                 self.generate_order_accepted(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
             # TODO: Consider other scenarios
@@ -340,7 +338,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 continue  # Trade already applied
             self._log.info(
                 f"Generating OrderFilled event for {repr(exec_report.id)}...",
-                color=LogColor.GREEN,
+                color=LogColor.BLUE,
             )
 
             instrument = self._instrument_provider.find(order.instrument_id)
@@ -360,7 +358,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 commission=exec_report.commission,
                 is_inverse=instrument.is_inverse,
                 liquidity_side=exec_report.liquidity_side,
-                timestamp_ns=exec_report.execution_ns,
+                execution_ns=exec_report.execution_ns,
             )
 
         return True

@@ -195,7 +195,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         self.generate_order_submitted(
             client_order_id=command.order.client_order_id,
-            timestamp_ns=self._clock.timestamp_ns(),
+            submitted_ns=self._clock.timestamp_ns(),
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
@@ -225,7 +225,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self.generate_order_rejected(
                 client_order_id=client_order_id,
                 reason=reason,
-                timestamp_ns=self._clock.timestamp_ns(),
+                rejected_ns=self._clock.timestamp_ns(),
             )
             return
         bet_id = resp['instructionReports'][0]['betId']
@@ -234,11 +234,16 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.generate_order_accepted(
             client_order_id=client_order_id,
             venue_order_id=VenueOrderId(bet_id),
-            timestamp_ns=self._clock.timestamp_ns(),
+            accepted_ns=self._clock.timestamp_ns(),
         )
 
     cpdef void update_order(self, UpdateOrder command) except *:
         self._log.debug(f"Received {command}")
+        self.generate_order_pending_replace(
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            pending_ns=self._clock.timestamp_ns(),
+        )
         f = self._loop.run_in_executor(None, self._update_order, command)  # type: asyncio.Future
         self._log.debug(f"future: {f}")
         f.add_done_callback(partial(self._post_update_order, client_order_id=command.client_order_id))
@@ -281,7 +286,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self.generate_order_rejected(
                 client_order_id=client_order_id,
                 reason=reason,
-                timestamp_ns=self._clock.timestamp_ns(),
+                rejected_ns=self._clock.timestamp_ns(),
             )
             return
         # Check the venue_order_id that has been deleted currently exists on our order
@@ -297,12 +302,17 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=VenueOrderId(instructions["betId"]),
             quantity=Quantity(instructions["instruction"]['limitOrder']["size"], precision=4),
             price=price_to_probability(instructions["instruction"]['limitOrder']["price"]),
-            timestamp_ns=self._clock.timestamp_ns(),
+            updated_ns=self._clock.timestamp_ns(),
             venue_order_id_modified=True,
         )
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         self._log.debug("Received cancel order")
+        self.generate_order_pending_cancel(
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            pending_ns=self._clock.timestamp_ns(),
+        )
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_cancel_to_betfair(command=command, instrument=instrument)
         resp = self._client.betting.cancel_orders(**kw)
@@ -371,7 +381,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             self.generate_order_accepted(
                                 client_order_id=client_order_id,
                                 venue_order_id=venue_order_id,
-                                timestamp_ns=millis_to_nanos(order["pd"]),
+                                accepted_ns=millis_to_nanos(order["pd"]),
                             )
 
                         # Check for any portion executed
@@ -392,11 +402,11 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     is_inverse=False,
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.NONE,
-                                    timestamp_ns=millis_to_nanos(order["md"]),
+                                    execution_ns=millis_to_nanos(order["md"]),
                                 )
                                 self.published_executions[client_order_id].append(execution_id)
 
-                    # Execution complete, this order is fulled match or cancelled
+                    # Execution complete, this order is fulled match or canceled
                     elif order["status"] == "EC":
                         if order["sm"] != 0:
                             execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
@@ -416,20 +426,20 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     # avg_px=order['avp'],
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
-                                    timestamp_ns=millis_to_nanos(order['md']),
+                                    execution_ns=millis_to_nanos(order['md']),
                                 )
                         if any([order[x] != 0 for x in ("sc", "sl", "sv")]):
                             cancel_qty = sum([order[k] for k in ("sc", "sl", "sv")])
-                            assert order['sm'] + cancel_qty == order["s"], f"Size matched + cancelled != total: {order}"
+                            assert order['sm'] + cancel_qty == order["s"], f"Size matched + canceled != total: {order}"
                             # If this is the result of a UpdateOrder, we don't want to emit a cancel
                             key = (ClientOrderId(order.get("rfo")), VenueOrderId(order["id"]))
                             self._log.debug(f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}")
                             if key not in self.pending_update_order_client_ids:
-                                # The remainder of this order has been cancelled
-                                self.generate_order_cancelled(
+                                # The remainder of this order has been canceled
+                                self.generate_order_canceled(
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
-                                    timestamp_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),
+                                    canceled_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),
                                 )
                         # This execution is complete - no need to track this anymore
                         del self.published_executions[client_order_id]

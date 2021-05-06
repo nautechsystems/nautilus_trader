@@ -670,10 +670,6 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
-        if isinstance(event, (OrderCancelRejected, OrderUpdateRejected)):
-            self._handle_order_command_rejected(event)
-            return  # Event will be sent to strategy
-
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self.cache.order(event.client_order_id)

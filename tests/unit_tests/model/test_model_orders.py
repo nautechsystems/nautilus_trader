@@ -678,7 +678,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
 
-    def test_apply_order_cancelled_event(self):
+    def test_apply_order_canceled_event(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -688,16 +688,18 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_pending_cancel(order))
 
         # Act
-        order.apply(TestStubs.event_order_cancelled(order))
+        order.apply(TestStubs.event_order_canceled(order))
 
         # Assert
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        self.assertEqual(OrderState.CANCELED, order.state)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
+        self.assertEqual(5, order.event_count)
 
-    def test_apply_order_amended_event_to_stop_order(self):
+    def test_apply_order_updated_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -708,6 +710,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_pending_replace(order))
 
         updated = OrderUpdated(
             self.account_id,
@@ -730,7 +733,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price("1.00001"), order.price)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(4, order.event_count)
+        self.assertEqual(5, order.event_count)
 
     def test_apply_order_updated_venue_id_change(self):
         # Arrange
@@ -743,6 +746,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_pending_replace(order))
 
         updated = OrderUpdated(
             self.account_id,

@@ -426,7 +426,7 @@ class TestLiveExecutionEngine:
 
         self.loop.run_until_complete(run_test())
 
-    def test_reconcile_state_when_cancelled_reconciles(self):
+    def test_reconcile_state_when_canceled_reconciles(self):
         async def run_test():
             # Arrange
             self.engine.start()
@@ -465,7 +465,7 @@ class TestLiveExecutionEngine:
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
-                order_state=OrderState.CANCELLED,
+                order_state=OrderState.CANCELED,
                 filled_qty=Quantity(0),
                 timestamp_ns=0,
             )

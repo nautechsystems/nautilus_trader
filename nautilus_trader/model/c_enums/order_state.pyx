@@ -30,14 +30,18 @@ cdef class OrderStateParser:
         elif value == 6:
             return "REJECTED"
         elif value == 7:
-            return "CANCELLED"
+            return "CANCELED"
         elif value == 8:
             return "EXPIRED"
         elif value == 9:
             return "TRIGGERED"
         elif value == 10:
-            return "PARTIALLY_FILLED"
+            return "PENDING_CANCEL"
         elif value == 11:
+            return "PENDING_REPLACE"
+        elif value == 12:
+            return "PARTIALLY_FILLED"
+        elif value == 13:
             return "FILLED"
         else:
             raise ValueError(f"value was invalid, was {value}")
@@ -56,12 +60,16 @@ cdef class OrderStateParser:
             return OrderState.ACCEPTED
         elif value == "REJECTED":
             return OrderState.REJECTED
-        elif value == "CANCELLED":
-            return OrderState.CANCELLED
+        elif value == "CANCELED":
+            return OrderState.CANCELED
         elif value == "EXPIRED":
             return OrderState.EXPIRED
         elif value == "TRIGGERED":
             return OrderState.TRIGGERED
+        elif value == "PENDING_CANCEL":
+            return OrderState.PENDING_CANCEL
+        elif value == "PENDING_REPLACE":
+            return OrderState.PENDING_REPLACE
         elif value == "PARTIALLY_FILLED":
             return OrderState.PARTIALLY_FILLED
         elif value == "FILLED":
