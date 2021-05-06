@@ -23,6 +23,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.tick import TradeTick
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.test_kit.strategies import QuotingStrategy
 
 
 @pytest.fixture()
@@ -47,7 +48,7 @@ def test_betfair_backtest(instrument_provider):
     engine = BacktestEngine()
 
     # Filter and add to engine
-    for instrument in instruments:
+    for instrument in instruments[:1]:
         engine.add_instrument(instrument)
 
         ob_data = [
@@ -71,4 +72,6 @@ def test_betfair_backtest(instrument_provider):
         order_book_level=OrderBookLevel.L2,
     )
 
-    engine.run(strategies=[])
+    strategy = QuotingStrategy(instrument_id=instrument.id, trade_size=20)
+
+    engine.run(strategies=[strategy])
