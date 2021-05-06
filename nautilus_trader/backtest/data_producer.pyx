@@ -192,7 +192,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
             # Process trade tick data
             # -----------------------
-            if instrument_id in trade_ticks:
+            if instrument_id in trade_ticks and isinstance(trade_ticks[instrument_id], pd.DataFrame):
                 ts = unix_timestamp()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,

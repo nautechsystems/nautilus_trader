@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import List
 
 import pandas as pd
 import pytz
@@ -43,6 +44,7 @@ from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport GenericData
 
 from nautilus_trader.core.functions import get_size_of  # Not cimport
@@ -64,6 +66,8 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick import TradeTick
+
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
@@ -434,6 +438,46 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {len(data)} {instrument_id} TradeTick data elements.")
 
+    def add_trade_tick_objects(self, InstrumentId instrument_id, data: List[TradeTick]) -> None:
+        """
+        Add the trade tick data to the container.
+
+        The format of the dataframe is expected to be a DateTimeIndex (times are
+        assumed to be UTC, and are converted to tz-aware in pre-processing).
+
+        With index column named 'timestamp', and 'trade_id', 'price', 'quantity',
+        'buyer_maker' data columns.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the trade tick data.
+        data : pd.DataFrame
+            The trade tick data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(data, "data")
+        Condition.type(data, list, "data")
+        Condition.true(len(data), "data was empty")
+
+        # self._added_instrument_ids.add(instrument_id)
+
+        # Add to clients to be constructed in backtest engine
+        # Check client has been registered
+        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+
+        # Add data
+        self._trade_ticks[instrument_id] = data
+        self._trade_ticks = dict(sorted(self._trade_ticks.items()))
+
+        self._log.info(f"Added {len(data)} {instrument_id} TradeTick data elements.")
+
     def add_bars(
         self,
         InstrumentId instrument_id,
@@ -522,6 +566,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
+        OrderBookLevel order_book_level=OrderBookLevel.L1
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -569,6 +614,7 @@ cdef class BacktestEngine:
             modules=modules,
             exec_cache=self._exec_engine.cache,
             fill_model=fill_model,
+            exchange_order_book_level=order_book_level,
             clock=self._test_clock,
             logger=self._test_logger,
         )
@@ -701,7 +747,7 @@ cdef class BacktestEngine:
                 self._data_producer = CachedProducer(self._data_producer)
 
         log_memory(self._log)
-        self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
+        # self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
 
         # Setup start datetime
         if start is None:

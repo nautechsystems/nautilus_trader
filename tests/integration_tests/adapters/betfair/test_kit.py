@@ -9,6 +9,7 @@ import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
@@ -404,11 +405,29 @@ class BetfairTestStubs(TestStubs):
         return [orjson.loads(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
-    def raw_market_updates_instruments():
-        updates = BetfairTestStubs.raw_market_updates()
+    def raw_market_updates_instruments(
+        market="1.166811431", runner1="60424", runner2="237478"
+    ):
+        updates = BetfairTestStubs.raw_market_updates(
+            market=market, runner1=runner1, runner2=runner2
+        )
         market_def = updates[0]["mc"][0]
         instruments = make_instruments(market_def, "AUD")
         return instruments
+
+    @staticmethod
+    def parsed_market_updates(
+        instrument_provider, market="1.166811431", runner1="60424", runner2="237478"
+    ):
+        updates = []
+        for raw in BetfairTestStubs.raw_market_updates(
+            market=market, runner1=runner1, runner2=runner2
+        ):
+            for message in on_market_update(
+                instrument_provider=instrument_provider, update=raw
+            ):
+                updates.append(message)
+        return updates
 
     @staticmethod
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
