@@ -441,8 +441,11 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     venue_order_id=venue_order_id,
                                     canceled_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),
                                 )
-                        # This execution is complete - no need to track this anymore
-                        del self.published_executions[client_order_id]
+                        # Market order will not be in self.published_executions
+                        if client_order_id in self.published_executions:
+                            # This execution is complete - no need to track this anymore
+                            del self.published_executions[client_order_id]
+
                     else:
                         self._log.warning("Unknown order state: {order}")
                         # raise KeyError("Unknown order type", order, None)
