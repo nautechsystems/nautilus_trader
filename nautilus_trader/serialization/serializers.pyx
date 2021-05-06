@@ -638,9 +638,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == AccountState.__name__:
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                [Money(v, Currency.from_str_c(k, force_crypto=True)) for k, v in unpacked[BALANCES].items()],
-                [Money(v, Currency.from_str_c(k, force_crypto=True)) for k, v in unpacked[BALANCES_FREE].items()],
-                [Money(v, Currency.from_str_c(k, force_crypto=True)) for k, v in unpacked[BALANCES_LOCKED].items()],
+                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES].items()],
+                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES_FREE].items()],
+                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES_LOCKED].items()],
                 unpacked[INFO],
                 event_id,
                 timestamp_ns,
@@ -797,7 +797,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 timestamp_ns,
             )
         elif event_type == OrderFilled.__name__:
-            commission_currency = Currency.from_str_c(unpacked[COMMISSION_CURRENCY], force_crypto=True)
+            commission_currency = Currency.from_str_c(unpacked[COMMISSION_CURRENCY])
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
@@ -809,7 +809,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 Quantity(unpacked[LAST_QTY]),
                 Price(unpacked[LAST_PX]),
-                Currency.from_str_c(unpacked[CURRENCY], force_crypto=True),
+                Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
                 Money(unpacked[COMMISSION_AMOUNT], commission_currency),
                 LiquiditySideParser.from_str(unpacked[LIQUIDITY_SIDE]),

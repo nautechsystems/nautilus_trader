@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import unittest
 
 import redis
 
@@ -23,7 +22,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -52,8 +53,8 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # - A Redis instance listening on the default port 6379
 
 
-class RedisExecutionDatabaseTests(unittest.TestCase):
-    def setUp(self):
+class TestRedisExecutionDatabase:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
@@ -77,9 +78,25 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
 
-    def tearDown(self):
+    def teardown(self):
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
+
+    def test_add_currency(self):
+        # Arrange
+        currency = Currency(
+            code="1INCH",
+            precision=8,
+            iso4217=0,
+            name="1INCH",
+            currency_type=CurrencyType.CRYPTO,
+        )
+
+        # Act
+        self.database.add_currency(currency)
+
+        # Assert
+        assert self.database.load_currency(currency.code) == currency
 
     def test_add_account(self):
         # Arrange
@@ -90,7 +107,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_account(account)
 
         # Assert
-        self.assertEqual(account, self.database.load_account(account.id))
+        assert self.database.load_account(account.id) == account
 
     def test_add_order(self):
         # Arrange
@@ -104,7 +121,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_order(order)
 
         # Assert
-        self.assertEqual(order, self.database.load_order(order.client_order_id))
+        assert self.database.load_order(order.client_order_id) == order
 
     def test_add_position(self):
         # Arrange
@@ -130,7 +147,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position)
 
         # Assert
-        self.assertEqual(position, self.database.load_position(position.id))
+        assert self.database.load_position(position.id) == position
 
     def test_update_account(self):
         # Arrange
@@ -142,7 +159,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_account(account)
 
         # Assert
-        self.assertEqual(account, self.database.load_account(account.id))
+        assert self.database.load_account(account.id) == account
 
     def test_update_order_for_working_order(self):
         # Arrange
@@ -164,7 +181,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order)
 
         # Assert
-        self.assertEqual(order, self.database.load_order(order.client_order_id))
+        assert self.database.load_order(order.client_order_id) == order
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -194,7 +211,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order)
 
         # Assert
-        self.assertEqual(order, self.database.load_order(order.client_order_id))
+        assert self.database.load_order(order.client_order_id) == order
 
     def test_update_position_for_closed_position(self):
         # Arrange
@@ -257,7 +274,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_position(position)
 
         # Assert
-        self.assertEqual(position, self.database.load_position(position.id))
+        assert self.database.load_position(position.id) == position
 
     def test_update_strategy(self):
         # Arrange
@@ -269,7 +286,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_strategy(strategy.id)
 
         # Assert
-        self.assertEqual({"UserState": b"1"}, result)
+        assert result == {"UserState": b"1"}
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
@@ -280,7 +297,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_account(account.id)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_load_account_when_account_in_database_returns_account(self):
         # Arrange
@@ -292,7 +309,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_account(account.id)
 
         # Assert
-        self.assertEqual(account, result)
+        assert result == account
 
     def test_load_order_when_no_order_in_database_returns_none(self):
         # Arrange
@@ -306,7 +323,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_order(order.client_order_id)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_load_order_when_market_order_in_database_returns_order(self):
         # Arrange
@@ -322,7 +339,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_order(order.client_order_id)
 
         # Assert
-        self.assertEqual(order, result)
+        assert result == order
 
     def test_load_order_when_limit_order_in_database_returns_order(self):
         # Arrange
@@ -339,7 +356,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_order(order.client_order_id)
 
         # Assert
-        self.assertEqual(order, result)
+        assert result == order
 
     def test_load_order_when_stop_market_order_in_database_returns_order(self):
         # Arrange
@@ -356,7 +373,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_order(order.client_order_id)
 
         # Assert
-        self.assertEqual(order, result)
+        assert result == order
 
     def test_load_order_when_stop_limit_order_in_database_returns_order(self):
         # Arrange
@@ -374,9 +391,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_order(order.client_order_id)
 
         # Assert
-        self.assertEqual(order, result)
-        self.assertEqual(order.price, result.price)
-        self.assertEqual(order.trigger, result.trigger)
+        assert result == order
+        assert result.price == order.price
+        assert result.trigger == order.trigger
 
     def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
@@ -386,7 +403,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_position(position_id)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_load_order_when_position_in_database_returns_position(self):
         # Arrange
@@ -412,8 +429,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Act
         result = self.database.load_position(position_id)
+
         # Assert
-        self.assertEqual(position, result)
+        assert result == position
 
     def test_load_accounts_when_no_accounts_returns_empty_dict(self):
         # Arrange
@@ -421,7 +439,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_accounts()
 
         # Assert
-        self.assertEqual({}, result)
+        assert result == {}
 
     def test_load_accounts_cache_when_one_account_in_database(self):
         # Arrange
@@ -431,7 +449,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual({account.id: account}, self.database.load_accounts())
+        assert self.database.load_accounts() == {account.id: account}
 
     def test_load_orders_cache_when_no_orders(self):
         # Arrange
@@ -439,7 +457,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.load_orders()
 
         # Assert
-        self.assertEqual({}, self.database.load_orders())
+        assert self.database.load_orders() == {}
 
     def test_load_orders_cache_when_one_order_in_database(self):
         # Arrange
@@ -455,7 +473,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_orders()
 
         # Assert
-        self.assertEqual({order.client_order_id: order}, result)
+        assert result == {order.client_order_id: order}
 
     def test_load_positions_cache_when_no_positions(self):
         # Arrange
@@ -463,7 +481,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.load_positions()
 
         # Assert
-        self.assertEqual({}, self.database.load_positions())
+        assert self.database.load_positions() == {}
 
     def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
@@ -495,7 +513,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_positions()
 
         # Assert
-        self.assertEqual({position.id: position}, result)
+        assert result == {position.id: position}
 
     def test_delete_strategy(self):
         # Arrange
@@ -504,7 +522,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         result = self.database.load_strategy(self.strategy.id)
 
         # Assert
-        self.assertEqual({}, result)
+        assert result == {}
 
     def test_flush(self):
         # Arrange
@@ -546,13 +564,13 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.flush()
 
         # Assert
-        self.assertIsNone(self.database.load_order(order1.client_order_id))
-        self.assertIsNone(self.database.load_order(order2.client_order_id))
-        self.assertIsNone(self.database.load_position(position1.id))
+        assert self.database.load_order(order1.client_order_id) is None
+        assert self.database.load_order(order2.client_order_id) is None
+        assert self.database.load_position(position1.id) is None
 
 
-class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
-    def setUp(self):
+class TestExecutionCacheWithRedisDatabaseTests:
+    def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
             bypass_logging=False,  # Uncomment this to see integrity check failure messages
@@ -585,7 +603,7 @@ class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
 
-    def tearDown(self):
+    def teardown(self):
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
 
@@ -608,4 +626,4 @@ class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(self.engine.get_exec_engine().cache.check_integrity())
+        assert self.engine.get_exec_engine().cache.check_integrity()

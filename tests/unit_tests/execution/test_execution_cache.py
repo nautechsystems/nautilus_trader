@@ -23,7 +23,9 @@ from nautilus_trader.execution.cache import ExecutionCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -68,6 +70,14 @@ class ExecutionCacheTests(unittest.TestCase):
         exec_db = BypassExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.cache = ExecutionCache(database=exec_db, logger=logger)
 
+    def test_cache_currencies_with_no_currencies(self):
+        # Arrange
+        # Act
+        self.cache.cache_currencies()
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
     def test_cache_accounts_with_no_accounts(self):
         # Arrange
         # Act
@@ -99,6 +109,22 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(True)  # No exception raised
+
+    def test_add_currency(self):
+        # Arrange
+        currency = Currency(
+            code="1INCH",
+            precision=8,
+            iso4217=0,
+            name="1INCH",
+            currency_type=CurrencyType.CRYPTO,
+        )
+
+        # Act
+        self.cache.add_currency(currency)
+
+        # Assert
+        self.assertEqual(currency, Currency.from_str("1INCH"))
 
     def test_add_account(self):
         # Arrange
