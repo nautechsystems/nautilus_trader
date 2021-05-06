@@ -897,12 +897,15 @@ cdef class BacktestEngine:
                 account_balances_starting = ', '.join([b.to_str() for b in exchange.starting_balances])
                 account_balances_ending = ', '.join([b.to_str() for b in exchange.account_balances.values()])
                 account_commissions = ', '.join([b.to_str() for b in exchange.total_commissions.values()])
+                unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(exchange.id).values()])
                 account_starting_length = len(account_balances_starting)
                 account_balances_ending = pad_string(account_balances_ending, account_starting_length)
                 account_commissions = pad_string(account_commissions, account_starting_length)
+                unrealized_pnls = pad_string(unrealized_pnls, account_starting_length)
                 self._log.info(f"Account balances (starting): {account_balances_starting}")
                 self._log.info(f"Account balances (ending):   {account_balances_ending}")
                 self._log.info(f"Commissions (total):         {account_commissions}")
+                self._log.info(f"Unrealized PnLs:             {unrealized_pnls}")
 
             # Log output diagnostics for all simulation modules
             for module in exchange.modules:
