@@ -16,6 +16,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import OMSType
@@ -23,7 +24,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.tick import TradeTick
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.test_kit.strategies import QuotingStrategy
+from tests.test_kit.strategies import OrderBookImbalanceStrategy
 
 
 @pytest.fixture()
@@ -45,7 +46,7 @@ def test_betfair_backtest(instrument_provider):
     all_data = BetfairTestStubs.parsed_market_updates(instrument_provider)
 
     # Create engine
-    engine = BacktestEngine()
+    engine = BacktestEngine(level_stdout=LogLevel.ERROR)
 
     # Filter and add to engine
     for instrument in instruments[:1]:
@@ -72,6 +73,6 @@ def test_betfair_backtest(instrument_provider):
         order_book_level=OrderBookLevel.L2,
     )
 
-    strategy = QuotingStrategy(instrument_id=instrument.id, trade_size=20)
+    strategy = OrderBookImbalanceStrategy(instrument_id=instrument.id, trade_size=20)
 
     engine.run(strategies=[strategy])

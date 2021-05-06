@@ -369,7 +369,6 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             The order book received.
 
         """
-        print(order_book)
         bid_qty = order_book.best_bid_qty()
         ask_qty = order_book.best_ask_qty()
         if bid_qty and ask_qty:
