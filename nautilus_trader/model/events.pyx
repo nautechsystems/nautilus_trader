@@ -1052,13 +1052,10 @@ cdef class OrderFilled(OrderEvent):
             If venue_order_id has a 'NULL' value.
         ValueError
             If last_qty is not positive (> 0).
-        ValueError
-            If last_price is not positive (> 0).
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         Condition.positive(last_qty, "last_qty")
-        Condition.positive(last_px, "last_px")
         if info is None:
             info = {}
         super().__init__(
