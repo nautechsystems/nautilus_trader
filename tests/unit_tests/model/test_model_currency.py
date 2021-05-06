@@ -107,12 +107,20 @@ class TestCurrency:
         [["AUD", AUD], ["GBP", GBP], ["BTC", BTC], ["ETH", ETH]],
     )
     def test_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = Currency.from_str(string)
 
         # Assert
         assert result == expected
+
+    def test_from_str_force_crypto_returns_crypto(self):
+        # Arrange, Act
+        result = Currency.from_str("SHITCOIN", force_crypto=True)
+
+        # Assert
+        assert result.currency_type == CurrencyType.CRYPTO
+        assert result.precision == 8
+        assert result.name == "SHITCOIN"
 
     @pytest.mark.parametrize(
         "string, expected",

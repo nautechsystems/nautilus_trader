@@ -29,7 +29,7 @@ cdef class Currency:
     """The currency type (FIAT or CRYPTO).\n\n:returns: `CurrencyType`"""
 
     @staticmethod
-    cdef Currency from_str_c(str code)
+    cdef Currency from_str_c(str code, bint force_crypto=*)
 
     @staticmethod
     cdef bint is_fiat_c(str code)
