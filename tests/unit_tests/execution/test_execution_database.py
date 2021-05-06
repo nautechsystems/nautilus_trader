@@ -51,6 +51,9 @@ class ExecutionDatabaseTests(unittest.TestCase):
     def test_flush_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.database.flush)
 
+    def test_load_currencies_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.database.load_currencies)
+
     def test_load_accounts_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.database.load_accounts)
 
@@ -59,6 +62,9 @@ class ExecutionDatabaseTests(unittest.TestCase):
 
     def test_load_positions_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.database.load_positions)
+
+    def test_load_currency_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.database.load_currency, None)
 
     def test_load_account_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.database.load_account, None)
@@ -116,6 +122,9 @@ class BypassExecutionDatabaseTests(unittest.TestCase):
         self.database = BypassExecutionDatabase(
             trader_id=self.trader_id, logger=self.logger
         )
+
+    def test_load_currency_returns_none(self):
+        self.assertIsNone(self.database.load_currency(None))
 
     def test_load_account_returns_none(self):
         self.assertIsNone(self.database.load_account(None))

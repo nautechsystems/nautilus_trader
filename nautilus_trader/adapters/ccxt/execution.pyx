@@ -166,6 +166,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log_ccxt_error(ex, self._connect.__name__)
             return
 
+        # Add currencies to cache
+        for currency in self._instrument_provider.currencies().values():
+            self._engine.cache.add_currency(currency)
+
         # Start streams
         self._watch_balances_task = self._loop.create_task(self._watch_balances())
         self._watch_orders_task = self._loop.create_task(self._watch_orders())
