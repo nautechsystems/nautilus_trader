@@ -98,9 +98,6 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
 
-# Valid states to update an order in
-cdef (int, int) _UPDATABLE_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)  # noqa
-
 
 cdef class Order:
     """
@@ -512,11 +509,14 @@ cdef class Order:
             self._rollback_state = <OrderState>self._fsm.state
             self._fsm.trigger(OrderState.PENDING_CANCEL)
         elif isinstance(event, OrderUpdateRejected):
-            self._fsm.trigger(self._rollback_state)
+            if self._fsm.state == OrderState.PENDING_REPLACE:
+                self._fsm.trigger(self._rollback_state)
         elif isinstance(event, OrderCancelRejected):
-            self._fsm.trigger(self._rollback_state)
+            if self._fsm.state == OrderState.PENDING_CANCEL:
+                self._fsm.trigger(self._rollback_state)
         elif isinstance(event, OrderUpdated):
-            self._fsm.trigger(self._rollback_state)
+            if self._fsm.state == OrderState.PENDING_REPLACE:
+                self._fsm.trigger(self._rollback_state)
             self._updated(event)
         elif isinstance(event, OrderCanceled):
             self._fsm.trigger(OrderState.CANCELED)
