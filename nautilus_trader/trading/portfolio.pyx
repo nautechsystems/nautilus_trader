@@ -457,7 +457,7 @@ cdef class Portfolio(PortfolioFacade):
             # Calculate PnL
             pnl = self._calculate_unrealized_pnl(instrument_id)
             if pnl is None:
-                return None  # Error already logged in `_calculate_unrealized_pnl`
+                continue  # Error logged in `_calculate_unrealized_pnl`
             unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
 
         return {k: Money(v, k) for k, v in unrealized_pnls.items()}
