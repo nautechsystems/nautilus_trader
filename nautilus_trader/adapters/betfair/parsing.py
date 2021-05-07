@@ -29,6 +29,8 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
+from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
 from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
@@ -69,10 +71,31 @@ from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.tick import TradeTick
 
 
 uuid_factory = UUIDFactory()
+
+
+def make_custom_order_ref(client_order_id, strategy_id):
+    return client_order_id.value.rsplit("-" + strategy_id.tag.value, maxsplit=1)[0]
+
+
+def determine_order_price(order: Order):
+    """
+    Determine the correct price to send for a given order. Betfair doesn't support market orders, so if this order is a
+    MarketOrder, we generate a MIN/MAX price based on the side
+    :param order:
+    :return:
+    """
+    if isinstance(order, LimitOrder):
+        return order.price
+    elif isinstance(order, MarketOrder):
+        if order.side == OrderSide.BUY:
+            return MAX_BET_PROB
+        else:
+            return MIN_BET_PROB
 
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
@@ -80,7 +103,9 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
     Convert a SubmitOrder command into the data required by betfairlightweight
     """
 
-    order = command.order  # type: LimitOrder
+    order = command.order  # type Order
+    price = determine_order_price(order)
+
     return {
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
@@ -97,7 +122,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 limit_order=limit_order(
                     size=float(order.quantity),
                     price=float(
-                        probability_to_price(probability=order.price, side=order.side)
+                        probability_to_price(probability=price, side=order.side)
                     ),
                     persistence_type="PERSIST",
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
@@ -105,9 +130,10 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 ),
                 # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
                 # length the strategy might be or what characters users might append
-                customer_order_ref=order.client_order_id.value.rsplit(
-                    "-" + command.strategy_id.value, maxsplit=1
-                )[0],
+                customer_order_ref=make_custom_order_ref(
+                    client_order_id=order.client_order_id,
+                    strategy_id=command.strategy_id,
+                ),
             )
         ],
     }
@@ -174,6 +200,10 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
     # Check we only have one of [best bets / depth bets / all bets]
     bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
     ask_keys = [k for k in B_ASK_KINDS if k in selection] or ["atl"]
+    if set(bid_keys) == {"batb", "atb"}:
+        bid_keys = ["atb"]
+    if set(ask_keys) == {"batl", "atl"}:
+        ask_keys = ["atl"]
     assert len(bid_keys) <= 1
     assert len(ask_keys) <= 1
 
@@ -332,7 +362,7 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
             handicap=str(runner.get("hc") or "0.0"),
         )
         instrument = instrument_provider.get_betting_instrument(**kw)
-        if not instrument:
+        if instrument is None:
             continue
         updates.extend(
             _handle_instrument_status(
@@ -376,6 +406,8 @@ def build_market_snapshot_messages(
                         handicap=str(handicap or "0.0"),
                     )
                     instrument = instrument_provider.get_betting_instrument(**kw)
+                    if instrument is None:
+                        continue
                     updates.extend(
                         _handle_market_snapshot(
                             selection=selection,
@@ -427,7 +459,7 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
                 handicap=str(runner.get("hc") or "0.0"),
             )
             instrument = instrument_provider.get_betting_instrument(**kw)
-            if not instrument:
+            if instrument is None:
                 continue
             # Delay appending book updates until we can merge at the end
             book_updates.extend(

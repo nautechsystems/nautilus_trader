@@ -19,14 +19,17 @@ import json
 import os
 from typing import List
 
+import pandas as pd
 from pandas import DataFrame
 
+from nautilus_trader.adapters.betfair.data import BETFAIR_VENUE
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.loaders import ParquetTickDataLoader
 from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
 from nautilus_trader.backtest.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.c_enums.asset_class import AssetClass
 from nautilus_trader.model.c_enums.asset_type import AssetType
 from nautilus_trader.model.currencies import BTC
@@ -37,12 +40,14 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.tick import TradeTick
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -130,8 +135,20 @@ class TestDataProvider:
                 # return {'timestamp': d['remote_timestamp'], "close_price": d['close_price']}
                 return {}
             if "trade" in d:
-                return {}
-                # data = TradeTick()
+                return {
+                    "timestamp": d["remote_timestamp"],
+                    "op": "trade",
+                    "trade": TradeTick(
+                        instrument_id=InstrumentId(Symbol("TEST"), BETFAIR_VENUE),
+                        price=Price(d["trade"]["price"], 4),
+                        size=Quantity(d["trade"]["volume"], 4),
+                        aggressor_side=d["trade"]["side"],
+                        match_id=TradeMatchId(d["trade"]["trade_id"]),
+                        timestamp_ns=millis_to_nanos(
+                            pd.Timestamp(d["remote_timestamp"]).timestamp()
+                        ),
+                    ),
+                }
             elif "level" in d and d["level"]["orders"][0]["volume"] == 0:
                 op = "delete"
             else:
@@ -207,6 +224,14 @@ class TestDataProvider:
             bz2.open(str(f)).read().strip().split(b"\n")
             for f in TestDataProvider.betfair_files()
             if market_id in str(f)
+        ]
+
+    @staticmethod
+    def betfair_trade_ticks():
+        return [
+            msg["trade"]
+            for msg in TestDataProvider.l2_feed()
+            if msg.get("op") == "trade"
         ]
 
 
