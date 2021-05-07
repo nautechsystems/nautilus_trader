@@ -92,6 +92,7 @@ cdef class SimulatedExchange:
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
+    cdef dict _net_position_ids
     cdef dict _books
     cdef dict _instrument_orders
     cdef dict _working_orders
@@ -142,7 +143,7 @@ cdef class SimulatedExchange:
     cdef inline void _cancel_order(self, PassiveOrder order) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
 
-    cdef inline void _generate_account_event(self) except *
+    cdef inline void _generate_account_state(self) except *
     cdef inline void _generate_order_submitted(self, Order order) except *
     cdef inline void _generate_order_rejected(self, Order order, str reason) except *
     cdef inline void _generate_order_accepted(self, Order order) except *

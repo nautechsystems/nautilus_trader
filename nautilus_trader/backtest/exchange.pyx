@@ -169,6 +169,7 @@ cdef class SimulatedExchange:
             self._instrument_indexer[instrument.id] = index
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
+        self._net_position_ids = {}     # type: dict[InstrumentId, PositionId]
         self._books = {}                # type: dict[InstrumentId, OrderBook]
         self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
         self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
@@ -330,7 +331,7 @@ cdef class SimulatedExchange:
         Condition.not_none(client, "client")
 
         self.exec_client = client
-        self._generate_account_event()
+        self._generate_account_state()
 
         self._log.info(f"Registered {client}.")
 
@@ -365,9 +366,10 @@ cdef class SimulatedExchange:
 
         balance = self.account_balances[adjustment.currency]
         self.account_balances[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
+        self.account_balances_free[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
 
         # Generate and handle event
-        self._generate_account_event()
+        self._generate_account_state()
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -460,8 +462,9 @@ cdef class SimulatedExchange:
         self.account_balances_locked = {b.currency: Money(0, b.currency) for b in self.starting_balances}
         self.total_commissions = {}
 
-        self._generate_account_event()
+        self._generate_account_state()
 
+        self._net_position_ids.clear()
         self._books.clear()
         self._instrument_orders.clear()
         self._working_orders.clear()
@@ -621,7 +624,7 @@ cdef class SimulatedExchange:
             self._check_oco_order(order.client_order_id)
         self._clean_up_child_orders(order.client_order_id)
 
-    cdef inline void _generate_account_event(self) except *:
+    cdef inline void _generate_account_state(self) except *:
         cdef dict info
         if self.default_currency is None:
             info = {}
@@ -1126,18 +1129,19 @@ cdef class SimulatedExchange:
 
         # Determine position (do not reorder below `generate_order_filled`) as
         # this will change the logic of the `position_id`.
-        cdef PositionId position_id = None
-        if self.oms_type == OMSType.NETTING:
-            position_id = PositionId.null_c()
-        elif self.oms_type == OMSType.HEDGING:
-            position_id = self.exec_cache.position_id(order.client_order_id)
-            if position_id is None:
-                # Set the filled position identifier
-                position_id = self._generate_position_id(order.instrument_id)
+        cdef PositionId position_id = order.position_id
+        if position_id.is_null():
+            if self.oms_type == OMSType.NETTING:
+                # Fetch any cached netted position_id
+                position_id = self._net_position_ids.get(order.instrument_id, PositionId.null_c())
+            elif self.oms_type == OMSType.HEDGING:
+                position_id = self.exec_cache.position_id(order.client_order_id)
+                if position_id is None:
+                    # Generate a position identifier
+                    position_id = self._generate_position_id(order.instrument_id)
 
-        cdef Position position = None
-        if position_id.not_null():
-            position = self.exec_cache.position(position_id)
+        cdef Position position = self.exec_cache.position(position_id) if position_id.not_null() else None
+        # *** position could be None here ***
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
@@ -1147,7 +1151,7 @@ cdef class SimulatedExchange:
             liquidity_side=liquidity_side,
         )
 
-        # Calculate potential PnL
+        # Calculate potential PnL (do not reorder below `generate_order_filled`)
         cdef Money pnl = None
         if position and position.entry != order.side:
             # Calculate PnL
@@ -1174,6 +1178,12 @@ cdef class SimulatedExchange:
             execution_ns=self._clock.timestamp_ns(),
         )
 
+        if self.oms_type == OMSType.NETTING and position:
+            if position.is_closed_c():
+                self._net_position_ids[position.instrument_id] = PositionId.null_c()
+            else:
+                self._net_position_ids[position.instrument_id] = position.id
+
         self._check_oco_order(order.client_order_id)
 
         # Work any bracket child orders
@@ -1197,7 +1207,7 @@ cdef class SimulatedExchange:
         cdef Currency currency  # Settlement currency
         if self.default_currency:  # Single-asset account
             currency = self.default_currency
-            if pnl is None:
+            if not pnl:
                 pnl = Money(0, currency)
 
             if commission.currency != currency:
@@ -1216,7 +1226,7 @@ cdef class SimulatedExchange:
             pnl = Money(pnl - commission, self.default_currency)
         else:
             currency = instrument.settlement_currency
-            if pnl is None:
+            if not pnl:
                 pnl = commission
 
         # Increment total commissions

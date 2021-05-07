@@ -1095,6 +1095,38 @@ cdef class OrderFilled(OrderEvent):
                 f"commission={self.commission.to_str()}, "
                 f"event_id={self.id})")
 
+    cdef bint is_buy_c(self) except *:
+        return self.order_side == OrderSide.BUY
+
+    cdef bint is_sell_c(self) except *:
+        return self.order_side == OrderSide.SELL
+
+    @property
+    def is_buy(self):
+        """
+        If the fill order side is BUY.
+
+        Returns
+        -------
+        bool
+            True if BUY, else False.
+
+        """
+        return self.is_buy_c()
+
+    @property
+    def is_sell(self):
+        """
+        If the fill order side is SELL.
+
+        Returns
+        -------
+        bool
+            True if SELL, else False.
+
+        """
+        return self.is_sell_c()
+
 
 cdef class PositionEvent(Event):
     """
@@ -1168,6 +1200,7 @@ cdef class PositionOpened(PositionEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
+                f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
@@ -1214,6 +1247,7 @@ cdef class PositionChanged(PositionEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
+                f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
@@ -1264,6 +1298,7 @@ cdef class PositionClosed(PositionEvent):
     def __repr__(self) -> str:
         cdef str duration = str(self.position.open_duration_ns).replace("0 days ", "", 1)
         return (f"{type(self).__name__}("
+                f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "

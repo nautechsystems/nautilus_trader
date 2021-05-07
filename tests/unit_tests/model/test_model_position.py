@@ -103,6 +103,7 @@ class PositionTests(unittest.TestCase):
         # Assert
         assert position.symbol == AUDUSD_SIM.id.symbol
         assert position.venue == AUDUSD_SIM.id.venue
+        assert not position.is_opposite_side(fill.order_side)
         self.assertFalse(position != position)  # Equality operator test
         self.assertEqual(
             ClientOrderId("O-19700101-000000-000-001-1"), position.from_order
@@ -337,6 +338,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill2)
 
         # Assert
+        assert position.is_opposite_side(fill2.order_side)
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(1_000_000_000, position.opened_timestamp_ns)

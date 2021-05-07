@@ -206,6 +206,9 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 
+    cdef bint is_buy_c(self) except *
+    cdef bint is_sell_c(self) except *
+
 
 cdef class PositionEvent(Event):
     cdef readonly Position position

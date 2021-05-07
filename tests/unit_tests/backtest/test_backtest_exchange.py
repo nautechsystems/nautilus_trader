@@ -1240,6 +1240,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price("96.711"), order.avg_px)
+        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
         # Arrange: Prepare market
@@ -1404,6 +1405,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.001"), order.avg_px)
+        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
 
     def test_process_quote_tick_fills_sell_stop_order(self):
         # Arrange: Prepare market
@@ -1440,6 +1442,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.000"), order.avg_px)
+        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
 
     def test_process_quote_tick_fills_sell_limit_order(self):
         # Arrange: Prepare market
@@ -1476,6 +1479,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("90.101"), order.avg_px)
+        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
 
     def test_process_quote_tick_fills_buy_limit_entry_with_bracket(self):
         # Arrange: Prepare market
@@ -1520,6 +1524,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, bracket.take_profit.state)
         self.assertEqual(2, len(self.exchange.get_working_orders()))
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
+        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
 
     def test_process_quote_tick_fills_sell_limit_entry_with_bracket(self):
         # Arrange: Prepare market
@@ -1840,6 +1845,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Quantity(50000), position_open.quantity)
         self.assertEqual(Money(999619.98, JPY), position_closed.realized_pnl)
         self.assertEqual([Money(380.02, JPY)], position_closed.commissions())
+        self.assertEqual(Money(1014994.55, USD), self.exchange.account_balances[USD])
 
 
 class BitmexExchangeTests(unittest.TestCase):
@@ -2097,6 +2103,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Decimal("2000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.33333333333333333333333333"), order.avg_px)
+        self.assertEqual(Money(999999.86, USD), self.exchange.account_balances[USD])
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
@@ -2120,6 +2127,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
         self.assertEqual(Quantity("6000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.93333333333333333333333333"), order.avg_px)
+        self.assertEqual(Money(999999.61, USD), self.exchange.account_balances[USD])
 
     def test_passive_post_only_insert(self):
         # Arrange: Prepare market
