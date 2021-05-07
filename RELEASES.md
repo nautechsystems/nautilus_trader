@@ -19,6 +19,9 @@ for `OrderFill` events, as well as additional order states and events.
 - Added `OrderState.PENDING_REPLACE`.
 - Added `OrderPendingReplace` event.
 - Added `OrderPendingCancel` event.
+- Added `OrderFilled.is_buy` property (with corresponding `is_buy_c()` fast method).
+- Added `OrderFilled.is_sell` property (with corresponding `is_sell_c()` fast method).
+- Added `Position.is_opposite_side(OrderSide side)` convenience method.
 - Modified the `Order` FSM and event handling for the above.
 - Re-engineered `BacktestEngine` to take data directly.
 - Simplified `CCXTExecutionClient` by removing redundant 'hot cache'.
@@ -26,6 +29,8 @@ for `OrderFill` events, as well as additional order states and events.
 - Refactored `SimulatedExchange` for greater clarity.
 
 ## Fixes
+- Exchange accounting for exchange `OMSType.NETTING`.
+- Position flipping logic for exchange `OMSType.NETTING`.
 - Multi-currency account terminology.
 - Windows wheel packaging.
 - Windows path errors.
