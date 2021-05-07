@@ -592,7 +592,7 @@ cdef class BettingInstrument(Instrument):
             settlement_currency=Currency.from_str_c(currency),
             is_inverse=False,
             price_precision=5,
-            size_precision=1,
+            size_precision=4,
             tick_size=Decimal(1),
             multiplier=Decimal(1),
             lot_size=Quantity(1),

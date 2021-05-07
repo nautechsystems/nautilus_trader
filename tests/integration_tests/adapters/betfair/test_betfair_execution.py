@@ -85,11 +85,12 @@ async def test_submit_order(mocker, execution_client, exec_engine):
                     "size": 10.0,
                     "minFillSize": 0,
                 },
-                "customerOrderRef": "O-20210410-022422-001-001",
+                "customerOrderRef": "O-20210410-022422-001-001-Test",
             }
         ],
     }
-    mock_place_orders.assert_called_with(**expected)
+    result = mock_place_orders.call_args[1]
+    assert result == expected
 
 
 @pytest.mark.asyncio

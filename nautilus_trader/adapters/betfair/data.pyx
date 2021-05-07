@@ -145,8 +145,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Connected.")
 
     async def _post_connect_heartbeat(self):
-        await asyncio.sleep(5)
-        await self._stream.send(orjson.dumps({'op': 'heartbeat'}))
+        for _ in range(3):
+            await asyncio.sleep(5)
+            await self._stream.send(orjson.dumps({'op': 'heartbeat'}))
 
     cpdef void disconnect(self) except *:
         """ Disconnect the client """
