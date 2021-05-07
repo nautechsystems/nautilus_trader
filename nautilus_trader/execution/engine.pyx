@@ -32,6 +32,8 @@ just need to override the `execute` and `process` methods.
 
 from libc.stdint cimport int64_t
 
+from decimal import Decimal
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
@@ -727,7 +729,8 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *:
         if fill.strategy_id.not_null():
-            return  # Already assigned to fill
+            # Already assigned to fill
+            return
 
         # Fetch identifier from cache
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.client_order_id)
@@ -746,7 +749,8 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _confirm_position_id(self, OrderFilled fill) except *:
         if fill.position_id.not_null():
-            return  # Already assigned to fill
+            # Already assigned to fill
+            return
 
         # Fetch identifier from cache
         cdef PositionId position_id = self.cache.position_id(fill.client_order_id)
@@ -760,12 +764,9 @@ cdef class ExecutionEngine(Component):
         if not positions_open:
             # Assign new identifier to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
-        elif len(positions_open) == 1:
+        else:
             # Assign existing identifier to fill
             fill.position_id = positions_open[0].id
-        else:
-            self._log.error(f"Cannot assign PositionId: "
-                            f"{len(positions_open)} open positions")
 
     cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.client_order_id))
@@ -786,7 +787,7 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
-        if fill.order_side != position.entry and fill.last_qty > position.quantity:
+        if position.is_opposite_side(fill.order_side) and 0 < position.quantity < fill.last_qty:
             self._flip_position(position, fill)
             return  # Handled in flip
 
@@ -809,35 +810,36 @@ cdef class ExecutionEngine(Component):
         self.process(position_event)
 
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
-        cdef Quantity difference
+        cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity)
         else:  # position.side == PositionSide.SHORT:
             difference = Quantity(abs(position.quantity - fill.last_qty))
 
         # Split commission between two positions
-        fill_percent1 = position.quantity / fill.last_qty
-        fill_percent2 = 1 - fill_percent1  # Subtract from an integer to return a Decimal
+        fill_percent1: Decimal = position.quantity / fill.last_qty
+        fill_percent2: Decimal = Decimal(1) - fill_percent1
 
+        cdef OrderFilled fill_split1 = None
         # Split fill to close original position
-        cdef OrderFilled fill_split1 = OrderFilled(
-            fill.account_id,
-            fill.client_order_id,
-            fill.venue_order_id,
-            fill.execution_id,
-            fill.position_id,
-            fill.strategy_id,
-            fill.instrument_id,
-            fill.order_side,
-            position.quantity,                       # Fill original position quantity remaining
-            fill.last_px,
-            fill.currency,
-            fill.is_inverse,
-            Money(fill.commission * fill_percent1, fill.commission.currency),
-            fill.liquidity_side,
-            fill.execution_ns,
-            fill.id,
-            fill.timestamp_ns,
+        fill_split1 = OrderFilled(
+            account_id=fill.account_id,
+            client_order_id=fill.client_order_id,
+            venue_order_id=fill.venue_order_id,
+            execution_id=fill.execution_id,
+            position_id=fill.position_id,
+            strategy_id=fill.strategy_id,
+            instrument_id=fill.instrument_id,
+            order_side=fill.order_side,
+            last_qty=position.quantity,  # Fill original position quantity remaining
+            last_px=fill.last_px,
+            currency=fill.currency,
+            is_inverse=fill.is_inverse,
+            commission=Money(fill.commission * fill_percent1, fill.commission.currency),
+            liquidity_side=fill.liquidity_side,
+            execution_ns=fill.execution_ns,
+            event_id=fill.id,
+            timestamp_ns=fill.timestamp_ns,
         )
 
         # Close original position
@@ -845,7 +847,7 @@ cdef class ExecutionEngine(Component):
         self.cache.update_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
-        self.process(self._pos_closed_event(position, fill))
+        self.process(self._pos_closed_event(position, fill_split1))
 
         # Generate position identifier for flipped position
         cdef PositionId position_id_flip = self._pos_id_generator.generate(
@@ -855,23 +857,23 @@ cdef class ExecutionEngine(Component):
 
         # Split fill to open flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
-            fill.account_id,
-            ClientOrderId(f"{fill.client_order_id.value}F"),
-            fill.venue_order_id,
-            fill.execution_id,
-            position_id_flip,
-            fill.strategy_id,
-            fill.instrument_id,
-            fill.order_side,
-            difference,  # Fill difference from original as above
-            fill.last_px,
-            fill.currency,
-            fill.is_inverse,
-            Money(fill.commission * fill_percent2, fill.commission.currency),
-            fill.liquidity_side,
-            fill.execution_ns,
-            self._uuid_factory.generate(),  # New event identifier
-            fill.timestamp_ns,
+            account_id=fill.account_id,
+            client_order_id=ClientOrderId(f"{fill.client_order_id.value}F"),
+            venue_order_id=fill.venue_order_id,
+            execution_id=fill.execution_id,
+            position_id=position_id_flip,
+            strategy_id=fill.strategy_id,
+            instrument_id=fill.instrument_id,
+            order_side=fill.order_side,
+            last_qty=difference,  # Fill difference from original as above
+            last_px=fill.last_px,
+            currency=fill.currency,
+            is_inverse=fill.is_inverse,
+            commission=Money(fill.commission * fill_percent2, fill.commission.currency),
+            liquidity_side=fill.liquidity_side,
+            execution_ns=fill.execution_ns,
+            event_id=self._uuid_factory.generate(),  # New event identifier
+            timestamp_ns=fill.timestamp_ns,
         )
 
         cdef Position position_flip = Position(fill=fill_split2)
