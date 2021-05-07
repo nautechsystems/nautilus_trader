@@ -237,6 +237,17 @@ class TestBacktestEngineData:
         # assert ETHUSDT_BINANCE.id in data.trade_ticks
         # assert len(data.trade_ticks[ETHUSDT_BINANCE.id]) == 69806
 
+    def test_add_trade_tick_objects_adds_to_container(self):
+        # Arrange
+        engine = BacktestEngine()
+        engine.add_instrument(ETHUSDT_BINANCE)
+
+        # Act
+        engine.add_trade_tick_objects(
+            instrument_id=ETHUSDT_BINANCE.id,
+            data=TestDataProvider.betfair_trade_ticks(),
+        )
+
     def test_add_bars_adds_to_container(self):
         # Arrange
         engine = BacktestEngine()

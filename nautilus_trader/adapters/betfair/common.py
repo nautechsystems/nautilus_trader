@@ -42,6 +42,7 @@ N2B_SIDE = {
 N2B_TIME_IN_FORCE = {
     TimeInForce.GTC: None,
     TimeInForce.FOK: "FILL_OR_KILL",
+    TimeInForce.FAK: "FILL_OR_KILL",
 }
 
 B2N_MARKET_STREAM_SIDE = {
@@ -107,6 +108,9 @@ inverse_price_map = {p: invert_price(p / 100) for p in price_probability_map}
 all_probabilities = np.asarray(sorted(map(float, probability_price_map)))
 
 all_prices = np.asarray(np.asarray(list(price_probability_map)) / 100.0)
+
+MAX_BET_PROB = Price(max(price_probability_map.values()), 5)
+MIN_BET_PROB = Price(min(price_probability_map.values()), 5)
 
 
 def round_probability(probability, side):
