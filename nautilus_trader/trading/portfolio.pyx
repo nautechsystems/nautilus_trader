@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `Portfolio` components facilitate the management of trading operations.
+The `Portfolio` facilitate the management of trading operations.
 
 The intended use case is for a single `Portfolio` instance per running system,
 a fleet of trading strategies will organize around a portfolio with the help
@@ -519,7 +519,8 @@ cdef class Portfolio(PortfolioFacade):
                 return None  # Cannot calculate
 
             market_value = market_values.get(instrument.settlement_currency, Decimal(0))
-            market_value += instrument.market_value(
+            market_value += Account.market_value(
+                instrument,
                 position.quantity,
                 last,
             ) * xrate
@@ -615,7 +616,8 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{instrument.settlement_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
-            market_value += instrument.market_value(
+            market_value += Account.market_value(
+                instrument,
                 position.quantity,
                 last,
             ) * xrate
@@ -794,7 +796,8 @@ cdef class Portfolio(PortfolioFacade):
                 continue  # Cannot calculate
 
             # Calculate margin
-            margin = instrument.calculate_initial_margin(
+            margin = Account.calculate_initial_margin(
+                instrument,
                 order.quantity,
                 order.price,
             )
@@ -859,7 +862,8 @@ cdef class Portfolio(PortfolioFacade):
                 continue  # Cannot calculate
 
             # Calculate margin
-            margin = instrument.calculate_maint_margin(
+            margin = Account.calculate_maint_margin(
+                instrument,
                 position.side,
                 position.quantity,
                 last,

@@ -760,13 +760,17 @@ cdef class ExecutionEngine(Component):
             return
 
         # Check for open positions
-        positions_open = self.cache.positions_open(instrument_id=fill.instrument_id)
+        cdef list positions_open = self.cache.positions_open(instrument_id=fill.instrument_id)
         if not positions_open:
             # Assign new identifier to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
-        else:
-            # Assign existing identifier to fill
-            fill.position_id = positions_open[0].id
+            return
+
+        # Invariant (design-time)
+        assert len(positions_open) == 1, "more than one position for unassigned position_id"
+
+        # Assign existing positions identifier to fill
+        fill.position_id = positions_open[0].id
 
     cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.client_order_id))
@@ -787,7 +791,7 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
-        if position.is_opposite_side(fill.order_side) and 0 < position.quantity < fill.last_qty:
+        if position.is_opposite_side(fill.order_side) and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
             return  # Handled in flip
 
@@ -843,11 +847,7 @@ cdef class ExecutionEngine(Component):
         )
 
         # Close original position
-        position.apply(fill_split1)
-        self.cache.update_position(position)
-
-        self._send_to_strategy(fill, fill.strategy_id)
-        self.process(self._pos_closed_event(position, fill_split1))
+        self._update_position(position, fill_split1)
 
         # Generate position identifier for flipped position
         cdef PositionId position_id_flip = self._pos_id_generator.generate(
@@ -855,7 +855,7 @@ cdef class ExecutionEngine(Component):
             flipped=True,
         )
 
-        # Split fill to open flipped position
+        # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
             account_id=fill.account_id,
             client_order_id=ClientOrderId(f"{fill.client_order_id.value}F"),
@@ -876,9 +876,8 @@ cdef class ExecutionEngine(Component):
             timestamp_ns=fill.timestamp_ns,
         )
 
-        cdef Position position_flip = Position(fill=fill_split2)
-        self.cache.add_position(position_flip)
-        self.process(self._pos_opened_event(position_flip, fill_split2))
+        # Open flipped position
+        self._handle_order_fill(fill_split2)
 
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
         return PositionOpened(

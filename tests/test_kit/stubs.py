@@ -64,6 +64,7 @@ from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -389,7 +390,8 @@ class TestStubs:
         if last_qty is None:
             last_qty = order.quantity
 
-        commission = instrument.calculate_commission(
+        commission = Account.calculate_commission(
+            instrument=instrument,
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,
