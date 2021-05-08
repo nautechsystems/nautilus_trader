@@ -1423,7 +1423,7 @@ cdef class TradingStrategy(Component):
 
         References
         ----------
-        https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
+        https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
         Condition.not_none(order, "order")

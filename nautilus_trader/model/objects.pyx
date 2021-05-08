@@ -295,7 +295,7 @@ cdef class Quantity(BaseDecimal):
 
     References
     ----------
-    https://www.onixs.biz/fix-dictionary/5.0/index.html#Qty
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
 
     """
 
@@ -360,7 +360,7 @@ cdef class Price(BaseDecimal):
 
     References
     ----------
-    https://www.onixs.biz/fix-dictionary/5.0/index.html#Qty
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
 
     """
 
