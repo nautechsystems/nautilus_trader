@@ -15,15 +15,15 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.model.identifiers cimport BracketOrderId
+from nautilus_trader.model.identifiers cimport ClientOrderLinkId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 
 
 cdef class BracketOrder:
-    cdef readonly BracketOrderId id
-    """The bracket order identifier.\n\n:returns: `BracketOrderId`"""
+    cdef readonly ClientOrderLinkId id
+    """The client order link identifier.\n\n:returns: `ClientOrderLinkId`"""
     cdef readonly Order entry
     """The entry order.\n\n:returns: `Order`"""
     cdef readonly StopMarketOrder stop_loss
