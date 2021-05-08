@@ -27,6 +27,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # TODO: Temporary test of powershell commands
+      - name: Set output (Windows)
+        if: runner.os == 'Windows'
+        id: vars
+        run: |
+          echo "::set-output name=asset_path::$(Get-ChildItem scripts | Select-Object -ExpandProperty FullName)"
+          echo "::set-output name=asset_name::$(Get-ChildItem scripts | Select-Object -ExpandProperty Name)"
+
       # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel poetry nox
