@@ -618,6 +618,65 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertEqual(1, self.cache.positions_closed_count())
         self.assertEqual(1, self.cache.positions_total_count())
 
+    def test_positions_queries_with_multiple_positions_returns_expected_positions(self):
+        # Arrange
+        # -- Position 1 --------------------------------------------------------
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order1, position_id)
+        order1.apply(TestStubs.event_order_submitted(order1))
+        self.cache.update_order(order1)
+
+        order1.apply(TestStubs.event_order_accepted(order1))
+        self.cache.update_order(order1)
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price("1.00001"),
+        )
+
+        position1 = Position(fill=fill1)
+        self.cache.add_position(position1)
+
+        # -- Position 2 --------------------------------------------------------
+
+        order2 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order2.apply(TestStubs.event_order_submitted(order2))
+        self.cache.update_order(order2)
+
+        order2.apply(TestStubs.event_order_accepted(order2))
+        self.cache.update_order(order2)
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=GBPUSD_SIM,
+            position_id=PositionId("P-2"),
+            last_px=Price("1.00001"),
+        )
+
+        position2 = Position(fill=fill2)
+        self.cache.add_position(position2)
+
+        # Assert
+        assert position1 in self.cache.positions()
+        assert position2 in self.cache.positions()
+        assert len(self.cache.positions(AUDUSD_SIM.id)) == 1
+        assert len(self.cache.positions(GBPUSD_SIM.id)) == 1
+        assert position1 in self.cache.positions(AUDUSD_SIM.id)
+        assert position2 in self.cache.positions(GBPUSD_SIM.id)
+        assert position1 not in self.cache.positions_closed()
+        assert position2 not in self.cache.positions_closed()
+
     def test_update_account(self):
         # Arrange
         event = TestStubs.event_account_state()
