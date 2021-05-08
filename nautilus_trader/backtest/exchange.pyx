@@ -59,6 +59,7 @@ from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
@@ -1145,7 +1146,8 @@ cdef class SimulatedExchange:
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
-        cdef Money commission = instrument.calculate_commission(
+        cdef Money commission = Account.calculate_commission(
+            instrument=instrument,
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,

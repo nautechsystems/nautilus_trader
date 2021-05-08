@@ -16,14 +16,20 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Account:
     """
-    Provides a trading account.
+    The base class for all trading accounts.
 
-    Represents Cash, Margin or Futures account types.
+    Represents Cash account type.
     """
 
     def __init__(self, AccountState event):
@@ -437,6 +443,199 @@ cdef class Account:
             return None
 
         return Money(balance + unrealized_pnl, currency)
+
+    @staticmethod
+    def market_value(
+        Instrument instrument,
+        Quantity quantity,
+        close_price: Decimal,
+    ):
+        """
+        Calculate the market value from the given parameters.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        quantity : Quantity
+            The total quantity.
+        close_price : Decimal or Price
+            The closing price.
+
+        Returns
+        -------
+        Money
+            In the settlement currency.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.type(close_price, (Decimal, Price), "close_price")
+        Condition.not_none(close_price, "close_price")
+
+        if instrument.is_inverse:
+            close_price = 1 / close_price
+
+        market_value: Decimal = (quantity * close_price * instrument.multiplier)
+        return Money(market_value, instrument.settlement_currency)
+
+    @staticmethod
+    def notional_value(Instrument instrument, Quantity quantity, close_price: Decimal):
+        """
+        Calculate the notional value from the given parameters.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        quantity : Quantity
+            The total quantity.
+        close_price : Decimal or Price
+            The closing price.
+
+        Returns
+        -------
+        Money
+            In the settlement currency.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.type(close_price, (Decimal, Price), "close_price")
+        Condition.not_none(close_price, "close_price")
+
+        if instrument.is_inverse:
+            close_price = 1 / close_price
+
+        notional_value: Decimal = quantity * close_price * instrument.multiplier
+        return Money(notional_value, instrument.settlement_currency)
+
+    @staticmethod
+    def calculate_initial_margin(
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+    ):
+        """
+        Calculate the initial margin from the given parameters.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+
+        Returns
+        -------
+        Money
+            In the settlement currency.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        # TODO: Temporarily no margin
+        leverage = 1
+        if leverage == 1:
+            return Money(0, instrument.settlement_currency)
+
+        notional = Account.notional_value(quantity, price)
+        margin = notional / leverage * instrument.margin_init
+        margin += notional * instrument.taker_fee * 2
+
+        return Money(margin, instrument.settlement_currency)
+
+    @staticmethod
+    def calculate_maint_margin(
+        Instrument instrument,
+        PositionSide side,
+        Quantity quantity,
+        Price last,
+    ):
+        """
+        Calculate the maintenance margin from the given parameters.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        side : PositionSide
+            The currency position side.
+        quantity : Quantity
+            The currency position quantity.
+        last : Price
+            The position instruments last price.
+
+        Returns
+        -------
+        Money
+            In the settlement currency.
+
+        """
+        # side checked in _get_close_price
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(last, "last")
+
+        # TODO: Temporarily no margin
+        leverage = 1
+        if leverage == 1:
+            return Money(0, instrument.settlement_currency)  # No margin necessary
+
+        cdef Money notional = Account.notional_value(instrument, quantity, last)
+        margin = (notional / leverage) * instrument.margin_maint
+        margin += notional * instrument.taker_fee
+
+        return Money(margin, instrument.settlement_currency)
+
+    @staticmethod
+    def calculate_commission(
+        Instrument instrument,
+        Quantity last_qty,
+        last_px: Decimal,
+        LiquiditySide liquidity_side,
+    ):
+        """
+        Calculate the commission generated from a transaction with the given
+        parameters.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        last_qty : Quantity
+            The transaction quantity.
+        last_px : Decimal or Price
+            The transaction price.
+        liquidity_side : LiquiditySide
+            The liquidity side for the transaction.
+
+        Returns
+        -------
+        Money
+            In the settlement currency.
+
+        Raises
+        ------
+        ValueError
+            If liquidity_side is NONE.
+
+        """
+        Condition.not_none(last_qty, "last_qty")
+        Condition.type(last_px, (Decimal, Price), "last_px")
+        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
+
+        cdef Money notional = Account.notional_value(instrument, last_qty, last_px)
+
+        if liquidity_side == LiquiditySide.MAKER:
+            commission: Decimal = notional * instrument.maker_fee
+        elif liquidity_side == LiquiditySide.TAKER:
+            commission: Decimal = notional * instrument.taker_fee
+        else:
+            raise RuntimeError(f"invalid LiquiditySide, "
+                               f"was {LiquiditySideParser.to_str(liquidity_side)}")
+
+        return Money(commission, instrument.settlement_currency)
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 
