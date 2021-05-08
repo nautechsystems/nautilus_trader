@@ -1128,8 +1128,7 @@ cdef class SimulatedExchange:
     ) except *:
         self._delete_order(order)  # Remove order from working orders (if found)
 
-        # Determine position (do not reorder below `generate_order_filled`) as
-        # this will change the logic of the `position_id`.
+        # Determine position_id
         cdef PositionId position_id = order.position_id
         if position_id.is_null():
             if self.oms_type == OMSType.NETTING:
@@ -1138,11 +1137,20 @@ cdef class SimulatedExchange:
             elif self.oms_type == OMSType.HEDGING:
                 position_id = self.exec_cache.position_id(order.client_order_id)
                 if position_id is None:
+                    # TODO: Check for position OCO orders
                     # Generate a position identifier
                     position_id = self._generate_position_id(order.instrument_id)
 
+        # Determine any position
         cdef Position position = self.exec_cache.position(position_id) if position_id.not_null() else None
         # *** position could be None here ***
+
+        # Check for closed NET position
+        if self.oms_type == OMSType.NETTING and position:
+            if position.is_open_c():
+                self._net_position_ids[order.instrument_id] = position_id
+            else:
+                position = None
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
@@ -1168,7 +1176,7 @@ cdef class SimulatedExchange:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id if order.venue_order_id.not_null() else self._generate_venue_order_id(order.instrument_id),
             execution_id=self._generate_execution_id(),
-            position_id=position_id,
+            position_id=PositionId.null_c() if self.oms_type == OMSType.NETTING else position_id,
             instrument_id=order.instrument_id,
             order_side=order.side,
             last_qty=last_qty,
@@ -1179,12 +1187,6 @@ cdef class SimulatedExchange:
             liquidity_side=liquidity_side,
             execution_ns=self._clock.timestamp_ns(),
         )
-
-        if self.oms_type == OMSType.NETTING and position:
-            if position.is_closed_c():
-                self._net_position_ids[position.instrument_id] = PositionId.null_c()
-            else:
-                self._net_position_ids[position.instrument_id] = position.id
 
         self._check_oco_order(order.client_order_id)
 
