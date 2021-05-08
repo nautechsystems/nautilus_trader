@@ -792,7 +792,7 @@ cdef class BacktestEngine:
             self._data_engine.process(instrument)
 
         # Setup new strategies
-        if strategies is not None:
+        if strategies:
             self.trader.initialize_strategies(strategies, warn_no_strategies=False)
 
         # Run the backtest

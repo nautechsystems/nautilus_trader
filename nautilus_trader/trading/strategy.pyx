@@ -1720,7 +1720,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)  # Could be None
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_quote_tick(tick)
 
@@ -1787,7 +1787,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)  # Could be None
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_trade_tick(tick)
 
@@ -1854,7 +1854,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_bars.get(bar.type)
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_bar(bar)
 
