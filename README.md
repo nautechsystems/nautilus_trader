@@ -296,7 +296,7 @@ Following any changes to `.pyx` or `.pxd` files, you can re-compile by running:
 
     poetry run python build.py
 
-Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
+Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/overview.html) for further information.
 
 ## Contributing
 
