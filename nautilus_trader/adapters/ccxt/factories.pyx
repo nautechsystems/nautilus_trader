@@ -147,6 +147,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         cdef dict internal_config = {
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
+            "password": os.getenv(config.get("api_password", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": engine.get_event_loop(),
