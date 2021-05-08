@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport BracketOrderId
+from nautilus_trader.model.identifiers cimport ClientOrderLinkId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
@@ -52,7 +52,7 @@ cdef class BracketOrder:
             The take-profit (TP) 'child' order.
 
         """
-        self.id = BracketOrderId(f"B{entry.client_order_id.value}")
+        self.id = ClientOrderLinkId(f"B{entry.client_order_id.value}")
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit
