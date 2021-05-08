@@ -149,7 +149,7 @@ cdef class DataCache(DataCacheFacade):
         cdef InstrumentId instrument_id = tick.instrument_id
         ticks = self._quote_ticks.get(instrument_id)
 
-        if ticks is None:
+        if not ticks:
             # The instrument_id was not registered
             ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[instrument_id] = ticks
@@ -171,7 +171,7 @@ cdef class DataCache(DataCacheFacade):
         cdef InstrumentId instrument_id = tick.instrument_id
         ticks = self._trade_ticks.get(instrument_id)
 
-        if ticks is None:
+        if not ticks:
             # The instrument_id was not registered
             ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[instrument_id] = ticks
@@ -192,7 +192,7 @@ cdef class DataCache(DataCacheFacade):
 
         bars = self._bars.get(bar.type)
 
-        if bars is None:
+        if not bars:
             # The bar type was not registered
             bars = deque(maxlen=self.bar_capacity)
             self._bars[bar.type] = bars
@@ -222,7 +222,7 @@ cdef class DataCache(DataCacheFacade):
 
         cached_ticks = self._quote_ticks.get(instrument_id)
 
-        if cached_ticks is None:
+        if not cached_ticks:
             # The instrument_id was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[instrument_id] = cached_ticks
@@ -259,7 +259,7 @@ cdef class DataCache(DataCacheFacade):
 
         cached_ticks = self._trade_ticks.get(instrument_id)
 
-        if cached_ticks is None:
+        if not cached_ticks:
             # The instrument_id was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[instrument_id] = cached_ticks
@@ -296,7 +296,7 @@ cdef class DataCache(DataCacheFacade):
 
         cached_bars = self._bars.get(bar_type)
 
-        if cached_bars is None:
+        if not cached_bars:
             # The instrument_id was not registered
             cached_bars = deque(maxlen=self.bar_capacity)
             self._bars[bar_type] = cached_bars
