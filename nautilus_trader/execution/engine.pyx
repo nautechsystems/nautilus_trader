@@ -858,7 +858,7 @@ cdef class ExecutionEngine(Component):
         # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
             account_id=fill.account_id,
-            client_order_id=ClientOrderId(f"{fill.client_order_id.value}F"),
+            client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=position_id_flip,
