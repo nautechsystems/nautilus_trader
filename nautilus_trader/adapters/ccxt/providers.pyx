@@ -170,10 +170,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             min_quantity = Quantity(min_quantity, precision=size_precision)
 
         lot_size = values["info"].get("lotSize")
-        if lot_size is not None:
+        if lot_size is not None and Decimal(lot_size) > 0:
             lot_size = Quantity(lot_size)
-        elif min_quantity is not None:
-            lot_size = Quantity(min_quantity, precision=size_precision)
         else:
             lot_size = Quantity(1)
 
