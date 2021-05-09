@@ -428,7 +428,7 @@ cdef class OrderAccepted(OrderEvent):
 
     References
     ----------
-    https://www.onixs.biz/fix-dictionary/4.4/tagNum_39.html
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
 
     """
 

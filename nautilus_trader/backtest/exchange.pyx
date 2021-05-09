@@ -177,6 +177,7 @@ cdef class SimulatedExchange:
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
         self._child_orders = {}         # type: dict[ClientOrderId, list[Order]]
         self._oco_orders = {}           # type: dict[ClientOrderId, ClientOrderId]
+        self._oco_position_ids = {}     # type: dict[ClientOrderId, PositionId]
         self._position_oco_orders = {}  # type: dict[PositionId, list[ClientOrderId]]
         self._symbol_pos_count = {}     # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}     # type: dict[InstrumentId, int]
@@ -472,6 +473,7 @@ cdef class SimulatedExchange:
         self._position_index.clear()
         self._child_orders.clear()
         self._oco_orders.clear()
+        self._oco_position_ids.clear()
         self._position_oco_orders.clear()
         self._symbol_pos_count.clear()
         self._symbol_ord_count.clear()
@@ -493,6 +495,7 @@ cdef class SimulatedExchange:
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         Condition.not_none(command, "command")
 
+        self._log.error("bracket orders are currently broken in this version.")
         cdef PositionId position_id = self._generate_position_id(command.bracket_order.entry.instrument_id)
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
@@ -600,7 +603,7 @@ cdef class SimulatedExchange:
 
     cdef inline void _cancel_order(self, PassiveOrder order) except *:
         cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
-        if instrument_orders is not None:
+        if instrument_orders:
             # Assumption that order exists in instrument_orders
             # Will raise KeyError if not found by `pop`.
             instrument_orders.pop(order.client_order_id)
@@ -933,7 +936,7 @@ cdef class SimulatedExchange:
     cdef inline void _delete_order(self, Order order) except *:
         self._working_orders.pop(order.client_order_id, None)
         cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
-        if instrument_orders is not None:
+        if instrument_orders:
             instrument_orders.pop(order.client_order_id, None)
 
     cdef inline void _iterate_matching_engine(
@@ -1137,7 +1140,6 @@ cdef class SimulatedExchange:
             elif self.oms_type == OMSType.HEDGING:
                 position_id = self.exec_cache.position_id(order.client_order_id)
                 if position_id is None:
-                    # TODO: Check for position OCO orders
                     # Generate a position identifier
                     position_id = self._generate_position_id(order.instrument_id)
 

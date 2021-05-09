@@ -49,6 +49,7 @@ from tests.test_kit.stubs import TestStubs
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
+BTCUSD_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class ExecutionCacheTests(unittest.TestCase):
@@ -617,6 +618,152 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertEqual(0, self.cache.positions_open_count())
         self.assertEqual(1, self.cache.positions_closed_count())
         self.assertEqual(1, self.cache.positions_total_count())
+
+    def test_positions_queries_with_multiple_open_returns_expected_positions(self):
+        # Arrange
+        # -- Position 1 --------------------------------------------------------
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order1, position_id)
+        order1.apply(TestStubs.event_order_submitted(order1))
+        self.cache.update_order(order1)
+
+        order1.apply(TestStubs.event_order_accepted(order1))
+        self.cache.update_order(order1)
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price("1.00001"),
+        )
+
+        position1 = Position(fill=fill1)
+        self.cache.add_position(position1)
+
+        # -- Position 2 --------------------------------------------------------
+
+        order2 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order2.apply(TestStubs.event_order_submitted(order2))
+        self.cache.update_order(order2)
+
+        order2.apply(TestStubs.event_order_accepted(order2))
+        self.cache.update_order(order2)
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=GBPUSD_SIM,
+            position_id=PositionId("P-2"),
+            last_px=Price("1.00001"),
+        )
+
+        position2 = Position(fill=fill2)
+        self.cache.add_position(position2)
+
+        # Assert
+        assert position1.is_open
+        assert position2.is_open
+        assert position1 in self.cache.positions()
+        assert position2 in self.cache.positions()
+        assert self.cache.positions(AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions(GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions_open(AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions_open(GBPUSD_SIM.id) == [position2]
+        assert position1 in self.cache.positions_open()
+        assert position2 in self.cache.positions_open()
+        assert position1 not in self.cache.positions_closed()
+        assert position2 not in self.cache.positions_closed()
+
+    def test_positions_queries_with_one_closed_returns_expected_positions(self):
+        # Arrange
+        # -- Position 1 --------------------------------------------------------
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order1, position_id)
+        order1.apply(TestStubs.event_order_submitted(order1))
+        self.cache.update_order(order1)
+
+        order1.apply(TestStubs.event_order_accepted(order1))
+        self.cache.update_order(order1)
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            last_px=Price("1.00001"),
+        )
+
+        position1 = Position(fill=fill1)
+        self.cache.add_position(position1)
+
+        # -- Position 2 --------------------------------------------------------
+
+        order2 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order2.apply(TestStubs.event_order_submitted(order2))
+        self.cache.update_order(order2)
+
+        order2.apply(TestStubs.event_order_accepted(order2))
+        self.cache.update_order(order2)
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=GBPUSD_SIM,
+            position_id=PositionId("P-2"),
+            last_px=Price("1.00001"),
+        )
+
+        position2 = Position(fill=fill2)
+        self.cache.add_position(position2)
+
+        order3 = self.strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity(100000),
+        )
+
+        order3.apply(TestStubs.event_order_submitted(order3))
+        self.cache.update_order(order3)
+
+        order3.apply(TestStubs.event_order_accepted(order3))
+        self.cache.update_order(order3)
+        fill3 = TestStubs.event_order_filled(
+            order3,
+            instrument=GBPUSD_SIM,
+            position_id=PositionId("P-2"),
+            last_px=Price("1.00001"),
+        )
+
+        position2.apply(fill3)
+        self.cache.update_position(position2)
+
+        # Assert
+        assert position1.is_open
+        assert position2.is_closed
+        assert position1 in self.cache.positions()
+        assert position1 in self.cache.positions(AUDUSD_SIM.id)
+        assert position2 in self.cache.positions()
+        assert position2 in self.cache.positions(GBPUSD_SIM.id)
+        assert self.cache.positions_open(BTCUSD_BINANCE.id) == []
+        assert self.cache.positions_open(AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions_open(GBPUSD_SIM.id) == []
+        assert self.cache.positions_closed(AUDUSD_SIM.id) == []
+        assert self.cache.positions_closed(GBPUSD_SIM.id) == [position2]
 
     def test_update_account(self):
         # Arrange

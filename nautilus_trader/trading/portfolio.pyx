@@ -727,7 +727,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef inline set _instruments_open_for_venue(self, Venue venue):
         cdef set positions_open = self._positions_open.get(venue)
-        if positions_open is None:
+        if not positions_open:
             return set()
         return {position.instrument_id for position in positions_open}
 
@@ -780,7 +780,7 @@ cdef class Portfolio(PortfolioFacade):
             return  # Cannot calculate
 
         cdef set working_orders = self._orders_working.get(venue)
-        if working_orders is None:
+        if not working_orders:
             return  # Nothing to calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
@@ -839,7 +839,7 @@ cdef class Portfolio(PortfolioFacade):
             return  # Cannot calculate
 
         cdef set open_positions = self._positions_open.get(venue)
-        if open_positions is None:
+        if not open_positions:
             return  # Nothing to calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
@@ -918,7 +918,7 @@ cdef class Portfolio(PortfolioFacade):
             currency = instrument.settlement_currency
 
         cdef set positions_open = self._positions_open.get(instrument_id.venue)
-        if positions_open is None:
+        if not positions_open:
             if account.default_currency is not None:
                 return Money(0, account.default_currency)
             else:

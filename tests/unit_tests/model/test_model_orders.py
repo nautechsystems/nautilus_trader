@@ -33,8 +33,8 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderUpdated
-from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ClientOrderLinkId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -484,7 +484,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
         self.assertEqual(None, bracket_order.take_profit.expire_time)
         self.assertEqual(
-            BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id
+            ClientOrderLinkId("BO-19700101-000000-000-001-1"), bracket_order.id
         )
         self.assertEqual(0, bracket_order.timestamp_ns)
 

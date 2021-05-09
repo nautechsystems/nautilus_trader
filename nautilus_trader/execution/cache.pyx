@@ -1140,7 +1140,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
 
-        if not query:
+        if query is None:
             return self._index_positions_open
         else:
             return self._index_positions_open.intersection(query)

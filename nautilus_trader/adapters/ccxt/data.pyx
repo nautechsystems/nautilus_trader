@@ -677,9 +677,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
                     bids = lob.get("bids")
                     asks = lob.get("asks")
-                    if bids is None:
+                    if not bids:
                         continue
-                    if asks is None:
+                    if not asks:
                         continue
 
                     # Currently inefficient while using CCXT. The order book

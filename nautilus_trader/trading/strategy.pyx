@@ -1423,7 +1423,7 @@ cdef class TradingStrategy(Component):
 
         References
         ----------
-        https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
+        https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
         Condition.not_none(order, "order")
@@ -1530,6 +1530,7 @@ cdef class TradingStrategy(Component):
             The instrument for the orders to cancel.
 
         """
+        # instrument_id can be None
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list working_orders = self.execution.orders_working(instrument_id, self.id)
@@ -1604,7 +1605,7 @@ cdef class TradingStrategy(Component):
             The instrument for the positions to flatten.
 
         """
-        Condition.not_none(instrument_id, "instrument_id")
+        # instrument_id can be None
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list positions_open = self.execution.positions_open(instrument_id, self.id)
@@ -1720,7 +1721,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)  # Could be None
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_quote_tick(tick)
 
@@ -1787,7 +1788,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)  # Could be None
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_trade_tick(tick)
 
@@ -1854,7 +1855,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_bars.get(bar.type)
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_bar(bar)
 

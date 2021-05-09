@@ -1679,10 +1679,13 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick3)
 
         # Assert
+        print(self.exchange.exec_cache.position(PositionId("2-001")))
         self.assertEqual(OrderState.FILLED, entry.state)
         self.assertEqual(OrderState.FILLED, bracket.stop_loss.state)
         self.assertEqual(OrderState.CANCELED, bracket.take_profit.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
+        # TODO: WIP - fix handling of OCO orders
+        # self.assertEqual(0, len(self.exchange.exec_cache.positions_open()))
 
     def test_realized_pnl_contains_commission(self):
         # Arrange: Prepare market

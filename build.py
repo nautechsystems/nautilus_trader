@@ -95,7 +95,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
     # Build a Distribution using cythonize()
     # Determine the build output directory
     if PROFILING_MODE:
-        # For subsequent annotation, the c source needs to be in
+        # For subsequent annotation, the C source needs to be in
         # the same tree as the Cython code.
         build_dir = None
     elif ANNOTATION_MODE:
