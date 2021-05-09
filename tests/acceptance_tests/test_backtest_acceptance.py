@@ -147,7 +147,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.assertEqual(2689, strategy2.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
         self.assertEqual(
-            Money(994662.69, USD), self.engine.portfolio.account(self.venue).balance()
+            Money(992818.88, USD), self.engine.portfolio.account(self.venue).balance()
         )
 
 
