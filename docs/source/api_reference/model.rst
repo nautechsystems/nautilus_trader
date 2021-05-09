@@ -106,7 +106,7 @@ Order Book
 Market Order
 ------------
 
-.. automodule:: nautilus_trader.model.order.market
+.. automodule:: nautilus_trader.model.orders.market
    :show-inheritance:
    :inherited-members:
    :members:
@@ -115,7 +115,7 @@ Market Order
 Limit Order
 -----------
 
-.. automodule:: nautilus_trader.model.order.limit
+.. automodule:: nautilus_trader.model.orders.limit
    :show-inheritance:
    :inherited-members:
    :members:
@@ -124,7 +124,7 @@ Limit Order
 Stop-Market Order
 -----------------
 
-.. automodule:: nautilus_trader.model.order.stop_market
+.. automodule:: nautilus_trader.model.orders.stop_market
    :show-inheritance:
    :inherited-members:
    :members:
@@ -133,7 +133,7 @@ Stop-Market Order
 Stop-Limit Order
 ----------------
 
-.. automodule:: nautilus_trader.model.order.stop_limit
+.. automodule:: nautilus_trader.model.orders.stop_limit
    :show-inheritance:
    :inherited-members:
    :members:
@@ -142,7 +142,7 @@ Stop-Limit Order
 Bracket Order
 -------------
 
-.. automodule:: nautilus_trader.model.order.bracket
+.. automodule:: nautilus_trader.model.orders.bracket
    :show-inheritance:
    :inherited-members:
    :members:
