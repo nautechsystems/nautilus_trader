@@ -157,7 +157,7 @@ cdef class UpbitExecutionClientFactory(LiveExecutionClientFactory):
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": engine.get_event_loop(),
-            "rateLimit": 15,
+            "rateLimit": 100,    # (ms)
 
             # Set cache limits
             "options": {
