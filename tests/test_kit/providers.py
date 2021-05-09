@@ -108,6 +108,12 @@ class TestDataProvider:
         return ParquetTickDataLoader.load(path)
 
     @staticmethod
+    def binance_btcusdt_instrument():
+        path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-instrument.txt")
+        with open(path, 'r') as f:
+            return f.readline()
+
+    @staticmethod
     def l1_feed():
         updates = []
         for _, row in TestDataProvider.usdjpy_ticks().iterrows():

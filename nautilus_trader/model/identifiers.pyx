@@ -174,7 +174,7 @@ cdef class InstrumentId(Identifier):
         if venue_pieces[2] != '':  # Venue contains a dash therefore a broker
             return InstrumentId(
                 symbol=Symbol(pieces[0]),
-                venue=Venue(venue_pieces[0], broker=venue_pieces[2]),
+                venue=Venue(venue_pieces[2], broker=venue_pieces[0]),
             )
         else:
             return InstrumentId(

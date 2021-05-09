@@ -33,6 +33,7 @@ from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
@@ -438,8 +439,8 @@ def test_trade_side(sample_book):
 def test_l3_get_price_for_volume(sample_book):
     bid_price = sample_book.get_price_for_volume(True, 5.0)
     ask_price = sample_book.get_price_for_volume(False, 12.0)
-    assert bid_price == 0.82000
-    assert ask_price == 0.88700
+    assert bid_price == 0.88600
+    assert ask_price == 0.0
 
 
 @pytest.mark.parametrize(
@@ -447,7 +448,7 @@ def test_l3_get_price_for_volume(sample_book):
     [
         (True, 0.8860, 0.8860),
         (False, 0.8300, 0.8300),
-    ]
+    ],
 )
 def test_l3_get_price_for_quote_volume(sample_book, is_buy, quote_volume, expected):
     assert sample_book.get_price_for_quote_volume(is_buy, quote_volume) == expected
@@ -465,7 +466,7 @@ def test_l3_get_price_for_quote_volume(sample_book, is_buy, quote_volume, expect
         (False, 0.82000, 5.0),
         (False, 0.80000, 5.0),
         (False, 0.88700, 0.0),
-    ]
+    ],
 )
 def test_get_volume_for_price(sample_book, is_buy, price, expected):
     assert sample_book.get_volume_for_price(is_buy, price) == expected
@@ -483,7 +484,7 @@ def test_get_volume_for_price(sample_book, is_buy, price, expected):
         (False, 0.82000, 4.14),
         (False, 0.80000, 4.14),
         (False, 0.88700, 0.0),
-    ]
+    ],
 )
 def test_get_quote_volume_for_price(sample_book, is_buy, price, expected):
     assert sample_book.get_quote_volume_for_price(is_buy, price) == expected
@@ -501,7 +502,9 @@ def test_get_quote_volume_for_price(sample_book, is_buy, price, expected):
         (False, 1.0, 0.83),
         (False, 3.0, 0.83),
         (False, 5.0, 0.828),
-    ]
+    ],
 )
 def test_get_vwap_for_volume(sample_book, is_buy, volume, expected):
-    assert sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(expected, 0.01)
+    assert sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(
+        expected, 0.01
+    )

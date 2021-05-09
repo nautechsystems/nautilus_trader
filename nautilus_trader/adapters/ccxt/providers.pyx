@@ -132,19 +132,11 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):
-        """
-Instrument('id=DOGE-PERP.FTX, symbol=DOGE-PERP, asset_class=8, asset_type=3, base_currency=DOGE, quote_currency=USD, settlement_currency=USD, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
-Instrument('id=DOGE-0625.FTX, symbol=DOGE-0625, asset_class=8, asset_type=3, base_currency=DOGE, quote_currency=USD, settlement_currency=USD, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
-Instrument('id=DOGE/BTC.FTX, symbol=DOGE/BTC, asset_class=8, asset_type=1, base_currency=DOGE, quote_currency=BTC, settlement_currency=BTC, tick_size=1.0000000000000000209225608301284726753266340892878361046314239501953125E-8, price_precision=0, lot_size=1', size_precision=0')
-Instrument('id=DOGE/USD.FTX, symbol=DOGE/USD, asset_class=8, asset_type=1, base_currency=DOGE, quote_currency=USD, settlement_currency=USD, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
-Instrument('id=DOGE/USDT.FTX, symbol=DOGE/USDT, asset_class=8, asset_type=1, base_currency=DOGE, quote_currency=USDT, settlement_currency=USDT, tick_size=4.999999999999999773740559129431293428069693618454039096832275390625E-7, price_precision=0, lot_size=1', size_precision=0')
-        """
         cdef:
             dict precisions
             str asset_type_str
             bint is_inverse
         precisions = values["precision"]
-        # Precisions
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
             price_precision = precisions.get("price")
             size_precision = precisions.get("amount", 8)
@@ -161,9 +153,7 @@ Instrument('id=DOGE/USDT.FTX, symbol=DOGE/USDT, asset_class=8, asset_type=1, bas
                                f"SIGNIFICANT_DIGITS precision which is not "
                                f"currently supported in this version.")
 
-
         asset_type_str = values.get("type")
-
         if asset_type_str is not None:
             asset_type = AssetTypeParser.from_str(asset_type_str.upper())
         else:

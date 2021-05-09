@@ -28,6 +28,9 @@ from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
+from nautilus_trader.core.datetime import iso8601_to_unix_micros
+from nautilus_trader.core.datetime import iso8601_to_unix_millis
+from nautilus_trader.core.datetime import iso8601_to_unix_nanos
 from nautilus_trader.core.datetime import micros_to_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_micros
@@ -37,9 +40,6 @@ from nautilus_trader.core.datetime import nanos_to_timedelta
 from nautilus_trader.core.datetime import nanos_to_unix_dt
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.datetime import timedelta_to_nanos
-from nautilus_trader.core.datetime import iso8601_to_unix_millis
-from nautilus_trader.core.datetime import iso8601_to_unix_micros
-from nautilus_trader.core.datetime import iso8601_to_unix_nanos
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -502,7 +502,9 @@ class TestDatetimeFunctions:
             [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
             [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(), 1357002000000],
             [
-                datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc).isoformat(),
+                datetime(
+                    2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc
+                ).isoformat(),
                 1577934120001,
             ],
         ],
@@ -524,7 +526,7 @@ class TestDatetimeFunctions:
             [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
             [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(), 1357002000000000],
             [
-                datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc),
+                datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc).isoformat(),
                 1577934120001000,
             ],
         ],
@@ -542,18 +544,24 @@ class TestDatetimeFunctions:
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc).isoformat(), -2674800000000000],
-            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
-            [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(), 1357002000000000000],
             [
-                datetime(2020, 1, 2, 3, 2, microsecond=333, tzinfo=pytz.utc).isoformat(),
+                datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc).isoformat(),
+                -2674800000000000,
+            ],
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
+            [
+                datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(),
+                1357002000000000000,
+            ],
+            [
+                datetime(
+                    2020, 1, 2, 3, 2, microsecond=333, tzinfo=pytz.utc
+                ).isoformat(),
                 1577934120003330000,
             ],
         ],
     )
-    def test_iso8601_to_unix_nanos_given_iso8601_datetime_string(
-        self, value, expected
-    ):
+    def test_iso8601_to_unix_nanos_given_iso8601_datetime_string(self, value, expected):
         # Arrange
         # Act
         result = iso8601_to_unix_nanos(value)
