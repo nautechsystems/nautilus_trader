@@ -185,20 +185,20 @@ jobs:
           poetry build --format sdist
 
       # Set release output variables
-      - name: Set output (Linux/macOS)
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+      - name: Set output
         id: vars
         run: |
-          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-          cd dist
-          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-
-      - name: Set output (Windows)
-        if: runner.os == 'Windows'
-        id: vars
-        run: |
-          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
-          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+            cd dist
+            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+            cd dist
+            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
+            echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
 
       # Upload release asset
       - name: Upload release asset
@@ -266,20 +266,20 @@ jobs:
           poetry build --format wheel
 
       # Set release output variables
-      - name: Set output (Linux/macOS)
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+      - name: Set output
         id: vars
         run: |
-          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-          cd dist
-          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-
-      - name: Set output (Windows)
-        if: runner.os == 'Windows'
-        id: vars
-        run: |
-          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
-          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+            cd dist
+            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+            cd dist
+            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
+            echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
 
       # Upload release asset
       - name: Upload release asset

@@ -60,7 +60,3 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.xml
           verbose: true
-
-      # Run performance
-      - name: Run performance tests
-        run: nox -s performance_tests --reuse-existing-virtualenvs
