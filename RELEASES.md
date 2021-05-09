@@ -5,16 +5,17 @@ intermediate `BacktestDataContainer`. There has also been some simplifications
 for `OrderFill` events, as well as additional order states and events.
 
 ## Breaking Changes
-- Cancelled renamed to canceled for standardization.
+- Standardized all 'cancelled' references to 'canceled'.
 - `SimulatedExchange` no longer generates `OrderAccepted` for `MarketOrder`.
 - Removed redundant `BacktestDataContainer`.
 - Removed redundant `OrderFilled.cum_qty`.
-- Removed redundant `OrderFilled.leave_qty`.
+- Removed redundant `OrderFilled.leaves_qty`.
 - `BacktestEngine` constructor simplified.
 - `BacktestMarketDataClient` no longer needs instruments.
-- Rename `PerformanceAnalyzer` `.get_realized_pnls` to `.realized_pnls`.
+- Rename `PerformanceAnalyzer.get_realized_pnls` to `.realized_pnls`.
 
 ## Enhancements
+- Re-engineered `BacktestEngine` to take data directly.
 - Added `OrderState.PENDING_CANCEL`.
 - Added `OrderState.PENDING_REPLACE`.
 - Added `OrderPendingReplace` event.
@@ -23,12 +24,11 @@ for `OrderFill` events, as well as additional order states and events.
 - Added `OrderFilled.is_sell` property (with corresponding `is_sell_c()` fast method).
 - Added `Position.is_opposite_side(OrderSide side)` convenience method.
 - Modified the `Order` FSM and event handling for the above.
-- Re-engineered `BacktestEngine` to take data directly.
-- Simplified `CCXTExecutionClient` by removing redundant 'hot cache'.
 - Consolidated event generation into `ExecutionClient` base class.
 - Refactored `SimulatedExchange` for greater clarity.
 
 ## Fixes
+- `ExecutionCache` positions open queries.
 - Exchange accounting for exchange `OMSType.NETTING`.
 - Position flipping logic for exchange `OMSType.NETTING`.
 - Multi-currency account terminology.
