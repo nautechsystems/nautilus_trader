@@ -15,10 +15,10 @@
 
 import numpy as np
 
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Price
 
 
 BETFAIR_VENUE = Venue("BETFAIR")
