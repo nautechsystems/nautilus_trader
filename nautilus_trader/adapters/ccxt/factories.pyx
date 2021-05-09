@@ -16,6 +16,8 @@
 import os
 
 from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
+from nautilus_trader.adapters.ccxt.execution cimport BinanceCCXTExecutionClient
+from nautilus_trader.adapters.ccxt.execution cimport BitmexCCXTExecutionClient
 from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
@@ -67,6 +69,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
         cdef dict internal_config = {
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
+            "password": os.getenv(config.get("api_password", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": engine.get_event_loop(),
@@ -92,18 +95,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
 
         client = client_cls(internal_config)
-
-        # Check required CCXT methods are available
-        if not client.has.get("fetchTrades", False):
-            raise RuntimeError(f"CCXT `fetch_trades` not available for {client.name}")
-        if not client.has.get("fetchOHLCV", False):
-            raise RuntimeError(f"CCXT `fetch_ohlcv` not available for {client.name}")
-        if not client.has.get("watchOrderBook", False):
-            raise RuntimeError(f"CCXT `watch_order_book` not available for {client.name}")
-        if not client.has.get("watchTrades", False):
-            raise RuntimeError(f"CCXT `watch_trades` not available for {client.name}")
-        if not client.has.get("watchOHLCV", False):
-            raise RuntimeError(f"CCXT `watch_ohlcv` not available for {client.name}")
+        client.set_sandbox_mode(config.get("sandbox_mode", False))
 
         # Create client
         return CCXTDataClient(
@@ -155,6 +147,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         cdef dict internal_config = {
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
+            "password": os.getenv(config.get("api_password", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": engine.get_event_loop(),
@@ -180,18 +173,13 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
 
         client = client_cls(internal_config)
+        client.set_sandbox_mode(config.get("sandbox_mode", False))
 
         # Check required CCXT methods are available
         if not client.has.get("fetchTrades", False):
             raise RuntimeError(f"CCXT `fetch_trades` not available for {client.name}")
-        if not client.has.get("fetchOHLCV", False):
-            raise RuntimeError(f"CCXT `fetch_ohlcv` not available for {client.name}")
-        if not client.has.get("watchOrderBook", False):
-            raise RuntimeError(f"CCXT `watch_order_book` not available for {client.name}")
         if not client.has.get("watchTrades", False):
             raise RuntimeError(f"CCXT `watch_trades` not available for {client.name}")
-        if not client.has.get("watchOHLCV", False):
-            raise RuntimeError(f"CCXT `watch_ohlcv` not available for {client.name}")
 
         # Get account identifier env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
@@ -200,10 +188,27 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         account_id = AccountId(client.name.upper(), account_id_env_var)
 
         # Create client
-        return CCXTExecutionClient(
-            client=client,
-            account_id=account_id,
-            engine=engine,
-            clock=clock,
-            logger=logger,
-        )
+        if client.name.upper() == "BINANCE":
+            return BinanceCCXTExecutionClient(
+                client=client,
+                account_id=account_id,
+                engine=engine,
+                clock=clock,
+                logger=logger,
+            )
+        elif client.name.upper() == "BITMEX":
+            return BitmexCCXTExecutionClient(
+                client=client,
+                account_id=account_id,
+                engine=engine,
+                clock=clock,
+                logger=logger,
+            )
+        else:
+            return CCXTExecutionClient(
+                client=client,
+                account_id=account_id,
+                engine=engine,
+                clock=clock,
+                logger=logger,
+            )

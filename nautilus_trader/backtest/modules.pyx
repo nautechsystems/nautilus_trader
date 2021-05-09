@@ -165,7 +165,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
                 timestamp,
             )
 
-            rollover = instrument.notional_value(position.quantity, mid_prices[instrument.id]) * interest_rate
+            rollover: Decimal = position.quantity * mid_prices[instrument.id] * interest_rate
 
             if iso_week_day == 3:  # Book triple for Wednesdays
                 rollover *= 3

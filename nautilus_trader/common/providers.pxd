@@ -26,5 +26,6 @@ cdef class InstrumentProvider:
     cpdef void load(self, InstrumentId instrument_id, dict details) except *
     cpdef void add(self, Instrument instrument) except *
     cpdef dict get_all(self)
+    cpdef dict currencies(self)
     cpdef Currency currency(self, str code)
     cpdef Instrument find(self, InstrumentId instrument_id)

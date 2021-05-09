@@ -94,6 +94,36 @@ class TestCurrency:
             == "Currency(code=AUD, name=Australian dollar, precision=2, iso4217=36, type=FIAT)"
         )
 
+    def test_register_adds_currency_to_internal_currency_map(self):
+        # Arrange, Act
+        one_inch = Currency(
+            code="1INCH",
+            precision=8,
+            iso4217=0,
+            name="1INCH",
+            currency_type=CurrencyType.CRYPTO,
+        )
+        Currency.register(one_inch)
+
+        result = Currency.from_str("1INCH")
+
+        assert result == one_inch
+
+    def test_register_when_overwrite_true_overwrites_internal_currency_map(self):
+        # Arrange, Act
+        another_aud = Currency(
+            code="AUD",
+            precision=8,
+            iso4217=0,
+            name="AUD",
+            currency_type=CurrencyType.CRYPTO,
+        )
+        Currency.register(another_aud, overwrite=False)
+
+        result = Currency.from_str("AUD")
+
+        assert result != another_aud
+
     def test_from_str_given_unknown_code_returns_none(self):
         # Arrange
         # Act
@@ -107,8 +137,7 @@ class TestCurrency:
         [["AUD", AUD], ["GBP", GBP], ["BTC", BTC], ["ETH", ETH]],
     )
     def test_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = Currency.from_str(string)
 
         # Assert

@@ -13,15 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.orders.base cimport PassiveOrder
 
-cdef class BacktestDataContainer:
-    cdef set _added_instrument_ids
-    cdef readonly dict clients
-    cdef readonly list generic_data
-    cdef readonly list books
-    cdef readonly list order_book_data
-    cdef readonly dict instruments
-    cdef readonly dict quote_ticks
-    cdef readonly dict trade_ticks
-    cdef readonly dict bars_bid
-    cdef readonly dict bars_ask
+
+cdef class StopMarketOrder(PassiveOrder):
+    cdef readonly bint is_reduce_only
+    """If the order will only reduce an open position.\n\n:returns: `bool`"""
+
+    @staticmethod
+    cdef StopMarketOrder create(OrderInitialized init)

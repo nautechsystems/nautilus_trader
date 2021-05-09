@@ -27,7 +27,6 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -44,44 +43,31 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
+    # Create the backtest engine
+    engine = BacktestEngine(
+        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
+        # exec_db_type="redis",
+        # exec_db_flush=False,
+        # bypass_logging=True
+    )
+
     # Setup trading instruments
     SIM = Venue("SIM")
     GBPUSD = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
-    # Setup data container
-    data = BacktestDataContainer()
-    data.add_instrument(GBPUSD)
-    data.add_bars(
+    # Setup data
+    engine.add_instrument(GBPUSD)
+    engine.add_bars(
         instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.BID,
         data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
-    data.add_bars(
+    engine.add_bars(
         instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.ASK,
         data=TestDataProvider.gbpusd_1min_ask(),  # Stub data from the test kit
-    )
-
-    # Instantiate your strategy
-    strategy = EMACross(
-        instrument_id=GBPUSD.id,
-        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
-        fast_ema_period=10,
-        slow_ema_period=20,
-        trade_size=Decimal(1_000_000),
-        order_id_tag="001",
-    )
-
-    # Build the backtest engine
-    engine = BacktestEngine(
-        data=data,
-        strategies=[strategy],  # List of 'any' number of strategies
-        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # exec_db_type="redis",
-        # exec_db_flush=False,
-        # bypass_logging=True
     )
 
     # Create a fill model (optional)
@@ -95,24 +81,34 @@ if __name__ == "__main__":
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
     interest_rate_data = pd.read_csv(
-        os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+        os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
     )
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-asset or multi-asset accounts
+    # Add starting balances for single-currency or multi-currency accounts
     engine.add_exchange(
-        venue=Venue("SIM"),
+        venue=SIM,
         oms_type=OMSType.HEDGING,  # Exchange will generate position_ids
         starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],
     )
 
+    # Instantiate your strategy
+    strategy = EMACross(
+        instrument_id=GBPUSD.id,
+        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
+        fast_ema_period=10,
+        slow_ema_period=20,
+        trade_size=Decimal(1_000_000),
+        order_id_tag="001",
+    )
+
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine from start to end of data
-    engine.run()
+    engine.run(strategies=[strategy])
 
     # Optionally view reports
     with pd.option_context(
@@ -127,5 +123,8 @@ if __name__ == "__main__":
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 
-    # Good practice to dispose of the object
+    # For repeated backtest runs make sure to reset the engine
+    engine.reset()
+
+    # Good practice to dispose of the object when done
     engine.dispose()

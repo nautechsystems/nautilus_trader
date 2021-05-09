@@ -33,7 +33,7 @@ cdef class PerformanceAnalyzer:
     cpdef void add_return(self, datetime timestamp, double value) except *
     cpdef void reset(self) except *
 
-    cpdef object get_realized_pnls(self, Currency currency=*)
+    cpdef object realized_pnls(self, Currency currency=*)
     cpdef double total_pnl(self, Currency currency=*) except *
     cpdef double total_pnl_percentage(self, Currency currency=*) except *
     cpdef double max_winner(self, Currency currency=*) except *
@@ -45,7 +45,7 @@ cdef class PerformanceAnalyzer:
     cpdef double win_rate(self, Currency currency=*) except *
     cpdef double expectancy(self, Currency currency=*) except *
 
-    cpdef object get_daily_returns(self)
+    cpdef object daily_returns(self)
     cpdef double annual_return(self) except *
     cpdef double cum_return(self) except *
     cpdef double max_drawdown_return(self) except *

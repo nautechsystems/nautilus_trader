@@ -275,7 +275,7 @@ cdef class LiveDataEngine(DataEngine):
                 self._handle_data(data)
         except asyncio.CancelledError:
             if not self._data_queue.empty():
-                self._log.warning(f"Running cancelled "
+                self._log.warning(f"Running canceled "
                                   f"with {self.data_qsize()} data item(s) on queue.")
             else:
                 self._log.debug(f"Data queue processing stopped (qsize={self.data_qsize()}).")
@@ -298,7 +298,7 @@ cdef class LiveDataEngine(DataEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except asyncio.CancelledError:
             if not self._message_queue.empty():
-                self._log.warning(f"Running cancelled "
+                self._log.warning(f"Running canceled "
                                   f"with {self.message_qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")

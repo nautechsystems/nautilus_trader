@@ -27,6 +27,7 @@ from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_us
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -34,7 +35,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -66,6 +67,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._database = database
 
         # Cached objects
+        self._cached_currencies = {}           # type: dict[str, Currency]
         self._cached_accounts = {}             # type: dict[AccountId, Account]
         self._cached_orders = {}               # type: dict[ClientOrderId, Order]
         self._cached_positions = {}            # type: dict[PositionId, Position]
@@ -92,6 +94,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.info("Initialized.")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void cache_currencies(self) except *:
+        """
+        Clear the current currencies cache and load currencies from the execution
+        database.
+        """
+        self._log.debug(f"Loading accounts from database...")
+
+        self._cached_currencies = self._database.load_currencies()
+
+        # Register currencies in internal `_CURRENCY_MAP`.
+        cdef Currency currency
+        for currency in self._cached_currencies.values():
+            Currency.register_c(currency, overwrite=False)
+
+        cdef int count = len(self._cached_currencies)
+        self._log.info(
+            f"Cached {count} currenc{'y' if count == 1 else 'ies'} from database.",
+            color=LogColor.BLUE if self._cached_currencies else LogColor.NORMAL,
+        )
 
     cpdef void cache_accounts(self) except *:
         """
@@ -398,6 +420,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         self._log.debug(f"Clearing cache...")
 
+        self._cached_currencies.clear()
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
@@ -603,6 +626,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._cached_positions.get(position_id)
+
+    cpdef void add_currency(self, Currency currency) except *:
+        """
+        Add the given currency to the execution cache.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to add.
+
+        """
+        Condition.not_none(currency, "currency")
+
+        self._cached_currencies[currency.code] = currency
+        Currency.register_c(currency, overwrite=False)
+
+        self._log.debug(f"Added currency {currency.code}.")
+
+        # Update database
+        self._database.add_currency(currency)
 
     cpdef void add_account(self, Account account) except *:
         """
@@ -1097,7 +1140,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
 
-        if not query:
+        if query is None:
             return self._index_positions_open
         else:
             return self._index_positions_open.intersection(query)

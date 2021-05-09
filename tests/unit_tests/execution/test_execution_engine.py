@@ -33,7 +33,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -48,7 +48,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.bracket import BracketOrder
+from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
@@ -930,6 +930,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.account_id,
             order.instrument_id,
             order.client_order_id,
+            order.venue_order_id,
             Quantity(200000),
             order.price,
             self.uuid_factory.generate(),
@@ -977,7 +978,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
-        cancelled = OrderCancelled(
+        canceled = OrderCanceled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
@@ -987,10 +988,10 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.process(cancelled)
+        self.exec_engine.process(canceled)
 
-        # Assert (order was found and OrderCancelled event was applied)
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        # Assert (order was found and OrderCanceled event was applied)
+        self.assertEqual(OrderState.CANCELED, order.state)
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
         self,
@@ -1028,7 +1029,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
-        cancelled = OrderCancelled(
+        canceled = OrderCanceled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
@@ -1038,7 +1039,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.process(cancelled)
+        self.exec_engine.process(canceled)
 
         # Assert (order was not found, engine did not crash)
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -1077,7 +1078,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
-        cancelled = OrderCancelled(
+        canceled = OrderCanceled(
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
@@ -1087,11 +1088,11 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.process(cancelled)
-        self.exec_engine.process(cancelled)
+        self.exec_engine.process(canceled)
+        self.exec_engine.process(canceled)
 
-        # Assert (order was found and OrderCancelled event was applied)
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        # Assert (order was found and OrderCanceled event was applied)
+        self.assertEqual(OrderState.CANCELED, order.state)
         self.assertEqual(4, order.event_count)
 
     def test_handle_order_fill_event_with_no_strategy_id_correctly_handles_fill(self):
@@ -1901,15 +1902,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.assertEqual(-50000, position_flipped.relative_qty)
         self.assertEqual(50000, position_flipped.last_event.last_qty)
-        self.assertEqual(150000, position_flipped.last_event.cum_qty)
-        self.assertEqual(0, position_flipped.last_event.leaves_qty)
-        self.assertEqual(
-            Quantity(100000),
-            self.cache.order(order1.client_order_id).last_event.cum_qty,
-        )
-        self.assertEqual(
-            0, self.cache.order(order1.client_order_id).last_event.leaves_qty
-        )
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))
@@ -1994,15 +1986,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.assertEqual(50000, position_flipped.relative_qty)
         self.assertEqual(50000, position_flipped.last_event.last_qty)
-        self.assertEqual(150000, position_flipped.last_event.cum_qty)
-        self.assertEqual(0, position_flipped.last_event.leaves_qty)
-        self.assertEqual(
-            Quantity(100000),
-            self.cache.order(order1.client_order_id).last_event.cum_qty,
-        )
-        self.assertEqual(
-            0, self.cache.order(order1.client_order_id).last_event.leaves_qty
-        )
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))
@@ -2051,6 +2034,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_pending_replace(order))
 
         # Get order, check venue_order_id
         cached_order = self.cache.order(order.client_order_id)

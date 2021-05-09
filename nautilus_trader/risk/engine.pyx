@@ -37,7 +37,7 @@ from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 

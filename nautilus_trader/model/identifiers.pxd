@@ -91,10 +91,6 @@ cdef class ClientId(Identifier):
     cdef ClientId from_str_c(str value)
 
 
-cdef class BracketOrderId(Identifier):
-    pass
-
-
 cdef class ClientOrderId(Identifier):
     pass
 

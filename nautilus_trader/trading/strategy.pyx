@@ -75,11 +75,11 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
-from nautilus_trader.model.order.bracket cimport BracketOrder
-from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.orderbook.book cimport OrderBookData
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -1423,7 +1423,7 @@ cdef class TradingStrategy(Component):
 
         References
         ----------
-        https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
+        https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
         Condition.not_none(order, "order")
@@ -1446,7 +1446,8 @@ cdef class TradingStrategy(Component):
 
         if trigger is not None:
             if order.is_triggered:
-                self.log.warning(f"Cannot update order for {repr(order.client_order_id)}: already triggered.")
+                self.log.warning(f"Cannot update order: "
+                                 f"{repr(order.client_order_id)} already triggered.")
                 return
             if trigger != order.trigger:
                 updating = True
@@ -1459,7 +1460,8 @@ cdef class TradingStrategy(Component):
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot update order (no account assigned to order yet), {order}.")
+            self.log.error(f"Cannot update order: "
+                           f"no account assigned to order yet, {order}.")
             return  # Cannot send command
 
         cdef UpdateOrder command = UpdateOrder(
@@ -1468,6 +1470,7 @@ cdef class TradingStrategy(Component):
             order.account_id,
             order.instrument_id,
             order.client_order_id,
+            order.venue_order_id,
             quantity,
             price,
             self.uuid_factory.generate(),
@@ -1527,6 +1530,7 @@ cdef class TradingStrategy(Component):
             The instrument for the orders to cancel.
 
         """
+        # instrument_id can be None
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list working_orders = self.execution.orders_working(instrument_id, self.id)
@@ -1601,7 +1605,7 @@ cdef class TradingStrategy(Component):
             The instrument for the positions to flatten.
 
         """
-        Condition.not_none(instrument_id, "instrument_id")
+        # instrument_id can be None
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list positions_open = self.execution.positions_open(instrument_id, self.id)
@@ -1717,7 +1721,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)  # Could be None
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_quote_tick(tick)
 
@@ -1784,7 +1788,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)  # Could be None
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_trade_tick(tick)
 
@@ -1851,7 +1855,7 @@ cdef class TradingStrategy(Component):
         # Update indicators
         cdef list indicators = self._indicators_for_bars.get(bar.type)
         cdef Indicator indicator
-        if indicators is not None:
+        if indicators:
             for indicator in indicators:
                 indicator.handle_bar(bar)
 

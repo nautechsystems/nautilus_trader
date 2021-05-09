@@ -90,8 +90,33 @@ cdef class Currency:
                 f"type={CurrencyTypeParser.to_str(self.currency_type)})")
 
     @staticmethod
+    cdef void register_c(Currency currency, bint overwrite=False):
+        if not overwrite and currency.code in _CURRENCY_MAP:
+            return
+        _CURRENCY_MAP[currency.code] = currency
+
+    @staticmethod
     cdef Currency from_str_c(str code):
         return _CURRENCY_MAP.get(code)
+
+    @staticmethod
+    def register(Currency currency, bint overwrite=False):
+        """
+        Register the given currency.
+
+        Will override the internal currency map.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to register
+        overwrite : bool
+            If the currency in the internal currency map should be overwritten.
+
+        """
+        Condition.not_none(currency, "currency")
+
+        return Currency.register_c(currency, overwrite)
 
     @staticmethod
     def from_str(str code):
@@ -108,7 +133,7 @@ cdef class Currency:
         Currency or None
 
         """
-        return _CURRENCY_MAP.get(code)
+        return Currency.from_str_c(code)
 
     @staticmethod
     cdef bint is_fiat_c(str code):

@@ -24,8 +24,8 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.bracket cimport BracketOrder
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.bracket cimport BracketOrder
 
 
 cdef class TradingCommand(Command):
@@ -58,6 +58,8 @@ cdef class SubmitBracketOrder(TradingCommand):
 cdef class UpdateOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue order identifier associated with the command.\n\n:returns: `VenueOrderId`"""
     cdef readonly Quantity quantity
     """The quantity for the command.\n\n:returns: `Quantity`"""
     cdef readonly Price price

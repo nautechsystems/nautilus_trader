@@ -1,6 +1,5 @@
 import pytest
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -13,6 +12,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -115,7 +115,7 @@ def position_id():
 
 @pytest.fixture()
 def instrument_id():
-    return InstrumentId(symbol=Symbol("Test"), venue=BETFAIR_VENUE)
+    return InstrumentId(symbol=Symbol("Test"), venue=Venue("BETFAIR"))
 
 
 @pytest.fixture()
