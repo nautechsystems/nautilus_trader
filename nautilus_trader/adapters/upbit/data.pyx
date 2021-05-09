@@ -727,7 +727,7 @@ cdef class UpbitDataClient(LiveMarketDataClient):
                         instrument_id=instrument.id,
                         price=Price(message['price'], instrument.price_precision),
                         size=Quantity(message['amount'], instrument.size_precision),
-                        side=side,
+                        aggressor_side=side,
                         match_id=TradeMatchId(str(message["id"])),
                         timestamp_ns=secs_to_nanos(message['receipt_timestamp'])
                     )
