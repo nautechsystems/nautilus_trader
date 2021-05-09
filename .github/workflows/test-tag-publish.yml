@@ -268,6 +268,7 @@ jobs:
             echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
             cd dist
             echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          fi
 
       # Upload release asset
       - name: Upload release asset
