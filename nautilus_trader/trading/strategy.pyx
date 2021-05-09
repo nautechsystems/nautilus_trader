@@ -1530,6 +1530,7 @@ cdef class TradingStrategy(Component):
             The instrument for the orders to cancel.
 
         """
+        # instrument_id can be None
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list working_orders = self.execution.orders_working(instrument_id, self.id)
@@ -1604,7 +1605,7 @@ cdef class TradingStrategy(Component):
             The instrument for the positions to flatten.
 
         """
-        Condition.not_none(instrument_id, "instrument_id")
+        # instrument_id can be None
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list positions_open = self.execution.positions_open(instrument_id, self.id)
