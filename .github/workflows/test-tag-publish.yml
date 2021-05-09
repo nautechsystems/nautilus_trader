@@ -188,17 +188,9 @@ jobs:
       - name: Set output
         id: vars
         run: |
-          if [ "$RUNNER_OS" == "Linux" ]; then
-            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-            cd dist
-            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-            cd dist
-            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-          elif [ "$RUNNER_OS" == "Windows" ]; then
-            echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
-            echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
+          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+          cd dist
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
       # Upload release asset
       - name: Upload release asset
@@ -269,17 +261,14 @@ jobs:
       - name: Set output
         id: vars
         run: |
-          if [ "$RUNNER_OS" == "Linux" ]; then
-            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-            cd dist
-            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-            cd dist
-            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-          elif [ "$RUNNER_OS" == "Windows" ]; then
+          if [ "$RUNNER_OS" == "Windows" ]; then
             echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
             echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
+          else
+            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+            cd dist
+            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          fi
 
       # Upload release asset
       - name: Upload release asset
