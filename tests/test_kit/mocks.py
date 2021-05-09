@@ -32,6 +32,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -42,7 +43,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.order.base import Order
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -602,14 +603,18 @@ class MockExecutionDatabase(ExecutionDatabase):
         """
         super().__init__(trader_id, logger)
 
+        self.currencies = {}
         self.accounts = {}
         self.orders = {}
         self.positions = {}
 
     def flush(self) -> None:
-        self.accounts = {}
-        self.orders = {}
-        self.positions = {}
+        self.accounts.clear()
+        self.orders.clear()
+        self.positions.clear()
+
+    def load_currencies(self) -> dict:
+        return self.currencies.copy()
 
     def load_accounts(self) -> dict:
         return self.accounts.copy()
@@ -619,6 +624,9 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def load_positions(self) -> dict:
         return self.positions.copy()
+
+    def load_currency(self, code: str) -> Currency:
+        return self.currencies.get(code)
 
     def load_account(self, account_id: AccountId) -> Account:
         return self.accounts.get(account_id)
@@ -634,6 +642,9 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def delete_strategy(self, strategy_id: StrategyId) -> None:
         pass
+
+    def add_currency(self, currency: Currency) -> None:
+        self.currencies[currency.code] = currency
 
     def add_account(self, account: Account) -> None:
         self.accounts[account.id] = account

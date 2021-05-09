@@ -87,8 +87,11 @@ class TradingStrategyTests(unittest.TestCase):
                 "use_previous_close": False
             },  # To correctly reproduce historical data bars
         )
-        self.portfolio.register_cache(self.data_engine.cache)
+        self.data_engine.process(AUDUSD_SIM)
+        self.data_engine.process(GBPUSD_SIM)
+        self.data_engine.process(USDJPY_SIM)
 
+        self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         trader_id = TraderId("TESTER", "000")
@@ -120,7 +123,6 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.data_client = BacktestMarketDataClient(
-            instruments=[AUDUSD_SIM, GBPUSD_SIM, USDJPY_SIM],
             client_id=ClientId("SIM"),
             engine=self.data_engine,
             clock=self.clock,
@@ -1866,7 +1868,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
+        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[0].state)
         self.assertEqual(
             order.client_order_id,
             strategy.execution.orders_completed()[0].client_order_id,
@@ -1969,8 +1971,8 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIn(order1, strategy.execution.orders())
         self.assertIn(order2, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[1].state)
+        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[0].state)
+        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[1].state)
         self.assertIn(order1, strategy.execution.orders_completed())
         self.assertIn(order2, strategy.execution.orders_completed())
 

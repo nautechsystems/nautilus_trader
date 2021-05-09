@@ -30,14 +30,17 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelRejected
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingReplace
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdateRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
@@ -51,9 +54,9 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.limit import LimitOrder
-from nautilus_trader.model.order.stop_limit import StopLimitOrder
-from nautilus_trader.model.order.stop_market import StopMarketOrder
+from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.stop_limit import StopLimitOrder
+from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
@@ -370,6 +373,7 @@ class TestMsgPackCommandSerializer:
             self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
+            VenueOrderId("001"),
             Quantity(100000),
             Price("1.00001"),
             uuid4(),
@@ -547,23 +551,6 @@ class TestMsgPackEventSerializer:
         assert deserialized == event
         assert deserialized.options == options
 
-    def test_serialize_and_deserialize_order_submitted_events(self):
-        # Arrange
-        event = OrderSubmitted(
-            self.account_id,
-            ClientOrderId("O-123456"),
-            0,
-            uuid4(),
-            0,
-        )
-
-        # Act
-        serialized = self.serializer.serialize(event)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        assert deserialized == event
-
     def test_serialize_and_deserialize_order_invalid_events(self):
         # Arrange
         event = OrderInvalid(
@@ -585,6 +572,23 @@ class TestMsgPackEventSerializer:
         event = OrderDenied(
             ClientOrderId("O-123456"),
             "Exceeds risk for FX",
+            uuid4(),
+            0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_order_submitted_events(self):
+        # Arrange
+        event = OrderSubmitted(
+            self.account_id,
+            ClientOrderId("O-123456"),
+            0,
             uuid4(),
             0,
         )
@@ -619,8 +623,8 @@ class TestMsgPackEventSerializer:
         event = OrderRejected(
             self.account_id,
             ClientOrderId("O-123456"),
-            0,
             "ORDER_ID_INVALID",
+            0,
             uuid4(),
             0,
         )
@@ -632,9 +636,45 @@ class TestMsgPackEventSerializer:
         # Assert
         assert deserialized == event
 
-    def test_serialize_and_deserialize_order_cancelled_events(self):
+    def test_serialize_and_deserialize_order_pending_cancel_events(self):
         # Arrange
-        event = OrderCancelled(
+        event = OrderPendingCancel(
+            self.account_id,
+            ClientOrderId("O-123456"),
+            VenueOrderId("1"),
+            0,
+            uuid4(),
+            0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_order_pending_replace_events(self):
+        # Arrange
+        event = OrderPendingReplace(
+            self.account_id,
+            ClientOrderId("O-123456"),
+            VenueOrderId("1"),
+            0,
+            uuid4(),
+            0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_order_canceled_events(self):
+        # Arrange
+        event = OrderCanceled(
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
@@ -656,9 +696,9 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
+            0,
             uuid4(),
             0,
         )
@@ -676,9 +716,9 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
+            0,
             uuid4(),
             0,
         )
@@ -728,6 +768,24 @@ class TestMsgPackEventSerializer:
         # Assert
         assert deserialized == event
 
+    def test_serialize_and_deserialize_order_triggered_events(self):
+        # Arrange
+        event = OrderTriggered(
+            self.account_id,
+            ClientOrderId("O-123456"),
+            VenueOrderId("1"),
+            0,
+            uuid4(),
+            0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
     def test_serialize_and_deserialize_order_partially_filled_events(self):
         # Arrange
         event = OrderFilled(
@@ -741,8 +799,6 @@ class TestMsgPackEventSerializer:
             OrderSide.SELL,
             Quantity(50000),
             Price("1.00000"),
-            Quantity(50000),
-            Quantity(50000),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
@@ -772,8 +828,6 @@ class TestMsgPackEventSerializer:
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
-            Quantity(100000),
-            Quantity(),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),

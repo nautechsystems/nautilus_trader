@@ -22,7 +22,6 @@ import pstats
 import pandas as pd
 import pytz
 
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -48,27 +47,20 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_with_empty_strategy():
         # Arrange
-        data = BacktestDataContainer()
-        data.add_instrument(USDJPY_SIM)
-        data.add_bars(
+        engine = BacktestEngine(bypass_logging=True)
+
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_bars(
             USDJPY_SIM.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        data.add_bars(
+        engine.add_bars(
             USDJPY_SIM.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.usdjpy_1min_ask(),
-        )
-
-        strategies = [TradingStrategy("001")]
-
-        engine = BacktestEngine(
-            data=data,
-            strategies=strategies,
-            bypass_logging=True,
         )
 
         engine.add_exchange(
@@ -78,11 +70,18 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             fill_model=FillModel(),
         )
 
+        strategies = [TradingStrategy("001")]
+
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
         stats_file = "perf_stats_backtest_run_empty.prof"
-        cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
+        cProfile.runctx(
+            "engine.run(start, stop, strategies=strategies)",
+            globals(),
+            locals(),
+            stats_file,
+        )
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
@@ -104,33 +103,20 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_for_tick_processing():
         # Arrange
-        data = BacktestDataContainer()
-        data.add_instrument(USDJPY_SIM)
-        data.add_bars(
+        engine = BacktestEngine(bypass_logging=True)
+
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_bars(
             USDJPY_SIM.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        data.add_bars(
+        engine.add_bars(
             USDJPY_SIM.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.usdjpy_1min_ask(),
-        )
-
-        strategy = EMACross(
-            instrument_id=USDJPY_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
-            trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
-        )
-
-        engine = BacktestEngine(
-            data=data,
-            strategies=[strategy],
-            bypass_logging=True,
         )
 
         engine.add_exchange(
@@ -139,32 +125,6 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             starting_balances=[Money(1_000_000, USD)],
         )
 
-        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
-
-        stats_file = "perf_stats_tick_processing.prof"
-        cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
-        s = pstats.Stats(stats_file)
-        s.strip_dirs().sort_stats("time").print_stats()
-
-    @staticmethod
-    def test_run_with_ema_cross_strategy():
-        # Arrange
-        data = BacktestDataContainer()
-        data.add_instrument(USDJPY_SIM)
-        data.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
-        )
-        data.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
-
         strategy = EMACross(
             instrument_id=USDJPY_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_bid(),
@@ -173,14 +133,40 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             slow_ema=20,
         )
 
-        engine = BacktestEngine(
-            data=data,
-            strategies=[strategy],
-            bypass_logging=True,
+        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+
+        stats_file = "perf_stats_tick_processing.prof"
+        cProfile.runctx(
+            "engine.run(start, stop, strategies=[strategy])",
+            globals(),
+            locals(),
+            stats_file,
+        )
+        s = pstats.Stats(stats_file)
+        s.strip_dirs().sort_stats("time").print_stats()
+
+    @staticmethod
+    def test_run_with_ema_cross_strategy():
+        # Arrange
+        engine = BacktestEngine(bypass_logging=True)
+
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.BID,
+            TestDataProvider.usdjpy_1min_bid(),
+        )
+        engine.add_bars(
+            USDJPY_SIM.id,
+            BarAggregation.MINUTE,
+            PriceType.ASK,
+            TestDataProvider.usdjpy_1min_ask(),
         )
 
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -191,11 +177,24 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             modules=[fx_rollover_interest],
         )
 
+        strategy = EMACross(
+            instrument_id=USDJPY_SIM.id,
+            bar_spec=TestStubs.bar_spec_1min_bid(),
+            trade_size=Decimal(1_000_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
         stats_file = "perf_stats_backtest_run_ema.prof"
-        cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
+        cProfile.runctx(
+            "engine.run(start, stop, strategies=[strategy])",
+            globals(),
+            locals(),
+            stats_file,
+        )
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
@@ -228,7 +227,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         # 27/11/20  4294514 function calls (4268761 primitive calls) in 5.822 seconds (remove redundant methods)
         # 29/11/20  4374015 function calls (4348306 primitive calls) in 5.753 seconds (performance check)
         # 09/12/20  4294769 function calls (4268911 primitive calls) in 5.858 seconds (performance check)
-        # 14/12/20  5685767 function calls (5648057 primitive calls) in 6.484 seconds (multi-asset accounts)
+        # 14/12/20  5685767 function calls (5648057 primitive calls) in 6.484 seconds (multi-currency accounts)
         # 01/01/21  5657521 function calls (5615526 primitive calls) in 6.960 seconds (performance check)
         # 03/01/21  5518555 function calls (5480845 primitive calls) in 6.529 seconds (make handlers c methods)
         # 31/01/21  5408449 function calls (5370737 primitive calls) in 6.890 seconds (refactor execution engine)
@@ -238,3 +237,4 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         # 24/04/21  5375115 function calls (5337643 primitive calls) in 10.553 seconds (order book in exchanges)
         # 24/04/21  5375115 function calls (5337643 primitive calls) in 10.009 seconds (order book optimizations)
         # 26/04/21  5405727 function calls (5368039 primitive calls) in 7.469 seconds (order book optimizations)
+        # 01/05/21  5405727 function calls (5368039 primitive calls) in 7.533 seconds (refactorings)

@@ -17,7 +17,7 @@ import asyncio
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ccxt.data import CCXTDataClient
-from nautilus_trader.adapters.ccxt.execution import CCXTExecutionClient
+from nautilus_trader.adapters.ccxt.execution import BinanceCCXTExecutionClient
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.common.clock import LiveClock
@@ -163,5 +163,5 @@ class TestCCXTExecClientFactory:
         )
 
         # Assert
-        assert type(client) == CCXTExecutionClient
+        assert type(client) == BinanceCCXTExecutionClient
         assert client.id == ClientId("BINANCE")

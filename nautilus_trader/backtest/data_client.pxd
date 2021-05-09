@@ -22,5 +22,4 @@ cdef class BacktestDataClient(DataClient):
 
 
 cdef class BacktestMarketDataClient(MarketDataClient):
-    cdef dict _instruments
     cdef bint _is_connected

@@ -100,6 +100,7 @@ cdef class Position:
 
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
+    cpdef bint is_opposite_side(self, OrderSide side) except *
 
     cpdef void apply(self, OrderFilled fill) except *
 

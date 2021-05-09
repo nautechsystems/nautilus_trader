@@ -450,16 +450,12 @@ cpdef object as_utc_index(data: pd.DataFrame):
 
 cpdef str format_iso8601(datetime dt):
     """
-    Format the given string to the ISO 8601 specification with "Z" zulu.
+    Format the given string to millisecond accuracy ISO 8601 specification.
 
     Parameters
     ----------
     dt : datetime
         The input datetime to format.
-
-    Notes
-    -----
-    Unit accuracy is millisecond.
 
     Returns
     -------
@@ -482,16 +478,12 @@ cpdef str format_iso8601(datetime dt):
 
 cpdef str format_iso8601_us(datetime dt):
     """
-    Format the given string to the ISO 8601 specification with "Z" zulu.
+    Format the given string to microsecond accuracy ISO 8601 specification.
 
     Parameters
     ----------
     dt : datetime
         The input datetime to format.
-
-    Notes
-    -----
-    Unit accuracy is millisecond.
 
     Returns
     -------

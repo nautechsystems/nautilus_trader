@@ -12,15 +12,6 @@ Data Client
    :members:
    :member-order: bysource
 
-Data Container
---------------
-
-.. automodule:: nautilus_trader.backtest.data_container
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Data Producer
 -------------
 

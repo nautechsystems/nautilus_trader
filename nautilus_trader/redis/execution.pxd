@@ -20,6 +20,7 @@ from nautilus_trader.serialization.base cimport EventSerializer
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef str _key_trader
+    cdef str _key_currencies
     cdef str _key_accounts
     cdef str _key_orders
     cdef str _key_positions

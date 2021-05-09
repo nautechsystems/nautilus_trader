@@ -25,7 +25,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
@@ -51,6 +51,7 @@ cdef class Order:
     cdef list _events
     cdef list _execution_ids
     cdef FiniteStateMachine _fsm
+    cdef OrderState _rollback_state
 
     cdef readonly ClientOrderId client_order_id
     """The client order identifier.\n\n:returns: `ClientOrderId`"""
@@ -116,7 +117,7 @@ cdef class Order:
     cdef void _rejected(self, OrderRejected event) except *
     cdef void _accepted(self, OrderAccepted event) except *
     cdef void _updated(self, OrderUpdated event) except *
-    cdef void _cancelled(self, OrderCancelled event) except *
+    cdef void _canceled(self, OrderCanceled event) except *
     cdef void _expired(self, OrderExpired event) except *
     cdef void _triggered(self, OrderTriggered event) except *
     cdef void _filled(self, OrderFilled event) except *

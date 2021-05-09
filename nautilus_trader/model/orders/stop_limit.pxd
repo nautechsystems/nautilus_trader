@@ -15,7 +15,7 @@
 
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef class StopLimitOrder(PassiveOrder):

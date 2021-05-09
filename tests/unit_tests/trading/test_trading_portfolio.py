@@ -620,7 +620,7 @@ class PortfolioTests(unittest.TestCase):
         result = self.portfolio.unrealized_pnls(BITMEX)
 
         # # Assert
-        self.assertIsNone(result)
+        self.assertEqual({}, result)
 
     def test_market_value_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange

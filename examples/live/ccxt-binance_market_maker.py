@@ -66,6 +66,7 @@ config = {
             "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
+            "sandbox_mode": False,  # If client uses the testnet
         },
     },
     "exec_clients": {
@@ -73,7 +74,7 @@ config = {
             "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
-            "sandbox_mode": False,  # If clients use the testnet
+            "sandbox_mode": False,  # If client uses the testnet
         },
     },
 }

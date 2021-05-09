@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from decimal import Decimal
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
@@ -29,6 +28,7 @@ from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -39,6 +39,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
@@ -425,7 +426,7 @@ class TestLiveExecutionEngine:
 
         self.loop.run_until_complete(run_test())
 
-    def test_reconcile_state_when_cancelled_reconciles(self):
+    def test_reconcile_state_when_canceled_reconciles(self):
         async def run_test():
             # Arrange
             self.engine.start()
@@ -464,7 +465,7 @@ class TestLiveExecutionEngine:
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
-                order_state=OrderState.CANCELLED,
+                order_state=OrderState.CANCELED,
                 filled_qty=Quantity(0),
                 timestamp_ns=0,
             )
@@ -584,26 +585,24 @@ class TestLiveExecutionEngine:
             )
 
             trade1 = ExecutionReport(
-                execution_id=ExecutionId("1"),
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
-                last_qty=Decimal(50000),
-                last_px=Decimal("1.00000"),
-                commission_amount=Decimal("5.0"),
-                commission_currency="USD",
+                execution_id=ExecutionId("1"),
+                last_qty=Quantity(50000),
+                last_px=Price("1.00000"),
+                commission=Money(5.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,
                 timestamp_ns=0,
             )
 
             trade2 = ExecutionReport(
-                execution_id=ExecutionId("2"),
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
-                last_qty=Decimal(20000),
-                last_px=Decimal("1.00000"),
-                commission_amount=Decimal("2.0"),
-                commission_currency="USD",
+                execution_id=ExecutionId("2"),
+                last_qty=Quantity(20000),
+                last_px=Price("1.00000"),
+                commission=Money(2.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,
                 timestamp_ns=0,
@@ -671,10 +670,9 @@ class TestLiveExecutionEngine:
                 execution_id=ExecutionId("1"),
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
-                last_qty=Decimal(50000),
-                last_px=Decimal("1.00000"),
-                commission_amount=Decimal("5.0"),
-                commission_currency="USD",
+                last_qty=Quantity(50000),
+                last_px=Price("1.00000"),
+                commission=Money(5.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,
                 timestamp_ns=0,
@@ -684,10 +682,9 @@ class TestLiveExecutionEngine:
                 execution_id=ExecutionId("2"),
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
-                last_qty=Decimal(50000),
-                last_px=Decimal("1.00000"),
-                commission_amount=Decimal("2.0"),
-                commission_currency="USD",
+                last_qty=Quantity(50000),
+                last_px=Price("1.00000"),
+                commission=Money(2.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,
                 timestamp_ns=0,

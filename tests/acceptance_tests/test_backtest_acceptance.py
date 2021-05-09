@@ -19,7 +19,6 @@ import unittest
 
 import pandas as pd
 
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.bar import BarSpecification
@@ -32,7 +31,6 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -42,31 +40,27 @@ from tests.test_kit.strategies import EMACross
 class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+        self.engine = BacktestEngine(bypass_logging=True)
+
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        data = BacktestDataContainer()
-        data.add_instrument(self.usdjpy)
-        data.add_bars(
+
+        self.engine.add_instrument(self.usdjpy)
+        self.engine.add_bars(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        data.add_bars(
+        self.engine.add_bars(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
-        )
-
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -153,38 +147,34 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.assertEqual(2689, strategy2.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
         self.assertEqual(
-            Money(994662.69, USD), self.engine.portfolio.account(self.venue).balance()
+            Money(992818.88, USD), self.engine.portfolio.account(self.venue).balance()
         )
 
 
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+        self.engine = BacktestEngine(bypass_logging=True)
+
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
-        data = BacktestDataContainer()
-        data.add_instrument(self.gbpusd)
-        data.add_bars(
+
+        self.engine.add_instrument(self.gbpusd)
+        self.engine.add_bars(
             self.gbpusd.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.gbpusd_1min_bid(),
         )
-        data.add_bars(
+        self.engine.add_bars(
             self.gbpusd.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.gbpusd_1min_ask(),
         )
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
-        )
-
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
@@ -222,25 +212,21 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
 class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+        self.engine = BacktestEngine(bypass_logging=True)
+
         self.venue = Venue("SIM")
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        data = BacktestDataContainer()
-        data.add_instrument(self.audusd)
-        data.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
-        )
+        self.engine.add_instrument(self.audusd)
+        self.engine.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
 
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         self.engine.add_exchange(
-            venue=self.venue,
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, AUD)],
             modules=[fx_rollover_interest],
@@ -293,18 +279,13 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
 class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+        self.engine = BacktestEngine(bypass_logging=True)
+
         self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
-        data = BacktestDataContainer()
-        data.add_instrument(self.ethusdt)
-        data.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
-        )
-
+        self.engine.add_instrument(self.ethusdt)
+        self.engine.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
         self.engine.add_exchange(
             venue=self.venue,
             oms_type=OMSType.NETTING,
@@ -331,7 +312,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.assertEqual(279, strategy.fast_ema.count)
         self.assertEqual(69806, self.engine.iteration)
         self.assertEqual(
-            Money(999744.86220000, USDT),
+            Money(997703.75635820, USDT),
             self.engine.portfolio.account(self.venue).balance(),
         )
 
@@ -339,19 +320,18 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+        self.engine = BacktestEngine(bypass_logging=True)
+
         self.venue = Venue("BINANCE")
         self.instrument = TestInstrumentProvider.btcusdt_binance()
-        data = BacktestDataContainer()
-        data.add_instrument(self.instrument)
-        data.add_trade_ticks(self.instrument.id, TestDataProvider.tardis_trades())
-        data.add_quote_ticks(self.instrument.id, TestDataProvider.tardis_quotes())
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
+        self.engine.add_instrument(self.instrument)
+        self.engine.add_trade_ticks(
+            self.instrument.id, TestDataProvider.tardis_trades()
         )
-
+        self.engine.add_quote_ticks(
+            self.instrument.id, TestDataProvider.tardis_quotes()
+        )
         self.engine.add_exchange(
             venue=self.venue,
             oms_type=OMSType.NETTING,
@@ -378,6 +358,6 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.assertEqual(39, strategy.fast_ema.count)
         self.assertEqual(19998, self.engine.iteration)
         self.assertEqual(
-            Money(992256.83000000, USDT),
+            Money(991976.84796000, USDT),
             self.engine.portfolio.account(self.venue).balance(),
         )

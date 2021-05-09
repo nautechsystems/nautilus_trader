@@ -242,7 +242,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
 
     def test_rate_dataframe_returns_correct_dataframe(self):

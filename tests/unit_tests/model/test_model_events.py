@@ -28,7 +28,7 @@ from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelRejected
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
@@ -173,8 +173,8 @@ class TestEvents:
         event = OrderRejected(
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
-            rejected_ns=0,
             reason="INSUFFICIENT_MARGIN",
+            rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -217,9 +217,9 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            rejected_ns=0,
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
+            rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -243,9 +243,9 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            rejected_ns=0,
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
+            rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -262,25 +262,25 @@ class TestEvents:
             f"event_id={uuid})" == repr(event)
         )
 
-    def test_order_cancelled(self):
+    def test_order_canceled(self):
         # Arrange
         uuid = uuid4()
-        event = OrderCancelled(
+        event = OrderCanceled(
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            cancelled_ns=0,
+            canceled_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
 
         # Act
         assert (
-            f"OrderCancelled(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"OrderCanceled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, event_id={uuid})" == str(event)
         )
         assert (
-            f"OrderCancelled(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"OrderCanceled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, event_id={uuid})" == repr(event)
         )
 
@@ -346,8 +346,6 @@ class TestEvents:
             order_side=OrderSide.BUY,
             last_qty=Quantity("0.561000"),
             last_px=Price("15600.12445"),
-            cum_qty=Quantity("0.561000"),
-            leaves_qty=Quantity(0),
             currency=USDT,
             is_inverse=False,
             commission=Money("12.20000000", USDT),
@@ -363,14 +361,14 @@ class TestEvents:
             f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
-            f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
+            f"last_px=15600.12445, "
             f"commission=12.20000000 USDT, event_id={uuid})" == str(event)
         )
         assert (
             f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
-            f"last_px=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
+            f"last_px=15600.12445, "
             f"commission=12.20000000 USDT, event_id={uuid})" == repr(event)
         )
 
