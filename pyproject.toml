@@ -40,7 +40,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 betfairlightweight = {extras = ["speed"], version = "^2.12.1"}
-ccxt = "^1.49.45"
+ccxt = "^1.49.64"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 ib_insync = "^0.9.66"
@@ -50,8 +50,8 @@ numpydoc = { version = "^1.1.0", optional = true }
 oandapyV20 = "^0.6.3"
 pandas = "^1.2.4"
 psutil = "^5.8.0"
-pyarrow = { version = "^3.0.0", markers = "sys_platform != 'win32'" }
-pytz = "^2020.5"
+pyarrow = { version = "^4.0.0", markers = "sys_platform != 'win32'" }
+pytz = "^2021.1"
 redis = "3.5.3"
 scipy = "^1.6.1"
 tabulate = "^0.8.9"
@@ -62,19 +62,19 @@ uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
 # https://github.com/cython/cython/issues/3515
 # A commit was pushed on 7/1/21 to fix the above,
 # possibly fixed in the next version of Cython.
-black = "^20.8.b1"
+black = "^21.5.b0"
 coverage = "^4.5.4"
-flake8 = "^3.9.1"
+flake8 = "^3.9.2"
 isort = "^5.8.0"
 mypy = "^0.812"
 nox = "^2020.12.31"
 parameterized = "^0.8.1"
 pre-commit = "^2.12.1"
 pytest = "^6.2.4"
-pytest-asyncio = "^0.14.0"
+pytest-asyncio = "^0.15.1"
 pytest-benchmark = "^3.4.1"
 pytest-cov = "^2.10.1"
-pytest-mock = "^3.6.0"
+pytest-mock = "^3.6.1"
 pytest-xdist = { version = "^2.2.0", extras = ["psutil"] }
 sphinx = { version = "^3.4.3", optional = true }
 sphinx-rtd-theme = { version = "^0.5.1", optional = true }
