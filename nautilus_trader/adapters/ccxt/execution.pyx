@@ -654,7 +654,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cum_qty: Decimal = prev_cum_qty + last_qty
         self._cached_filled[order.venue_order_id] = cum_qty
         leaves_qty: Decimal = order.quantity - cum_qty
-        if leaves_qty == 0:
+        if leaves_qty < 1e-8:
+            leaves_qty = Decimal(0.0)
+        if leaves_qty == 0 :
             self._decache_order(venue_order_id)
 
         self._generate_order_filled(
@@ -666,7 +668,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             last_qty=last_qty,
             last_px=event["price"],
             cum_qty=cum_qty,
-            leaves_qty=order.quantity - cum_qty,
+            leaves_qty=leaves_qty,
             commission_amount=event.get("fee", {}).get("cost", 0),
             commission_currency=event.get("fee", {}).get("currency"),
             liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
@@ -892,3 +894,4 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
                 timestamp_ns=self._clock.timestamp_ns(),
             )
 #endregion
+
