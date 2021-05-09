@@ -767,7 +767,10 @@ cdef class ExecutionEngine(Component):
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
         elif len(positions_open) == 1:
             # Assign existing identifier to fill
-            fill.position_id = positions_open[0].id
+            if positions_open[0].instrument_id != fill.instrument_id:
+                fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
+            else:
+                fill.position_id = positions_open[0].id
         else:
             self._log.error(f"Cannot assign PositionId: "
                             f"{len(positions_open)} open positions")
