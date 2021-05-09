@@ -17,14 +17,15 @@ import unittest
 
 from parameterized import parameterized
 
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
+
 
 class InstrumentTests(unittest.TestCase):
     @parameterized.expand(

@@ -110,7 +110,7 @@ class TestDataProvider:
     @staticmethod
     def binance_btcusdt_instrument():
         path = os.path.join(PACKAGE_ROOT, "data", "binance-btcusdt-instrument.txt")
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             return f.readline()
 
     @staticmethod
