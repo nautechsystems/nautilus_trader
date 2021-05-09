@@ -24,6 +24,8 @@ cdef class CryptofeedDataClient(CCXTDataClient):
 
     cdef object _handle_messages_task
 
-    cdef str _convert_instrument_to_market_id(self, Instrument instrument)
+    cdef str _url
+
     cdef str _make_order_book_topic(self, Instrument instrument)
     cdef str _make_trade_tick_topic(self, Instrument instrument)
+    cdef str _convert_instrument_to_market_id(self, Instrument instrument)

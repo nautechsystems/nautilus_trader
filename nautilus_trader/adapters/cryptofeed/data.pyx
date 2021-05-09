@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import asyncio
+from libc.stdint cimport int64_t
 
 import ccxtpro
 import orjson as json
@@ -42,12 +43,13 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.network.zmq cimport context
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
-cdef class CryptoFeedDataClient(CCXTDataClient):
+cdef class CryptofeedDataClient(CCXTDataClient):
     """
     Provides a data client for the unified CCXT Pro API and Crpytofeed.
     """
@@ -80,106 +82,23 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
 
         """
         super().__init__(
-            ClientId(client.name.upper()),
+            client,
             engine,
             clock,
-            logger,
-            config={
-                "name": f"CCXTDataClient-{client.name.upper()}",
-                "unavailable_methods": [
-                    self.request_quote_ticks.__name__,
-                ],
-            }
+            logger
         )
-
-        self._client = client
-        self._instrument_provider = CCXTInstrumentProvider(
-            client=client,
-            load_all=False,
-        )
-
         self._subscriber = context.socket(zmq.SUB)  # type: zmq.Socket
-
-        self.is_connected = False
-
-        # Subscriptions
-        self._subscribed_instruments = set()  # type: set[InstrumentId]
-        self._subscribed_order_books = {}  # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_quote_ticks = {}  # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_trade_ticks = {}  # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_bars = {}  # type: dict[BarType, asyncio.Task]
-
         # Caches
         self._market_id_to_instrument = {}
-
         # ZeroMQ task
         self._handle_messages_task = None
 
-        # Scheduled tasks
-        self._update_instruments_task = None
-
-    @property
-    def subscribed_instruments(self):
-        """
-        The instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_instruments))
-
-    @property
-    def subscribed_quote_ticks(self):
-        """
-        The quote tick instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_quote_ticks.keys()))
-
-    @property
-    def subscribed_trade_ticks(self):
-        """
-        The trade tick instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_trade_ticks.keys()))
-
-    @property
-    def subscribed_bars(self):
-        """
-        The bar types subscribed to.
-
-        Returns
-        -------
-        list[BarType]
-
-        """
-        return sorted(list(self._subscribed_bars.keys()))
-
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
-        self._log.info("Connecting...")
-
-        # Schedule subscribed instruments update
-        delay = _SECONDS_IN_HOUR
-        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
-
-        self._loop.create_task(self._connect())
+        self._url = ""
 
     async def _connect(self):
+        self._subscriber.bind(self._url)
+        self._handle_messages_task = self._loop.create_task(self._handle_messages())
+
         try:
             await self._load_instruments()
         except CCXTError as ex:
@@ -189,17 +108,8 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
 
-        self._subscriber.bind("tcp://127.0.0.1:5678")
-        self._handle_messages_task = self._loop.create_task(self._handle_messages())
-
         self.is_connected = True
         self._log.info("Connected.")
-
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
-        self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
         self._log.info("Disconnecting...")
@@ -220,43 +130,6 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
 
         self.is_connected = False
         self._log.info("Disconnected.")
-
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-        """
-        if self.is_connected:
-            self._log.error("Cannot reset a connected data client.")
-            return
-
-        self._log.info("Resetting...")
-
-        self._instrument_provider = CCXTInstrumentProvider(
-            client=self._client,
-            load_all=False,
-        )
-
-        self._subscribed_instruments = set()
-
-        # Check all tasks have been popped and cancelled
-        assert not self._subscribed_order_books
-        assert not self._subscribed_quote_ticks
-        assert not self._subscribed_trade_ticks
-        assert not self._subscribed_bars
-
-        self._log.info("Reset.")
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose the client.
-        """
-        if self.is_connected:
-            self._log.error("Cannot dispose a connected data client.")
-            return
-
-        self._log.info("Disposing...")
-
-        self._log.info("Disposed.")
 
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -297,6 +170,7 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
         self._market_id_to_instrument[market_id] = instrument
 
         self._subscribed_order_books[instrument_id] = True
+        self._log.debug(f"Subscribed topic: {topic}")
         self._log.info(f"Subscribed to {instrument_id.symbol} <OrderBook> data.")
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
@@ -336,6 +210,7 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
         self._market_id_to_instrument[market_id] = instrument
 
         self._subscribed_trade_ticks[instrument_id] = True
+        self._log.debug(f"Subscribed topic: {topic}")
         self._log.info(f"Subscribed to {instrument_id.symbol} <TradeTick> data.")
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
@@ -440,8 +315,8 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
                           "by the exchange.")
 
     # -- STREAMS ---------------------------------------------------------------------------------------
-
     async def _handle_messages(self):
+        # TODO: Refactoring
         cdef:
             str data
             str key, raw_message
@@ -451,7 +326,6 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
             Instrument instrument
             OrderBookSnapshot snapshot
             TradeTick trade
-            OrderSide side
         try:
             while True:
                 # noinspection PyUnresolvedReferences
@@ -463,7 +337,7 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
                 market_id = f"{base}-{quote}"
                 instrument = self._market_id_to_instrument.get(market_id, None)
                 if not instrument:
-                    self._log.debug(f"Unregistered instrument.")
+                    self._log.error(f"Unregistered instrument(market_id:{market_id})")
                     continue
 
                 if message_type == "book":
@@ -526,14 +400,13 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
  'symbol': 'CBK-KRW',
  'timestamp': 1619454502}
                     """
-                    side = OrderSide.BUY if message['side'] == "buy" else OrderSide.SELL
                     trade = TradeTick(
                         instrument_id=instrument.id,
                         price=Price(message['price'], instrument.price_precision),
                         size=Quantity(message['amount'], instrument.size_precision),
-                        side=side,
+                        aggressor_side=AggressorSide.BUY if message['side'] == "buy" else AggressorSide.SELL,
                         match_id=TradeMatchId(str(message["id"])),
-                        timestamp_ns=secs_to_nanos(message['receipt_timestamp'])
+                        timestamp_ns=<int64_t>secs_to_nanos(message['receipt_timestamp'])
                     )
                     self._handle_data(trade)
                 else:
@@ -542,10 +415,6 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
             self._log.debug(f"Cancelled `_handle_messages`.")
         except Exception as ex:
             self._log.exception(ex)
-
-    cdef str _convert_instrument_to_market_id(self, Instrument instrument):
-        # Convert symbol to market id(needed when using api)
-        return f"{instrument.base_currency.code}-{instrument.quote_currency.code}"
 
     cdef str _make_order_book_topic(self, Instrument instrument):
         """
@@ -566,3 +435,7 @@ cdef class CryptoFeedDataClient(CCXTDataClient):
         """
         return f"{self._client.name.upper()}-trades-" \
                f"{self._convert_instrument_to_market_id(instrument)}"
+
+    cdef str _convert_instrument_to_market_id(self, Instrument instrument):
+        # Convert symbol to market id(needed when using api)
+        return f"{instrument.base_currency.code}-{instrument.quote_currency.code}"
