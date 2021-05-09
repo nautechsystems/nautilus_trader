@@ -16,7 +16,6 @@
 import asyncio
 from collections import defaultdict
 from datetime import datetime
-from decimal import Decimal
 from functools import partial
 from typing import Dict, List, Optional, Set
 
@@ -35,6 +34,9 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+
+from nautilus_trader.model.currency import Currency
+
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -57,8 +59,9 @@ from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.base import Order
+from nautilus_trader.model.orders.base import Order
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -124,6 +127,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.venue_order_id_to_client_order_id = {}  # type: Dict[str, ClientOrderId]
         self.pending_update_order_client_ids = set()  # type: Set[(ClientOrderId, VenueOrderId)]
         self.published_executions = defaultdict(list)  # type: Dict[ClientOrderId, ExecutionId]
+        self._account_currency = None
 
     cpdef void connect(self) except *:
         self._loop.create_task(self._connect())
@@ -190,8 +194,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef void submit_order(self, SubmitOrder command) except *:
         self._log.debug(f"Received {command}")
 
-        self._generate_order_submitted(
-            client_order_id=command.order.client_order_id, timestamp_ns=self._clock.timestamp_ns(),
+        self.generate_order_submitted(
+            client_order_id=command.order.client_order_id,
+            submitted_ns=self._clock.timestamp_ns(),
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
@@ -218,23 +223,28 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         if resp["status"] == "FAILURE":
             reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
             self._log.warning(f"Submit failed - {reason}")
-            self._generate_order_rejected(
+            self.generate_order_rejected(
                 client_order_id=client_order_id,
                 reason=reason,
-                timestamp_ns=self._clock.timestamp_ns(),
+                rejected_ns=self._clock.timestamp_ns(),
             )
             return
         bet_id = resp['instructionReports'][0]['betId']
         self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {client_order_id}")
         self.venue_order_id_to_client_order_id[bet_id] = client_order_id
-        self._generate_order_accepted(
+        self.generate_order_accepted(
             client_order_id=client_order_id,
             venue_order_id=VenueOrderId(bet_id),
-            timestamp_ns=self._clock.timestamp_ns(),
+            accepted_ns=self._clock.timestamp_ns(),
         )
 
     cpdef void update_order(self, UpdateOrder command) except *:
         self._log.debug(f"Received {command}")
+        self.generate_order_pending_replace(
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            pending_ns=self._clock.timestamp_ns(),
+        )
         f = self._loop.run_in_executor(None, self._update_order, command)  # type: asyncio.Future
         self._log.debug(f"future: {f}")
         f.add_done_callback(partial(self._post_update_order, client_order_id=command.client_order_id))
@@ -274,10 +284,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         if resp["status"] == "FAILURE":
             reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
             self._log.warning(f"Submit failed - {reason}")
-            self._generate_order_rejected(
+            self.generate_order_rejected(
                 client_order_id=client_order_id,
                 reason=reason,
-                timestamp_ns=self._clock.timestamp_ns(),
+                rejected_ns=self._clock.timestamp_ns(),
             )
             return
         # Check the venue_order_id that has been deleted currently exists on our order
@@ -288,16 +298,22 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         instructions = resp["instructionReports"][0]["placeInstructionReport"]
         self.venue_order_id_to_client_order_id[instructions["betId"]] = client_order_id
-        self._generate_order_updated(
+        self.generate_order_updated(
             client_order_id=client_order_id,
             venue_order_id=VenueOrderId(instructions["betId"]),
-            price=price_to_probability(instructions["instruction"]['limitOrder']["price"]),
             quantity=Quantity(instructions["instruction"]['limitOrder']["size"], precision=4),
+            price=price_to_probability(instructions["instruction"]['limitOrder']["price"]),
+            updated_ns=self._clock.timestamp_ns(),
             venue_order_id_modified=True,
         )
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         self._log.debug("Received cancel order")
+        self.generate_order_pending_cancel(
+            client_order_id=command.client_order_id,
+            venue_order_id=command.venue_order_id,
+            pending_ns=self._clock.timestamp_ns(),
+        )
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_cancel_to_betfair(command=command, instrument=instrument)
         resp = self._client.betting.cancel_orders(**kw)
@@ -317,8 +333,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
 # -- ACCOUNT ---------------------------------------------------------------------------------------
 
-    cpdef str get_account_currency(self):
-        return self._instrument_provider.get_account_currency()
+    cpdef Currency get_account_currency(self):
+        if not self._account_currency:
+            self._account_currency = Currency.from_str(self._instrument_provider.get_account_currency())
+        return self._account_currency
 
 # -- DEBUGGING -------------------------------------------------------------------------------------
 
@@ -348,83 +366,87 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     handicap=str(selection.get("hc", "0.0")),
                 )
                 for order in selection.get("uo", []):
+                    self._log.debug(f"order_update: {order}")
                     client_order_id = await self.wait_for_order(order['id'], timeout_seconds=10.0)
                     if client_order_id is None:
                         continue
                     venue_order_id = VenueOrderId(order["id"])
 
                     # "E" = Executable (live / working)
-                    if order['status'] == "E":
+                    if order["status"] == "E":
                         # Check if this is the first time seeing this order (backtest or replay)
                         if venue_order_id.value in self.venue_order_id_to_client_order_id:
                             # We've already sent an accept for this order in self._post_submit_order
                             self._log.debug(f"Skipping order_accept as order exists: {venue_order_id}")
                         else:
-                            self._generate_order_accepted(
+                            self.generate_order_accepted(
                                 client_order_id=client_order_id,
                                 venue_order_id=venue_order_id,
-                                timestamp_ns=millis_to_nanos(order['pd']),
+                                accepted_ns=millis_to_nanos(order["pd"]),
                             )
 
                         # Check for any portion executed
-                        if order['sm'] != 0:
+                        if order["sm"] != 0:
                             execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
                             if execution_id not in self.published_executions[client_order_id]:
-                                self._generate_order_filled(
+                                self.generate_order_filled(
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     execution_id=execution_id,
+                                    position_id=None,  # Assigned in engine
                                     instrument_id=instrument.id,
-                                    order_side=B2N_ORDER_STREAM_SIDE[order['side']],
-                                    last_qty=Decimal(order['sm']),
-                                    last_px=price_to_probability(order['p']),
-                                    cum_qty=Decimal(order['s'] - order['sr']),
-                                    leaves_qty=Decimal(order['sr']),
+                                    order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
+                                    last_qty=Quantity(order["sm"], instrument.size_precision),
+                                    last_px=price_to_probability(order["p"]),
                                     # avg_px=Decimal(order['avp']),
-                                    commission_amount=Decimal(0.0),
-                                    commission_currency=self.get_account_currency(),
+                                    quote_currency=instrument.quote_currency,
+                                    is_inverse=False,
+                                    commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.NONE,
-                                    timestamp_ns=millis_to_nanos(order['md']),
+                                    execution_ns=millis_to_nanos(order["md"]),
                                 )
                                 self.published_executions[client_order_id].append(execution_id)
 
-                    # Execution complete, this order is fulled match or cancelled
+                    # Execution complete, this order is fulled match or canceled
                     elif order["status"] == "EC":
                         if order["sm"] != 0:
                             execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
                             if execution_id not in self.published_executions[client_order_id]:
                                 # At least some part of this order has been filled
-                                self._generate_order_filled(
+                                self.generate_order_filled(
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     execution_id=execution_id,
+                                    position_id=None,  # Assigned in engine
                                     instrument_id=instrument.id,
-                                    order_side=B2N_ORDER_STREAM_SIDE[order['side']],
-                                    last_qty=Decimal(order['sm']),
+                                    order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
+                                    last_qty=Quantity(order["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order['p']),
-                                    cum_qty=Decimal(order['s'] - order['sr']),
-                                    leaves_qty=Decimal(order['sr']),
+                                    quote_currency=instrument.quote_currency,
+                                    is_inverse=False,
                                     # avg_px=order['avp'],
-                                    commission_amount=Decimal(0.0),
-                                    commission_currency=self.get_account_currency(),
+                                    commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
-                                    timestamp_ns=millis_to_nanos(order['md']),
+                                    execution_ns=millis_to_nanos(order['md']),
                                 )
                         if any([order[x] != 0 for x in ("sc", "sl", "sv")]):
-                            cancel_qty = sum([order[k] for k in ('sc', 'sl', 'sv')])
-                            assert order['sm'] + cancel_qty == order['s'], f"Size matched + cancelled != total: {order}"
+                            cancel_qty = sum([order[k] for k in ("sc", "sl", "sv")])
+                            assert order['sm'] + cancel_qty == order["s"], f"Size matched + canceled != total: {order}"
                             # If this is the result of a UpdateOrder, we don't want to emit a cancel
-                            key = (ClientOrderId(order.get('rfo')), VenueOrderId(order['id']))
+                            key = (ClientOrderId(order.get("rfo")), VenueOrderId(order["id"]))
                             self._log.debug(f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}")
                             if key not in self.pending_update_order_client_ids:
-                                # The remainder of this order has been cancelled
-                                self._generate_order_cancelled(
+                                # The remainder of this order has been canceled
+                                self.generate_order_canceled(
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
-                                    timestamp_ns=millis_to_nanos(order.get('cd') or order.get('ld') or order.get('md')),
+                                    canceled_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),
                                 )
-                        # This execution is complete - no need to track this anymore
-                        del self.published_executions[client_order_id]
+                        # Market order will not be in self.published_executions
+                        if client_order_id in self.published_executions:
+                            # This execution is complete - no need to track this anymore
+                            del self.published_executions[client_order_id]
+
                     else:
                         self._log.warning("Unknown order state: {order}")
                         # raise KeyError("Unknown order type", order, None)
@@ -476,11 +498,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     ) -> List[ExecutionReport]:
         self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
         return await generate_trades_list(self, venue_order_id, symbol, since)
-
-# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
-
-    def _handle_event_py(self, event: Event):
-        self._engine.process(event)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

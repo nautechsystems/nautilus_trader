@@ -43,11 +43,11 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
-from nautilus_trader.model.order.bracket cimport BracketOrder
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBookData
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick

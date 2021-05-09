@@ -13,10 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
@@ -58,6 +65,26 @@ cdef class Account:
     cpdef Money balance_locked(self, Currency currency=*)
     cpdef Money unrealized_pnl(self, Currency currency=*)
     cpdef Money equity(self, Currency currency=*)
+
+    # cpdef Money market_value(self, Instrument instrument, Quantity quantity, close_price: Decimal, leverage: Decimal=*)
+    # cpdef Money notional_value(self, Instrument instrument, Quantity quantity, close_price: Decimal)
+    # cpdef Money calculate_initial_margin(self, Instrument instrument, Quantity quantity, Price price, leverage: Decimal=*)
+    # cpdef Money calculate_maint_margin(
+    #     self,
+    #     Instrument instrument,
+    #     PositionSide side,
+    #     Quantity quantity,
+    #     Price last,
+    #     leverage: Decimal=*,
+    # )
+    #
+    # cpdef Money calculate_commission(
+    #     self,
+    #     Instrument instrument,
+    #     Quantity last_qty,
+    #     last_px: Decimal,
+    #     LiquiditySide liquidity_side,
+    # )
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 

@@ -529,26 +529,6 @@ cdef class ClientId(Identifier):
         return ClientId.from_str_c(value)
 
 
-cdef class BracketOrderId(Identifier):
-    """
-    Represents a valid bracket order identifier.
-
-    The identifier value must be unique at the fund level.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the `VenueOrderId` class.
-
-        Parameters
-        ----------
-        value : str
-            The value of the order_id (should be unique).
-
-        """
-        super().__init__(value)
-
-
 cdef class ClientOrderId(Identifier):
     """
     Represents a valid client order identifier.
@@ -573,12 +553,22 @@ cdef class ClientOrderLinkId(Identifier):
     """
     Represents a valid client order link identifier.
 
-    The identifier value must be unique at the fund level.
+    The identifier value must be unique at the account level.
+
+    Permits order originators to tie together groups of orders in which trades
+    resulting from orders are associated for a specific purpose, for example the
+    calculation of average execution price for a customer or to associate lists
+    submitted to a broker as waves of a larger program trade.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_583.html
+
     """
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `ClientOrderId` class.
+        Initialize a new instance of the `ClientOrderLinkId` class.
 
         Parameters
         ----------

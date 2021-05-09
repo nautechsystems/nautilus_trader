@@ -15,7 +15,6 @@
 
 import pandas as pd
 
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.data_producer import BacktestDataProducer
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -23,8 +22,6 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -41,8 +38,7 @@ class TestBacktestDataProducer:
 
     def test_producer_when_data_not_setup(self):
         # Arrange
-        data = BacktestDataContainer()
-        producer = BacktestDataProducer(data=data, logger=self.logger)
+        producer = BacktestDataProducer(logger=self.logger)
 
         # Act
         # Assert
@@ -57,26 +53,8 @@ class TestBacktestDataProducer:
         assert not producer.has_data
         assert producer.next() is None
 
-    def test_instruments_returns_added_instruments(self):
-        # Arrange
-        data = BacktestDataContainer()
-        data.add_instrument(ETHUSDT_BINANCE)
-        data.add_trade_ticks(
-            instrument_id=ETHUSDT_BINANCE.id,
-            data=TestDataProvider.ethusdt_trades(),
-        )
-
-        producer = BacktestDataProducer(data=data, logger=self.logger)
-
-        # Act
-        # Assert
-        assert ETHUSDT_BINANCE in producer.instruments()
-
     def test_with_mix_of_stream_data_produces_correct_stream_of_data(self):
         # Assert
-        data = BacktestDataContainer()
-        data.add_instrument(ETHUSDT_BINANCE)
-
         snapshot1 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
@@ -101,10 +79,12 @@ class TestBacktestDataProducer:
             timestamp_ns=1_000_000,
         )
 
-        data.add_generic_data(ClientId("NEWS_CLIENT"), generic_data1)
-        data.add_order_book_data([snapshot1, snapshot2])
-
-        producer = BacktestDataProducer(data=data, logger=self.logger)
+        producer = BacktestDataProducer(
+            logger=self.logger,
+            instruments=[ETHUSDT_BINANCE],
+            generic_data=generic_data1,
+            order_book_data=[snapshot1, snapshot2],
+        )
         producer.setup(producer.min_timestamp_ns, producer.max_timestamp_ns)
 
         # Act
@@ -127,23 +107,20 @@ class TestBacktestDataProducer:
 
     def test_with_bars_produces_correct_stream_of_data(self):
         # Arrange
-        data = BacktestDataContainer()
-        data.add_instrument(USDJPY_SIM)
-
-        data.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid()[:2000],
+        producer = BacktestDataProducer(
+            logger=self.logger,
+            instruments=[USDJPY_SIM],
+            bars_bid={
+                USDJPY_SIM.id: {
+                    BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()[:2000]
+                }
+            },
+            bars_ask={
+                USDJPY_SIM.id: {
+                    BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()[:2000]
+                }
+            },
         )
-        data.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask()[:2000],
-        )
-
-        producer = BacktestDataProducer(data=data, logger=self.logger)
         producer.setup(producer.min_timestamp_ns, producer.max_timestamp_ns)
 
         # Act

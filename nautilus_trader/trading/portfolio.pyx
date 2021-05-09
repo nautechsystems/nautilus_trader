@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `Portfolio` components facilitate the management of trading operations.
+The `Portfolio` facilitate the management of trading operations.
 
 The intended use case is for a single `Portfolio` instance per running system,
 a fleet of trading strategies will organize around a portfolio with the help
@@ -44,7 +44,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -457,7 +457,7 @@ cdef class Portfolio(PortfolioFacade):
             # Calculate PnL
             pnl = self._calculate_unrealized_pnl(instrument_id)
             if pnl is None:
-                return None  # Error already logged in `_calculate_unrealized_pnl`
+                continue  # Error logged in `_calculate_unrealized_pnl`
             unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
 
         return {k: Money(v, k) for k, v in unrealized_pnls.items()}
@@ -519,7 +519,8 @@ cdef class Portfolio(PortfolioFacade):
                 return None  # Cannot calculate
 
             market_value = market_values.get(instrument.settlement_currency, Decimal(0))
-            market_value += instrument.market_value(
+            market_value += Account.market_value(
+                instrument,
                 position.quantity,
                 last,
             ) * xrate
@@ -615,7 +616,8 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{instrument.settlement_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
-            market_value += instrument.market_value(
+            market_value += Account.market_value(
+                instrument,
                 position.quantity,
                 last,
             ) * xrate
@@ -725,7 +727,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef inline set _instruments_open_for_venue(self, Venue venue):
         cdef set positions_open = self._positions_open.get(venue)
-        if positions_open is None:
+        if not positions_open:
             return set()
         return {position.instrument_id for position in positions_open}
 
@@ -778,7 +780,7 @@ cdef class Portfolio(PortfolioFacade):
             return  # Cannot calculate
 
         cdef set working_orders = self._orders_working.get(venue)
-        if working_orders is None:
+        if not working_orders:
             return  # Nothing to calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
@@ -794,7 +796,8 @@ cdef class Portfolio(PortfolioFacade):
                 continue  # Cannot calculate
 
             # Calculate margin
-            margin = instrument.calculate_initial_margin(
+            margin = Account.calculate_initial_margin(
+                instrument,
                 order.quantity,
                 order.price,
             )
@@ -836,7 +839,7 @@ cdef class Portfolio(PortfolioFacade):
             return  # Cannot calculate
 
         cdef set open_positions = self._positions_open.get(venue)
-        if open_positions is None:
+        if not open_positions:
             return  # Nothing to calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
@@ -859,7 +862,8 @@ cdef class Portfolio(PortfolioFacade):
                 continue  # Cannot calculate
 
             # Calculate margin
-            margin = instrument.calculate_maint_margin(
+            margin = Account.calculate_maint_margin(
+                instrument,
                 position.side,
                 position.quantity,
                 last,
@@ -914,7 +918,7 @@ cdef class Portfolio(PortfolioFacade):
             currency = instrument.settlement_currency
 
         cdef set positions_open = self._positions_open.get(instrument_id.venue)
-        if positions_open is None:
+        if not positions_open:
             if account.default_currency is not None:
                 return Money(0, account.default_currency)
             else:

@@ -134,7 +134,7 @@ cdef class DataEngine(Component):
 
         # Public components
         self.portfolio = portfolio
-        self.cache = DataCache(logger)
+        self.cache = DataCache(logger, config=config)
 
         # Counters
         self.command_count = 0

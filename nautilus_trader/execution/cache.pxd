@@ -16,12 +16,13 @@
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -30,6 +31,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 cdef class ExecutionCache(ExecutionCacheFacade):
     cdef LoggerAdapter _log
     cdef ExecutionDatabase _database
+    cdef dict _cached_currencies
     cdef dict _cached_accounts
     cdef dict _cached_orders
     cdef dict _cached_positions
@@ -54,6 +56,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void cache_currencies(self) except *
     cpdef void cache_accounts(self) except *
     cpdef void cache_orders(self) except *
     cpdef void cache_positions(self) except *
@@ -71,6 +74,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cpdef void load_strategy(self, TradingStrategy strategy) except *
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
 
+    cpdef void add_currency(self, Currency currency) except *
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id) except *
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId client_order_id, StrategyId strategy_id) except *

@@ -15,12 +15,8 @@
 
 from cpython.datetime cimport datetime
 
-from decimal import Decimal
-
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -85,24 +81,6 @@ cdef class Instrument(Data):
         Currency quote_currency,
         Currency settlement_currency,
     ) except *
-
-    cpdef Money market_value(self, Quantity quantity, close_price: Decimal, leverage: Decimal=*)
-    cpdef Money notional_value(self, Quantity quantity, close_price: Decimal)
-    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price, leverage: Decimal=*)
-    cpdef Money calculate_maint_margin(
-        self,
-        PositionSide side,
-        Quantity quantity,
-        Price last,
-        leverage: Decimal=*,
-    )
-
-    cpdef Money calculate_commission(
-        self,
-        Quantity last_qty,
-        last_px: Decimal,
-        LiquiditySide liquidity_side,
-    )
 
 
 cdef class Future(Instrument):

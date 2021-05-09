@@ -237,7 +237,7 @@ cdef class Ladder:
 
         Returns
         -------
-        (Price, Quantity)
+        list[(Price, Quantity)]
 
         """
         Condition.not_none(order, "order")

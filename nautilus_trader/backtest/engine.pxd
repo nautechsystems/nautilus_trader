@@ -19,7 +19,6 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_producer cimport DataProducerFacade
-from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -27,8 +26,6 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
@@ -47,7 +44,15 @@ cdef class BacktestEngine:
     cdef Logger _test_logger
     cdef bint _log_to_file
     cdef bint _exec_db_flush
+    cdef bint _use_data_cache
     cdef dict _exchanges
+
+    cdef list _generic_data
+    cdef list _order_book_data
+    cdef dict _quote_ticks
+    cdef dict _trade_ticks
+    cdef dict _bars_bid
+    cdef dict _bars_ask
 
     cdef readonly Trader trader
     cdef readonly UUID system_id
@@ -56,26 +61,6 @@ cdef class BacktestEngine:
     cdef readonly int iteration
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
-
-    cpdef ExecutionEngine get_exec_engine(self)
-    cpdef void add_exchange(
-        self,
-        Venue venue,
-        OMSType oms_type,
-        list starting_balances,
-        bint is_frozen_account=*,
-        list modules=*,
-        FillModel fill_model=*,
-    ) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
-    cpdef void change_fill_model(self, Venue venue, FillModel model) except *
-    cpdef void run(
-        self,
-        datetime start=*,
-        datetime stop=*,
-        list strategies=*,
-    ) except *
 
     cdef inline void _advance_time(self, int64_t now_ns) except *
     cdef inline void _process_modules(self, int64_t now_ns) except *

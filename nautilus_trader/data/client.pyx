@@ -330,7 +330,8 @@ cdef class MarketDataClient(DataClient):
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    # TODO: Comment why these aren't cpdef
+    # Convenient pure Python wrappers for the data handlers. Often Python methods
+    # involving threads or the event loop don't work with cpdef methods.
     def _handle_instruments_py(self, list instruments, UUID correlation_id):
         self._handle_instruments(instruments, correlation_id)
 

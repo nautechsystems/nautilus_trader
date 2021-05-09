@@ -53,7 +53,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         super().__init__()
 
         self._client = client
-        self._currencies = {}  # type: dict[str, Currency]
 
         self.venue = Venue(client.name.upper())
 

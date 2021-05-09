@@ -15,7 +15,8 @@
 
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.orders.base cimport Order
 
 
 cdef class CCXTExecutionClient(LiveExecutionClient):
@@ -38,6 +39,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef inline void _on_account_state(self, dict event) except *
     cdef inline void _on_order_status(self, dict event) except *
     cdef inline void _on_exec_report(self, dict event) except *
+    cdef inline Money _parse_commission(self, dict event)
     cdef inline void _cache_order(self, VenueOrderId venue_order_id, Order order) except *
     cdef inline void _decache_order(self, VenueOrderId venue_order_id) except *
 

@@ -234,7 +234,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._subscribed_instruments = set()
 
-        # Check all tasks have been popped and cancelled
+        # Check all tasks have been popped and canceled
         assert not self._subscribed_order_books
         assert not self._subscribed_quote_ticks
         assert not self._subscribed_trade_ticks
@@ -297,6 +297,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         if kwargs is None:
             kwargs = {}
         Condition.not_none(instrument_id, "instrument_id")
+
+        if not self._client.has.get("watchOrderBook", False):
+            raise RuntimeError(f"CCXT `watch_order_book` not available for {self._client.name}")
 
         if instrument_id in self._subscribed_order_books:
             self._log.warning(f"Already subscribed {instrument_id.symbol} <OrderBook> data.")
@@ -366,8 +369,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
+        if not self._client.has.get("watchOHLCV", False):
+            raise RuntimeError(f"CCXT `watch_ohlcv` not available for {self._client.name}")
+
         if bar_type.spec.price_type != PriceType.LAST:
-            self._log.warning(f"`request_bars` was called with a `price_type` argument "
+            self._log.warning(f"`subscribe_bars` was called with a `price_type` argument "
                               f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
                               f"when not supported by the exchange (must be LAST).")
             return
@@ -616,6 +622,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(correlation_id, "correlation_id")
 
+        if not self._client.has.get("fetchOHLCV", False):
+            raise RuntimeError(f"CCXT `fetch_ohlcv` not available for {self._client.name}")
+
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.warning(f"`request_bars` was called with a `price_type` argument "
                               f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
@@ -668,9 +677,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
                     bids = lob.get("bids")
                     asks = lob.get("asks")
-                    if bids is None:
+                    if not bids:
                         continue
-                    if asks is None:
+                    if not asks:
                         continue
 
                     # Currently inefficient while using CCXT. The order book

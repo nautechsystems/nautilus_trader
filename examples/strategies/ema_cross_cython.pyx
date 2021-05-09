@@ -25,8 +25,8 @@ from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy

@@ -33,8 +33,8 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderUpdated
-from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ClientOrderLinkId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -43,10 +43,10 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.base import Order
-from nautilus_trader.model.order.market import MarketOrder
-from nautilus_trader.model.order.stop_limit import StopLimitOrder
-from nautilus_trader.model.order.stop_market import StopMarketOrder
+from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.model.orders.stop_limit import StopLimitOrder
+from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -484,7 +484,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
         self.assertEqual(None, bracket_order.take_profit.expire_time)
         self.assertEqual(
-            BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id
+            ClientOrderLinkId("BO-19700101-000000-000-001-1"), bracket_order.id
         )
         self.assertEqual(0, bracket_order.timestamp_ns)
 
@@ -678,7 +678,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
 
-    def test_apply_order_cancelled_event(self):
+    def test_apply_order_canceled_event(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -688,16 +688,18 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_pending_cancel(order))
 
         # Act
-        order.apply(TestStubs.event_order_cancelled(order))
+        order.apply(TestStubs.event_order_canceled(order))
 
         # Assert
-        self.assertEqual(OrderState.CANCELLED, order.state)
+        self.assertEqual(OrderState.CANCELED, order.state)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
+        self.assertEqual(5, order.event_count)
 
-    def test_apply_order_amended_event_to_stop_order(self):
+    def test_apply_order_updated_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -708,6 +710,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_pending_replace(order))
 
         updated = OrderUpdated(
             self.account_id,
@@ -730,7 +733,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Price("1.00001"), order.price)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(4, order.event_count)
+        self.assertEqual(5, order.event_count)
 
     def test_apply_order_updated_venue_id_change(self):
         # Arrange
@@ -743,6 +746,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_pending_replace(order))
 
         updated = OrderUpdated(
             self.account_id,
@@ -948,8 +952,6 @@ class OrderTests(unittest.TestCase):
             order.side,
             order.quantity,
             Price("1.00001"),
-            order.quantity,
-            Quantity(),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
@@ -995,8 +997,6 @@ class OrderTests(unittest.TestCase):
             order.side,
             Quantity(50000),
             Price("0.999999"),
-            Quantity(50000),
-            Quantity(50000),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),

@@ -56,6 +56,13 @@ cdef class DataCache(DataCacheFacade):
         config : dict[str, object], optional
             The configuration options.
 
+        Raises
+        ------
+        ValueError
+            If config 'tick_capacity' is not positive.
+        ValueError
+            If config 'bar_capacity' is not positive.
+
         """
         if config is None:
             config = {}
@@ -72,10 +79,10 @@ cdef class DataCache(DataCacheFacade):
 
         # Cached data
         self._instruments = {}  # type: dict[InstrumentId, Instrument]
-        self._quote_ticks = {}  # type: dict[InstrumentId, list[QuoteTick]]
-        self._trade_ticks = {}  # type: dict[InstrumentId, list[TradeTick]]
+        self._quote_ticks = {}  # type: dict[InstrumentId, deque[QuoteTick]]
+        self._trade_ticks = {}  # type: dict[InstrumentId, deque[TradeTick]]
         self._order_books = {}  # type: dict[InstrumentId, OrderBook]
-        self._bars = {}         # type: dict[BarType, list[Bar]]
+        self._bars = {}         # type: dict[BarType, deque[Bar]]
 
         self._log.info("Initialized.")
 
@@ -102,7 +109,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         instrument : Instrument
-            The received instrument to add.
+            The instrument to add.
 
         """
         self._instruments[instrument.id] = instrument
@@ -142,7 +149,7 @@ cdef class DataCache(DataCacheFacade):
         cdef InstrumentId instrument_id = tick.instrument_id
         ticks = self._quote_ticks.get(instrument_id)
 
-        if ticks is None:
+        if not ticks:
             # The instrument_id was not registered
             ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[instrument_id] = ticks
@@ -164,7 +171,7 @@ cdef class DataCache(DataCacheFacade):
         cdef InstrumentId instrument_id = tick.instrument_id
         ticks = self._trade_ticks.get(instrument_id)
 
-        if ticks is None:
+        if not ticks:
             # The instrument_id was not registered
             ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[instrument_id] = ticks
@@ -185,7 +192,7 @@ cdef class DataCache(DataCacheFacade):
 
         bars = self._bars.get(bar.type)
 
-        if bars is None:
+        if not bars:
             # The bar type was not registered
             bars = deque(maxlen=self.bar_capacity)
             self._bars[bar.type] = bars
@@ -215,7 +222,7 @@ cdef class DataCache(DataCacheFacade):
 
         cached_ticks = self._quote_ticks.get(instrument_id)
 
-        if cached_ticks is None:
+        if not cached_ticks:
             # The instrument_id was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[instrument_id] = cached_ticks
@@ -252,7 +259,7 @@ cdef class DataCache(DataCacheFacade):
 
         cached_ticks = self._trade_ticks.get(instrument_id)
 
-        if cached_ticks is None:
+        if not cached_ticks:
             # The instrument_id was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[instrument_id] = cached_ticks
@@ -289,7 +296,7 @@ cdef class DataCache(DataCacheFacade):
 
         cached_bars = self._bars.get(bar_type)
 
-        if cached_bars is None:
+        if not cached_bars:
             # The instrument_id was not registered
             cached_bars = deque(maxlen=self.bar_capacity)
             self._bars[bar_type] = cached_bars
@@ -305,26 +312,37 @@ cdef class DataCache(DataCacheFacade):
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef list instrument_ids(self):
+    cpdef list instrument_ids(self, Venue venue=None):
         """
         Return all instrument identifiers held by the data cache.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue filter for the query.
 
         Returns
         -------
         list[InstrumentId]
-        """
-        return sorted(list(self._instruments.keys()))
 
-    cpdef list instruments(self):
+        """
+        return sorted([x for x in self._instruments.keys() if venue is None or venue == x.venue])
+
+    cpdef list instruments(self, Venue venue=None):
         """
         Return all instruments held by the data cache.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue filter for the query.
 
         Returns
         -------
         list[Instrument]
 
         """
-        return list(self._instruments.values())
+        return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """

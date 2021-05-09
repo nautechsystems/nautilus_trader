@@ -146,7 +146,7 @@ class ForexSessionFilterTests(unittest.TestCase):
 class EconomicNewsEventFilterTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        news_csv_path = os.path.join(PACKAGE_ROOT + "/data/", "news_events.csv")
+        news_csv_path = os.path.join(PACKAGE_ROOT, "data", "news_events.csv")
         self.news_data = as_utc_index(
             pd.read_csv(news_csv_path, parse_dates=True, index_col=0)
         )

@@ -35,9 +35,11 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingReplace
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
@@ -62,6 +64,7 @@ from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -333,8 +336,30 @@ class TestStubs:
         return OrderRejected(
             TestStubs.account_id(),
             order.client_order_id,
-            0,
             "ORDER_REJECTED",
+            0,
+            uuid4(),
+            0,
+        )
+
+    @staticmethod
+    def event_order_pending_replace(order) -> OrderPendingReplace:
+        return OrderPendingReplace(
+            TestStubs.account_id(),
+            order.client_order_id,
+            order.venue_order_id,
+            0,
+            uuid4(),
+            0,
+        )
+
+    @staticmethod
+    def event_order_pending_cancel(order) -> OrderPendingCancel:
+        return OrderPendingCancel(
+            TestStubs.account_id(),
+            order.client_order_id,
+            order.venue_order_id,
+            0,
             uuid4(),
             0,
         )
@@ -365,7 +390,8 @@ class TestStubs:
         if last_qty is None:
             last_qty = order.quantity
 
-        commission = instrument.calculate_commission(
+        commission = Account.calculate_commission(
+            instrument=instrument,
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,
@@ -382,8 +408,6 @@ class TestStubs:
             order_side=order.side,
             last_qty=last_qty,
             last_px=order.price if last_px is None else last_px,
-            cum_qty=Quantity(order.filled_qty + last_qty),
-            leaves_qty=Quantity(max(0, order.quantity - order.filled_qty - last_qty)),
             currency=instrument.quote_currency,
             is_inverse=instrument.is_inverse,
             commission=commission,
@@ -394,8 +418,8 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_cancelled(order) -> OrderCancelled:
-        return OrderCancelled(
+    def event_order_canceled(order) -> OrderCanceled:
+        return OrderCanceled(
             TestStubs.account_id(),
             order.client_order_id,
             order.venue_order_id,

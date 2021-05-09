@@ -332,6 +332,23 @@ cdef class Position:
         """
         return Position.side_from_order_side_c(side)
 
+    cpdef bint is_opposite_side(self, OrderSide side) except *:
+        """
+        Return a value indicating whether the given order side is opposite to
+        the current position side.
+
+        Parameters
+        ----------
+        side : OrderSide
+
+        Returns
+        -------
+        bool
+            True if side is opposite, else False.
+
+        """
+        return self.side != Position.side_from_order_side_c(side)
+
     cpdef void apply(self, OrderFilled fill) except *:
         """
         Applies the given order fill event to the position.
@@ -552,7 +569,7 @@ cdef class Position:
         if not self.avg_px_close:
             return fill.last_px
 
-        close_qty = self._sell_qty if self.side == PositionSide.LONG else self._buy_qty
+        close_qty: Decimal = self._sell_qty if self.side == PositionSide.LONG else self._buy_qty
         return self._calculate_avg_px(close_qty, self.avg_px_close, fill)
 
     cdef inline object _calculate_avg_px(
