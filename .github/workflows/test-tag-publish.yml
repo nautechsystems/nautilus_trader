@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-# TODO: Uncomment for next release
+# TODO: Temporary to repair release
 #  test:
 #    strategy:
 #      fail-fast: false
@@ -68,7 +68,7 @@ jobs:
 
 
   tag_release:
-    # TODO: Uncomment for next release
+    # TODO: Temporary to repair release
     # needs: [ test ]
     strategy:
       fail-fast: false
@@ -208,7 +208,7 @@ jobs:
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/zip
 
-# TODO: Uncomment for next release
+# TODO: Temporary to repair release
 #      # Publish
 #      - name: Publish to production PyPI
 #        env:
@@ -307,7 +307,7 @@ jobs:
 
       # Publish
       - name: Publish to production PyPI
-        if: runner.os == 'Windows'  # TODO: Remove this for next release
+        if: runner.os == 'Windows'  # TODO: Temporary to repair release
         env:
           POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
           POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
