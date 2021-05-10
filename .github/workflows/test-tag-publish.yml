@@ -114,10 +114,11 @@ jobs:
         run: poetry install
 
       # Tag the commit with the library version
-      - name: Create git tag
-        uses: salsify/action-detect-and-tag-new-version@v2
-        with:
-          version-command: poetry version --short
+      # TODO: Uncomment for next release
+#      - name: Create git tag
+#        uses: salsify/action-detect-and-tag-new-version@v2
+#        with:
+#          version-command: poetry version --short
 
       # Set release output variables
       - name: Set output
