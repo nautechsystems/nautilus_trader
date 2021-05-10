@@ -141,77 +141,78 @@ jobs:
           body_path: RELEASE.md
 
 
-  publish_sdist:
-    needs: [ tag_release ]
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest ]
-        python-version: [ 3.9 ]
-    name: publish_sdist - Python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v2
-
-      # Python setup
-      - name: Set up Python environment
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      # Install build dependencies
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel poetry
-
-      # Setup Poetry caching
-      - name: Get Poetry cache dir
-        id: poetry-cache
-        run: echo "::set-output name=dir::$(poetry config cache-dir)"
-
-      - name: Poetry/Nox cache
-        uses: actions/cache@v2
-        with:
-          path: ${{ steps.poetry-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
-
-      # Install / Build
-      - name: Install / Build
-        run: |
-          poetry install
-          poetry build --format sdist
-
-      # Set release output variables
-      - name: Set output
-        id: vars
-        run: |
-          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-          cd dist
-          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-
-      # Upload release asset
-      - name: Upload release asset
-        id: upload-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
-        with:
-          upload_url: ${{ needs.tag_release.outputs.upload_url }}
-          asset_path: ${{ env.ASSET_PATH }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/zip
-
-      # Publish
-      - name: Publish to production PyPI
-        env:
-          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish
+# TODO: Uncomment for next release
+#  publish_sdist:
+#    needs: [ tag_release ]
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        os: [ ubuntu-latest ]
+#        python-version: [ 3.9 ]
+#    name: publish_sdist - Python ${{ matrix.python-version }} (${{ matrix.os }})
+#    runs-on: ${{ matrix.os }}
+#
+#    steps:
+#      - uses: actions/checkout@v2
+#
+#      # Python setup
+#      - name: Set up Python environment
+#        uses: actions/setup-python@v2
+#        with:
+#          python-version: ${{ matrix.python-version }}
+#
+#      # Install build dependencies
+#      - name: Install build dependencies
+#        run: python -m pip install --upgrade pip setuptools wheel poetry
+#
+#      # Setup Poetry caching
+#      - name: Get Poetry cache dir
+#        id: poetry-cache
+#        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+#
+#      - name: Poetry/Nox cache
+#        uses: actions/cache@v2
+#        with:
+#          path: ${{ steps.poetry-cache.outputs.dir }}
+#          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-${{ hashFiles('**/poetry.lock') }}
+#          restore-keys: |
+#            ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
+#            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
+#
+#      # Install / Build
+#      - name: Install / Build
+#        run: |
+#          poetry install
+#          poetry build --format sdist
+#
+#      # Set release output variables
+#      - name: Set output
+#        id: vars
+#        run: |
+#          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+#          cd dist
+#          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+#
+#      # Upload release asset
+#      - name: Upload release asset
+#        id: upload-release-asset
+#        uses: actions/upload-release-asset@v1
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
+#          ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
+#        with:
+#          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+#          asset_path: ${{ env.ASSET_PATH }}
+#          asset_name: ${{ env.ASSET_NAME }}
+#          asset_content_type: application/zip
+#
+#      # Publish
+#      - name: Publish to production PyPI
+#        env:
+#          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+#          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+#        run: poetry publish
 
 
   publish_wheels:
@@ -219,7 +220,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        os: [ windows-latest ]  # TODO: All OS in matrix for next release
         python-version: [ 3.7, 3.8, 3.9 ]
     name: publish_wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -257,27 +258,47 @@ jobs:
           poetry install
           poetry build --format wheel
 
-      # Set release output variables
-      - name: Set output
-        id: vars
-        run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
-            echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
-          else
-            echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-            cd dist
-            echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-          fi
 
-      # Upload release asset
-      - name: Upload release asset
-        id: upload-release-asset
+# TODO: Uncomment for next release
+#      # Upload release asset (UNIX)
+#      - name: Set output (UNIX)
+#        id: vars-unix
+#        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+#        run: |
+#          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+#          cd dist
+#          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+#
+#      - name: Upload release asset (UNIX)
+#        id: upload-release-asset-unix
+#        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+#        uses: actions/upload-release-asset@v1
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          ASSET_PATH: ${{ steps.vars-unix.outputs.asset_path }}
+#          ASSET_NAME: ${{ steps.vars-unix.outputs.asset_name }}
+#        with:
+#          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+#          asset_path: ${{ env.ASSET_PATH }}
+#          asset_name: ${{ env.ASSET_NAME }}
+#          asset_content_type: application/wheel
+
+      # Upload release asset (Windows)
+      - name: Set output (Windows)
+        id: vars-windows
+        if: runner.os == 'Windows'
+        run: |
+          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
+          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
+
+      - name: Upload release asset (Windows)
+        id: upload-release-asset-windows
+        if: runner.os == 'Windows'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
+          ASSET_PATH: ${{ steps.vars-windows.outputs.asset_path }}
+          ASSET_NAME: ${{ steps.vars-windows.outputs.asset_name }}
         with:
           upload_url: ${{ needs.tag_release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
@@ -286,6 +307,7 @@ jobs:
 
       # Publish
       - name: Publish to production PyPI
+        if: runner.os == 'Windows'  # TODO: Remove this for next release
         env:
           POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
           POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
