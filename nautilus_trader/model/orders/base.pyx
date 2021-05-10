@@ -83,6 +83,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PENDING_REPLACE, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PENDING_REPLACE, OrderState.FILLED): OrderState.FILLED,
     (OrderState.PENDING_CANCEL, OrderState.CANCELED): OrderState.CANCELED,
+    (OrderState.PENDING_CANCEL, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PENDING_CANCEL, OrderState.FILLED): OrderState.FILLED,
     (OrderState.TRIGGERED, OrderState.REJECTED): OrderState.REJECTED,
     (OrderState.TRIGGERED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
