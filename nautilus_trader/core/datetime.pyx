@@ -504,7 +504,7 @@ cpdef str format_iso8601_us(datetime dt):
     return f"{dt_partitioned[0]}.{dt_partitioned[2].rjust(6)}Z"
 
 
-cpdef int64_t iso8601_to_unix_millis(str iso8601):
+cpdef int64_t iso8601_to_unix_millis(str iso8601) except *:
     """
     Convert the given string to the Unix timestamp (microseconds).
 
@@ -520,13 +520,12 @@ cpdef int64_t iso8601_to_unix_millis(str iso8601):
     Returns
     -------
     int64
-        The formatted string.
 
     """
-    Condition.type(iso8601, str, "iso8601")
     return dt_to_unix_millis(pd.Timestamp(iso8601))
 
-cpdef int64_t iso8601_to_unix_micros(str iso8601):
+
+cpdef int64_t iso8601_to_unix_micros(str iso8601) except *:
     """
     Convert the given string to the Unix timestamp (microseconds).
 
@@ -542,13 +541,12 @@ cpdef int64_t iso8601_to_unix_micros(str iso8601):
     Returns
     -------
     int64
-        The formatted string.
 
     """
-    Condition.type(iso8601, str, "iso8601")
     return dt_to_unix_micros(pd.Timestamp(iso8601))
 
-cpdef int64_t iso8601_to_unix_nanos(str iso8601):
+
+cpdef int64_t iso8601_to_unix_nanos(str iso8601) except *:
     """
     Convert the given string to the Unix timestamp (nanoseconds).
 
@@ -564,9 +562,6 @@ cpdef int64_t iso8601_to_unix_nanos(str iso8601):
     Returns
     -------
     int64
-        The formatted string.
 
     """
-
-    Condition.type(iso8601, str, "iso8601")
     return dt_to_unix_nanos(pd.Timestamp(iso8601))
