@@ -268,7 +268,7 @@ cdef class ExecutionEngine(Component):
         self._clients[client.id] = client
         self._log.info(f"Registered {client}.")
 
-        if self._risk_engine is not None and client not in self._risk_engine.registered_clients:
+        if self._risk_engine is not None and client.id not in self._risk_engine.registered_clients:
             self._risk_engine.register_client(client)
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:

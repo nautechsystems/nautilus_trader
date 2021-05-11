@@ -502,3 +502,71 @@ cpdef str format_iso8601_us(datetime dt):
 
     cdef tuple dt_partitioned = tz_stripped.rpartition('.')
     return f"{dt_partitioned[0]}.{dt_partitioned[2].rjust(6)}Z"
+
+
+cpdef int64_t iso8601_to_unix_millis(str iso8601):
+    """
+    Convert the given string to the Unix timestamp (microseconds).
+
+    Parameters
+    ----------
+    iso8601 : str
+        The input iso8601 datetime string to convert.
+
+    Notes
+    -----
+    Unit accuracy is millisecond.
+
+    Returns
+    -------
+    int64
+        The formatted string.
+
+    """
+    Condition.type(iso8601, str, "iso8601")
+    return dt_to_unix_millis(pd.Timestamp(iso8601))
+
+cpdef int64_t iso8601_to_unix_micros(str iso8601):
+    """
+    Convert the given string to the Unix timestamp (microseconds).
+
+    Parameters
+    ----------
+    iso8601 : str
+        The input iso8601 datetime string to convert.
+
+    Notes
+    -----
+    Unit accuracy is microseconds.
+
+    Returns
+    -------
+    int64
+        The formatted string.
+
+    """
+    Condition.type(iso8601, str, "iso8601")
+    return dt_to_unix_micros(pd.Timestamp(iso8601))
+
+cpdef int64_t iso8601_to_unix_nanos(str iso8601):
+    """
+    Convert the given string to the Unix timestamp (nanoseconds).
+
+    Parameters
+    ----------
+    iso8601 : str
+        The input iso8601 datetime string to convert.
+
+    Notes
+    -----
+    Unit accuracy is nanoseconds.
+
+    Returns
+    -------
+    int64
+        The formatted string.
+
+    """
+
+    Condition.type(iso8601, str, "iso8601")
+    return dt_to_unix_nanos(pd.Timestamp(iso8601))
