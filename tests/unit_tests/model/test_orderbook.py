@@ -434,3 +434,77 @@ def test_trade_side(sample_book):
         instrument_id=sample_book.instrument_id, price=Price("0.85000")
     )
     assert sample_book.trade_side(trade=trade) == 0
+
+
+def test_l3_get_price_for_volume(sample_book):
+    bid_price = sample_book.get_price_for_volume(True, 5.0)
+    ask_price = sample_book.get_price_for_volume(False, 12.0)
+    assert bid_price == 0.88600
+    assert ask_price == 0.0
+
+
+@pytest.mark.parametrize(
+    "is_buy, quote_volume, expected",
+    [
+        (True, 0.8860, 0.8860),
+        (False, 0.8300, 0.8300),
+    ],
+)
+def test_l3_get_price_for_quote_volume(sample_book, is_buy, quote_volume, expected):
+    assert sample_book.get_price_for_quote_volume(is_buy, quote_volume) == expected
+
+
+@pytest.mark.parametrize(
+    "is_buy, price, expected",
+    [
+        (True, 1.0, 35.0),
+        (True, 0.88600, 5.0),
+        (True, 0.88650, 5.0),
+        (True, 0.88700, 15.0),
+        (True, 0.82, 0.0),
+        (False, 0.83000, 4.0),
+        (False, 0.82000, 5.0),
+        (False, 0.80000, 5.0),
+        (False, 0.88700, 0.0),
+    ],
+)
+def test_get_volume_for_price(sample_book, is_buy, price, expected):
+    assert sample_book.get_volume_for_price(is_buy, price) == expected
+
+
+@pytest.mark.parametrize(
+    "is_buy, price, expected",
+    [
+        (True, 1.0, 31.3),
+        (True, 0.88600, 4.43),
+        (True, 0.88650, 4.43),
+        (True, 0.88700, 13.3),
+        (True, 0.82, 0.0),
+        (False, 0.83000, 3.32),
+        (False, 0.82000, 4.14),
+        (False, 0.80000, 4.14),
+        (False, 0.88700, 0.0),
+    ],
+)
+def test_get_quote_volume_for_price(sample_book, is_buy, price, expected):
+    assert sample_book.get_quote_volume_for_price(is_buy, price) == expected
+
+
+@pytest.mark.parametrize(
+    "is_buy, volume, expected",
+    [
+        (True, 1.0, 0.886),
+        (True, 3.0, 0.886),
+        (True, 5.0, 0.88599),
+        (True, 7.0, 0.88628),
+        (True, 15.0, 0.88666),
+        (True, 22.0, 0.89090),
+        (False, 1.0, 0.83),
+        (False, 3.0, 0.83),
+        (False, 5.0, 0.828),
+    ],
+)
+def test_get_vwap_for_volume(sample_book, is_buy, volume, expected):
+    assert sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(
+        expected, 0.01
+    )
