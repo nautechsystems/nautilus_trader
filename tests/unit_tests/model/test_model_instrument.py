@@ -17,12 +17,14 @@ import unittest
 
 from parameterized import parameterized
 
+from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 
 
 class InstrumentTests(unittest.TestCase):
@@ -46,8 +48,8 @@ class InstrumentTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("Instrument('BTC/USDT.BINANCE')", str(BTCUSDT_BINANCE))
-        self.assertEqual("Instrument('BTC/USDT.BINANCE')", repr(BTCUSDT_BINANCE))
+        self.assertEqual(BTCUSDT_BINANCE_INSTRUMENT, str(BTCUSDT_BINANCE))
+        self.assertEqual(BTCUSDT_BINANCE_INSTRUMENT, repr(BTCUSDT_BINANCE))
 
     def test_hash(self):
         # Arrange

@@ -69,6 +69,9 @@ XRP = Currency("XRP", precision=6, iso4217=0, name="Ripple", currency_type=Curre
 XTZ = Currency("XTZ", precision=6, iso4217=0, name="Tezos", currency_type=CurrencyType.CRYPTO)
 USDT = Currency("USDT", precision=8, iso4217=0, name="Tether", currency_type=CurrencyType.CRYPTO)
 ZEC = Currency("ZEC", precision=8, iso4217=0, name="Zcash", currency_type=CurrencyType.CRYPTO)
+BRZ = Currency("BRZ", precision=8, iso4217=0, name="Brazilian Digital Token", currency_type=CurrencyType.CRYPTO)
+TRYB = Currency("TRYB", precision=8, iso4217=0, name="BiLira", currency_type=CurrencyType.CRYPTO)
+DOGE = Currency("DOGE", precision=8, iso4217=0, name="DOGE", currency_type=CurrencyType.CRYPTO)
 
 
 _CURRENCY_MAP = {
@@ -123,4 +126,7 @@ _CURRENCY_MAP = {
     "XTZ": XTZ,
     "USDT": USDT,
     "ZEC": ZEC,
+    "BRZ": BRZ,
+    "TRYB": TRYB,
+    "DOGE": DOGE
 }
