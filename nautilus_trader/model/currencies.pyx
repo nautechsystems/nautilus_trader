@@ -128,5 +128,5 @@ _CURRENCY_MAP = {
     "ZEC": ZEC,
     "BRZ": BRZ,
     "TRYB": TRYB,
-    "DOGE": DOGE
+    "DOGE": DOGE,
 }

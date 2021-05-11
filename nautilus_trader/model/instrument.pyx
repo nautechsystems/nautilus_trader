@@ -237,18 +237,18 @@ cdef class Instrument(Data):
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}" \
-               f"('id={self.id.value}, " \
-               f"symbol={self.id.symbol}, " \
-               f"asset_class={self.asset_class}, " \
-               f"asset_type={self.asset_type}, " \
-               f"base_currency={self.base_currency}, " \
-               f"quote_currency={self.quote_currency}, " \
-               f"settlement_currency={self.settlement_currency}, " \
-               f"tick_size={self.tick_size}, " \
-               f"price_precision={self.price_precision}, " \
-               f"lot_size={self.lot_size}', " \
-               f"size_precision={self.size_precision}')"
+        return (f"{type(self).__name__}"
+                f"(id={self.id.value}, "
+                f"symbol={self.id.symbol}, "
+                f"asset_class={self.asset_class}, "
+                f"asset_type={self.asset_type}, "
+                f"base_currency={self.base_currency}, "
+                f"quote_currency={self.quote_currency}, "
+                f"settlement_currency={self.settlement_currency}, "
+                f"tick_size={self.tick_size}, "
+                f"price_precision={self.price_precision}, "
+                f"lot_size={self.lot_size}, "
+                f"size_precision={self.size_precision})")
 
 
 # # TODO: Finish docs
