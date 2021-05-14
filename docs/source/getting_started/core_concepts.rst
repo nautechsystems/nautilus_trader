@@ -35,8 +35,7 @@ market data, and it is left to the user to supply this for backtesting purposes.
 
 The platform is extremely flexible and open ended, you could inject dozens of
 different datasets into a backtest engine, running them simultaneously with time
-being accurately simulated down to the smallest ``timedelta`` definable by
-Python.
+being accurately simulated to nanosecond precision.
 
 Trading Live
 ------------
