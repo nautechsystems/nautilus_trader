@@ -162,7 +162,7 @@ async def test_post_order_update_success(execution_client, exec_engine):
     await asyncio.sleep(0)
     event = exec_engine.events[0]
     assert isinstance(event, OrderUpdated)
-    assert event.price == Price("0.47619")
+    assert event.price == Price.from_str("0.47619")
 
 
 @pytest.mark.asyncio

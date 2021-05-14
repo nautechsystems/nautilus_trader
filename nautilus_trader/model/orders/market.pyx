@@ -158,6 +158,6 @@ cdef class MarketOrder(Order):
         self.strategy_id = fill.strategy_id
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
-        self.filled_qty = Quantity(self.filled_qty + fill.last_qty)
+        self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
         self.execution_ns = fill.execution_ns
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)

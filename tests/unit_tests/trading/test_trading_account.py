@@ -66,8 +66,8 @@ class AccountTests(unittest.TestCase):
 
         margin = Account.calculate_initial_margin(
             instrument,
-            Quantity(100000),
-            Price("11493.60"),
+            Quantity.from_int(100000),
+            Price.from_str("11493.60"),
         )
 
         # Assert
@@ -81,8 +81,8 @@ class AccountTests(unittest.TestCase):
         margin = Account.calculate_maint_margin(
             instrument,
             PositionSide.LONG,
-            Quantity(100000),
-            Price("11493.60"),
+            Quantity.from_int(100000),
+            Price.from_str("11493.60"),
         )
 
         # Assert
@@ -95,8 +95,8 @@ class AccountTests(unittest.TestCase):
         # Act
         value = Account.notional_value(
             instrument,
-            Quantity(10),
-            Price("11493.60"),
+            Quantity.from_int(10),
+            Price.from_str("11493.60"),
         )
 
         # Assert
@@ -109,8 +109,8 @@ class AccountTests(unittest.TestCase):
         # Act
         value = Account.notional_value(
             instrument,
-            Quantity(100000),
-            Price("11493.60"),
+            Quantity.from_int(100000),
+            Price.from_str("11493.60"),
         )
 
         # Assert
@@ -123,7 +123,7 @@ class AccountTests(unittest.TestCase):
         # Act
         commission = Account.calculate_commission(
             instrument,
-            Quantity(100000),
+            Quantity.from_int(100000),
             Decimal("11450.50"),
             LiquiditySide.MAKER,
         )
@@ -138,7 +138,7 @@ class AccountTests(unittest.TestCase):
         # Act
         commission = Account.calculate_commission(
             instrument,
-            Quantity(1500000),
+            Quantity.from_int(1500000),
             Decimal("0.80050"),
             LiquiditySide.TAKER,
         )
@@ -153,7 +153,7 @@ class AccountTests(unittest.TestCase):
         # Act
         commission = Account.calculate_commission(
             instrument,
-            Quantity(100000),
+            Quantity.from_int(100000),
             Decimal("11450.50"),
             LiquiditySide.TAKER,
         )
@@ -168,7 +168,7 @@ class AccountTests(unittest.TestCase):
         # Act
         commission = Account.calculate_commission(
             instrument,
-            Quantity(2200000),
+            Quantity.from_int(2200000),
             Decimal("120.310"),
             LiquiditySide.TAKER,
         )

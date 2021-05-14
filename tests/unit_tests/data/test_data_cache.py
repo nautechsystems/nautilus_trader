@@ -234,10 +234,10 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -253,10 +253,10 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -273,8 +273,8 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -292,8 +292,8 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -313,11 +313,11 @@ class DataCacheTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
             TestStubs.bartype_audusd_1min_bid(),
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -334,11 +334,11 @@ class DataCacheTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
             TestStubs.bartype_audusd_1min_bid(),
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -405,10 +405,10 @@ class DataCacheTests(unittest.TestCase):
         # Act
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -423,8 +423,8 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -442,8 +442,8 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -455,13 +455,13 @@ class DataCacheTests(unittest.TestCase):
         result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
 
         # Assert
-        self.assertEqual(Price("1.00000"), result)
+        self.assertEqual(Price.from_str("1.00000"), result)
 
     @parameterized.expand(
         [
-            [PriceType.BID, Price("1.00000")],
-            [PriceType.ASK, Price("1.00001")],
-            [PriceType.MID, Price("1.000005")],
+            [PriceType.BID, Price.from_str("1.00000")],
+            [PriceType.ASK, Price.from_str("1.00001")],
+            [PriceType.MID, Price.from_str("1.000005")],
         ]
     )
     def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
@@ -470,10 +470,10 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -489,10 +489,10 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -509,19 +509,19 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick1 = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
         tick2 = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00001"),
-            Price("1.00003"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -539,8 +539,8 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -559,8 +559,8 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         tick1 = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -568,8 +568,8 @@ class DataCacheTests(unittest.TestCase):
 
         tick2 = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00001"),
-            Quantity(20000),
+            Price.from_str("1.00001"),
+            Quantity.from_int(20000),
             AggressorSide.SELL,
             TradeMatchId("123456789"),
             0,
@@ -590,11 +590,11 @@ class DataCacheTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
             bar_type,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -612,21 +612,21 @@ class DataCacheTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar1 = Bar(
             bar_type,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
         bar2 = Bar(
             bar_type,
-            Price("1.00002"),
-            Price("1.00003"),
-            Price("1.00004"),
-            Price("1.00005"),
-            Quantity(200000),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00005"),
+            Quantity.from_int(200000),
             0,
         )
 
@@ -646,10 +646,10 @@ class DataCacheTests(unittest.TestCase):
 
         tick = QuoteTick(
             USDJPY_SIM.id,
-            Price("110.80000"),
-            Price("110.80010"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("110.80000"),
+            Price.from_str("110.80010"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -675,10 +675,10 @@ class DataCacheTests(unittest.TestCase):
 
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("0.80000"),
-            Price("0.80010"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("0.80000"),
+            Price.from_str("0.80010"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 

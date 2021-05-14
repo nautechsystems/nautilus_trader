@@ -245,7 +245,7 @@ def _handle_market_trades(runner, instrument, timestamp_ns):
         trade_id = hash_json(data=(timestamp_ns, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
-            price=Price(price_to_probability(price, force=True)),
+            price=price_to_probability(price, force=True),  # Already wrapping in Price
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
             match_id=TradeMatchId(trade_id),
@@ -497,7 +497,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
             client_order_id=ClientOrderId(),
             venue_order_id=VenueOrderId(),
             order_state=OrderState(),
-            filled_qty=Quantity(),
+            filled_qty=Quantity.zero(),
             timestamp_ns=millis_to_nanos(),
         )
         for order in self.client().betting.list_current_orders()["currentOrders"]
@@ -520,10 +520,10 @@ async def generate_trades_list(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
             venue_order_id=VenueOrderId(fill["betId"]),
             execution_id=ExecutionId(fill["lastMatchedDate"]),
-            last_qty=Quantity(
+            last_qty=Quantity.from_str(
                 str(fill["sizeSettled"])
             ),  # TODO: Possibly incorrect precision
-            last_px=Price(
+            last_px=Price.from_str(
                 str(fill["priceMatched"])
             ),  # TODO: Possibly incorrect precision
             commission=None,  # Can be None

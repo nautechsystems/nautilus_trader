@@ -28,8 +28,8 @@ cdef class Currency:
     def __init__(
         self,
         str code,
-        int precision,
-        int iso4217,
+        uint8_t precision,
+        uint16_t iso4217,
         str name,
         CurrencyType currency_type,
     ):
@@ -40,9 +40,9 @@ cdef class Currency:
         ----------
         code : str
             The currency code.
-        precision : int
+        precision : uint8
             The currency decimal precision.
-        iso4217 : int
+        iso4217 : uint16
             The currency ISO 4217 code.
         name : str
             The currency name.
@@ -53,7 +53,7 @@ cdef class Currency:
         ------
         ValueError
             If code is not a valid string.
-        ValueError
+        OverflowError
             If precision is negative (< 0).
         ValueError
             If name is not a valid string.

@@ -163,11 +163,11 @@ class TestStubs:
     def bar_5decimal() -> Bar:
         return Bar(
             TestStubs.bartype_audusd_1min_bid(),
-            Price("1.00002"),
-            Price("1.00004"),
-            Price("1.00001"),
-            Price("1.00003"),
-            Quantity(1_000_000),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(1_000_000),
             0,
         )
 
@@ -175,11 +175,11 @@ class TestStubs:
     def bar_3decimal() -> Bar:
         return Bar(
             TestStubs.bartype_usdjpy_1min_bid(),
-            Price("90.002"),
-            Price("90.004"),
-            Price("90.001"),
-            Price("90.003"),
-            Quantity(1_000_000),
+            Price.from_str("90.002"),
+            Price.from_str("90.004"),
+            Price.from_str("90.001"),
+            Price.from_str("90.003"),
+            Quantity.from_int(1_000_000),
             0,
         )
 
@@ -189,10 +189,10 @@ class TestStubs:
     ) -> QuoteTick:
         return QuoteTick(
             instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
-            bid or Price("90.002"),
-            ask or Price("90.005"),
-            bid_volume or Quantity(1_000_000),
-            ask_volume or Quantity(1_000_000),
+            bid or Price.from_str("90.002"),
+            ask or Price.from_str("90.005"),
+            bid_volume or Quantity.from_int(1_000_000),
+            ask_volume or Quantity.from_int(1_000_000),
             0,
         )
 
@@ -200,10 +200,10 @@ class TestStubs:
     def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
             instrument_id if instrument_id is not None else TestStubs.audusd_id(),
-            bid or Price("1.00001"),
-            ask or Price("1.00003"),
-            Quantity(1_000_000),
-            Quantity(1_000_000),
+            bid or Price.from_str("1.00001"),
+            ask or Price.from_str("1.00003"),
+            Quantity.from_int(1_000_000),
+            Quantity.from_int(1_000_000),
             0,
         )
 
@@ -213,8 +213,8 @@ class TestStubs:
     ) -> TradeTick:
         return TradeTick(
             instrument_id or TestStubs.audusd_id(),
-            price or Price("1.00001"),
-            quantity or Quantity(100000),
+            price or Price.from_str("1.00001"),
+            quantity or Quantity.from_int(100000),
             aggressor_side or AggressorSide.BUY,
             TradeMatchId("123456"),
             0,
@@ -386,7 +386,7 @@ class TestStubs:
         if strategy_id is None:
             strategy_id = order.strategy_id
         if last_px is None:
-            last_px = Price("1.00000")
+            last_px = Price.from_str("1.00000")
         if last_qty is None:
             last_qty = order.quantity
 

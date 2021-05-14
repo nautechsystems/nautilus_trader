@@ -127,7 +127,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Price((self.bid + self.ask) / 2)
+            return Price(((self.bid + self.ask) / 2), self.bid.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid
         elif price_type == PriceType.ASK:
@@ -150,7 +150,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Quantity((self.bid_size + self.ask_size) / 2, self.bid_size.precision_c())
+            return Quantity((self.bid_size + self.ask_size) / 2, self.bid_size.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid_size
         elif price_type == PriceType.ASK:
@@ -170,10 +170,10 @@ cdef class QuoteTick(Tick):
 
         return QuoteTick(
             instrument_id,
-            Price(pieces[0]),
-            Price(pieces[1]),
-            Quantity(pieces[2]),
-            Quantity(pieces[3]),
+            Price.from_str_c(pieces[0]),
+            Price.from_str_c(pieces[1]),
+            Quantity.from_str_c(pieces[2]),
+            Quantity.from_str_c(pieces[3]),
             int(pieces[4]),
         )
 
@@ -276,8 +276,8 @@ cdef class TradeTick(Tick):
 
         return TradeTick(
             instrument_id,
-            Price(pieces[0]),
-            Quantity(pieces[1]),
+            Price.from_str_c(pieces[0]),
+            Quantity.from_str_c(pieces[1]),
             AggressorSideParser.from_str(pieces[2]),
             TradeMatchId(pieces[3]),
             int(pieces[4]),

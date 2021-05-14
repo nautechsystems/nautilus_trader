@@ -16,8 +16,6 @@
 from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
@@ -49,7 +47,7 @@ class TestOrderBookSnapshot:
 class TestOrderBookOperation:
     def test_repr(self):
         # Arrange
-        order = Order(price=Price(10), volume=Quantity(5), side=OrderSide.BUY)
+        order = Order(price=10, volume=5, side=OrderSide.BUY)
         op = OrderBookDelta(
             instrument_id=AUDUSD,
             level=OrderBookLevel.L2,

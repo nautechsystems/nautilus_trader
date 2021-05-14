@@ -43,7 +43,7 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
-        "loop_debug": False,  # The event loop debug mode
+        "loop_debug": False,  # If event loop debug mode
         "connection_timeout": 5.0,  # Timeout for successful connections for all engine clients
         "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
@@ -92,7 +92,7 @@ instrument_id = InstrumentId(
 strategy = VolatilityMarketMaker(
     instrument_id=instrument_id,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-    trade_size=Decimal("0.05"),
+    trade_size=Decimal("0.01"),
     atr_period=20,
     atr_multiple=1.0,
     order_id_tag="001",

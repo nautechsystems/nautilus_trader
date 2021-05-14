@@ -151,7 +151,7 @@ class TestLiveRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -196,7 +196,7 @@ class TestLiveRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -276,7 +276,7 @@ class TestLiveRiskEngine:
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             )
 
             submit_order = SubmitOrder(
@@ -320,7 +320,7 @@ class TestLiveRiskEngine:
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             )
 
             event = TestStubs.event_order_submitted(order)

@@ -155,7 +155,7 @@ cdef class LimitOrder(PassiveOrder):
             instrument_id=init.instrument_id,
             order_side=init.order_side,
             quantity=init.quantity,
-            price=Price(init.options[PRICE]),
+            price=Price.from_str_c(init.options[PRICE]),
             time_in_force=init.time_in_force,
             expire_time=init.options.get(EXPIRE_TIME),
             init_id=init.id,

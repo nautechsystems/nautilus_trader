@@ -205,7 +205,7 @@ class BetfairTestStrategy(TradingStrategy):
             instrument_id=self.instrument_id,
             price=Price(price, precision=5),
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
+            quantity=Quantity(self.trade_size, precision=0),
             time_in_force=TimeInForce.GTC,
         )
         self._in_flight.add(order.client_order_id)
@@ -219,7 +219,7 @@ class BetfairTestStrategy(TradingStrategy):
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             price=Price(price + (self.market_width / Decimal(2.0)), precision=5),
-            quantity=Quantity(self.trade_size),
+            quantity=Quantity(self.trade_size, precision=0),
             time_in_force=TimeInForce.GTC,
         )
         self._in_flight.add(order.client_order_id)

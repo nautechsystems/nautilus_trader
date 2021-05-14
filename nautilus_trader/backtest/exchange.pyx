@@ -1061,7 +1061,7 @@ cdef class SimulatedExchange:
 
     cdef inline list _determine_market_price_and_volume(self, Order order):
         cdef OrderBook book = self.get_book(order.instrument_id)
-        cdef Price price = Price(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
+        cdef Price price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, volume=order.quantity, side=order.side)
 
         if order.side == OrderSide.BUY:
@@ -1097,9 +1097,9 @@ cdef class SimulatedExchange:
             if self.exchange_order_book_level == OrderBookLevel.L1 and self.fill_model.is_slipped():
                 instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
                 if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px + instrument.tick_size)
+                    fill_px = Price(fill_px + instrument.tick_size, instrument.price_precision)
                 else:  # => OrderSide.SELL
-                    fill_px = Price(fill_px - instrument.tick_size)
+                    fill_px = Price(fill_px - instrument.tick_size, instrument.price_precision)
             self._fill_order(
                 order=order,
                 last_px=fill_px,
@@ -1112,13 +1112,13 @@ cdef class SimulatedExchange:
             fill_px = fills[-1][0]
             instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
             if order.side == OrderSide.BUY:
-                fill_px = Price(fill_px + instrument.tick_size)
+                fill_px = Price(fill_px + instrument.tick_size, instrument.price_precision)
             else:  # => OrderSide.SELL
-                fill_px = Price(fill_px - instrument.tick_size)
+                fill_px = Price(fill_px - instrument.tick_size, instrument.price_precision)
             self._fill_order(
                 order=order,
                 last_px=fill_px,
-                last_qty=Quantity(order.quantity - order.filled_qty),
+                last_qty=Quantity(order.quantity - order.filled_qty, instrument.size_precision),
                 liquidity_side=liquidity_side,
             )
 

@@ -236,7 +236,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -275,7 +275,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -292,7 +292,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -302,7 +302,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position = Position(fill=fill)
@@ -344,7 +344,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -354,7 +354,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position = Position(fill=fill)
@@ -371,8 +371,8 @@ class ExecutionCacheTests(unittest.TestCase):
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         position_id = PositionId("P-1")
@@ -423,7 +423,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -435,7 +435,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order)
 
         fill = TestStubs.event_order_filled(
-            order, instrument=AUDUSD_SIM, last_px=Price("1.00001")
+            order, instrument=AUDUSD_SIM, last_px=Price.from_str("1.00001")
         )
 
         order.apply(fill)
@@ -481,7 +481,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -495,7 +495,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position = Position(fill=fill1)
@@ -541,7 +541,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -555,7 +555,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position = Position(fill=fill1)
@@ -564,7 +564,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -576,7 +576,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position.apply(order2_filled)
@@ -625,7 +625,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -639,7 +639,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position1 = Position(fill=fill1)
@@ -650,7 +650,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order2 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -662,7 +662,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order2,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position2 = Position(fill=fill2)
@@ -688,7 +688,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -702,7 +702,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position1 = Position(fill=fill1)
@@ -713,7 +713,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order2 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -725,7 +725,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order2,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position2 = Position(fill=fill2)
@@ -734,7 +734,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order3 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order3.apply(TestStubs.event_order_submitted(order3))
@@ -746,7 +746,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order3,
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         position2.apply(fill3)
@@ -793,7 +793,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position1_id = PositionId("P-1")
@@ -809,7 +809,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position1 = Position(fill=fill1)
@@ -819,8 +819,8 @@ class ExecutionCacheTests(unittest.TestCase):
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.0000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.0000"),
         )
 
         position2_id = PositionId("P-2")
@@ -843,7 +843,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position1_id = PositionId("P-1")
@@ -859,7 +859,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
         position1 = Position(fill=fill1)
         self.cache.update_order(order1)
@@ -868,8 +868,8 @@ class ExecutionCacheTests(unittest.TestCase):
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         position2_id = PositionId("P-2")
@@ -896,7 +896,7 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position1_id = PositionId("P-1")
@@ -912,7 +912,7 @@ class ExecutionCacheTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position1 = Position(fill=fill1)
@@ -922,8 +922,8 @@ class ExecutionCacheTests(unittest.TestCase):
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         position2_id = PositionId("P-2")

@@ -61,7 +61,7 @@ class TestExecutionStateReport:
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=venue_order_id,
             order_state=OrderState.REJECTED,
-            filled_qty=Quantity(0),
+            filled_qty=Quantity.zero(),
             timestamp_ns=0,
         )
 
@@ -81,7 +81,7 @@ class TestExecutionStateReport:
         position_report = PositionStatusReport(
             instrument_id=AUDUSD_SIM,
             position_side=PositionSide.FLAT,
-            qty=Quantity(0),
+            qty=Quantity.zero(),
             timestamp_ns=0,
         )
 

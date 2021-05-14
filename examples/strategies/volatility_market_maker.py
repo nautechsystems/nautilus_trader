@@ -27,8 +27,6 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -81,11 +79,10 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialize in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple
-        self.instrument = None  # Request on start instead
-        self.price_precision = None  # Initialized on start
 
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(atr_period)
@@ -97,7 +94,10 @@ class VolatilityMarketMaker(TradingStrategy):
     def on_start(self):
         """Actions to be performed on strategy start."""
         self.instrument = self.data.instrument(self.instrument_id)
-        self.price_precision = self.instrument.price_precision
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.atr)
@@ -208,8 +208,8 @@ class VolatilityMarketMaker(TradingStrategy):
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # Default value is True
             hidden=False,  # Default value is False
@@ -226,8 +226,8 @@ class VolatilityMarketMaker(TradingStrategy):
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # Default value is True
             hidden=False,  # Default value is False

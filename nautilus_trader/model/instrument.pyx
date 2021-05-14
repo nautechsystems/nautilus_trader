@@ -216,6 +216,40 @@ cdef class Instrument(Data):
         """
         return self.id.venue
 
+    cpdef Price make_price(self, value):
+        """
+        Create a new price from the given value using the instruments price
+        precision.
+
+        Parameters
+        ----------
+        value : integer, float, str or Decimal
+            The value of the price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price(float(value), precision=self.price_precision)
+
+    cpdef Quantity make_qty(self, value):
+        """
+        Create a new quantity from the given value using the instruments size
+        precision.
+
+        Parameters
+        ----------
+        value : integer, float, str or Decimal
+            The value of the quantity.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return Quantity(float(value), precision=self.size_precision)
+
     cdef bint _is_quanto(
         self,
         Currency base_currency,
@@ -324,7 +358,7 @@ cdef class Future(Instrument):
             multiplier=Decimal(multiplier),
             lot_size=lot_size,
             max_quantity=None,
-            min_quantity=Quantity(1),
+            min_quantity=Quantity(1, precision=0),
             max_notional=None,
             min_notional=None,
             max_price=None,
@@ -411,7 +445,7 @@ cdef class BettingInstrument(Instrument):
             size_precision=4,
             tick_size=Decimal(1),
             multiplier=Decimal(1),
-            lot_size=Quantity(1),
+            lot_size=Quantity(1, precision=0),
             max_quantity=None,  # Can be None
             min_quantity=None,  # Can be None
             max_notional=None,     # Can be None

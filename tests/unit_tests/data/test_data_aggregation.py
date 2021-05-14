@@ -83,11 +83,11 @@ class BarBuilderTests(unittest.TestCase):
 
         partial_bar = Bar(
             bar_type=bar_type,
-            open_price=Price("1.00001"),
-            high_price=Price("1.00010"),
-            low_price=Price("1.00000"),
-            close_price=Price("1.00002"),
-            volume=Quantity("1"),
+            open_price=Price.from_str("1.00001"),
+            high_price=Price.from_str("1.00010"),
+            low_price=Price.from_str("1.00000"),
+            close_price=Price.from_str("1.00002"),
+            volume=Quantity.from_str("1"),
             timestamp_ns=1_000_000_000,
         )
 
@@ -97,11 +97,11 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build_now()
 
         # Assert
-        self.assertEqual(Price("1.00001"), bar.open)
-        self.assertEqual(Price("1.00010"), bar.high)
-        self.assertEqual(Price("1.00000"), bar.low)
-        self.assertEqual(Price("1.00002"), bar.close)
-        self.assertEqual(Quantity("1"), bar.volume)
+        self.assertEqual(Price.from_str("1.00001"), bar.open)
+        self.assertEqual(Price.from_str("1.00010"), bar.high)
+        self.assertEqual(Price.from_str("1.00000"), bar.low)
+        self.assertEqual(Price.from_str("1.00002"), bar.close)
+        self.assertEqual(Quantity.from_str("1"), bar.volume)
         self.assertEqual(1_000_000_000, bar.timestamp_ns)
         self.assertEqual(1_000_000_000, builder.last_timestamp_ns)
 
@@ -112,21 +112,21 @@ class BarBuilderTests(unittest.TestCase):
 
         partial_bar1 = Bar(
             bar_type=bar_type,
-            open_price=Price("1.00001"),
-            high_price=Price("1.00010"),
-            low_price=Price("1.00000"),
-            close_price=Price("1.00002"),
-            volume=Quantity("1"),
+            open_price=Price.from_str("1.00001"),
+            high_price=Price.from_str("1.00010"),
+            low_price=Price.from_str("1.00000"),
+            close_price=Price.from_str("1.00002"),
+            volume=Quantity.from_str("1"),
             timestamp_ns=1_000_000_000,
         )
 
         partial_bar2 = Bar(
             bar_type=bar_type,
-            open_price=Price("2.00001"),
-            high_price=Price("2.00010"),
-            low_price=Price("2.00000"),
-            close_price=Price("2.00002"),
-            volume=Quantity("2"),
+            open_price=Price.from_str("2.00001"),
+            high_price=Price.from_str("2.00010"),
+            low_price=Price.from_str("2.00000"),
+            close_price=Price.from_str("2.00002"),
+            volume=Quantity.from_str("2"),
             timestamp_ns=3_000_000_000,
         )
 
@@ -137,11 +137,11 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build(4_000_000_000)
 
         # Assert
-        self.assertEqual(Price("1.00001"), bar.open)
-        self.assertEqual(Price("1.00010"), bar.high)
-        self.assertEqual(Price("1.00000"), bar.low)
-        self.assertEqual(Price("1.00002"), bar.close)
-        self.assertEqual(Quantity("1"), bar.volume)
+        self.assertEqual(Price.from_str("1.00001"), bar.open)
+        self.assertEqual(Price.from_str("1.00010"), bar.high)
+        self.assertEqual(Price.from_str("1.00000"), bar.low)
+        self.assertEqual(Price.from_str("1.00002"), bar.close)
+        self.assertEqual(Quantity.from_str("1"), bar.volume)
         self.assertEqual(4_000_000_000, bar.timestamp_ns)
         self.assertEqual(1_000_000_000, builder.last_timestamp_ns)
 
@@ -151,7 +151,7 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_type, use_previous_close=True)
 
         # Act
-        builder.update(Price("1.00000"), Quantity("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
 
         # Assert
         self.assertTrue(builder.initialized)
@@ -162,10 +162,12 @@ class BarBuilderTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(bar_type, use_previous_close=True)
-        builder.update(Price("1.00000"), Quantity("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
 
         # Act
-        builder.update(Price("1.00001"), Quantity("1"), -1_000_000_000)
+        builder.update(
+            Price.from_str("1.00001"), Quantity.from_str("1"), -1_000_000_000
+        )
 
         # Assert
         self.assertTrue(builder.initialized)
@@ -178,11 +180,11 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_type, use_previous_close=True)
 
         # Act
-        builder.update(Price("1.00000"), Quantity("1"), 0)
-        builder.update(Price("1.00000"), Quantity("1"), 0)
-        builder.update(Price("1.00000"), Quantity("1"), 0)
-        builder.update(Price("1.00000"), Quantity("1"), 0)
-        builder.update(Price("1.00000"), Quantity("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
 
         # Assert
         self.assertEqual(5, builder.count)
@@ -201,11 +203,11 @@ class BarBuilderTests(unittest.TestCase):
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(bar_type, use_previous_close=True)
 
-        builder.update(Price("1.00001"), Quantity("1.0"), 0)
-        builder.update(Price("1.00002"), Quantity("1.5"), 0)
+        builder.update(Price.from_str("1.00001"), Quantity.from_str("1.0"), 0)
+        builder.update(Price.from_str("1.00002"), Quantity.from_str("1.5"), 0)
         builder.update(
-            Price("1.00000"),
-            Quantity("1.5"),
+            Price.from_str("1.00000"),
+            Quantity.from_str("1.5"),
             1_000_000_000,
         )
 
@@ -213,11 +215,11 @@ class BarBuilderTests(unittest.TestCase):
         bar = builder.build_now()  # Also resets builder
 
         # Assert
-        self.assertEqual(Price("1.00001"), bar.open)
-        self.assertEqual(Price("1.00002"), bar.high)
-        self.assertEqual(Price("1.00000"), bar.low)
-        self.assertEqual(Price("1.00000"), bar.close)
-        self.assertEqual(Quantity("4.0"), bar.volume)
+        self.assertEqual(Price.from_str("1.00001"), bar.open)
+        self.assertEqual(Price.from_str("1.00002"), bar.high)
+        self.assertEqual(Price.from_str("1.00000"), bar.low)
+        self.assertEqual(Price.from_str("1.00000"), bar.close)
+        self.assertEqual(Quantity.from_str("4.0"), bar.volume)
         self.assertEqual(1_000_000_000, bar.timestamp_ns)
         self.assertEqual(1_000_000_000, builder.last_timestamp_ns)
         self.assertEqual(0, builder.count)
@@ -227,21 +229,21 @@ class BarBuilderTests(unittest.TestCase):
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(bar_type, use_previous_close=True)
 
-        builder.update(Price("1.00001"), Quantity("1.0"), 0)
+        builder.update(Price.from_str("1.00001"), Quantity.from_str("1.0"), 0)
         builder.build_now()  # This close should become the next open
 
-        builder.update(Price("1.00000"), Quantity("1.0"), 0)
-        builder.update(Price("1.00003"), Quantity("1.0"), 0)
-        builder.update(Price("1.00002"), Quantity("1.0"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1.0"), 0)
+        builder.update(Price.from_str("1.00003"), Quantity.from_str("1.0"), 0)
+        builder.update(Price.from_str("1.00002"), Quantity.from_str("1.0"), 0)
 
         bar2 = builder.build_now()
 
         # Assert
-        self.assertEqual(Price("1.00001"), bar2.open)
-        self.assertEqual(Price("1.00003"), bar2.high)
-        self.assertEqual(Price("1.00000"), bar2.low)
-        self.assertEqual(Price("1.00002"), bar2.close)
-        self.assertEqual(Quantity("3.0"), bar2.volume)
+        self.assertEqual(Price.from_str("1.00001"), bar2.open)
+        self.assertEqual(Price.from_str("1.00003"), bar2.high)
+        self.assertEqual(Price.from_str("1.00000"), bar2.low)
+        self.assertEqual(Price.from_str("1.00002"), bar2.close)
+        self.assertEqual(Quantity.from_str("3.0"), bar2.volume)
 
 
 class TickBarAggregatorTests(unittest.TestCase):
@@ -256,10 +258,10 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             timestamp_ns=0,
         )
 
@@ -280,8 +282,8 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00001"),
-            size=Quantity(1),
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
@@ -304,28 +306,28 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             timestamp_ns=0,
         )
 
         tick2 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid=Price.from_str("1.00002"),
+            ask=Price.from_str("1.00005"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             timestamp_ns=0,
         )
 
         tick3 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             timestamp_ns=0,
         )
 
@@ -336,11 +338,11 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.000015"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.000015"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity(3), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.000025"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.000035"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.000015"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.000015"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_int(3), bar_store.get_store()[0].volume)
 
     def test_handle_trade_tick_when_count_at_threshold_sends_bar_to_handler(self):
         # Arrange
@@ -353,8 +355,8 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00001"),
-            size=Quantity(1),
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
@@ -362,8 +364,8 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         tick2 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00002"),
-            size=Quantity(1),
+            price=Price.from_str("1.00002"),
+            size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
@@ -371,8 +373,8 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         tick3 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00000"),
-            size=Quantity(1),
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
@@ -385,11 +387,11 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity(3), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.00001"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.00002"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_int(3), bar_store.get_store()[0].volume)
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -415,11 +417,11 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Assert
         last_bar = bar_store.get_store()[-1]
         self.assertEqual(999, len(bar_store.get_store()))
-        self.assertEqual(Price("0.66939"), last_bar.open)
-        self.assertEqual(Price("0.66947"), last_bar.high)
-        self.assertEqual(Price("0.669355"), last_bar.low)
-        self.assertEqual(Price("0.66945"), last_bar.close)
-        self.assertEqual(Quantity(100000000), last_bar.volume)
+        self.assertEqual(Price.from_str("0.66939"), last_bar.open)
+        self.assertEqual(Price.from_str("0.66947"), last_bar.high)
+        self.assertEqual(Price.from_str("0.669355"), last_bar.low)
+        self.assertEqual(Price.from_str("0.66945"), last_bar.close)
+        self.assertEqual(Quantity.from_int(100000000), last_bar.volume)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -444,11 +446,11 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Assert
         last_bar = bar_store.get_store()[-1]
         self.assertEqual(69, len(bar_store.get_store()))
-        self.assertEqual(Price("426.72"), last_bar.open)
-        self.assertEqual(Price("427.01"), last_bar.high)
-        self.assertEqual(Price("426.46"), last_bar.low)
-        self.assertEqual(Price("426.67"), last_bar.close)
-        self.assertEqual(Quantity(2281), last_bar.volume)
+        self.assertEqual(Price.from_str("426.72"), last_bar.open)
+        self.assertEqual(Price.from_str("427.01"), last_bar.high)
+        self.assertEqual(Price.from_str("426.46"), last_bar.low)
+        self.assertEqual(Price.from_str("426.67"), last_bar.close)
+        self.assertEqual(Quantity.from_int(2281), last_bar.volume)
 
 
 class VolumeBarAggregatorTests(unittest.TestCase):
@@ -463,10 +465,10 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(3000),
-            ask_size=Quantity(2000),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(3000),
+            ask_size=Quantity.from_int(2000),
             timestamp_ns=0,
         )
 
@@ -487,8 +489,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00001"),
-            size=Quantity(1),
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
@@ -511,28 +513,28 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(3000),
-            ask_size=Quantity(2000),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(3000),
+            ask_size=Quantity.from_int(2000),
             timestamp_ns=0,
         )
 
         tick2 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(4000),
-            ask_size=Quantity(2000),
+            bid=Price.from_str("1.00002"),
+            ask=Price.from_str("1.00005"),
+            bid_size=Quantity.from_int(4000),
+            ask_size=Quantity.from_int(2000),
             timestamp_ns=0,
         )
 
         tick3 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(3000),
-            ask_size=Quantity(2000),
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(3000),
+            ask_size=Quantity.from_int(2000),
             timestamp_ns=0,
         )
 
@@ -543,11 +545,11 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.00001"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.00002"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[0].volume)
 
     def test_handle_trade_tick_when_volume_at_threshold_sends_bar_to_handler(self):
         # Arrange
@@ -560,8 +562,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00001"),
-            size=Quantity(3000),
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
@@ -569,8 +571,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick2 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00002"),
-            size=Quantity(4000),
+            price=Price.from_str("1.00002"),
+            size=Quantity.from_int(4000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
@@ -578,8 +580,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick3 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00000"),
-            size=Quantity(3000),
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
@@ -592,11 +594,11 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.00001"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.00002"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[0].volume)
 
     def test_handle_quote_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
@@ -609,28 +611,28 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(2000),
-            ask_size=Quantity(2000),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(2000),
+            ask_size=Quantity.from_int(2000),
             timestamp_ns=0,
         )
 
         tick2 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(3000),
-            ask_size=Quantity(3000),
+            bid=Price.from_str("1.00002"),
+            ask=Price.from_str("1.00005"),
+            bid_size=Quantity.from_int(3000),
+            ask_size=Quantity.from_int(3000),
             timestamp_ns=0,
         )
 
         tick3 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(25000),
-            ask_size=Quantity(25000),
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(25000),
+            ask_size=Quantity.from_int(25000),
             timestamp_ns=0,
         )
 
@@ -641,21 +643,21 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(3, len(bar_store.get_store()))
-        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[0].volume)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].open)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[1].volume)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].open)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[2].volume)
+        self.assertEqual(Price.from_str("1.00001"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.00002"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].open)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[1].volume)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].open)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[2].volume)
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
@@ -668,8 +670,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00001"),
-            size=Quantity(2000),
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(2000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
@@ -677,8 +679,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick2 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00002"),
-            size=Quantity(3000),
+            price=Price.from_str("1.00002"),
+            size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
@@ -686,8 +688,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         tick3 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("1.00000"),
-            size=Quantity(25000),
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(25000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
@@ -700,21 +702,21 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(3, len(bar_store.get_store()))
-        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[0].volume)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].open)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[1].volume)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].open)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].close)
-        self.assertEqual(Quantity(10000), bar_store.get_store()[2].volume)
+        self.assertEqual(Price.from_str("1.00001"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.00002"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].open)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[1].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[1].volume)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].open)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[2].close)
+        self.assertEqual(Quantity.from_int(10000), bar_store.get_store()[2].volume)
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -740,11 +742,11 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Assert
         last_bar = bar_store.get_store()[-1]
         self.assertEqual(99, len(bar_store.get_store()))
-        self.assertEqual(Price("0.669325"), last_bar.open)
-        self.assertEqual(Price("0.669485"), last_bar.high)
-        self.assertEqual(Price("0.66917"), last_bar.low)
-        self.assertEqual(Price("0.66935"), last_bar.close)
-        self.assertEqual(Quantity(1000), last_bar.volume)
+        self.assertEqual(Price.from_str("0.669325"), last_bar.open)
+        self.assertEqual(Price.from_str("0.669485"), last_bar.high)
+        self.assertEqual(Price.from_str("0.66917"), last_bar.low)
+        self.assertEqual(Price.from_str("0.66935"), last_bar.close)
+        self.assertEqual(Quantity.from_int(1000), last_bar.volume)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -769,11 +771,11 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Assert
         last_bar = bar_store.get_store()[-1]
         self.assertEqual(187, len(bar_store.get_store()))
-        self.assertEqual(Price("426.44"), last_bar.open)
-        self.assertEqual(Price("426.84"), last_bar.high)
-        self.assertEqual(Price("426.00"), last_bar.low)
-        self.assertEqual(Price("426.82"), last_bar.close)
-        self.assertEqual(Quantity(1000), last_bar.volume)
+        self.assertEqual(Price.from_str("426.44"), last_bar.open)
+        self.assertEqual(Price.from_str("426.84"), last_bar.high)
+        self.assertEqual(Price.from_str("426.00"), last_bar.low)
+        self.assertEqual(Price.from_str("426.82"), last_bar.close)
+        self.assertEqual(Quantity.from_int(1000), last_bar.volume)
 
 
 class ValueBarAggregatorTests(unittest.TestCase):
@@ -788,10 +790,10 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(3000),
-            ask_size=Quantity(2000),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(3000),
+            ask_size=Quantity.from_int(2000),
             timestamp_ns=0,
         )
 
@@ -813,8 +815,8 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("15000.00"),
-            size=Quantity("3.5"),
+            price=Price.from_str("15000.00"),
+            size=Quantity.from_str("3.5"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
@@ -838,28 +840,28 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(20000),
-            ask_size=Quantity(20000),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(20000),
+            ask_size=Quantity.from_int(20000),
             timestamp_ns=0,
         )
 
         tick2 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(60000),
-            ask_size=Quantity(20000),
+            bid=Price.from_str("1.00002"),
+            ask=Price.from_str("1.00005"),
+            bid_size=Quantity.from_int(60000),
+            ask_size=Quantity.from_int(20000),
             timestamp_ns=0,
         )
 
         tick3 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(30500),
-            ask_size=Quantity(20000),
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(30500),
+            ask_size=Quantity.from_int(20000),
             timestamp_ns=0,
         )
 
@@ -870,11 +872,11 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity("99999"), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.00001"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.00002"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.00000"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_str("99999"), bar_store.get_store()[0].volume)
         self.assertEqual(Decimal("10501.400"), aggregator.get_cumulative_value())
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
@@ -888,8 +890,8 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         tick1 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("20.00001"),
-            size=Quantity("3000.00"),
+            price=Price.from_str("20.00001"),
+            size=Quantity.from_str("3000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp_ns=0,
@@ -897,8 +899,8 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         tick2 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("20.00002"),
-            size=Quantity("4000.00"),
+            price=Price.from_str("20.00002"),
+            size=Quantity.from_str("4000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp_ns=0,
@@ -906,8 +908,8 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         tick3 = TradeTick(
             instrument_id=AUDUSD_SIM.id,
-            price=Price("20.00000"),
-            size=Quantity("5000.00"),
+            price=Price.from_str("20.00000"),
+            size=Quantity.from_str("5000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp_ns=0,
@@ -920,19 +922,19 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, len(bar_store.get_store()))
-        self.assertEqual(Price("20.00001"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("20.00002"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("20.00001"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("20.00002"), bar_store.get_store()[0].close)
+        self.assertEqual(Price.from_str("20.00001"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("20.00002"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("20.00001"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("20.00002"), bar_store.get_store()[0].close)
         self.assertEqual(
-            Quantity("5000.00"), bar_store.get_store()[0].volume
+            Quantity.from_str("5000.00"), bar_store.get_store()[0].volume
         )  # TODO: WIP - intermittent?
-        self.assertEqual(Price("20.00002"), bar_store.get_store()[1].open)
-        self.assertEqual(Price("20.00002"), bar_store.get_store()[1].high)
-        self.assertEqual(Price("20.00000"), bar_store.get_store()[1].low)
-        self.assertEqual(Price("20.00000"), bar_store.get_store()[1].close)
+        self.assertEqual(Price.from_str("20.00002"), bar_store.get_store()[1].open)
+        self.assertEqual(Price.from_str("20.00002"), bar_store.get_store()[1].high)
+        self.assertEqual(Price.from_str("20.00000"), bar_store.get_store()[1].low)
+        self.assertEqual(Price.from_str("20.00000"), bar_store.get_store()[1].close)
         self.assertEqual(
-            Quantity("4999.99"), bar_store.get_store()[1].volume
+            Quantity.from_str("4999.99"), bar_store.get_store()[1].volume
         )  # TODO: WIP - intermittent?
         self.assertEqual(
             Decimal("40000.11000"), aggregator.get_cumulative_value()
@@ -962,11 +964,11 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Assert
         last_bar = bar_store.get_store()[-1]
         self.assertEqual(67, len(bar_store.get_store()))
-        self.assertEqual(Price("0.669205"), last_bar.open)
-        self.assertEqual(Price("0.669485"), last_bar.high)
-        self.assertEqual(Price("0.669205"), last_bar.low)
-        self.assertEqual(Price("0.669475"), last_bar.close)
-        self.assertEqual(Quantity(1494), last_bar.volume)
+        self.assertEqual(Price.from_str("0.669205"), last_bar.open)
+        self.assertEqual(Price.from_str("0.669485"), last_bar.high)
+        self.assertEqual(Price.from_str("0.669205"), last_bar.low)
+        self.assertEqual(Price.from_str("0.669475"), last_bar.close)
+        self.assertEqual(Quantity.from_int(1494), last_bar.volume)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -991,11 +993,11 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Assert
         last_bar = bar_store.get_store()[-1]
         self.assertEqual(7969, len(bar_store.get_store()))
-        self.assertEqual(Price("426.93"), last_bar.open)
-        self.assertEqual(Price("427.00"), last_bar.high)
-        self.assertEqual(Price("426.83"), last_bar.low)
-        self.assertEqual(Price("426.88"), last_bar.close)
-        self.assertEqual(Quantity(24), last_bar.volume)
+        self.assertEqual(Price.from_str("426.93"), last_bar.open)
+        self.assertEqual(Price.from_str("427.00"), last_bar.high)
+        self.assertEqual(Price.from_str("426.83"), last_bar.low)
+        self.assertEqual(Price.from_str("426.88"), last_bar.close)
+        self.assertEqual(Quantity.from_int(24), last_bar.volume)
 
 
 class TestTimeBarAggregator(unittest.TestCase):
@@ -1072,28 +1074,28 @@ class TestTimeBarAggregator(unittest.TestCase):
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid=Price.from_str("1.00001"),
+            ask=Price.from_str("1.00004"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             timestamp_ns=0,
         )
 
         tick2 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid=Price.from_str("1.00002"),
+            ask=Price.from_str("1.00005"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             timestamp_ns=0,
         )
 
         tick3 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
             timestamp_ns=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
         )
 
@@ -1104,11 +1106,11 @@ class TestTimeBarAggregator(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].open)
-        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].high)
-        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].low)
-        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].close)
-        self.assertEqual(Quantity(2), bar_store.get_store()[0].volume)
+        self.assertEqual(Price.from_str("1.000025"), bar_store.get_store()[0].open)
+        self.assertEqual(Price.from_str("1.000035"), bar_store.get_store()[0].high)
+        self.assertEqual(Price.from_str("1.000025"), bar_store.get_store()[0].low)
+        self.assertEqual(Price.from_str("1.000035"), bar_store.get_store()[0].close)
+        self.assertEqual(Quantity.from_int(2), bar_store.get_store()[0].volume)
         self.assertEqual(60_000_000_000, bar_store.get_store()[0].timestamp_ns)
 
 

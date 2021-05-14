@@ -443,8 +443,8 @@ class BetfairTestStubs(TestStubs):
         order = strategy.order_factory.limit(
             BetfairTestStubs.instrument_id(),
             OrderSide.BUY,
-            Quantity(10),
-            Price("0.50"),
+            Quantity.from_int(10),
+            Price.from_str("0.50"),
         )
         return order
 
@@ -463,8 +463,8 @@ class BetfairTestStubs(TestStubs):
                 strategy_id=BetfairTestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,
-                quantity=Quantity(10),
-                price=Price(0.33, 5),
+                quantity=Quantity.from_int(10),
+                price=Price(0.33, precision=5),
                 time_in_force=TimeInForce.GTC,
                 expire_time=None,
                 init_id=BetfairTestStubs.uuid(),
@@ -486,7 +486,7 @@ class BetfairTestStubs(TestStubs):
             client_order_id=client_order_id
             or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("001"),
-            quantity=Quantity(50),
+            quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
