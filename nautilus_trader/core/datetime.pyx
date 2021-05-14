@@ -26,26 +26,10 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport datetime_tzinfo
 from cpython.datetime cimport timedelta
 from cpython.unicode cimport PyUnicode_Contains
-from libc.math cimport llround as llround_func
-from libc.math cimport lround as lround_func
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-
-
-ctypedef int64_t (* round_func_type)(double x) nogil  # noqa E211 whitespace before '('
-
-cdef round_func_type _get_round_func() nogil:
-    if sizeof(long) == 8:
-        return <round_func_type>lround_func
-    elif sizeof(long long) == 8:
-        return <round_func_type>llround_func
-    else:
-        return NULL
-
-cdef round_func_type lround = _get_round_func()
-if lround == NULL:
-    raise TypeError(f"Can't support 'C' lround function.")
+from nautilus_trader.core.functions cimport lround
 
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -522,6 +506,8 @@ cpdef int64_t iso8601_to_unix_millis(str iso8601) except *:
     int64
 
     """
+    Condition.not_none(iso8601, "iso8601")
+
     return dt_to_unix_millis(pd.Timestamp(iso8601))
 
 
@@ -543,6 +529,8 @@ cpdef int64_t iso8601_to_unix_micros(str iso8601) except *:
     int64
 
     """
+    Condition.not_none(iso8601, "iso8601")
+
     return dt_to_unix_micros(pd.Timestamp(iso8601))
 
 
@@ -564,4 +552,6 @@ cpdef int64_t iso8601_to_unix_nanos(str iso8601) except *:
     int64
 
     """
+    Condition.not_none(iso8601, "iso8601")
+
     return dt_to_unix_nanos(pd.Timestamp(iso8601))
