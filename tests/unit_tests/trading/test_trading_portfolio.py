@@ -282,15 +282,15 @@ class PortfolioTests(unittest.TestCase):
         order1 = self.order_factory.stop_market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity("10.5"),
-            Price("25000.00"),
+            Quantity.from_str("10.5"),
+            Price.from_str("25000.00"),
         )
 
         order2 = self.order_factory.stop_market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity("10.5"),
-            Price("25000.00"),
+            Quantity.from_str("10.5"),
+            Price.from_str("25000.00"),
         )
 
         # Push state to FILLED
@@ -301,7 +301,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("25000.00"),
+            last_px=Price.from_str("25000.00"),
         )
         order1.apply(filled1)
 
@@ -312,10 +312,10 @@ class PortfolioTests(unittest.TestCase):
         # Update the last quote
         last = QuoteTick(
             BTCUSDT_BINANCE.id,
-            Price("25001.00"),
-            Price("25002.00"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("25001.00"),
+            Price.from_str("25002.00"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -336,13 +336,13 @@ class PortfolioTests(unittest.TestCase):
         order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity("10.50000000"),
+            Quantity.from_str("10.50000000"),
         )
 
         order2 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
-            Quantity("10.50000000"),
+            Quantity.from_str("10.50000000"),
         )
 
         fill1 = TestStubs.event_order_filled(
@@ -350,7 +350,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("25000.00"),
+            last_px=Price.from_str("25000.00"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -358,7 +358,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("25000.00"),
+            last_px=Price.from_str("25000.00"),
         )
 
         position1 = Position(fill=fill1)
@@ -367,7 +367,7 @@ class PortfolioTests(unittest.TestCase):
         order3 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity("10.00000000"),
+            Quantity.from_str("10.00000000"),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -375,7 +375,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("25000.00"),
+            last_px=Price.from_str("25000.00"),
         )
 
         position2 = Position(fill=fill3)
@@ -383,10 +383,10 @@ class PortfolioTests(unittest.TestCase):
         # Update the last quote
         last = QuoteTick(
             BTCUSDT_BINANCE.id,
-            Price("25001.00"),
-            Price("25002.00"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("25001.00"),
+            Price.from_str("25002.00"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -402,7 +402,7 @@ class PortfolioTests(unittest.TestCase):
         order = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity("10.000000"),
+            Quantity.from_str("10.000000"),
         )
 
         fill = TestStubs.event_order_filled(
@@ -410,15 +410,15 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("10500.00"),
+            last_px=Price.from_str("10500.00"),
         )
 
         last = QuoteTick(
             BTCUSDT_BINANCE.id,
-            Price("10510.00"),
-            Price("10511.00"),
-            Quantity("1.000000"),
-            Quantity("1.000000"),
+            Price.from_str("10510.00"),
+            Price.from_str("10511.00"),
+            Quantity.from_str("1.000000"),
+            Quantity.from_str("1.000000"),
             0,
         )
 
@@ -460,7 +460,7 @@ class PortfolioTests(unittest.TestCase):
         order = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
-            Quantity("0.515"),
+            Quantity.from_str("0.515"),
         )
 
         fill = TestStubs.event_order_filled(
@@ -468,15 +468,15 @@ class PortfolioTests(unittest.TestCase):
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("15000.00"),
+            last_px=Price.from_str("15000.00"),
         )
 
         last = QuoteTick(
             BTCUSDT_BINANCE.id,
-            Price("15510.15"),
-            Price("15510.25"),
-            Quantity("12.62"),
-            Quantity("3.1"),
+            Price.from_str("15510.15"),
+            Price.from_str("15510.25"),
+            Quantity.from_str("12.62"),
+            Quantity.from_str("3.1"),
             0,
         )
 
@@ -531,19 +531,19 @@ class PortfolioTests(unittest.TestCase):
 
         last_ethusd = QuoteTick(
             ETHUSD_BITMEX.id,
-            Price("376.05"),
-            Price("377.10"),
-            Quantity("16"),
-            Quantity("25"),
+            Price.from_str("376.05"),
+            Price.from_str("377.10"),
+            Quantity.from_str("16"),
+            Quantity.from_str("25"),
             0,
         )
 
         last_btcusd = QuoteTick(
             BTCUSD_BITMEX.id,
-            Price("10500.05"),
-            Price("10501.51"),
-            Quantity("2.54"),
-            Quantity("0.91"),
+            Price.from_str("10500.05"),
+            Price.from_str("10501.51"),
+            Quantity.from_str("2.54"),
+            Quantity.from_str("0.91"),
             0,
         )
 
@@ -555,7 +555,7 @@ class PortfolioTests(unittest.TestCase):
         order = self.order_factory.market(
             ETHUSD_BITMEX.id,
             OrderSide.BUY,
-            Quantity(10000),
+            Quantity.from_int(10000),
         )
 
         fill = TestStubs.event_order_filled(
@@ -563,7 +563,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("376.05"),
+            last_px=Price.from_str("376.05"),
         )
 
         position = Position(fill=fill)
@@ -601,7 +601,7 @@ class PortfolioTests(unittest.TestCase):
         order = self.order_factory.market(
             ETHUSD_BITMEX.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         fill = TestStubs.event_order_filled(
@@ -609,7 +609,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("376.05"),
+            last_px=Price.from_str("376.05"),
         )
 
         position = Position(fill=fill)
@@ -641,7 +641,7 @@ class PortfolioTests(unittest.TestCase):
         order = self.order_factory.market(
             ETHUSD_BITMEX.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         fill = TestStubs.event_order_filled(
@@ -649,15 +649,15 @@ class PortfolioTests(unittest.TestCase):
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("376.05"),
+            last_px=Price.from_str("376.05"),
         )
 
         last_ethusd = QuoteTick(
             ETHUSD_BITMEX.id,
-            Price("376.05"),
-            Price("377.10"),
-            Quantity("16"),
-            Quantity("25"),
+            Price.from_str("376.05"),
+            Price.from_str("377.10"),
+            Quantity.from_str("16"),
+            Quantity.from_str("25"),
             0,
         )
 
@@ -692,19 +692,19 @@ class PortfolioTests(unittest.TestCase):
 
         last_audusd = QuoteTick(
             AUDUSD_SIM.id,
-            Price("0.80501"),
-            Price("0.80505"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("0.80501"),
+            Price.from_str("0.80505"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
         last_gbpusd = QuoteTick(
             GBPUSD_SIM.id,
-            Price("1.30315"),
-            Price("1.30317"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.30315"),
+            Price.from_str("1.30317"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -716,13 +716,13 @@ class PortfolioTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = self.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
@@ -730,7 +730,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -738,7 +738,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position1 = Position(fill=fill1)
@@ -795,10 +795,10 @@ class PortfolioTests(unittest.TestCase):
 
         last_audusd = QuoteTick(
             AUDUSD_SIM.id,
-            Price("0.80501"),
-            Price("0.80505"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("0.80501"),
+            Price.from_str("0.80505"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -808,7 +808,7 @@ class PortfolioTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
@@ -816,7 +816,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position = Position(fill=fill1)
@@ -826,7 +826,7 @@ class PortfolioTests(unittest.TestCase):
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(50000),
+            Quantity.from_int(50000),
         )
 
         order2_filled = TestStubs.event_order_filled(
@@ -834,7 +834,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position.apply(order2_filled)
@@ -883,7 +883,7 @@ class PortfolioTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
@@ -891,7 +891,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position = Position(fill=fill1)
@@ -901,7 +901,7 @@ class PortfolioTests(unittest.TestCase):
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2_filled = TestStubs.event_order_filled(
@@ -909,7 +909,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00010"),
+            last_px=Price.from_str("1.00010"),
         )
 
         position.apply(order2_filled)
@@ -948,25 +948,25 @@ class PortfolioTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order3 = self.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order4 = self.order_factory.market(
             GBPUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
@@ -974,7 +974,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -982,7 +982,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -990,7 +990,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill4 = TestStubs.event_order_filled(
@@ -998,7 +998,7 @@ class PortfolioTests(unittest.TestCase):
             instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("1.00100"),
+            last_px=Price.from_str("1.00100"),
         )
 
         position1 = Position(fill=fill1)
@@ -1007,19 +1007,19 @@ class PortfolioTests(unittest.TestCase):
 
         last_audusd = QuoteTick(
             AUDUSD_SIM.id,
-            Price("0.80501"),
-            Price("0.80505"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("0.80501"),
+            Price.from_str("0.80505"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
         last_gbpusd = QuoteTick(
             GBPUSD_SIM.id,
-            Price("1.30315"),
-            Price("1.30317"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.30315"),
+            Price.from_str("1.30317"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 

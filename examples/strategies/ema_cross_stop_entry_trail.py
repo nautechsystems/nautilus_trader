@@ -26,8 +26,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -93,12 +91,11 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
-        self.instrument = None  # Initialize in on_start
-        self.tick_size = None  # Initialize in on_start
-        self.price_precision = None  # Initialize in on_start
+        self.tick_size = None  # Initialized in on_start
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema_period)
@@ -118,7 +115,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
             return
 
         self.tick_size = self.instrument.tick_size
-        self.price_precision = self.instrument.price_precision
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
@@ -218,8 +214,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            price=Price(last_bar.high + (self.tick_size * 2)),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(last_bar.low + (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -238,8 +234,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            price=Price(last_bar.low - (self.tick_size * 2)),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -262,8 +258,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             reduce_only=True,
         )
 
@@ -281,8 +277,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             reduce_only=True,
         )
 

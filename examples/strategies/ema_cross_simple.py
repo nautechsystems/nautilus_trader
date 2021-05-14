@@ -24,7 +24,6 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -79,6 +78,7 @@ class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialize in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
@@ -88,6 +88,12 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
+        self.instrument = self.data.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
@@ -198,7 +204,7 @@ class EMACross(TradingStrategy):
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
             # time_in_force=TimeInForce.FOK,
         )
 
@@ -211,7 +217,7 @@ class EMACross(TradingStrategy):
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
             # time_in_force=TimeInForce.FOK,
         )
 

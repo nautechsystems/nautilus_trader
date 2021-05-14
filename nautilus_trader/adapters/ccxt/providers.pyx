@@ -181,9 +181,9 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
         lot_size = values["info"].get("lotSize")
         if lot_size is not None and Decimal(lot_size) > 0:
-            lot_size = Quantity(lot_size)
+            lot_size = Quantity(lot_size, precision=size_precision)
         else:
-            lot_size = Quantity(1)
+            lot_size = Quantity(1, precision=size_precision)
 
         max_notional = values["limits"].get("cost").get("max")
         if max_notional is not None:
@@ -234,8 +234,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             min_notional=min_notional,
             max_price=max_price,
             min_price=min_price,
-            margin_init=Decimal(),         # Margin trading not implemented
-            margin_maint=Decimal(),        # Margin trading not implemented
+            margin_init=Decimal(),   # Margin trading not implemented
+            margin_maint=Decimal(),  # Margin trading not implemented
             maker_fee=maker_fee,
             taker_fee=taker_fee,
             timestamp_ns=unix_timestamp_ns(),

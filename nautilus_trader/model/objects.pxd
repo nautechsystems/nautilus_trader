@@ -13,22 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+
 from nautilus_trader.model.currency cimport Currency
 
 
 cdef class BaseDecimal:
     cdef object _value
 
-    cdef inline object _make_decimal_with_rounding(self, value, int precision, str rounding)
-    cdef inline object _make_decimal(self, double value, int precision)
+    cdef readonly uint8_t precision
+    """The decimal precision.\n\n:returns: `uint8`"""
 
     @staticmethod
     cdef inline object _extract_value(object obj)
 
     @staticmethod
     cdef inline bint _compare(a, b, int op) except *
-
-    cdef inline int precision_c(self) except *
 
     cpdef object as_decimal(self)
     cpdef double as_double(self) except *
@@ -37,13 +37,29 @@ cdef class BaseDecimal:
 cdef class Quantity(BaseDecimal):
     cpdef str to_str(self)
 
+    @staticmethod
+    cdef Quantity zero_c(uint8_t precision)
+
+    @staticmethod
+    cdef Quantity from_str_c(str value)
+
+    @staticmethod
+    cdef Quantity from_int_c(int value)
+
 
 cdef class Price(BaseDecimal):
-    pass
+    @staticmethod
+    cdef Price from_str_c(str value)
+
+    @staticmethod
+    cdef Price from_int_c(int value)
 
 
 cdef class Money(BaseDecimal):
     cdef readonly Currency currency
     """The currency of the money.\n\n:returns: `Currency`"""
+
+    @staticmethod
+    cdef Money from_str_c(str value)
 
     cpdef str to_str(self)

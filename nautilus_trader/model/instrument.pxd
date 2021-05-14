@@ -75,6 +75,9 @@ cdef class Instrument(Data):
     cdef readonly object taker_fee
     """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
 
+    cpdef Price make_price(self, value)
+    cpdef Quantity make_qty(self, value)
+
     cdef bint _is_quanto(
         self,
         Currency base_currency,

@@ -247,11 +247,11 @@ class TestBar:
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
-                Price("1.00001"),
-                Price("1.00000"),  # High below low
-                Price("1.00002"),
-                Price("1.00003"),
-                Quantity(100000),
+                Price.from_str("1.00001"),
+                Price.from_str("1.00000"),  # High below low
+                Price.from_str("1.00002"),
+                Price.from_str("1.00003"),
+                Quantity.from_int(100000),
                 0,
                 True,
             )
@@ -263,11 +263,11 @@ class TestBar:
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
-                Price("1.00000"),
-                Price("1.00000"),  # High below close
-                Price("1.00000"),
-                Price("1.00005"),
-                Quantity(100000),
+                Price.from_str("1.00000"),
+                Price.from_str("1.00000"),  # High below close
+                Price.from_str("1.00000"),
+                Price.from_str("1.00005"),
+                Quantity.from_int(100000),
                 0,
                 True,
             )
@@ -279,11 +279,11 @@ class TestBar:
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
-                Price("1.00000"),
-                Price("1.00005"),
-                Price("1.00000"),
-                Price("0.99999"),  # Close below low
-                Quantity(100000),
+                Price.from_str("1.00000"),
+                Price.from_str("1.00005"),
+                Price.from_str("1.00000"),
+                Price.from_str("0.99999"),  # Close below low
+                Quantity.from_int(100000),
                 0,
                 True,
             )
@@ -292,21 +292,21 @@ class TestBar:
         # Arrange
         bar1 = Bar(
             AUDUSD_1_MIN_BID,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
         bar2 = Bar(
             AUDUSD_1_MIN_BID,
-            Price("1.00000"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -319,11 +319,11 @@ class TestBar:
         # Arrange
         bar = Bar(
             AUDUSD_1_MIN_BID,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -343,11 +343,11 @@ class TestBar:
         # Arrange
         bar = Bar(
             AUDUSD_1_MIN_BID,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -361,11 +361,11 @@ class TestBar:
         # Arrange
         bar = Bar(
             AUDUSD_1_MIN_BID,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 

@@ -378,10 +378,10 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00050"),
-            Price("1.00048"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00050"),
+            Price.from_str("1.00048"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -395,8 +395,8 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00050"),
-            Quantity(1),
+            Price.from_str("1.00050"),
+            Quantity.from_int(1),
             AggressorSide.BUY,
             TradeMatchId("123456"),
             0,
@@ -414,11 +414,11 @@ class MarketDataClientTests(unittest.TestCase):
 
         bar = Bar(
             bar_type,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 

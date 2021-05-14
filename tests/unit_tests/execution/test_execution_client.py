@@ -102,8 +102,8 @@ class ExecutionClientTests(unittest.TestCase):
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         command = SubmitOrder(
@@ -123,15 +123,15 @@ class ExecutionClientTests(unittest.TestCase):
         entry_order = self.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("0.99995"),
+            Quantity.from_int(100000),
+            Price.from_str("0.99995"),
         )
 
         # Act
         bracket_order = self.order_factory.bracket(
             entry_order,
-            Price("0.99990"),
-            Price("1.00010"),
+            Price.from_str("0.99990"),
+            Price.from_str("1.00010"),
         )
 
         command = SubmitBracketOrder(
@@ -158,8 +158,8 @@ class ExecutionClientTests(unittest.TestCase):
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
-            Quantity(120000),
-            Price("1.00000"),
+            Quantity.from_int(120000),
+            Price.from_str("1.00000"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -190,7 +190,7 @@ class ExecutionClientTests(unittest.TestCase):
     #     order = self.order_factory.market(
     #         AUDUSD_SIM.id,
     #         OrderSide.BUY,
-    #         Quantity(100000),
+    #         Quantity.from_int(100000),
     #     )
     #
     #     fill = TestStubs.event_order_filled(
@@ -198,7 +198,7 @@ class ExecutionClientTests(unittest.TestCase):
     #         AUDUSD_SIM,
     #         position_id=PositionId("P-123456"),
     #         strategy_id=StrategyId("S", "001"),
-    #         last_px=Price("1.00001"),
+    #         last_px=Price.from_str("1.00001"),
     #     )
     #
     #     # Act

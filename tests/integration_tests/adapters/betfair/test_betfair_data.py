@@ -324,6 +324,6 @@ def test_duplicate_trades(betfair_data_client):
     trades = [
         m
         for m in messages
-        if isinstance(m, TradeTick) and m.price == Price("0.69930", 5)
+        if isinstance(m, TradeTick) and m.price == Price.from_str("0.69930")
     ]
     assert len(trades) == 5

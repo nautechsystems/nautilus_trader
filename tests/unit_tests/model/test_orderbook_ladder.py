@@ -97,8 +97,8 @@ def test_update_no_volume(bids):
 
 
 def test_top_level(bids, asks):
-    assert bids.top().price == Price("10")
-    assert asks.top().price == Price("15")
+    assert bids.top().price == Price.from_str("10")
+    assert asks.top().price == Price.from_str("15")
 
 
 def test_exposure():
@@ -132,7 +132,7 @@ def test_simulate_order_fills_single(asks):
     fills = asks.simulate_order_fills(
         order=Order(price=15, volume=10, side=OrderSide.BUY, id="1")
     )
-    assert fills == [(Price("15.0000"), Quantity("10.0000"))]
+    assert fills == [(Price.from_str("15.0000"), Quantity.from_str("10.0000"))]
 
 
 def test_simulate_order_fills_multiple_levels(asks):
@@ -140,8 +140,8 @@ def test_simulate_order_fills_multiple_levels(asks):
         order=Order(price=20, volume=20, side=OrderSide.BUY, id="1")
     )
     expected = [
-        (Price("15.0000"), Quantity("10.0000")),
-        (Price("16.0000"), Quantity("10.0000")),
+        (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("10.0000")),
     ]
     assert fills == expected
 
@@ -151,9 +151,9 @@ def test_simulate_order_fills_whole_ladder(asks):
         order=Order(price=100, volume=1000, side=OrderSide.BUY, id="1")
     )
     expected = [
-        (Price("15.0000"), Quantity("10.0000")),
-        (Price("16.0000"), Quantity("20.0000")),
-        (Price("17.0000"), Quantity("30.0000")),
+        (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("20.0000")),
+        (Price.from_str("17.0000"), Quantity.from_str("30.0000")),
     ]
     assert fills == expected
 
@@ -173,8 +173,8 @@ def test_simulate_order_fills_l3():
         order=Order(price=16.5, volume=4, side=OrderSide.BUY, id="1")
     )
     expected = [
-        (Price("15.0000"), Quantity("1.0000")),
-        (Price("16.0000"), Quantity("2.0000")),
-        (Price("16.0000"), Quantity("1.0000")),
+        (Price.from_str("15.0000"), Quantity.from_str("1.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("2.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("1.0000")),
     ]
     assert fills == expected

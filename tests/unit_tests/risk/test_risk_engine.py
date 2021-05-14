@@ -143,7 +143,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -179,13 +179,13 @@ class TestRiskEngine:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         bracket = strategy.order_factory.bracket(
             entry_order=entry,
-            stop_loss=Price("1.00000"),
-            take_profit=Price("1.00010"),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitBracketOrder(
@@ -220,7 +220,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -259,7 +259,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit = SubmitOrder(
@@ -281,7 +281,7 @@ class TestRiskEngine:
             order.client_order_id,
             order.venue_order_id,
             order.quantity,
-            Price("1.00010"),
+            Price.from_str("1.00010"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -310,7 +310,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit = SubmitOrder(
@@ -359,13 +359,13 @@ class TestRiskEngine:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         bracket = strategy.order_factory.bracket(
             entry_order=entry,
-            stop_loss=Price("1.00000"),
-            take_profit=Price("1.00010"),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitBracketOrder(

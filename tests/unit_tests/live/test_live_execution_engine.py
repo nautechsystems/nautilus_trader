@@ -159,7 +159,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -204,7 +204,7 @@ class TestLiveExecutionEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -284,7 +284,7 @@ class TestLiveExecutionEngine:
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             )
 
             submit_order = SubmitOrder(
@@ -328,7 +328,7 @@ class TestLiveExecutionEngine:
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             )
 
             event = TestStubs.event_order_submitted(order)
@@ -386,8 +386,8 @@ class TestLiveExecutionEngine:
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -409,7 +409,7 @@ class TestLiveExecutionEngine:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.ACCEPTED,
-                filled_qty=Quantity(0),
+                filled_qty=Quantity.zero(),
                 timestamp_ns=0,
             )
 
@@ -443,8 +443,8 @@ class TestLiveExecutionEngine:
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -466,7 +466,7 @@ class TestLiveExecutionEngine:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELED,
-                filled_qty=Quantity(0),
+                filled_qty=Quantity.zero(),
                 timestamp_ns=0,
             )
 
@@ -500,8 +500,8 @@ class TestLiveExecutionEngine:
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -523,7 +523,7 @@ class TestLiveExecutionEngine:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.EXPIRED,
-                filled_qty=Quantity(0),
+                filled_qty=Quantity.zero(),
                 timestamp_ns=0,
             )
 
@@ -557,8 +557,8 @@ class TestLiveExecutionEngine:
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -580,7 +580,7 @@ class TestLiveExecutionEngine:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.PARTIALLY_FILLED,
-                filled_qty=Quantity(70000),
+                filled_qty=Quantity.from_int(70000),
                 timestamp_ns=0,
             )
 
@@ -588,8 +588,8 @@ class TestLiveExecutionEngine:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
                 execution_id=ExecutionId("1"),
-                last_qty=Quantity(50000),
-                last_px=Price("1.00000"),
+                last_qty=Quantity.from_int(50000),
+                last_px=Price.from_str("1.00000"),
                 commission=Money(5.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,
@@ -600,8 +600,8 @@ class TestLiveExecutionEngine:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
                 execution_id=ExecutionId("2"),
-                last_qty=Quantity(20000),
-                last_px=Price("1.00000"),
+                last_qty=Quantity.from_int(20000),
+                last_px=Price.from_str("1.00000"),
                 commission=Money(2.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,
@@ -639,8 +639,8 @@ class TestLiveExecutionEngine:
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -662,7 +662,7 @@ class TestLiveExecutionEngine:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
-                filled_qty=Quantity(100000),
+                filled_qty=Quantity.from_int(100000),
                 timestamp_ns=0,
             )
 
@@ -670,8 +670,8 @@ class TestLiveExecutionEngine:
                 execution_id=ExecutionId("1"),
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
-                last_qty=Quantity(50000),
-                last_px=Price("1.00000"),
+                last_qty=Quantity.from_int(50000),
+                last_px=Price.from_str("1.00000"),
                 commission=Money(5.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,
@@ -682,8 +682,8 @@ class TestLiveExecutionEngine:
                 execution_id=ExecutionId("2"),
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),
-                last_qty=Quantity(50000),
-                last_px=Price("1.00000"),
+                last_qty=Quantity.from_int(50000),
+                last_px=Price.from_str("1.00000"),
                 commission=Money(2.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
                 execution_ns=0,

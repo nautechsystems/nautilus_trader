@@ -38,6 +38,7 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
+        "loop_debug": False,  # If event loop debug mode
         "connection_timeout": 30.0,  # Timeout for successful connections for all engine clients
         "disconnection_timeout": 30.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 15.0,  # How long to wait after stopping for residual events (secs)
@@ -66,7 +67,6 @@ config = {
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
             "market_filter": {"market_id": market_id},
-            "sandbox_mode": False,  # If clients use the testnet
         },
     },
 }
