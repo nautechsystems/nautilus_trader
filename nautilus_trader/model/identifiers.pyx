@@ -170,11 +170,11 @@ cdef class InstrumentId(Identifier):
         if len(pieces) != 3:
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        cdef tuple venue_pieces = value[2].partition('-')
+        cdef tuple venue_pieces = pieces[2].partition('-')
         if venue_pieces[2] != '':  # Venue contains a dash therefore a broker
             return InstrumentId(
                 symbol=Symbol(pieces[0]),
-                venue=Venue(venue_pieces[0], broker=venue_pieces[2]),
+                venue=Venue(venue_pieces[2], broker=venue_pieces[0]),
             )
         else:
             return InstrumentId(

@@ -205,7 +205,7 @@ cdef class BarBuilder:
             high_price=self._high,
             low_price=self._low,
             close_price=self._close,
-            volume=Quantity(self.volume),
+            volume=Quantity.from_str_c(str(self.volume)),  # TODO: TODO: Refactor when precision available
             timestamp_ns=timestamp_ns,
         )
 
@@ -376,7 +376,6 @@ cdef class VolumeBarAggregator(BarAggregator):
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
-        cdef int precision = size.precision_c()
         size_update = size
 
         while size_update > 0:  # While there is size to apply
@@ -384,7 +383,7 @@ cdef class VolumeBarAggregator(BarAggregator):
                 # Update and break
                 self._builder.update(
                     price=price,
-                    size=Quantity(size_update, precision=precision),
+                    size=Quantity(size_update, precision=size.precision),
                     timestamp_ns=timestamp_ns,
                 )
                 break
@@ -393,7 +392,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=Quantity(size_diff, precision=precision),
+                size=Quantity(size_diff, precision=size.precision),
                 timestamp_ns=timestamp_ns,
             )
 
@@ -453,7 +452,6 @@ cdef class ValueBarAggregator(BarAggregator):
         return self._cum_value
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
-        cdef int precision = size.precision_c()
         size_update = size
 
         while size_update > 0:  # While there is value to apply
@@ -463,7 +461,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 self._cum_value = self._cum_value + value_update
                 self._builder.update(
                     price=price,
-                    size=Quantity(size_update, precision=precision),
+                    size=Quantity(size_update, precision=size.precision),
                     timestamp_ns=timestamp_ns,
                 )
                 break
@@ -473,7 +471,7 @@ cdef class ValueBarAggregator(BarAggregator):
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=Quantity(size_diff, precision=precision),
+                size=Quantity(size_diff, precision=size.precision),
                 timestamp_ns=timestamp_ns,
             )
 

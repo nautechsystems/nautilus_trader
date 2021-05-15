@@ -83,6 +83,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PENDING_REPLACE, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PENDING_REPLACE, OrderState.FILLED): OrderState.FILLED,
     (OrderState.PENDING_CANCEL, OrderState.CANCELED): OrderState.CANCELED,
+    (OrderState.PENDING_CANCEL, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PENDING_CANCEL, OrderState.FILLED): OrderState.FILLED,
     (OrderState.TRIGGERED, OrderState.REJECTED): OrderState.REJECTED,
     (OrderState.TRIGGERED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
@@ -145,7 +146,7 @@ cdef class Order:
         self.quantity = init.quantity
         self.timestamp_ns = init.timestamp_ns
         self.time_in_force = init.time_in_force
-        self.filled_qty = Quantity()
+        self.filled_qty = Quantity.zero_c(precision=0)
         self.execution_ns = 0
         self.avg_px = None  # Can be None
         self.slippage = Decimal()
@@ -172,10 +173,10 @@ cdef class Order:
         return <OrderState>self._fsm.state
 
     cdef OrderInitialized init_event_c(self):
-        return self._events[0]  # Guaranteed to have the initialized event
+        return self._events[0]  # Guaranteed to contain the initialized event
 
     cdef OrderEvent last_event_c(self):
-        return self._events[-1]  # Guaranteed to have the initialized event
+        return self._events[-1]  # Guaranteed to contain the initialized event
 
     cdef list events_c(self):
         return self._events.copy()
@@ -582,7 +583,8 @@ cdef class Order:
             return last_px
 
         total_qty: Decimal = self.filled_qty + last_qty
-        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
+        if total_qty > 0:  # Protect divide by zero
+            return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
 
 
 cdef class PassiveOrder(Order):
@@ -714,7 +716,7 @@ cdef class PassiveOrder(Order):
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
-        self.filled_qty = Quantity(self.filled_qty + fill.last_qty)
+        self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
         self.execution_ns = fill.execution_ns
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()

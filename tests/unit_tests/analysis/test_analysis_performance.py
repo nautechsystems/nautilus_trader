@@ -107,25 +107,25 @@ class AnalyzerTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order3 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order4 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
@@ -133,7 +133,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -141,7 +141,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00010"),
+            last_px=Price.from_str("1.00010"),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -149,7 +149,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill4 = TestStubs.event_order_filled(
@@ -157,7 +157,7 @@ class AnalyzerTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00020"),
+            last_px=Price.from_str("1.00020"),
         )
 
         position1 = Position(fill=fill1)

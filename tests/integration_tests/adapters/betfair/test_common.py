@@ -23,18 +23,18 @@ def test_round_price():
 
 def test_price_to_probability():
     # Exact match
-    assert price_to_probability(1.69, side=OrderSide.BUY) == Price("0.59172")
+    assert price_to_probability(1.69, side=OrderSide.BUY) == Price.from_str("0.59172")
     # Rounding match
-    assert price_to_probability(2.01, side=OrderSide.BUY) == Price("0.49505")
-    assert price_to_probability(2.01, side=OrderSide.SELL) == Price("0.50000")
+    assert price_to_probability(2.01, side=OrderSide.BUY) == Price.from_str("0.49505")
+    assert price_to_probability(2.01, side=OrderSide.SELL) == Price.from_str("0.50000")
     # Force for TradeTicks which can have non-tick prices
-    assert price_to_probability(10.4, force=True) == Price("0.09615")
+    assert price_to_probability(10.4, force=True) == Price.from_str("0.09615")
 
 
 def test_probability_to_price():
     # Exact match
-    assert probability_to_price(0.5, side=OrderSide.BUY) == Price("2.0")
+    assert probability_to_price(0.5, side=OrderSide.BUY) == Price.from_str("2.0")
     # Rounding match
-    assert probability_to_price(0.499, side=OrderSide.BUY) == Price("2.02")
-    assert probability_to_price(0.501, side=OrderSide.BUY) == Price("2.0")
-    assert probability_to_price(0.501, side=OrderSide.SELL) == Price("1.99")
+    assert probability_to_price(0.499, side=OrderSide.BUY) == Price.from_str("2.02")
+    assert probability_to_price(0.501, side=OrderSide.BUY) == Price.from_str("2.0")
+    assert probability_to_price(0.501, side=OrderSide.SELL) == Price.from_str("1.99")

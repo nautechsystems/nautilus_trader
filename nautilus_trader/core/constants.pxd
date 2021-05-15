@@ -57,8 +57,7 @@ cdef str TAKE_PROFIT
 cdef str LAST_QTY
 cdef str LAST_PX
 cdef str QUANTITY
-cdef str COMMISSION_AMOUNT
-cdef str COMMISSION_CURRENCY
+cdef str COMMISSION
 cdef str PRICE
 cdef str TRIGGER
 cdef str CURRENCY

@@ -114,7 +114,7 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         # Act
@@ -128,7 +128,7 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.database.add_order(order)
@@ -138,7 +138,7 @@ class TestRedisExecutionDatabase:
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position = Position(fill=fill)
@@ -166,8 +166,8 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         self.database.add_order(order)
@@ -188,7 +188,7 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.database.add_order(order)
@@ -202,7 +202,7 @@ class TestRedisExecutionDatabase:
         fill = TestStubs.event_order_filled(
             order,
             instrument=AUDUSD_SIM,
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         order.apply(fill)
@@ -218,7 +218,7 @@ class TestRedisExecutionDatabase:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         position_id = PositionId("P-1")
@@ -235,7 +235,7 @@ class TestRedisExecutionDatabase:
                 order1,
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
-                last_px=Price("1.00001"),
+                last_px=Price.from_str("1.00001"),
             )
         )
         self.database.update_order(order1)
@@ -247,7 +247,7 @@ class TestRedisExecutionDatabase:
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.database.add_order(order2)
@@ -262,7 +262,7 @@ class TestRedisExecutionDatabase:
             order2,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            last_px=Price("1.00001"),
+            last_px=Price.from_str("1.00001"),
         )
 
         order2.apply(filled)
@@ -316,7 +316,7 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         # Act
@@ -330,7 +330,7 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.database.add_order(order)
@@ -346,8 +346,8 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         self.database.add_order(order)
@@ -363,8 +363,8 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         self.database.add_order(order)
@@ -380,9 +380,9 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.stop_limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            price=Price("1.00000"),
-            trigger=Price("1.00010"),
+            Quantity.from_int(100000),
+            price=Price.from_str("1.00000"),
+            trigger=Price.from_str("1.00010"),
         )
 
         self.database.add_order(order)
@@ -410,7 +410,7 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.database.add_order(order)
@@ -420,7 +420,7 @@ class TestRedisExecutionDatabase:
             order,
             instrument=AUDUSD_SIM,
             position_id=position_id,
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position = Position(fill=fill)
@@ -464,7 +464,7 @@ class TestRedisExecutionDatabase:
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.database.add_order(order)
@@ -488,8 +488,8 @@ class TestRedisExecutionDatabase:
         order1 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         self.database.add_order(order1)
@@ -502,7 +502,7 @@ class TestRedisExecutionDatabase:
                 order1,
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
-                last_px=Price("1.00001"),
+                last_px=Price.from_str("1.00001"),
             )
         )
 
@@ -529,7 +529,7 @@ class TestRedisExecutionDatabase:
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.database.add_order(order1)
@@ -539,7 +539,7 @@ class TestRedisExecutionDatabase:
             order1,
             instrument=AUDUSD_SIM,
             position_id=position1_id,
-            last_px=Price("1.00000"),
+            last_px=Price.from_str("1.00000"),
         )
 
         position1 = Position(fill=fill)
@@ -549,8 +549,8 @@ class TestRedisExecutionDatabase:
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         self.database.add_order(order2)

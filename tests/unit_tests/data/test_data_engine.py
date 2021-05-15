@@ -1132,10 +1132,10 @@ class DataEngineTests(unittest.TestCase):
 
         tick = QuoteTick(
             ETHUSDT_BINANCE.id,
-            Price("100.003"),
-            Price("100.003"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("100.003"),
+            Price.from_str("100.003"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -1180,10 +1180,10 @@ class DataEngineTests(unittest.TestCase):
 
         tick = QuoteTick(
             ETHUSDT_BINANCE.id,
-            Price("100.003"),
-            Price("100.003"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("100.003"),
+            Price.from_str("100.003"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -1271,8 +1271,8 @@ class DataEngineTests(unittest.TestCase):
 
         tick = TradeTick(
             ETHUSDT_BINANCE.id,
-            Price("1050.00000"),
-            Quantity(100),
+            Price.from_str("1050.00000"),
+            Quantity.from_int(100),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -1318,8 +1318,8 @@ class DataEngineTests(unittest.TestCase):
 
         tick = TradeTick(
             ETHUSDT_BINANCE.id,
-            Price("1050.00000"),
-            Quantity(100),
+            Price.from_str("1050.00000"),
+            Quantity.from_int(100),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -1409,11 +1409,11 @@ class DataEngineTests(unittest.TestCase):
 
         bar = Bar(
             bar_type,
-            Price("1051.00000"),
-            Price("1055.00000"),
-            Price("1050.00000"),
-            Price("1052.00000"),
-            Quantity(100),
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
             0,
         )
 
@@ -1454,11 +1454,11 @@ class DataEngineTests(unittest.TestCase):
 
         bar = Bar(
             bar_type,
-            Price("1051.00000"),
-            Price("1055.00000"),
-            Price("1050.00000"),
-            Price("1052.00000"),
-            Quantity(100),
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
             0,
         )
 

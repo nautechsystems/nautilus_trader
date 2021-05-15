@@ -23,7 +23,6 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -128,6 +127,7 @@ class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
@@ -137,6 +137,12 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
+        self.instrument = self.data.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
@@ -226,7 +232,7 @@ class EMACross(TradingStrategy):
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
@@ -238,7 +244,7 @@ class EMACross(TradingStrategy):
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
@@ -352,10 +358,17 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag
         )
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialized in on_start
         self.trade_size = trade_size
 
     def on_start(self):
         """Actions to be performed on strategy start."""
+        self.instrument = self.data.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
         # Subscribe to live data
         self.subscribe_order_book(self.instrument_id)
 
@@ -385,7 +398,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
@@ -397,7 +410,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)

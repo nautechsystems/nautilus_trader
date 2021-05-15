@@ -268,7 +268,7 @@ cdef class ExecutionEngine(Component):
         self._clients[client.id] = client
         self._log.info(f"Registered {client}.")
 
-        if self._risk_engine is not None and client not in self._risk_engine.registered_clients:
+        if self._risk_engine is not None and client.id not in self._risk_engine.registered_clients:
             self._risk_engine.register_client(client)
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
@@ -816,9 +816,9 @@ cdef class ExecutionEngine(Component):
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
-            difference = Quantity(fill.last_qty - position.quantity)
+            difference = Quantity.from_str_c(str(fill.last_qty - position.quantity))
         else:  # position.side == PositionSide.SHORT:
-            difference = Quantity(abs(position.quantity - fill.last_qty))
+            difference = Quantity.from_str_c(str(abs(position.quantity - fill.last_qty)))
 
         # Split commission between two positions
         fill_percent1: Decimal = position.quantity / fill.last_qty

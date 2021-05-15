@@ -19,10 +19,56 @@ import sys
 import cython
 
 cimport numpy as np
+from libc.math cimport llround as llround_func
+from libc.math cimport lround as lround_func
 from libc.math cimport pow
 from libc.math cimport sqrt
+from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
+
+
+# Determine correct C lround function
+cdef round_func_type _get_round_func():
+    if sizeof(long) == 8:
+        return <round_func_type>lround_func
+    elif sizeof(long long) == 8:
+        return <round_func_type>llround_func
+    else:
+        raise TypeError(f"Can't support 'C' lround function.")
+
+lround = _get_round_func()
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef inline uint8_t precision_from_str(str value):
+    """
+    Return the decimal precision inferred from the number of digits after
+    the '.' decimal place.
+
+    Parameters
+    ----------
+    value : str
+        The string value to parse.
+
+    Returns
+    -------
+    uint8
+
+    Raises
+    ------
+    ValueError
+        If value is not a valid string.
+
+    Notes
+    -----
+    If no decimal place then precision will be inferred as zero.
+
+    """
+    Condition.valid_string(value, "value")
+
+    return len(value.partition('.')[2])  # If does not contain "." then partition[2] will be ""
 
 
 @cython.boundscheck(False)

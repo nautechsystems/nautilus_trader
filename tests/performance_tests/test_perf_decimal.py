@@ -26,8 +26,8 @@ _PRECISION_5_CONTEXT = decimal.Context(prec=5)
 _BUILTIN_DECIMAL1 = Decimal("1.00000")
 _BUILTIN_DECIMAL2 = Decimal("1.00001")
 
-_DECIMAL1 = BaseDecimal("1")
-_DECIMAL2 = BaseDecimal("1.00001")
+_DECIMAL1 = BaseDecimal(1, precision=1)
+_DECIMAL2 = BaseDecimal(1.00001, precision=5)
 
 
 class DecimalTesting:
@@ -86,26 +86,26 @@ class TestDecimalPerformance(PerformanceHarness):
         self.benchmark.pedantic(
             target=Decimal,
             args=("1.23456",),
-            iterations=100_000,
-            rounds=1,
+            iterations=1,
+            rounds=100_000,
         )
         # ~0.0ms / ~0.3μs / 253ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_make_decimal(self):
         self.benchmark.pedantic(
             target=BaseDecimal,
-            args=("1.23456",),
-            iterations=100_000,
-            rounds=1,
+            args=(1.23456, 5),
+            iterations=1,
+            rounds=100_000,
         )
         # ~0.0ms / ~0.4μs / 353ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_make_price(self):
         self.benchmark.pedantic(
             target=Price,
-            args=("1.23456",),
-            iterations=100_000,
-            rounds=1,
+            args=(1.23456, 5),
+            iterations=1,
+            rounds=100_000,
         )
         # ~0.0ms / ~0.5μs / 526ns minimum of 100,000 runs @ 1 iteration each run.
 
@@ -113,62 +113,62 @@ class TestDecimalPerformance(PerformanceHarness):
         self.benchmark.pedantic(
             target=Price,
             args=(1.23456, 5),
-            iterations=100_000,
-            rounds=1,
+            iterations=1,
+            rounds=100_000,
         )
 
     def test_float_comparisons(self):
         self.benchmark.pedantic(
             target=DecimalTesting.float_comparisons,
-            iterations=100_000,
-            rounds=1,
+            iterations=1,
+            rounds=100_000,
         )
         # ~0.0ms / ~0.1μs / 118ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_decimal_comparisons(self):
         self.benchmark.pedantic(
             target=DecimalTesting.decimal_comparisons,
-            iterations=100_000,
-            rounds=1,
+            iterations=1,
+            rounds=100_000,
         )
         # ~0.0ms / ~0.4μs / 429ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_builtin_decimal_comparisons(self):
         self.benchmark.pedantic(
             target=DecimalTesting.builtin_decimal_comparisons,
-            iterations=100_000,
-            rounds=3,
+            iterations=1,
+            rounds=100_000,
         )
         # ~17.2ms / ~17237.6μs / 17237551ns minimum of 3 runs @ 100,000 iterations each run.
 
     def test_float_arithmetic(self):
         self.benchmark.pedantic(
             target=DecimalTesting.float_arithmetic,
-            iterations=100_000,
-            rounds=3,
+            iterations=1,
+            rounds=100_000,
         )
         # ~5.0ms / ~5027.3μs / 5027301ns minimum of 3 runs @ 100,000 iterations each run.
 
     def test_builtin_decimal_arithmetic(self):
         self.benchmark.pedantic(
             target=DecimalTesting.builtin_decimal_arithmetic,
-            iterations=100_000,
-            rounds=3,
+            iterations=1,
+            rounds=100_000,
         )
         # ~34.0ms / ~33955.2μs / 33955203ns minimum of 3 runs @ 100,000 iterations each run.
 
     def test_decimal_arithmetic(self):
         self.benchmark.pedantic(
             target=DecimalTesting.decimal_arithmetic,
-            iterations=100_000,
-            rounds=3,
+            iterations=1,
+            rounds=100_000,
         )
         # ~71.0ms / ~70980.9μs / 70980863ns minimum of 3 runs @ 100,000 iterations each run.
 
     def test_decimal_arithmetic_with_floats(self):
         self.benchmark.pedantic(
             target=DecimalTesting.decimal_arithmetic_with_floats,
-            iterations=100_000,
-            rounds=3,
+            iterations=1,
+            rounds=100_000,
         )
         # ~58.0ms / ~58034.9μs / 58034884ns minimum of 3 runs @ 100,000 iterations each run.

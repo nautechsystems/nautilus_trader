@@ -817,11 +817,11 @@ class TradingStrategyTests(unittest.TestCase):
 
         bar = Bar(
             bar_type,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -1796,7 +1796,7 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         # Act
@@ -1823,14 +1823,14 @@ class TradingStrategyTests(unittest.TestCase):
         entry = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            price=Price("90.100"),
+            Quantity.from_int(100000),
+            price=Price.from_str("90.100"),
         )
 
         order = strategy.order_factory.bracket(
             entry_order=entry,
-            stop_loss=Price("90.000"),
-            take_profit=Price("90.500"),
+            stop_loss=Price.from_str("90.000"),
+            take_profit=Price.from_str("90.500"),
         )
 
         # Act
@@ -1857,8 +1857,8 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.006"),
+            Quantity.from_int(100000),
+            Price.from_str("90.006"),
         )
 
         strategy.submit_order(order)
@@ -1892,14 +1892,16 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.001"),
+            Quantity.from_int(100000),
+            Price.from_str("90.001"),
         )
 
         strategy.submit_order(order)
 
         # Act
-        strategy.update_order(order, Quantity(100000), Price("90.001"))
+        strategy.update_order(
+            order, Quantity.from_int(100000), Price.from_str("90.001")
+        )
 
         # Assert
         self.assertEqual(1, self.exec_engine.command_count)
@@ -1918,20 +1920,24 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.000"),
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
         )
 
         strategy.submit_order(order)
 
         # Act
-        strategy.update_order(order, Quantity(110000), Price("90.001"))
+        strategy.update_order(
+            order, Quantity.from_int(110000), Price.from_str("90.001")
+        )
 
         # Assert
         self.assertEqual(order, strategy.execution.orders()[0])
         self.assertEqual(OrderState.ACCEPTED, strategy.execution.orders()[0].state)
-        self.assertEqual(Quantity(110000), strategy.execution.orders()[0].quantity)
-        self.assertEqual(Price("90.001"), strategy.execution.orders()[0].price)
+        self.assertEqual(
+            Quantity.from_int(110000), strategy.execution.orders()[0].quantity
+        )
+        self.assertEqual(Price.from_str("90.001"), strategy.execution.orders()[0].price)
         self.assertTrue(strategy.execution.order_exists(order.client_order_id))
         self.assertTrue(strategy.execution.is_order_working(order.client_order_id))
         self.assertFalse(strategy.execution.is_order_completed(order.client_order_id))
@@ -1951,15 +1957,15 @@ class TradingStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.007"),
+            Quantity.from_int(100000),
+            Price.from_str("90.007"),
         )
 
         order2 = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.006"),
+            Quantity.from_int(100000),
+            Price.from_str("90.006"),
         )
 
         strategy.submit_order(order1)
@@ -1992,13 +1998,13 @@ class TradingStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         strategy.submit_order(order1)
@@ -2028,7 +2034,7 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         strategy.submit_order(order)
@@ -2061,13 +2067,13 @@ class TradingStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         strategy.submit_order(order1)

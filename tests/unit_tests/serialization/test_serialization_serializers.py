@@ -122,7 +122,7 @@ class TestMsgPackOrderSerializer:
         order = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity(100000, precision=0),
         )
 
         # Act
@@ -139,8 +139,8 @@ class TestMsgPackOrderSerializer:
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity(100000, precision=0),
+            Price(1.00000, precision=5),
             TimeInForce.DAY,
         )
 
@@ -160,8 +160,8 @@ class TestMsgPackOrderSerializer:
             StrategyId("S", "001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            price=Price("1.00000"),
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
@@ -184,8 +184,8 @@ class TestMsgPackOrderSerializer:
             StrategyId("S", "001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            price=Price("1.00000"),
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
@@ -208,9 +208,9 @@ class TestMsgPackOrderSerializer:
             StrategyId("S", "001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            price=Price("1.00000"),
-            trigger=Price("1.00010"),
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
+            trigger=Price(1.00010, precision=5),
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=uuid4(),
@@ -233,9 +233,9 @@ class TestMsgPackOrderSerializer:
             StrategyId("S", "001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            price=Price("1.00000"),
-            trigger=Price("1.00010"),
+            Quantity(100000, precision=0),
+            price=Price(1.00000, precision=5),
+            trigger=Price(1.00010, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
@@ -268,7 +268,9 @@ class TestMsgPackCommandSerializer:
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_SIM.id, OrderSide.BUY, Quantity(100000)
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
         )
 
         command = SubmitOrder(
@@ -299,13 +301,15 @@ class TestMsgPackCommandSerializer:
     ):
         # Arrange
         entry_order = self.order_factory.market(
-            AUDUSD_SIM.id, OrderSide.BUY, Quantity(100000)
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity(100000, precision=0),
         )
 
         bracket_order = self.order_factory.bracket(
             entry_order,
-            stop_loss=Price("0.99900"),
-            take_profit=Price("1.00100"),
+            stop_loss=Price(0.99900, precision=5),
+            take_profit=Price(1.00100, precision=5),
         )
 
         command = SubmitBracketOrder(
@@ -335,14 +339,14 @@ class TestMsgPackCommandSerializer:
         entry_order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity(100000, precision=0),
+            Price(1.00000, precision=5),
         )
 
         bracket_order = self.order_factory.bracket(
             entry_order,
-            stop_loss=Price("0.99900"),
-            take_profit=Price("1.00010"),
+            stop_loss=Price(0.99900, precision=5),
+            take_profit=Price(1.00010, precision=5),
         )
 
         command = SubmitBracketOrder(
@@ -374,8 +378,8 @@ class TestMsgPackCommandSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("001"),
-            Quantity(100000),
-            Price("1.00001"),
+            Quantity(100000, precision=0),
+            Price(1.00001, precision=5),
             uuid4(),
             0,
         )
@@ -445,7 +449,7 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.MARKET,
-            Quantity(100000),
+            Quantity(100000, precision=0),
             TimeInForce.FOK,
             uuid4(),
             0,
@@ -475,7 +479,7 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.LIMIT,
-            Quantity(100000),
+            Quantity(100000, precision=0),
             TimeInForce.DAY,
             uuid4(),
             0,
@@ -504,7 +508,7 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.STOP_MARKET,
-            Quantity(100000),
+            Quantity(100000, precision=0),
             TimeInForce.DAY,
             uuid4(),
             0,
@@ -536,7 +540,7 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
-            Quantity(100000),
+            Quantity(100000, precision=0),
             TimeInForce.DAY,
             uuid4(),
             0,
@@ -736,8 +740,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            Quantity(100000),
-            Price("0.80010"),
+            Quantity(100000, precision=0),
+            Price(0.80010, precision=5),
             0,
             uuid4(),
             0,
@@ -797,8 +801,8 @@ class TestMsgPackEventSerializer:
             StrategyId("S", "001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(50000),
-            Price("1.00000"),
+            Quantity(50000, precision=0),
+            Price(1.00000, precision=5),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),
@@ -826,8 +830,8 @@ class TestMsgPackEventSerializer:
             StrategyId("S", "001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity(100000, precision=0),
+            Price(1.00000, precision=5),
             AUDUSD_SIM.quote_currency,
             AUDUSD_SIM.is_inverse,
             Money(0, USD),

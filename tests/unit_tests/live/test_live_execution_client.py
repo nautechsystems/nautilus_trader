@@ -111,7 +111,7 @@ class TestLiveExecutionClient:
                 client_order_id=ClientOrderId("O-123456"),
                 venue_order_id=VenueOrderId("1"),
                 order_state=OrderState.FILLED,
-                filled_qty=Quantity(100000),
+                filled_qty=Quantity.from_int(100000),
                 timestamp_ns=0,
             )
 
@@ -142,8 +142,8 @@ class TestLiveExecutionClient:
             order = strategy.order_factory.stop_market(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -169,7 +169,7 @@ class TestLiveExecutionClient:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.CANCELED,
-                filled_qty=Quantity(0),
+                filled_qty=Quantity.zero(),
                 timestamp_ns=0,
             )
 
@@ -198,8 +198,8 @@ class TestLiveExecutionClient:
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -225,7 +225,7 @@ class TestLiveExecutionClient:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
-                filled_qty=Quantity(100000),
+                filled_qty=Quantity.from_int(100000),
                 timestamp_ns=0,
             )
 
@@ -256,8 +256,8 @@ class TestLiveExecutionClient:
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("1.00000"),
+                Quantity.from_int(100000),
+                Price.from_str("1.00000"),
             )
 
             submit_order = SubmitOrder(
@@ -281,7 +281,7 @@ class TestLiveExecutionClient:
                 client_order_id=order.client_order_id,
                 venue_order_id=VenueOrderId("1"),  # <-- from stub event
                 order_state=OrderState.FILLED,
-                filled_qty=Quantity(100000),
+                filled_qty=Quantity.from_int(100000),
                 timestamp_ns=0,
             )
 

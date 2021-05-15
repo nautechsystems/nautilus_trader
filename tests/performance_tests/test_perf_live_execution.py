@@ -105,7 +105,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity("1.00000000"),
+            Quantity.from_str("1.00000000"),
         )
 
         self.strategy.submit_order(order)
@@ -114,7 +114,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         order = self.strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity("1.00000000"),
+            Quantity.from_str("1.00000000"),
         )
 
         command = SubmitOrder(
@@ -143,7 +143,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
                 order = self.strategy.order_factory.market(
                     BTCUSDT_BINANCE.id,
                     OrderSide.BUY,
-                    Quantity("1.00000000"),
+                    Quantity.from_str("1.00000000"),
                 )
 
                 self.strategy.submit_order(order)
@@ -162,7 +162,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
                 order = self.strategy.order_factory.market(
                     BTCUSDT_BINANCE.id,
                     OrderSide.BUY,
-                    Quantity("1.00000000"),
+                    Quantity.from_str("1.00000000"),
                 )
 
                 self.strategy.submit_order(order)

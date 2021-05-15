@@ -56,10 +56,10 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1000)
         tick = QuoteTick(
             USDJPY_SIM.id,
-            Price("117.80000"),
-            Price("117.80010"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("117.80000"),
+            Price.from_str("117.80010"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
         # Act
@@ -71,19 +71,19 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1000)
         tick1 = QuoteTick(
             AUDUSD_SIM.id,
-            Price("0.80000"),
-            Price("0.80010"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("0.80000"),
+            Price.from_str("0.80010"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
         tick2 = QuoteTick(
             AUDUSD_SIM.id,
-            Price("0.80002"),
-            Price("0.80008"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("0.80002"),
+            Price.from_str("0.80008"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 

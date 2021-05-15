@@ -213,7 +213,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[INSTRUMENT_ID])
         cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
         cdef OrderType order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
-        cdef Quantity quantity = Quantity(unpacked[QUANTITY])
+        cdef Quantity quantity = Quantity.from_str_c(unpacked[QUANTITY])
         cdef TimeInForce time_in_force = TimeInForceParser.from_str(unpacked[TIME_IN_FORCE])
         cdef UUID init_id = UUID.from_str_c(unpacked[INIT_ID])
         cdef int64_t timestamp_ns = unpacked[TIMESTAMP]
@@ -237,7 +237,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 instrument_id=instrument_id,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE]),
+                price=Price.from_str_c(unpacked[PRICE]),
                 time_in_force=time_in_force,
                 expire_time=maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME)),
                 init_id=init_id,
@@ -254,7 +254,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 instrument_id=instrument_id,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE]),
+                price=Price.from_str_c(unpacked[PRICE]),
                 time_in_force=time_in_force,
                 expire_time=maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME)),
                 init_id=init_id,
@@ -269,8 +269,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 instrument_id=instrument_id,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE]),
-                trigger=Price(unpacked[TRIGGER]),
+                price=Price.from_str_c(unpacked[PRICE]),
+                trigger=Price.from_str_c(unpacked[TRIGGER]),
                 time_in_force=time_in_force,
                 expire_time=maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME)),
                 init_id=init_id,
@@ -422,8 +422,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 VenueOrderId(unpacked[VENUE_ORDER_ID]),
-                Quantity(unpacked[QUANTITY]),
-                Price(unpacked[PRICE]),
+                Quantity.from_str_c(unpacked[QUANTITY]),
+                Price.from_str_c(unpacked[PRICE]),
                 command_id,
                 timestamp_ns,
             )
@@ -595,8 +595,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LAST_PX] = str(event.last_px)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
-            package[COMMISSION_AMOUNT] = str(event.commission)
-            package[COMMISSION_CURRENCY] = event.commission.currency.code
+            package[COMMISSION] = event.commission.to_str()
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_str(event.liquidity_side)
             package[EXECUTION_TIMESTAMP] = event.execution_ns
         else:
@@ -672,7 +671,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 order_type,
-                Quantity(unpacked[QUANTITY]),
+                Quantity.from_str_c(unpacked[QUANTITY]),
                 TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
                 event_id,
                 timestamp_ns,
@@ -763,8 +762,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 VenueOrderId(unpacked[VENUE_ORDER_ID]),
-                Quantity(unpacked[QUANTITY]),
-                Price(unpacked[PRICE]),
+                Quantity.from_str_c(unpacked[QUANTITY]),
+                Price.from_str_c(unpacked[PRICE]),
                 unpacked[UPDATED_TIMESTAMP],
                 event_id,
                 timestamp_ns,
@@ -797,7 +796,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 timestamp_ns,
             )
         elif event_type == OrderFilled.__name__:
-            commission_currency = Currency.from_str_c(unpacked[COMMISSION_CURRENCY])
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
@@ -807,11 +805,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                Quantity(unpacked[LAST_QTY]),
-                Price(unpacked[LAST_PX]),
+                Quantity.from_str_c(unpacked[LAST_QTY]),
+                Price.from_str_c(unpacked[LAST_PX]),
                 Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
-                Money(unpacked[COMMISSION_AMOUNT], commission_currency),
+                Money.from_str_c(unpacked[COMMISSION]),
                 LiquiditySideParser.from_str(unpacked[LIQUIDITY_SIDE]),
                 unpacked[EXECUTION_TIMESTAMP],
                 event_id,
