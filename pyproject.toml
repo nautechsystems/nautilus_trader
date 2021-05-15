@@ -38,7 +38,7 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = "^3.7.10"
+python = "^3.7.9"
 betfairlightweight = {extras = ["speed"], version = "^2.12.1"}
 ccxt = "^1.50.4"
 cython = "^3.0a6"
