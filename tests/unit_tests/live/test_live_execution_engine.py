@@ -27,6 +27,7 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -91,9 +92,17 @@ class TestLiveExecutionEngine:
         self.database = BypassExecutionDatabase(
             trader_id=self.trader_id, logger=self.logger
         )
-        self.engine = LiveExecutionEngine(
+        self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.risk_engine = LiveRiskEngine(
+            loop=self.loop,
+            exec_engine=self.exec_engine,
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
@@ -106,39 +115,40 @@ class TestLiveExecutionEngine:
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
             account_id=self.account_id,
-            engine=self.engine,
+            engine=self.exec_engine,
             instrument_provider=self.instrument_provider,
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.engine.register_client(self.client)
+        self.exec_engine.register_risk_engine(self.risk_engine)
+        self.exec_engine.register_client(self.client)
 
     def teardown(self):
-        self.engine.dispose()
+        self.exec_engine.dispose()
         self.loop.stop()
         self.loop.close()
 
     def test_start_when_loop_not_running_logs(self):
         # Arrange
         # Act
-        self.engine.start()
+        self.exec_engine.start()
 
         # Assert
         assert True  # No exceptions raised
-        self.engine.stop()
+        self.exec_engine.stop()
 
     def test_get_event_loop_returns_expected_loop(self):
         # Arrange
         # Act
-        loop = self.engine.get_event_loop()
+        loop = self.exec_engine.get_event_loop()
 
         # Assert
         assert loop == self.loop
 
     def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
-        self.engine = LiveExecutionEngine(
+        self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
             portfolio=self.portfolio,
@@ -147,6 +157,8 @@ class TestLiveExecutionEngine:
             config={"qsize": 1},
         )
 
+        self.exec_engine.register_risk_engine(self.risk_engine)
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -154,7 +166,7 @@ class TestLiveExecutionEngine:
             self.logger,
         )
 
-        self.engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -174,16 +186,16 @@ class TestLiveExecutionEngine:
         )
 
         # Act
-        self.engine.execute(submit_order)
-        self.engine.execute(submit_order)
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.execute(submit_order)
 
         # Assert
-        assert self.engine.qsize() == 1
-        assert self.engine.command_count == 0
+        assert self.exec_engine.qsize() == 1
+        assert self.exec_engine.command_count == 0
 
     def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
-        self.engine = LiveExecutionEngine(
+        self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=self.database,
             portfolio=self.portfolio,
@@ -192,6 +204,8 @@ class TestLiveExecutionEngine:
             config={"qsize": 1},
         )
 
+        self.exec_engine.register_risk_engine(self.risk_engine)
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -199,7 +213,7 @@ class TestLiveExecutionEngine:
             self.logger,
         )
 
-        self.engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -221,25 +235,25 @@ class TestLiveExecutionEngine:
         event = TestStubs.event_order_submitted(order)
 
         # Act
-        self.engine.execute(submit_order)
-        self.engine.process(event)  # Add over max size
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.process(event)  # Add over max size
 
         # Assert
-        assert self.engine.qsize() == 1
-        assert self.engine.command_count == 0
+        assert self.exec_engine.qsize() == 1
+        assert self.exec_engine.command_count == 0
 
     def test_start(self):
         async def run_test():
             # Arrange
             # Act
-            self.engine.start()
+            self.exec_engine.start()
             await asyncio.sleep(0.1)
 
             # Assert
-            assert self.engine.state == ComponentState.RUNNING
+            assert self.exec_engine.state == ComponentState.RUNNING
 
             # Tear Down
-            self.engine.stop()
+            self.exec_engine.stop()
 
         self.loop.run_until_complete(run_test())
 
@@ -247,12 +261,12 @@ class TestLiveExecutionEngine:
         async def run_test():
             # Arrange
             # Act
-            self.engine.start()
+            self.exec_engine.start()
             await asyncio.sleep(0)
-            self.engine.kill()
+            self.exec_engine.kill()
 
             # Assert
-            assert self.engine.state == ComponentState.STOPPED
+            assert self.exec_engine.state == ComponentState.STOPPED
 
         self.loop.run_until_complete(run_test())
 
@@ -260,17 +274,17 @@ class TestLiveExecutionEngine:
         async def run_test():
             # Arrange
             # Act
-            self.engine.kill()
+            self.exec_engine.kill()
 
             # Assert
-            assert self.engine.qsize() == 0
+            assert self.exec_engine.qsize() == 0
 
         self.loop.run_until_complete(run_test())
 
     def test_execute_command_places_command_on_queue(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -279,7 +293,7 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
@@ -299,22 +313,22 @@ class TestLiveExecutionEngine:
             )
 
             # Act
-            self.engine.execute(submit_order)
+            self.exec_engine.execute(submit_order)
             await asyncio.sleep(0.1)
 
             # Assert
-            assert self.engine.qsize() == 0
-            assert self.engine.command_count == 1
+            assert self.exec_engine.qsize() == 0
+            assert self.exec_engine.command_count == 1
 
             # Tear Down
-            self.engine.stop()
+            self.exec_engine.stop()
 
         self.loop.run_until_complete(run_test())
 
     def test_handle_position_opening_with_position_id_none(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -323,7 +337,7 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
@@ -334,22 +348,22 @@ class TestLiveExecutionEngine:
             event = TestStubs.event_order_submitted(order)
 
             # Act
-            self.engine.process(event)
+            self.exec_engine.process(event)
             await asyncio.sleep(0.1)
 
             # Assert
-            assert self.engine.qsize() == 0
-            assert self.engine.event_count == 1
+            assert self.exec_engine.qsize() == 0
+            assert self.exec_engine.event_count == 1
 
             # Tear Down
-            self.engine.stop()
+            self.exec_engine.stop()
 
         self.loop.run_until_complete(run_test())
 
     def test_reconcile_state_with_no_active_orders(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -358,11 +372,11 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             # Act
-            await self.engine.reconcile_state()
-            self.engine.stop()
+            await self.exec_engine.reconcile_state()
+            self.exec_engine.stop()
 
             # Assert
             assert True  # No exceptions raised
@@ -372,7 +386,7 @@ class TestLiveExecutionEngine:
     def test_reconcile_state_when_report_agrees_reconciles(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -381,7 +395,7 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -401,9 +415,9 @@ class TestLiveExecutionEngine:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.execute(submit_order)
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
@@ -418,8 +432,8 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.engine.reconcile_state()
-            self.engine.stop()
+            result = await self.exec_engine.reconcile_state()
+            self.exec_engine.stop()
 
             # Assert
             assert result
@@ -429,7 +443,7 @@ class TestLiveExecutionEngine:
     def test_reconcile_state_when_canceled_reconciles(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -438,7 +452,7 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -458,9 +472,9 @@ class TestLiveExecutionEngine:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.execute(submit_order)
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
@@ -475,8 +489,8 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.engine.reconcile_state()
-            self.engine.stop()
+            result = await self.exec_engine.reconcile_state()
+            self.exec_engine.stop()
 
             # Assert
             assert result
@@ -486,7 +500,7 @@ class TestLiveExecutionEngine:
     def test_reconcile_state_when_expired_reconciles(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -495,7 +509,7 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -515,9 +529,9 @@ class TestLiveExecutionEngine:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.execute(submit_order)
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
@@ -532,8 +546,8 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.engine.reconcile_state()
-            self.engine.stop()
+            result = await self.exec_engine.reconcile_state()
+            self.exec_engine.stop()
 
             # Assert
             assert result
@@ -543,7 +557,7 @@ class TestLiveExecutionEngine:
     def test_reconcile_state_when_partially_filled_reconciles(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -552,7 +566,7 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -572,9 +586,9 @@ class TestLiveExecutionEngine:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.execute(submit_order)
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
@@ -614,8 +628,8 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.engine.reconcile_state()
-            self.engine.stop()
+            result = await self.exec_engine.reconcile_state()
+            self.exec_engine.stop()
 
             # Assert
             assert result
@@ -625,7 +639,7 @@ class TestLiveExecutionEngine:
     def test_reconcile_state_when_filled_reconciles(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -634,7 +648,7 @@ class TestLiveExecutionEngine:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -654,9 +668,9 @@ class TestLiveExecutionEngine:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.execute(submit_order)
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
 
             report = OrderStatusReport(
                 client_order_id=order.client_order_id,
@@ -696,8 +710,8 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.engine.reconcile_state()
-            self.engine.stop()
+            result = await self.exec_engine.reconcile_state()
+            self.exec_engine.stop()
 
             # Assert
             assert result

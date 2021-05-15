@@ -27,6 +27,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
@@ -76,6 +77,14 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
+        self.risk_engine = LiveRiskEngine(
+            loop=self.loop,
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
             account_id=self.account_id,
@@ -84,6 +93,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
+        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(exec_client)
         self.exec_engine.process(TestStubs.event_account_state(self.account_id))
 

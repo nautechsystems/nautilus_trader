@@ -74,6 +74,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         if config is None:
             config = {}
+        if "qsize" not in config:
+            config["qsize"] = 10000
         super().__init__(
             database,
             portfolio,
@@ -83,7 +85,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize", 10000))
+        self._queue = Queue(maxsize=config.get("qsize"))
 
         self._run_queue_task = None
         self.is_running = False

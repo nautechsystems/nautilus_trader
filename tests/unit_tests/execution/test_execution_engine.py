@@ -50,6 +50,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -98,6 +99,13 @@ class ExecutionEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = self.exec_engine.cache
         self.exec_engine.process(TestStubs.event_account_state())
 
@@ -110,6 +118,7 @@ class ExecutionEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
 
     def test_registered_venues_returns_expected(self):
@@ -329,9 +338,9 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.execute(submit_order)  # Duplicate command
+        self.risk_engine.execute(submit_order)  # Duplicate command
 
         # Assert
         self.assertEqual(OrderState.SUBMITTED, order.state)
@@ -367,7 +376,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Assert
         self.assertEqual(1, self.exec_engine.command_count)
@@ -404,7 +413,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Assert
         self.assertEqual(OrderState.INVALID, order.state)
@@ -440,7 +449,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(
             TestStubs.event_order_filled(
@@ -505,8 +514,8 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_bracket)
-        self.exec_engine.execute(submit_bracket)  # Duplicate command
+        self.risk_engine.execute(submit_bracket)
+        self.risk_engine.execute(submit_bracket)  # Duplicate command
 
         # Assert
         self.assertEqual(
@@ -600,14 +609,14 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_bracket1)
+        self.risk_engine.execute(submit_bracket1)
         self.exec_engine.process(TestStubs.event_order_submitted(entry1))
         self.exec_engine.process(TestStubs.event_order_accepted(entry1))
         self.exec_engine.process(TestStubs.event_order_submitted(stop_loss1))
         self.exec_engine.process(TestStubs.event_order_accepted(stop_loss1))
         self.exec_engine.process(TestStubs.event_order_submitted(take_profit1))
         self.exec_engine.process(TestStubs.event_order_accepted(take_profit1))
-        self.exec_engine.execute(submit_bracket2)  # SL and TP
+        self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
         self.assertEqual(OrderState.INVALID, entry2.state)
@@ -622,6 +631,7 @@ class ExecutionEngineTests(unittest.TestCase):
     ):
         # Arrange
         self.exec_engine.start()
+        self.risk_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -698,14 +708,14 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_bracket1)
+        self.risk_engine.execute(submit_bracket1)
         self.exec_engine.process(TestStubs.event_order_submitted(entry1))
         self.exec_engine.process(TestStubs.event_order_accepted(entry1))
         self.exec_engine.process(TestStubs.event_order_submitted(stop_loss1))
         self.exec_engine.process(TestStubs.event_order_accepted(stop_loss1))
         self.exec_engine.process(TestStubs.event_order_submitted(take_profit1))
         self.exec_engine.process(TestStubs.event_order_accepted(take_profit1))
-        self.exec_engine.execute(submit_bracket2)  # SL and TP
+        self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
         self.assertEqual(OrderState.INVALID, entry2.state)
@@ -751,7 +761,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Assert
         self.assertIn(submit_order, self.exec_client.commands)
@@ -788,7 +798,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.cache.clear_cache()
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -826,7 +836,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act (event attempts to fill order before its submitted)
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         # Assert
@@ -889,7 +899,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
@@ -943,7 +953,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
@@ -998,7 +1008,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -1049,7 +1059,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -1098,7 +1108,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -1149,7 +1159,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
@@ -1213,7 +1223,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
@@ -1277,7 +1287,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
@@ -1335,7 +1345,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -1409,7 +1419,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
@@ -1478,7 +1488,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order1)
+        self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
         self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM))
@@ -1497,7 +1507,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order2)
+        self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(
@@ -1559,7 +1569,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         position_id = PositionId("P-1")
 
-        self.exec_engine.execute(submit_order1)
+        self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
         self.exec_engine.process(
@@ -1578,7 +1588,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order2)
+        self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(
@@ -1669,8 +1679,8 @@ class ExecutionEngineTests(unittest.TestCase):
         position2_id = PositionId("P-2")
 
         # Act
-        self.exec_engine.execute(submit_order1)
-        self.exec_engine.execute(submit_order2)
+        self.risk_engine.execute(submit_order1)
+        self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
         self.exec_engine.process(
@@ -1802,21 +1812,21 @@ class ExecutionEngineTests(unittest.TestCase):
         position_id2 = PositionId("P-2")
 
         # Act
-        self.exec_engine.execute(submit_order1)
+        self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
         self.exec_engine.process(
             TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id=position_id1)
         )
 
-        self.exec_engine.execute(submit_order2)
+        self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(
             TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id=position_id1)
         )
 
-        self.exec_engine.execute(submit_order3)
+        self.risk_engine.execute(submit_order3)
         self.exec_engine.process(TestStubs.event_order_submitted(order3))
         self.exec_engine.process(TestStubs.event_order_accepted(order3))
         self.exec_engine.process(
@@ -1894,7 +1904,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         position_id = PositionId("P-19700101-000000-000-001-1")
 
-        self.exec_engine.execute(submit_order1)
+        self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
         self.exec_engine.process(
@@ -1913,7 +1923,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order2)
+        self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(
@@ -1978,7 +1988,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         position_id = PositionId("P-19700101-000000-000-001-1")
 
-        self.exec_engine.execute(submit_order1)
+        self.risk_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
         self.exec_engine.process(
@@ -1997,7 +2007,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.execute(submit_order2)
+        self.risk_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(
@@ -2055,7 +2065,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_pending_replace(order))

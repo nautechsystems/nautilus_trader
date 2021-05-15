@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from typing import List
 
 import pandas as pd
 import pytz
@@ -43,21 +42,17 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.functions cimport format_bytes
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.data cimport GenericData
-
-from nautilus_trader.core.functions import get_size_of  # Not cimport
-
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -66,8 +61,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.tick import TradeTick
-
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
@@ -85,9 +79,9 @@ cdef class BacktestEngine:
     def __init__(
         self,
         TraderId trader_id=None,
-        dict data_config=None,
-        dict exec_config=None,
-        dict risk_config=None,
+        dict config_data=None,
+        dict config_risk=None,
+        dict config_exec=None,
         str exec_db_type not None="in-memory",
         bint exec_db_flush=True,
         bint use_data_cache=False,
@@ -101,12 +95,12 @@ cdef class BacktestEngine:
         ----------
         trader_id : TraderId, optional
             The trader identifier.
-        data_config : dict[str, object]
+        config_data : dict[str, object]
             The configuration for the data engine.
-        exec_config : dict[str, object]
-            The configuration for the execution engine.
-        risk_config : dict[str, object]
+        config_risk : dict[str, object]
             The configuration for the risk engine.
+        config_exec : dict[str, object]
+            The configuration for the execution engine.
         exec_db_type : str, optional
             The type for the execution cache (can be the default 'in-memory' or redis).
         exec_db_flush : bool, optional
@@ -197,14 +191,14 @@ cdef class BacktestEngine:
 
         self._data_producer = None  # Instantiated on first run
 
-        if data_config is None:
-            data_config = {}
-        data_config["use_previous_close"] = False  # Ensures bars match historical data
+        if config_data is None:
+            config_data = {}
+        config_data["use_previous_close"] = False  # Ensures bars match historical data
         self._data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=data_config,
+            config=config_data,
         )
 
         self.portfolio.register_cache(self._data_engine.cache)
@@ -214,7 +208,7 @@ cdef class BacktestEngine:
             portfolio=self.portfolio,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=exec_config,
+            config=config_exec,
         )
 
         self._risk_engine = RiskEngine(
@@ -222,11 +216,11 @@ cdef class BacktestEngine:
             portfolio=self.portfolio,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=risk_config,
+            config=config_risk,
         )
 
-        self._exec_engine.load_cache()
         self._exec_engine.register_risk_engine(self._risk_engine)
+        self._exec_engine.load_cache()
 
         self.trader = Trader(
             trader_id=trader_id,
@@ -438,21 +432,15 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {len(data)} {instrument_id} TradeTick data elements.")
 
-    def add_trade_tick_objects(self, InstrumentId instrument_id, data: List[TradeTick]) -> None:
+    def add_trade_tick_objects(self, InstrumentId instrument_id, list data) -> None:
         """
-        Add the trade tick data to the container.
-
-        The format of the dataframe is expected to be a DateTimeIndex (times are
-        assumed to be UTC, and are converted to tz-aware in pre-processing).
-
-        With index column named 'timestamp', and 'trade_id', 'price', 'quantity',
-        'buyer_maker' data columns.
+        Add the built trade tick data to the backtest engine.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the trade tick data.
-        data : pd.DataFrame
+        data : list[TradeTick]
             The trade tick data to add.
 
         Raises
@@ -463,12 +451,9 @@ cdef class BacktestEngine:
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
-        Condition.type(data, list, "data")
-        Condition.true(len(data), "data was empty")
+        Condition.not_empty(data, "data")
+        Condition.list_type(data, TradeTick, "data")
 
-        # self._added_instrument_ids.add(instrument_id)
-
-        # Add to clients to be constructed in backtest engine
         # Check client has been registered
         self._add_data_client_if_not_exists(instrument_id.venue.client_id)
 

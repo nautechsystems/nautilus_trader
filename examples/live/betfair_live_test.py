@@ -49,8 +49,13 @@ config = {
     "exec_database": {
         "type": "memory",
     },
-    "risk": {},
-    "strategy": {},
+    "data_engine": {},
+    "risk_engine": {},
+    "exec_engine": {},
+    "strategy": {
+        "load_state": True,  # Strategy state is loaded from the database on start
+        "save_state": True,  # Strategy state is saved to the database on shutdown
+    },
     "data_clients": {
         "BETFAIR": {
             "username": "BETFAIR_USERNAME",  # value is the environment variable key
