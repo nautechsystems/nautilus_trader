@@ -292,7 +292,7 @@ cdef class Quantity(BaseDecimal):
     @staticmethod
     def zero(uint8_t precision=0) -> Quantity:
         """
-        Return a quantity with a value and precision of zero.
+        Return a quantity with a value of zero.
 
         precision : uint8, optional
             The precision for the quantity.
@@ -466,7 +466,7 @@ cdef class Money(BaseDecimal):
         Parameters
         ----------
         value : integer, float, string or Decimal
-            The value of the money.
+            The amount of money in the currency denomination.
         currency : Currency
             The currency of the money.
 
@@ -515,8 +515,8 @@ cdef class Money(BaseDecimal):
         """
         Return money parsed from the given string.
 
-        Must be correctly formatted with a value and currency separated by
-        whitespace.
+        Must be correctly formatted with a value and currency separated by a
+        whitespace delimiter.
 
         Example: "1000000.00 USD".
 
@@ -531,7 +531,8 @@ cdef class Money(BaseDecimal):
 
         Raises
         ------
-
+        ValueError
+            If the value is malformed.
 
         """
         Condition.not_none(value, "value")
