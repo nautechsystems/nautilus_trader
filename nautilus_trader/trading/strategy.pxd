@@ -26,7 +26,6 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
@@ -51,13 +50,14 @@ from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy(Component):
     cdef DataEngine _data_engine
-    cdef ExecutionEngine _exec_engine
+    cdef RiskEngine _risk_engine
     cdef list _indicators
     cdef dict _indicators_for_quotes
     cdef dict _indicators_for_trades
@@ -114,7 +114,7 @@ cdef class TradingStrategy(Component):
         int order_id_count=*,
     ) except *
     cpdef void register_data_engine(self, DataEngine engine) except *
-    cpdef void register_execution_engine(self, ExecutionEngine engine) except *
+    cpdef void register_risk_engine(self, RiskEngine engine) except *
     cpdef void register_portfolio(self, Portfolio portfolio) except *
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *

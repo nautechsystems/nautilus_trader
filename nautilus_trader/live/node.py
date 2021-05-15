@@ -99,7 +99,9 @@ class TradingNode:
         config_system = config.get("system", {})
         config_log = config.get("logging", {})
         config_exec_db = config.get("exec_database", {})
-        config_risk = config.get("risk", {})
+        config_data = config.get("data_engine", {})
+        config_risk = config.get("risk_engine", {})
+        config_exec = config.get("exec_engine", {})
         config_strategy = config.get("strategy", {})
 
         # System config
@@ -165,7 +167,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
-            config={"qsize": 10000},
+            config=config_data,
         )
 
         self.portfolio.register_cache(self._data_engine.cache)
@@ -194,7 +196,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
-            config={"qsize": 10000},
+            config=config_exec,
         )
 
         self._risk_engine = LiveRiskEngine(
@@ -206,8 +208,8 @@ class TradingNode:
             config=config_risk,
         )
 
-        self._exec_engine.load_cache()
         self._exec_engine.register_risk_engine(self._risk_engine)
+        self._exec_engine.load_cache()
 
         self.trader = Trader(
             trader_id=self.trader_id,

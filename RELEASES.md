@@ -15,11 +15,16 @@ The serialization of `Money` has been improved with the inclusion of the
 currency code in the string delimited by whitespace. This avoids an additional
 field for the currency code.
 
+`RiskEngine` has been rewired ahead of `ExecutionEngine` which clarifies areas
+of responsibility and cleans up the registration sequence and allows a more
+natural flow of command and event messages.
+
 ## Breaking Changes
 - Serializations involving `Money`.
 - Usage of `Price` and `Quantity`.
 
 ## Enhancements
+- Rewire `RiskEngine` and `ExecutionEngine` sequence.
 - Added `Price.from_str()`.
 - Added `Price.from_int()`.
 - Added `Quantity.zero()`.

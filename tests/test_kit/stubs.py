@@ -68,6 +68,7 @@ from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
+from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.providers import TestInstrumentProvider
 
 
@@ -509,6 +510,16 @@ class TestStubs:
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
             database=database,
+            portfolio=TestStubs.portfolio(),
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def mock_live_risk_engine():
+        return MockLiveRiskEngine(
+            loop=asyncio.get_event_loop(),
+            exec_engine=TestStubs.mock_live_exec_engine(),
             portfolio=TestStubs.portfolio(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),

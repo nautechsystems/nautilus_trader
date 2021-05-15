@@ -25,6 +25,7 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -82,9 +83,17 @@ class TestLiveExecutionClient:
         asyncio.set_event_loop(self.loop)
 
         database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
-        self.engine = LiveExecutionEngine(
+        self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=database,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.risk_engine = LiveRiskEngine(
+            loop=self.loop,
+            exec_engine=self.exec_engine,
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
@@ -93,13 +102,14 @@ class TestLiveExecutionClient:
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
             account_id=self.account_id,
-            engine=self.engine,
+            engine=self.exec_engine,
             instrument_provider=InstrumentProvider(),
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.engine.register_client(self.client)
+        self.exec_engine.register_risk_engine(self.risk_engine)
+        self.exec_engine.register_client(self.client)
 
     def teardown(self):
         self.client.dispose()
@@ -128,7 +138,8 @@ class TestLiveExecutionClient:
     def test_reconcile_state_when_order_completed_returns_true_with_warning1(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
+            self.risk_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -137,7 +148,7 @@ class TestLiveExecutionClient:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.stop_market(
                 AUDUSD_SIM.id,
@@ -157,12 +168,13 @@ class TestLiveExecutionClient:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
+            self.risk_engine.execute(submit_order)
             await asyncio.sleep(0)  # Process queue
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
             await asyncio.sleep(0)  # Process queue
-            self.engine.process(TestStubs.event_order_canceled(order))
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
+            await asyncio.sleep(0)  # Process queue
+            self.exec_engine.process(TestStubs.event_order_canceled(order))
             await asyncio.sleep(0)  # Process queue
 
             report = OrderStatusReport(
@@ -184,7 +196,8 @@ class TestLiveExecutionClient:
     def test_reconcile_state_when_order_completed_returns_true_with_warning2(self):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
+            self.risk_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -193,7 +206,7 @@ class TestLiveExecutionClient:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -213,12 +226,13 @@ class TestLiveExecutionClient:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
+            self.risk_engine.execute(submit_order)
             await asyncio.sleep(0)  # Process queue
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
             await asyncio.sleep(0)  # Process queue
-            self.engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
+            await asyncio.sleep(0)  # Process queue
+            self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
             await asyncio.sleep(0)  # Process queue
 
             report = OrderStatusReport(
@@ -242,7 +256,8 @@ class TestLiveExecutionClient:
     ):
         async def run_test():
             # Arrange
-            self.engine.start()
+            self.exec_engine.start()
+            self.risk_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
@@ -251,7 +266,7 @@ class TestLiveExecutionClient:
                 self.logger,
             )
 
-            self.engine.register_strategy(strategy)
+            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -271,10 +286,11 @@ class TestLiveExecutionClient:
                 self.clock.timestamp_ns(),
             )
 
-            self.engine.execute(submit_order)
-            self.engine.process(TestStubs.event_order_submitted(order))
+            self.risk_engine.execute(submit_order)
             await asyncio.sleep(0)  # Process queue
-            self.engine.process(TestStubs.event_order_accepted(order))
+            self.exec_engine.process(TestStubs.event_order_submitted(order))
+            await asyncio.sleep(0)  # Process queue
+            self.exec_engine.process(TestStubs.event_order_accepted(order))
             await asyncio.sleep(0)  # Process queue
 
             report = OrderStatusReport(
