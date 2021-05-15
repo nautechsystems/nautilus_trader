@@ -57,7 +57,6 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -69,7 +68,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -121,7 +119,7 @@ cdef class ExecutionEngine(Component):
             clock=clock,
         )
         self._portfolio = portfolio
-        self._risk_engine = None
+        self._risk_engine = None  # Initialized when risk engine registered
 
         self.trader_id = database.trader_id
         self.cache = ExecutionCache(database, logger)
@@ -247,6 +245,21 @@ cdef class ExecutionEngine(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
+    cpdef void register_risk_engine(self, RiskEngine engine) except *:
+        """
+        Register the given risk engine with the execution engine.
+
+        Parameters
+        ----------
+        engine : RiskEngine
+            The risk engine to register.
+
+        """
+        Condition.not_none(engine, "engine")
+
+        self._risk_engine = engine
+        self._log.info(f"Registered {engine}.")
+
     cpdef void register_client(self, ExecutionClient client) except *:
         """
         Register the given execution client with the execution engine.
@@ -268,9 +281,6 @@ cdef class ExecutionEngine(Component):
         self._clients[client.id] = client
         self._log.info(f"Registered {client}.")
 
-        if self._risk_engine is not None and client.id not in self._risk_engine.registered_clients:
-            self._risk_engine.register_client(client)
-
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
         Register the given strategy with the execution engine.
@@ -289,32 +299,10 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(strategy, "strategy")
         Condition.not_in(strategy.id, self._strategies, "strategy.id", "registered_strategies")
 
-        strategy.register_execution_engine(self)
+        strategy.register_risk_engine(self._risk_engine)
         strategy.register_portfolio(self._portfolio)
         self._strategies[strategy.id] = strategy
         self._log.info(f"Registered {strategy}.")
-
-    cpdef void register_risk_engine(self, RiskEngine engine) except *:
-        """
-        Register the given risk engine with the execution engine.
-
-        Parameters
-        ----------
-        engine : RiskEngine
-            The risk engine to register.
-
-        """
-        Condition.not_none(engine, "engine")
-
-        self._risk_engine = engine
-        self._log.info(f"Registered {engine}.")
-
-        cdef list risk_registered = self._risk_engine.registered_clients
-
-        cdef ExecutionClient client
-        for venue, client in self._clients.items():
-            if venue not in risk_registered:
-                self._risk_engine.register_client(client)
 
     cpdef void deregister_client(self, ExecutionClient client) except *:
         """
@@ -511,132 +499,16 @@ cdef class ExecutionEngine(Component):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
-        # Validate command
-        if self.cache.order_exists(command.order.client_order_id):
-            self._log.error(f"Cannot submit order: "
-                            f"{repr(command.order.client_order_id)} already exists.")
-            return  # Invalid command
-
-        # Cache order
-        self.cache.add_order(command.order, command.position_id)
-
-        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
-            self._invalidate_order(
-                command.order.client_order_id,
-                f"{repr(command.position_id)} does not exist",
-            )
-            return  # Invalid command
-
-        # Submit order
-        if self._risk_engine is not None:
-            self._risk_engine.execute(command)
-        else:
-            client.submit_order(command)
+        client.submit_order(command)
 
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
-        # Validate command
-        if self.cache.order_exists(command.bracket_order.entry.client_order_id):
-            self._invalidate_bracket_order(command.bracket_order)
-            return  # Invalid command
-        if self.cache.order_exists(command.bracket_order.stop_loss.client_order_id):
-            self._invalidate_bracket_order(command.bracket_order)
-            return  # Invalid command
-        if command.bracket_order.take_profit is not None \
-                and self.cache.order_exists(command.bracket_order.take_profit.client_order_id):
-            self._invalidate_bracket_order(command.bracket_order)
-            return  # Invalid command
-
-        # Cache all orders
-        self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
-        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
-        if command.bracket_order.take_profit is not None:
-            self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
-
-        # Submit order
-        if self._risk_engine is not None:
-            self._risk_engine.execute(command)
-        else:
-            client.submit_bracket_order(command)
+        client.submit_bracket_order(command)
 
     cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
-        # Validate command
-        if not self.cache.is_order_working(command.client_order_id):
-            self._log.warning(f"Cannot update order: "
-                              f"{repr(command.client_order_id)} already completed.")
-            return  # Invalid command
-
-        # Amend order
-        if self._risk_engine is not None:
-            self._risk_engine.execute(command)
-        else:
-            client.update_order(command)
+        client.update_order(command)
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
-        # Validate command
-        if self.cache.is_order_completed(command.client_order_id):
-            self._log.warning(f"Cannot cancel order: "
-                              f"{repr(command.client_order_id)} already completed.")
-            return  # Invalid command
-
-        # Cancel order
-        if self._risk_engine is not None:
-            self._risk_engine.execute(command)
-        else:
-            client.cancel_order(command)
-
-    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *:
-        # Generate event
-        cdef OrderInvalid invalid = OrderInvalid(
-            client_order_id,
-            reason,
-            self._uuid_factory.generate(),
-            self._clock.timestamp_ns(),
-        )
-
-        self._handle_event(invalid)
-
-    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *:
-        cdef ClientOrderId entry_id = bracket_order.entry.client_order_id
-        cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.client_order_id
-        cdef ClientOrderId take_profit_id = None
-        if bracket_order.take_profit:
-            take_profit_id = bracket_order.take_profit.client_order_id
-
-        cdef list error_msgs = []
-
-        # Check entry ----------------------------------------------------------
-        if self.cache.order_exists(entry_id):
-            error_msgs.append(f"Duplicate {repr(entry_id)}")
-        else:
-            # Add to cache to be able to invalidate
-            self.cache.add_order(bracket_order.entry, PositionId.null_c())
-            self._invalidate_order(
-                bracket_order.entry.client_order_id,
-                "Duplicate ClientOrderId in bracket.",
-            )
-        # Check stop-loss ------------------------------------------------------
-        if self.cache.order_exists(stop_loss_id):
-            error_msgs.append(f"Duplicate {repr(stop_loss_id)}")
-        else:
-            # Add to cache to be able to invalidate
-            self.cache.add_order(bracket_order.stop_loss, PositionId.null_c())
-            self._invalidate_order(
-                bracket_order.stop_loss.client_order_id,
-                "Duplicate ClientOrderId in bracket.",
-            )
-        # Check take-profit ----------------------------------------------------
-        if take_profit_id is not None and self.cache.order_exists(take_profit_id):
-            error_msgs.append(f"Duplicate {repr(take_profit_id)}")
-        else:
-            # Add to cache to be able to invalidate
-            self.cache.add_order(bracket_order.take_profit, PositionId.null_c())
-            self._invalidate_order(
-                bracket_order.take_profit.client_order_id,
-                "Duplicate ClientOrderId in bracket.",
-            )
-
-        # Finally log error
-        self._log.error(f"Cannot submit BracketOrder: {', '.join(error_msgs)}")
+        client.cancel_order(command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
@@ -646,10 +518,8 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderEvent):
             self._handle_order_event(event)
-            self._send_to_risk_engine(event)
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
-            self._send_to_risk_engine(event)
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
         else:
@@ -668,6 +538,7 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
         self._portfolio.update_position(event)
+        self._risk_engine.process(event)
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
@@ -725,6 +596,7 @@ cdef class ExecutionEngine(Component):
             self._handle_order_fill(event)
             return  # Event will be sent to strategy
 
+        self._risk_engine.process(event)
         self._send_to_strategy(event, self.cache.strategy_id_for_order(client_order_id))
 
     cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *:
@@ -773,6 +645,7 @@ cdef class ExecutionEngine(Component):
         fill.position_id = positions_open[0].id
 
     cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
+        self._risk_engine.process(event)
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.client_order_id))
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
@@ -786,6 +659,7 @@ cdef class ExecutionEngine(Component):
         cdef Position position = Position(fill=fill)
         self.cache.add_position(position)
 
+        self._risk_engine.process(fill)
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(self._pos_opened_event(position, fill))
 
@@ -810,6 +684,7 @@ cdef class ExecutionEngine(Component):
         else:
             position_event = self._pos_changed_event(position, fill)
 
+        self._risk_engine.process(fill)
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(position_event)
 
@@ -916,8 +791,3 @@ cdef class ExecutionEngine(Component):
             return  # Cannot send to strategy
 
         strategy.handle_event(event)
-
-    cdef inline void _send_to_risk_engine(self, Event event) except *:
-        # If a `RiskEngine` is registered then send the event there
-        if self._risk_engine is not None:
-            self._risk_engine.process(event)

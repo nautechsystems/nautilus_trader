@@ -134,6 +134,11 @@ def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
 
 
 @pytest.fixture()
+def risk_engine(event_loop, clock, live_logger, portfolio, trader_id):
+    return BetfairTestStubs.mock_live_risk_engine()
+
+
+@pytest.fixture()
 def betting_instrument(provider):
     return BetfairTestStubs.betting_instrument()
 

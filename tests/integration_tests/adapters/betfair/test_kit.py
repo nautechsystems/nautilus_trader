@@ -36,6 +36,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
+from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.stubs import TestStubs
 
 
@@ -115,6 +116,16 @@ class BetfairTestStubs(TestStubs):
         return MockLiveExecutionEngine(
             loop=event_loop,
             database=database,
+            portfolio=portfolio,
+            clock=clock,
+            logger=live_logger,
+        )
+
+    @staticmethod
+    def risk_engine(event_loop, clock, live_logger, portfolio, exec_engine):
+        return MockLiveRiskEngine(
+            loop=event_loop,
+            exec_engine=exec_engine,
             portfolio=portfolio,
             clock=clock,
             logger=live_logger,

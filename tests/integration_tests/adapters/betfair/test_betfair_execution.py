@@ -113,7 +113,9 @@ async def test_post_order_submit_error(execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_update_order(mocker, execution_client, exec_engine):
+async def test_update_order(mocker, execution_client, exec_engine, risk_engine):
+    exec_engine.register_risk_engine(risk_engine)
+
     # Add sample order to the cache
     order = BetfairTestStubs.make_order(exec_engine)
     order.apply(BetfairTestStubs.event_order_submitted(order=order))
@@ -144,7 +146,9 @@ async def test_update_order(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_post_order_update_success(execution_client, exec_engine):
+async def test_post_order_update_success(execution_client, exec_engine, risk_engine):
+    exec_engine.register_risk_engine(risk_engine)
+
     # Add fake order to cache
     order = BetfairTestStubs.make_order(exec_engine)
     order.apply(BetfairTestStubs.event_order_submitted(order=order))

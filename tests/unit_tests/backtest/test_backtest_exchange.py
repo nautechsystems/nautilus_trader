@@ -57,6 +57,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestInstrumentProvider
@@ -111,6 +112,13 @@ class SimulatedExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.exchange = SimulatedExchange(
             venue=SIM,
             oms_type=OMSType.HEDGING,
@@ -132,6 +140,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
@@ -1899,6 +1908,13 @@ class BitmexExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
             oms_type=OMSType.HEDGING,
@@ -1920,6 +1936,7 @@ class BitmexExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
@@ -2048,6 +2065,13 @@ class OrderBookExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.exchange = SimulatedExchange(
             venue=SIM,
             oms_type=OMSType.HEDGING,
@@ -2070,6 +2094,7 @@ class OrderBookExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 

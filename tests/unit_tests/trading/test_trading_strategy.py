@@ -53,6 +53,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import KaboomStrategy
@@ -108,6 +109,15 @@ class TradingStrategyTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
+
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_risk_engine(self.risk_engine)
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
@@ -711,7 +721,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIsNotNone(strategy.data)
 
-    def test_register_execution_engine(self):
+    def test_register_risk_engine(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -721,7 +731,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         # Act
-        strategy.register_execution_engine(self.exec_engine)
+        strategy.register_risk_engine(self.risk_engine)
 
         # Assert
         self.assertIsNotNone(strategy.execution)
