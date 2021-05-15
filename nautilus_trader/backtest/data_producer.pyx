@@ -367,7 +367,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
         # Build quote tick data stream
         if not self._quote_tick_data.empty:
             time_buffer = timedelta(milliseconds=1)  # To ensure we don't pickup an `unwanted` generated tick
-            # TODO: Use normal slice
             # See slice_dataframe function comments on why [:] isn't used
             quote_ticks_slice = slice_dataframe(self._quote_tick_data, start + time_buffer, stop)
 
