@@ -21,7 +21,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.client import ExecutionClient
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
@@ -62,7 +62,9 @@ class ExecutionClientTests(unittest.TestCase):
         )
         portfolio.register_cache(DataCache(self.logger))
 
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        database = InMemoryExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = ExecutionEngine(
             database=database,
             portfolio=portfolio,

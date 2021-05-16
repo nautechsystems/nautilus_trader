@@ -25,7 +25,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
@@ -68,7 +68,9 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        database = InMemoryExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=database,

@@ -31,7 +31,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
@@ -98,7 +98,7 @@ class TradingStrategyTests(unittest.TestCase):
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
-        self.exec_db = BypassExecutionDatabase(
+        self.exec_db = InMemoryExecutionDatabase(
             trader_id=trader_id,
             logger=self.logger,
         )

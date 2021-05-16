@@ -22,7 +22,7 @@ import pytz
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
@@ -504,7 +504,7 @@ class TestStubs:
 
     @staticmethod
     def mock_live_exec_engine():
-        database = BypassExecutionDatabase(
+        database = InMemoryExecutionDatabase(
             trader_id=TestStubs.trader_id(), logger=TestStubs.logger()
         )
         return MockLiveExecutionEngine(

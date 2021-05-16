@@ -22,7 +22,7 @@ from nautilus_trader.adapters.ccxt.execution import BinanceCCXTExecutionClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -73,7 +73,9 @@ class BinanceExecutionClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        database = InMemoryExecutionDatabase(
+            trader_id=self.trader_id, logger=self.logger
+        )
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             database=database,

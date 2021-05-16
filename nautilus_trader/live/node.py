@@ -35,7 +35,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
@@ -44,6 +44,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
@@ -177,6 +178,7 @@ class TradingNode:
             exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
+                instrument_serializer=MsgPackInstrumentSerializer(),
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 config={
@@ -185,7 +187,7 @@ class TradingNode:
                 },
             )
         else:
-            exec_db = BypassExecutionDatabase(
+            exec_db = InMemoryExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
             )

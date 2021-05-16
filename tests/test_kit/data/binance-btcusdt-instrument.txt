@@ -1,1 +1,1 @@
-Instrument(id=BTC/USDT.BINANCE, symbol=BTC/USDT, asset_class=8, asset_type=1, base_currency=BTC, quote_currency=USDT, settlement_currency=USDT, tick_size=0.01, price_precision=2, lot_size=1, size_precision=6)
+Instrument(id=BTC/USDT.BINANCE, symbol=BTC/USDT, asset_class=CRYPTO, asset_type=SPOT, base_currency=BTC, quote_currency=USDT, settlement_currency=USDT, tick_size=0.01, price_precision=2, lot_size=1, size_precision=6)

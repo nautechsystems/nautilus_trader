@@ -38,6 +38,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockStrategy
@@ -71,6 +72,7 @@ class TestRedisExecutionDatabase:
         self.database = RedisExecutionDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
+            instrument_serializer=MsgPackInstrumentSerializer(),
             command_serializer=MsgPackCommandSerializer(),
             event_serializer=MsgPackEventSerializer(),
             config=config,
@@ -108,6 +110,13 @@ class TestRedisExecutionDatabase:
 
         # Assert
         assert self.database.load_account(account.id) == account
+
+    def test_add_instrument(self):
+        # Arrange, Act
+        self.database.add_instrument(AUDUSD_SIM)
+
+        # Assert
+        assert self.database.load_instrument(AUDUSD_SIM.id) == AUDUSD_SIM
 
     def test_add_order(self):
         # Arrange

@@ -24,7 +24,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
@@ -70,7 +70,7 @@ class TraderTests(unittest.TestCase):
         self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
-        self.exec_db = BypassExecutionDatabase(
+        self.exec_db = InMemoryExecutionDatabase(
             trader_id=trader_id,
             logger=logger,
         )

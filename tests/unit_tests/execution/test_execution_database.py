@@ -13,14 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.database import ExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from tests.test_kit.stubs import TestStubs
@@ -30,8 +30,8 @@ AUDUSD_SIM = TestStubs.audusd_id()
 GBPUSD_SIM = TestStubs.gbpusd_id()
 
 
-class ExecutionDatabaseTests(unittest.TestCase):
-    def setUp(self):
+class TestExecutionDatabase:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -49,62 +49,88 @@ class ExecutionDatabaseTests(unittest.TestCase):
         self.database = ExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
 
     def test_flush_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.flush)
+        with pytest.raises(NotImplementedError):
+            self.database.flush()
 
     def test_load_currencies_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_currencies)
+        with pytest.raises(NotImplementedError):
+            self.database.load_currencies()
+
+    def test_load_instruments_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.database.load_instruments()
 
     def test_load_accounts_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_accounts)
+        with pytest.raises(NotImplementedError):
+            self.database.load_accounts()
 
     def test_load_orders_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_orders)
+        with pytest.raises(NotImplementedError):
+            self.database.load_orders()
 
     def test_load_positions_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_positions)
+        with pytest.raises(NotImplementedError):
+            self.database.load_positions()
 
     def test_load_currency_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_currency, None)
+        with pytest.raises(NotImplementedError):
+            self.database.load_currency(None)
+
+    def test_load_instrument_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.database.load_instrument(None)
 
     def test_load_account_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_account, None)
+        with pytest.raises(NotImplementedError):
+            self.database.load_account(None)
 
     def test_load_order_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_order, None)
+        with pytest.raises(NotImplementedError):
+            self.database.load_order(None)
 
     def test_load_position_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_position, None)
+        with pytest.raises(NotImplementedError):
+            self.database.load_position(None)
 
     def test_load_strategy_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.load_strategy, None)
+        with pytest.raises(NotImplementedError):
+            self.database.load_strategy(None)
 
     def test_delete_strategy_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.delete_strategy, None)
+        with pytest.raises(NotImplementedError):
+            self.database.delete_strategy(None)
 
     def test_add_account_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.add_account, None)
+        with pytest.raises(NotImplementedError):
+            self.database.add_account(None)
 
     def test_add_order_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.add_order, None)
+        with pytest.raises(NotImplementedError):
+            self.database.add_order(None)
 
     def test_add_position_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.add_position, None)
+        with pytest.raises(NotImplementedError):
+            self.database.add_position(None)
 
     def test_update_account_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.update_account, None)
+        with pytest.raises(NotImplementedError):
+            self.database.update_account(None)
 
     def test_update_order_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.update_order, None)
+        with pytest.raises(NotImplementedError):
+            self.database.update_order(None)
 
     def test_update_position_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.update_position, None)
+        with pytest.raises(NotImplementedError):
+            self.database.update_position(None)
 
     def test_update_strategy_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.database.update_strategy, None)
+        with pytest.raises(NotImplementedError):
+            self.database.update_strategy(None)
 
 
-class BypassExecutionDatabaseTests(unittest.TestCase):
-    def setUp(self):
+class TestInMemoryExecutionDatabase:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -119,21 +145,27 @@ class BypassExecutionDatabaseTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.database = BypassExecutionDatabase(
+        self.database = InMemoryExecutionDatabase(
             trader_id=self.trader_id, logger=self.logger
         )
 
+    def teardown(self):
+        self.database.flush()
+
     def test_load_currency_returns_none(self):
-        self.assertIsNone(self.database.load_currency(None))
+        assert self.database.load_currency(None) is None
+
+    def test_load_instrument_returns_none(self):
+        assert self.database.load_instrument(None) is None
 
     def test_load_account_returns_none(self):
-        self.assertIsNone(self.database.load_account(None))
+        assert self.database.load_account(None) is None
 
     def test_load_order_returns_none(self):
-        self.assertIsNone(self.database.load_order(None))
+        assert self.database.load_order(None) is None
 
     def test_load_position_returns_none(self):
-        self.assertIsNone(self.database.load_position(None))
+        assert self.database.load_position(None) is None
 
     def test_load_strategy_returns_empty_dict(self):
-        self.assertEqual({}, self.database.load_strategy(None))
+        assert self.database.load_strategy(None) == {}
