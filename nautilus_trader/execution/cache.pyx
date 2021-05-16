@@ -68,6 +68,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Cached objects
         self._cached_currencies = {}           # type: dict[str, Currency]
+        self._cached_instruments = {}          # type: dict[InstrumentId, Instrument]
         self._cached_accounts = {}             # type: dict[AccountId, Account]
         self._cached_orders = {}               # type: dict[ClientOrderId, Order]
         self._cached_positions = {}            # type: dict[PositionId, Position]
@@ -113,6 +114,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.info(
             f"Cached {count} currenc{'y' if count == 1 else 'ies'} from database.",
             color=LogColor.BLUE if self._cached_currencies else LogColor.NORMAL,
+        )
+
+    cpdef void cache_instruments(self) except *:
+        """
+        Clear the current instruments cache and load instruments from the
+        execution database.
+        """
+        self._log.debug(f"Loading instruments from database...")
+
+        self._cached_instruments = self._database.load_instruments()
+
+        cdef int count = len(self._cached_instruments)
+        self._log.info(
+            f"Cached {count} instrument{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._cached_instruments else LogColor.NORMAL,
         )
 
     cpdef void cache_accounts(self) except *:
@@ -421,6 +437,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Clearing cache...")
 
         self._cached_currencies.clear()
+        self._cached_instruments.clear()
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
@@ -574,13 +591,38 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         else:
             self._log.info(f"No previous state found for {repr(strategy.id)}")
 
+    cpdef Instrument load_instrument(self, InstrumentId instrument_id):
+        """
+        Load the instrument associated with the given instrument_id (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier to load.
+
+        Returns
+        -------
+        Account or None
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef Instrument instrument = self._cached_instruments.get(instrument_id)
+        if instrument is None:
+            instrument = self._database.load_instrument(instrument_id)
+            if instrument:
+                self._cached_instruments[instrument.id] = instrument
+
+        return instrument
+
     cpdef Account load_account(self, AccountId account_id):
         """
         Load the account associated with the given account_id (if found).
 
         Parameters
         ----------
-        :param account_id: The account identifier to load.
+        account_id : AccountId
+            The account identifier to load.
 
         Returns
         -------
@@ -646,6 +688,25 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Update database
         self._database.add_currency(currency)
+
+    cpdef void add_instrument(self, Instrument instrument) except *:
+        """
+        Add the given instrument to the execution cache.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        self._cached_instruments[instrument.id] = instrument
+
+        self._log.debug(f"Added instrument {instrument.id.value}.")
+
+        # Update database
+        self._database.add_instrument(instrument)
 
     cpdef void add_account(self, Account account) except *:
         """

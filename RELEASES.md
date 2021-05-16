@@ -21,10 +21,13 @@ natural flow of command and event messages.
 
 ## Breaking Changes
 - Serializations involving `Money`.
-- Usage of `Price` and `Quantity`.
+- Changed usage of `Price` and `Quantity`.
+- Renamed `BypassExecutionDatabase` to `InMemoryExecutionDatabase`.
 
 ## Enhancements
-- Rewire `RiskEngine` and `ExecutionEngine` sequence.
+- Rewired `RiskEngine` and `ExecutionEngine` sequence.
+- Added `Instrument` database operations.
+- Added `MsgPackInstrumentSerializer`.
 - Added `Price.from_str()`.
 - Added `Price.from_int()`.
 - Added `Quantity.zero()`.

@@ -398,6 +398,7 @@ cdef class ExecutionEngine(Component):
         cdef int64_t ts = unix_timestamp_us()
 
         self.cache.cache_currencies()
+        self.cache.cache_instruments()
         self.cache.cache_accounts()
         self.cache.cache_orders()
         self.cache.cache_positions()

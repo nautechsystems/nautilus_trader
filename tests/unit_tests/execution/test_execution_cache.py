@@ -20,7 +20,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.execution.cache import ExecutionCache
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -68,13 +68,21 @@ class ExecutionCacheTests(unittest.TestCase):
             logger,
         )
 
-        exec_db = BypassExecutionDatabase(trader_id=self.trader_id, logger=logger)
+        exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.cache = ExecutionCache(database=exec_db, logger=logger)
 
     def test_cache_currencies_with_no_currencies(self):
         # Arrange
         # Act
         self.cache.cache_currencies()
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_cache_instruments_with_no_instruments(self):
+        # Arrange
+        # Act
+        self.cache.cache_instruments()
 
         # Assert
         self.assertTrue(True)  # No exception raised
@@ -137,6 +145,16 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(account, self.cache.load_account(account.id))
+
+    def test_load_instrument(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Act
+        result = self.cache.load_instrument(AUDUSD_SIM.id)
+
+        # Assert
+        self.assertEqual(AUDUSD_SIM, result)
 
     def test_load_account(self):
         # Arrange

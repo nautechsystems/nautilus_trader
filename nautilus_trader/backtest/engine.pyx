@@ -43,7 +43,7 @@ from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport pad_string
-from nautilus_trader.execution.database cimport BypassExecutionDatabase
+from nautilus_trader.execution.database cimport InMemoryExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -66,6 +66,7 @@ from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
+from nautilus_trader.serialization.serializers cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -162,13 +163,14 @@ cdef class BacktestEngine:
         self._log.info("Building engine...")
 
         if exec_db_type == "in-memory":
-            exec_db = BypassExecutionDatabase(
+            exec_db = InMemoryExecutionDatabase(
                 trader_id=trader_id,
                 logger=self._logger)
         elif exec_db_type == "redis":
             exec_db = RedisExecutionDatabase(
                 trader_id=trader_id,
                 logger=self._test_logger,
+                instrument_serializer=MsgPackInstrumentSerializer(),
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 config={"host": "localhost", "port": 6379},

@@ -60,6 +60,7 @@ from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
 from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -67,6 +68,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestSerializerBase:
@@ -105,6 +107,32 @@ class TestSerializerBase:
         assert result0 == "SnakeCase"
         assert result1 == "SnakeCase"
         assert result2 == "Snake"
+
+
+class TestInstrumentSerializer:
+    def setup(self):
+        # Fixture Setup
+        self.serializer = MsgPackInstrumentSerializer()
+
+    def test_serialize_and_deserialize_fx_instrument(self):
+        # Arrange, Act
+        serialized = self.serializer.serialize(AUDUSD_SIM)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == AUDUSD_SIM
+        print(b64encode(serialized))
+        print(deserialized)
+
+    def test_serialize_and_deserialize_crypto_instrument(self):
+        # Arrange, Act
+        serialized = self.serializer.serialize(ETHUSDT_BINANCE)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == ETHUSDT_BINANCE
+        print(b64encode(serialized))
+        print(deserialized)
 
 
 class TestMsgPackOrderSerializer:
