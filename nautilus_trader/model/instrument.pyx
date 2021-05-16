@@ -20,7 +20,9 @@ from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -274,8 +276,8 @@ cdef class Instrument(Data):
         return (f"{type(self).__name__}"
                 f"(id={self.id.value}, "
                 f"symbol={self.id.symbol}, "
-                f"asset_class={self.asset_class}, "
-                f"asset_type={self.asset_type}, "
+                f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
+                f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
                 f"base_currency={self.base_currency}, "
                 f"quote_currency={self.quote_currency}, "
                 f"settlement_currency={self.settlement_currency}, "

@@ -25,9 +25,11 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -35,13 +37,15 @@ from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
-from nautilus_trader.serialization.serializers cimport EventSerializer
+from nautilus_trader.serialization.base cimport EventSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef str _UTF8 = 'utf-8'
 cdef str _CURRENCIES = 'Currencies'
+cdef str _INSTRUMENTS = 'Instruments'
 cdef str _ACCOUNTS = 'Accounts'
 cdef str _TRADER = 'Trader'
 cdef str _ORDERS = 'Orders'
@@ -59,6 +63,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self,
         TraderId trader_id not None,
         Logger logger not None,
+        InstrumentSerializer instrument_serializer not None,
         CommandSerializer command_serializer not None,
         EventSerializer event_serializer not None,
         dict config,
@@ -72,10 +77,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             The trader identifier for the database.
         logger : Logger
             The logger for the database.
+        instrument_serializer : InstrumentSerializer
+            The instrument serializer for caching operations.
         command_serializer : CommandSerializer
-            The command serializer for cache transactions.
+            The command serializer for caching operations.
         event_serializer : EventSerializer
-            The event serializer for cache transactions.
+            The event serializer for caching operations.
 
         Raises
         ------
@@ -92,14 +99,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self._key_trader     = f"{_TRADER}-{trader_id.value}"        # noqa
-        self._key_currencies = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
-        self._key_accounts   = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
-        self._key_orders     = f"{self._key_trader}:{_ORDERS}:"      # noqa
-        self._key_positions  = f"{self._key_trader}:{_POSITIONS}:"   # noqa
-        self._key_strategies = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
+        self._key_trader      = f"{_TRADER}-{trader_id.value}"        # noqa
+        self._key_currencies  = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
+        self._key_instruments = f"{self._key_trader}:{_INSTRUMENTS}:" # noqa
+        self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
+        self._key_orders      = f"{self._key_trader}:{_ORDERS}:"      # noqa
+        self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
+        self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
 
         # Serializers
+        self._instrument_serializer = instrument_serializer
         self._command_serializer = command_serializer
         self._event_serializer = event_serializer
 
@@ -143,6 +152,33 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 currencies[currency.code] = currency
 
         return currencies
+
+    cpdef dict load_instruments(self):
+        """
+        Load all instruments from the execution database.
+
+        Returns
+        -------
+        dict[InstrumentId, Instrument]
+
+        """
+        cdef dict instruments = {}
+
+        cdef list instrument_keys = self._redis.keys(f"{self._key_instruments}*")
+        if not instrument_keys:
+            return instruments
+
+        cdef bytes key_bytes
+        cdef InstrumentId instrument_id
+        cdef Instrument instrument
+        for key_bytes in instrument_keys:
+            instrument_id = InstrumentId.from_str_c(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            instrument = self.load_instrument(instrument_id)
+
+            if instrument is not None:
+                instruments[instrument.id] = instrument
+
+        return instruments
 
     cpdef dict load_accounts(self):
         """
@@ -227,7 +263,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef Currency load_currency(self, str code):
         """
-        Load the currency associated with the given currency code (if found)
+        Load the currency associated with the given currency code (if found).
 
         Parameters
         ----------
@@ -251,6 +287,30 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             name=c_map["name"].decode("utf-8"),
             currency_type=CurrencyTypeParser.from_str(c_map["currency_type"].decode("utf-8")),
         )
+
+    cpdef Instrument load_instrument(self, InstrumentId instrument_id):
+        """
+        Load the instrument associated with the given instrument identifier
+        (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier to load.
+
+        Returns
+        -------
+        Instrument or None
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef str key = self._key_instruments + instrument_id.value
+        cdef bytes instrument_bytes = self._redis.get(name=key)
+        if not instrument_bytes:
+            return None
+
+        return self._instrument_serializer.deserialize(instrument_bytes)
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -373,8 +433,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         """
-        Delete the given strategy from the execution cache.
-        Logs error if strategy not found in the cache.
+        Delete the given strategy from the execution database.
+
+        Logs error if strategy not found in the database.
 
         Parameters
         ----------
@@ -390,7 +451,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_currency(self, Currency currency) except *:
         """
-        Add the given currency to the execution cache.
+        Add the given currency to the execution database.
 
         Parameters
         ----------
@@ -415,9 +476,26 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added currency {currency.code}.")
 
+    cpdef void add_instrument(self, Instrument instrument) except *:
+        """
+        Add the given instrument to the execution database.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        cdef str key = self._key_instruments + instrument.id.value
+        self._redis.set(name=key, value=self._instrument_serializer.serialize(instrument))
+
+        self._log.debug(f"Added instrument {instrument.id}.")
+
     cpdef void add_account(self, Account account) except *:
         """
-        Add the given account to the execution cache.
+        Add the given account to the execution database.
 
         Parameters
         ----------
@@ -440,8 +518,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void add_order(self, Order order) except *:
         """
-        Add the given order to the execution cache indexed with the given
-        identifiers.
+        Add the given order to the execution database.
 
         Parameters
         ----------
@@ -481,7 +558,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution cache.
+        Update the given strategy state in the execution database.
 
         Parameters
         ----------
@@ -504,7 +581,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution cache.
+        Update the given account in the execution database.
 
         Parameters
         ----------
@@ -520,7 +597,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_order(self, Order order) except *:
         """
-        Update the given order in the execution cache.
+        Update the given order in the execution database.
 
         Parameters
         ----------
@@ -541,7 +618,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution cache.
+        Update the given position in the execution database.
 
         Parameters
         ----------

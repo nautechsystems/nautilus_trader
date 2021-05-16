@@ -27,7 +27,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import UpdateOrder
@@ -100,7 +100,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = AccountId("SIM", "001")
 
-        exec_db = BypassExecutionDatabase(
+        exec_db = InMemoryExecutionDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
         )
@@ -1896,7 +1896,7 @@ class BitmexExchangeTests(unittest.TestCase):
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = AccountId("BITMEX", "001")
 
-        exec_db = BypassExecutionDatabase(
+        exec_db = InMemoryExecutionDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
         )
@@ -2053,7 +2053,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = AccountId("SIM", "001")
 
-        exec_db = BypassExecutionDatabase(
+        exec_db = InMemoryExecutionDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
         )

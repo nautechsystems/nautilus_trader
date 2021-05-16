@@ -23,7 +23,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
@@ -89,7 +89,7 @@ class TestLiveExecutionEngine:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        self.database = BypassExecutionDatabase(
+        self.database = InMemoryExecutionDatabase(
             trader_id=self.trader_id, logger=self.logger
         )
         self.exec_engine = LiveExecutionEngine(

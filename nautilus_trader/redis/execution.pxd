@@ -16,16 +16,19 @@
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef str _key_trader
     cdef str _key_currencies
+    cdef str _key_instruments
     cdef str _key_accounts
     cdef str _key_orders
     cdef str _key_positions
     cdef str _key_strategies
 
+    cdef InstrumentSerializer _instrument_serializer
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
     cdef object _redis

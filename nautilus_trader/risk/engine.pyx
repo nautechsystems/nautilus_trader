@@ -177,6 +177,7 @@ cdef class RiskEngine(Component):
             return  # Invalid command
 
         # Cache order
+        # *** Do not complete additional risk checks before here ***
         self.cache.add_order(command.order, command.position_id)
 
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
@@ -212,6 +213,7 @@ cdef class RiskEngine(Component):
             return  # Invalid command
 
         # Cache all orders
+        # *** Do not complete additional risk checks before here ***
         self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
         self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
         if command.bracket_order.take_profit is not None:
