@@ -15,9 +15,7 @@
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.identifiers cimport InstrumentId
 
 
 cdef enum SubscriptionStatus:
@@ -29,15 +27,13 @@ cdef enum SubscriptionStatus:
 cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
     cdef object _stream
+    cdef set _subscribed_instruments
     cdef set _subscribed_market_ids
     cdef SubscriptionStatus subscription_status
     cdef BetfairInstrumentProvider _instrument_provider
 
     cpdef BetfairInstrumentProvider instrument_provider(self)
-    cdef inline void _log_betfair_error(self, ex, str method_name) except *
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=*, dict kwargs=*) except *
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=*) except *
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
     cpdef void handle_data(self, Data data) except *
+
+    cdef inline void _log_betfair_error(self, ex, str method_name) except *
     cpdef void _on_market_update(self, bytes raw) except *
