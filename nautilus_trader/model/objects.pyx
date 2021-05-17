@@ -48,7 +48,7 @@ from nautilus_trader.model.currency cimport Currency
 
 cdef class BaseDecimal:
     """
-    The abstract base class for all domain objects.
+    The abstract base class for all domain value objects.
 
     Represents a decimal number with a specified precision.
 
