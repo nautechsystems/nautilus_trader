@@ -65,7 +65,7 @@ class TestOrderPerformance(PerformanceHarness):
             args=(
                 AUDUSD_SIM,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             ),
             iterations=10_000,
             rounds=1,
@@ -78,8 +78,8 @@ class TestOrderPerformance(PerformanceHarness):
             args=(
                 AUDUSD_SIM,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("0.80010"),
+                Quantity.from_int(100000),
+                Price.from_str("0.80010"),
             ),
             iterations=10_000,
             rounds=1,

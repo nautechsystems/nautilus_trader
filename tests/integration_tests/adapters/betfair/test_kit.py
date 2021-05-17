@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import asyncio
 import bz2
 import pathlib
@@ -16,12 +31,12 @@ from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -36,6 +51,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
+from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.stubs import TestStubs
 
 
@@ -111,10 +127,20 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
-        database = BypassExecutionDatabase(trader_id=trader_id, logger=live_logger)
+        database = InMemoryExecutionDatabase(trader_id=trader_id, logger=live_logger)
         return MockLiveExecutionEngine(
             loop=event_loop,
             database=database,
+            portfolio=portfolio,
+            clock=clock,
+            logger=live_logger,
+        )
+
+    @staticmethod
+    def risk_engine(event_loop, clock, live_logger, portfolio, exec_engine):
+        return MockLiveRiskEngine(
+            loop=event_loop,
+            exec_engine=exec_engine,
             portfolio=portfolio,
             clock=clock,
             logger=live_logger,
@@ -443,8 +469,8 @@ class BetfairTestStubs(TestStubs):
         order = strategy.order_factory.limit(
             BetfairTestStubs.instrument_id(),
             OrderSide.BUY,
-            Quantity(10),
-            Price("0.50"),
+            Quantity.from_int(10),
+            Price.from_str("0.50"),
         )
         return order
 
@@ -463,8 +489,8 @@ class BetfairTestStubs(TestStubs):
                 strategy_id=BetfairTestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,
-                quantity=Quantity(10),
-                price=Price(0.33, 5),
+                quantity=Quantity.from_int(10),
+                price=Price(0.33, precision=5),
                 time_in_force=TimeInForce.GTC,
                 expire_time=None,
                 init_id=BetfairTestStubs.uuid(),
@@ -486,7 +512,7 @@ class BetfairTestStubs(TestStubs):
             client_order_id=client_order_id
             or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("001"),
-            quantity=Quantity(50),
+            quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),

@@ -565,6 +565,122 @@ cdef class OrderBook:
             tablefmt="fancy",
         )
 
+    cdef double get_price_for_volume_c(self, bint is_buy, double volume):
+        cdef:
+            Level level
+            list levels = self.asks.levels \
+                if is_buy else self.bids.levels
+            double cumulative_volume = 0.0
+            double target_price = 0.0
+
+        for level in levels:
+            cumulative_volume += level.volume()
+            if cumulative_volume >= volume:
+                target_price = level.price
+                break
+        return target_price
+
+    cdef double get_price_for_quote_volume_c(self, bint is_buy, double quote_volume):
+        cdef:
+            Level level
+            list levels = self.asks.levels \
+                if is_buy else self.bids.levels
+            double cumulative_volume = 0.0
+            double target_price = 0.0
+
+        for level in levels:
+            cumulative_volume += level.volume() * level.price
+            if cumulative_volume >= quote_volume:
+                target_price = level.price
+                break
+        return target_price
+
+    cdef double get_volume_for_price_c(self, bint is_buy, double price):
+        cdef:
+            Ladder book = self.bids if is_buy else self.asks
+            Level top_of_book = book.top()
+            double cumulative_volume = 0.0
+            Level level
+
+        if is_buy and top_of_book.price > price:
+            # Buy price cannot be below best ask price
+            return 0.0
+        elif not is_buy and top_of_book.price < price:
+            # Sell price cannot be above best bid price
+            return 0.0
+
+        if is_buy:
+            for level in self.asks.levels:
+                if level.price > price:
+                    break
+                cumulative_volume += level.volume()
+        else:
+            for level in self.bids.levels:
+                if level.price < price:
+                    break
+                cumulative_volume += level.volume()
+        return cumulative_volume
+
+    cdef double get_quote_volume_for_price_c(self, bint is_buy, double price):
+        cdef:
+            Ladder book = self.bids if is_buy else self.asks
+            Level top_of_book = book.top()
+            double cumulative_quote_volume = 0.0
+            Level level
+
+        if is_buy and top_of_book.price > price:
+            # Buy price cannot be below best ask price
+            return 0.0
+        elif not is_buy and top_of_book.price < price:
+            # Sell price cannot be above best bid price
+            return 0.0
+
+        if is_buy:
+            for level in self.asks.levels:
+                if level.price > price:
+                    break
+                cumulative_quote_volume += level.volume() * level.price
+        else:
+            for level in self.bids.levels:
+                if level.price < price:
+                    break
+                cumulative_quote_volume += level.volume() * level.price
+        return cumulative_quote_volume
+
+    cdef double get_vwap_for_volume_c(self, bint is_buy, double volume):
+        cdef:
+            Level level
+            list levels = self.asks.levels \
+                if is_buy else self.bids.levels
+            double total_cost = 0.0
+            double cumulative_volume = 0.0
+            double target_vwap = 0.0
+
+        for level in levels:
+            cumulative_volume += level.volume()
+            total_cost += level.price * level.volume()
+            if cumulative_volume >= volume:
+                # Subtract exceed volume
+                total_cost -= level.price * level.volume()
+                cumulative_volume -= level.volume()
+                remaining_volume = volume - cumulative_volume
+                total_cost += remaining_volume * level.price
+                cumulative_volume += remaining_volume
+                target_vwap = total_cost / cumulative_volume
+                break
+        return target_vwap
+
+    cpdef double get_price_for_volume(self, bint is_buy, double volume):
+        return self.get_price_for_volume_c(is_buy, volume)
+    cpdef double get_price_for_quote_volume(self, bint is_buy, double quote_volume):
+        return self.get_price_for_quote_volume_c(is_buy, quote_volume)
+    cpdef double get_volume_for_price(self, bint is_buy, double price):
+        return self.get_volume_for_price_c(is_buy, price)
+    cpdef double get_quote_volume_for_price(self, bint is_buy, double price):
+        return self.get_quote_volume_for_price_c(is_buy, price)
+    cpdef double get_vwap_for_volume(self, bint is_buy, double volume):
+        return self.get_vwap_for_volume_c(is_buy, volume)
+
 
 cdef class L3OrderBook(OrderBook):
 

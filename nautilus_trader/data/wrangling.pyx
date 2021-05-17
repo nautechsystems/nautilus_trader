@@ -339,8 +339,8 @@ cdef class TradeTickDataWrangler:
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick(
             instrument_id=self.instrument.id,
-            price=Price(values[0]),
-            size=Quantity(values[1]),
+            price=Price(values[0], self.instrument.price_precision),
+            size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
             match_id=TradeMatchId(values[3]),
             timestamp_ns=secs_to_nanos(timestamp),

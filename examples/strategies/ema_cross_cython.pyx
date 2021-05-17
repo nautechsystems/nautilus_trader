@@ -90,6 +90,7 @@ cdef class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialize in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
@@ -99,6 +100,12 @@ cdef class EMACross(TradingStrategy):
 
     cpdef void on_start(self) except *:
         """Actions to be performed on strategy start."""
+        self.instrument = self.data.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
@@ -202,7 +209,7 @@ cdef class EMACross(TradingStrategy):
         cdef MarketOrder order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
@@ -214,7 +221,7 @@ cdef class EMACross(TradingStrategy):
         cdef MarketOrder order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)

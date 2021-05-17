@@ -57,8 +57,7 @@ cdef str TAKE_PROFIT
 cdef str LAST_QTY
 cdef str LAST_PX
 cdef str QUANTITY
-cdef str COMMISSION_AMOUNT
-cdef str COMMISSION_CURRENCY
+cdef str COMMISSION
 cdef str PRICE
 cdef str TRIGGER
 cdef str CURRENCY
@@ -80,6 +79,8 @@ cdef str BALANCES_FREE
 cdef str BALANCES_LOCKED
 
 cdef str INSTRUMENT
+cdef str ASSET_CLASS
+cdef str ASSET_TYPE
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
 cdef str SETTLEMENT_CURRENCY
@@ -95,6 +96,8 @@ cdef str MIN_QUANTITY
 cdef str MAX_QUANTITY
 cdef str MIN_NOTIONAL
 cdef str MAX_NOTIONAL
+cdef str MIN_PRICE
+cdef str MAX_PRICE
 cdef str MARGIN_INIT
 cdef str MARGIN_MAINT
 cdef str MAKER_FEE

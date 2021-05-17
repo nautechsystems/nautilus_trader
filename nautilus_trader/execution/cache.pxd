@@ -22,6 +22,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -32,6 +33,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef LoggerAdapter _log
     cdef ExecutionDatabase _database
     cdef dict _cached_currencies
+    cdef dict _cached_instruments
     cdef dict _cached_accounts
     cdef dict _cached_orders
     cdef dict _cached_positions
@@ -57,6 +59,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void cache_currencies(self) except *
+    cpdef void cache_instruments(self) except *
     cpdef void cache_accounts(self) except *
     cpdef void cache_orders(self) except *
     cpdef void cache_positions(self) except *
@@ -68,6 +71,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cpdef void clear_index(self) except *
     cpdef void flush_db(self) except *
 
+    cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
@@ -75,6 +79,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
 
     cpdef void add_currency(self, Currency currency) except *
+    cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id) except *
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId client_order_id, StrategyId strategy_id) except *

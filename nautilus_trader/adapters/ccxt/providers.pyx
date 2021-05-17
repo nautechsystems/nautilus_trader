@@ -112,8 +112,15 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             self._currencies[code] = currency
 
     cdef inline int _tick_size_to_precision(self, double tick_size) except *:
-        cdef tick_size_str = f"{tick_size:f}"
-        return len(tick_size_str.partition('.')[2].rstrip('0'))
+        cdef str tick_size_str
+        if f"{tick_size}".find('e') > -1:
+            # Significant decimal points are lost when
+            # converting scientific notation to format string.
+            tick_size_str = f"{tick_size}"
+            return int(tick_size_str.partition('e-')[2])
+        else:
+            tick_size_str = f"{Decimal(tick_size):f}"
+            return len(tick_size_str.partition('.')[2].rstrip('0'))
 
     cdef inline int _get_precision(self, double value, int mode) except *:
         if mode == 2:  # DECIMAL_PLACE
@@ -125,15 +132,18 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):
-        # Precisions
-        cdef dict precisions = values["precision"]
+        cdef:
+            dict precisions
+            str asset_type_str
+            bint is_inverse
+        precisions = values["precision"]
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
             price_precision = precisions.get("price")
             size_precision = precisions.get("amount", 8)
             tick_size = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
         elif self._client.precisionMode == 4:  # TICK_SIZE
             tick_size = Decimal(precisions.get("price"))
-            price_precision = self._tick_size_to_precision(tick_size)
+            price_precision = self._tick_size_to_precision(precisions.get("price"))
             size_precision = precisions.get("amount")
             if size_precision is None:
                 size_precision = 0
@@ -143,7 +153,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                                f"SIGNIFICANT_DIGITS precision which is not "
                                f"currently supported in this version.")
 
-        cdef str asset_type_str = values.get("type")
+        asset_type_str = values.get("type")
         if asset_type_str is not None:
             asset_type = AssetTypeParser.from_str(asset_type_str.upper())
         else:
@@ -171,9 +181,9 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
         lot_size = values["info"].get("lotSize")
         if lot_size is not None and Decimal(lot_size) > 0:
-            lot_size = Quantity(lot_size)
+            lot_size = Quantity(lot_size, precision=size_precision)
         else:
-            lot_size = Quantity(1)
+            lot_size = Quantity(1, precision=size_precision)
 
         max_notional = values["limits"].get("cost").get("max")
         if max_notional is not None:
@@ -203,7 +213,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         else:
             taker_fee = Decimal(taker_fee)
 
-        cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
+        is_inverse = values.get("info", {}).get("isInverse", False)
 
         return Instrument(
             instrument_id=instrument_id,
@@ -224,8 +234,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             min_notional=min_notional,
             max_price=max_price,
             min_price=min_price,
-            margin_init=Decimal(),         # Margin trading not implemented
-            margin_maint=Decimal(),        # Margin trading not implemented
+            margin_init=Decimal(),   # Margin trading not implemented
+            margin_maint=Decimal(),  # Margin trading not implemented
             maker_fee=maker_fee,
             taker_fee=taker_fee,
             timestamp_ns=unix_timestamp_ns(),

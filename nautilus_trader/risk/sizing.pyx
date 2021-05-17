@@ -182,14 +182,14 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.positive_int(units, "units")
 
         if exchange_rate == 0:
-            return Quantity(precision=self.instrument.size_precision)
+            return self.instrument.make_qty(0)
 
         risk_points: Decimal = self._calculate_risk_ticks(entry, stop_loss)
         risk_money: Decimal = self._calculate_riskable_money(equity.as_decimal(), risk, commission_rate)
 
         if risk_points <= 0:
             # Divide by zero protection
-            return Quantity(precision=self.instrument.size_precision)
+            return self.instrument.make_qty(0)
 
         # Calculate position size
         position_size: Decimal = ((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size

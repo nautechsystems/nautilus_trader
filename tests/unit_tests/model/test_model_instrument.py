@@ -13,24 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+from decimal import Decimal
 
-from parameterized import parameterized
+import pytest
 
+from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 
 
-class InstrumentTests(unittest.TestCase):
-    @parameterized.expand(
+class TestInstrument:
+    @pytest.mark.parametrize(
+        "instrument1, instrument2, expected1, expected2",
         [
             [AUDUSD_SIM, AUDUSD_SIM, True, False],
             [AUDUSD_SIM, USDJPY_SIM, False, True],
-        ]
+        ],
     )
     def test_equality(self, instrument1, instrument2, expected1, expected2):
         # Arrange
@@ -39,19 +42,69 @@ class InstrumentTests(unittest.TestCase):
         result2 = instrument1 != instrument2
 
         # Assert
-        self.assertEqual(expected1, result1)
-        self.assertEqual(expected2, result2)
+        assert result1 == expected1
+        assert result2 == expected2
 
     def test_str_repr_returns_expected(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("Instrument('BTC/USDT.BINANCE')", str(BTCUSDT_BINANCE))
-        self.assertEqual("Instrument('BTC/USDT.BINANCE')", repr(BTCUSDT_BINANCE))
+        assert str(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
+        assert repr(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
 
     def test_hash(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(int, type(hash(BTCUSDT_BINANCE)))
-        self.assertEqual(hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE))
+        assert isinstance(hash(BTCUSDT_BINANCE), int)
+        assert hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE)
+
+    @pytest.mark.parametrize(
+        "value, expected_str",
+        [
+            [0, "0.00000"],
+            [1, "1.00000"],
+            [1.23456, "1.23456"],
+            [1.234567, "1.23457"],  # <-- rounds to precision
+            ["0", "0.00000"],
+            ["1.00", "1.00000"],
+            [Decimal(), "0.00000"],
+            [Decimal(1), "1.00000"],
+            [Decimal("0.85"), "0.85000"],
+        ],
+    )
+    def test_make_price_with_various_values_returns_expected(
+        self,
+        value,
+        expected_str,
+    ):
+        # Arrange, Act
+        price = AUDUSD_SIM.make_price(value)
+
+        # Assert
+        assert str(price) == expected_str
+
+    @pytest.mark.parametrize(
+        "value, expected_str",
+        [
+            [0, "0.000000"],
+            [1, "1.000000"],
+            [1.23456, "1.234560"],
+            [1.2345678, "1.234568"],  # <-- rounds to precision
+            ["0", "0.000000"],
+            ["1.00", "1.000000"],
+            [Decimal(), "0.000000"],
+            [Decimal(1), "1.000000"],
+            [Decimal("0.85"), "0.850000"],
+        ],
+    )
+    def test_make_qty_with_various_values_returns_expected(
+        self,
+        value,
+        expected_str,
+    ):
+        # Arrange, Act
+        qty = BTCUSDT_BINANCE.make_qty(value)
+
+        # Assert
+        assert str(qty) == expected_str

@@ -39,3 +39,6 @@ cpdef datetime as_utc_timestamp(datetime dt)
 cpdef object as_utc_index(time_object)
 cpdef str format_iso8601(datetime dt)
 cpdef str format_iso8601_us(datetime dt)
+cpdef int64_t iso8601_to_unix_millis(str iso8601) except *
+cpdef int64_t iso8601_to_unix_micros(str iso8601) except *
+cpdef int64_t iso8601_to_unix_nanos(str iso8601) except *

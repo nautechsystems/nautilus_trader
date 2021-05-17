@@ -65,15 +65,15 @@ cdef class Position:
         # Properties
         self.entry = fill.order_side
         self.side = Position.side_from_order_side(fill.order_side)
-        self.relative_qty = Decimal()  # Initialized in apply()
-        self.quantity = Quantity()     # Initialized in apply()
-        self.peak_qty = Quantity()     # Initialized in apply()
+        self.relative_qty = Decimal()
+        self.quantity = Quantity.zero_c(precision=fill.last_qty.precision)
+        self.peak_qty = Quantity.zero_c(precision=fill.last_qty.precision)
         self.timestamp_ns = fill.execution_ns
         self.opened_timestamp_ns = fill.execution_ns
         self.closed_timestamp_ns = 0
         self.open_duration_ns = 0
         self.avg_px_open = fill.last_px.as_decimal()
-        self.avg_px_close = None      # Can be None
+        self.avg_px_close = None  # Can be None
         self.quote_currency = fill.currency
         self.is_inverse = fill.is_inverse
         self.realized_points = Decimal()
@@ -383,8 +383,8 @@ cdef class Position:
         else:  # event.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
 
-        # Set quantities
-        self.quantity = Quantity(abs(self.relative_qty))
+        # Set quantities  # TODO: Refactor when precision available
+        self.quantity = Quantity.from_str_c(str(abs(self.relative_qty)))
         if self.quantity > self.peak_qty:
             self.peak_qty = self.quantity
 

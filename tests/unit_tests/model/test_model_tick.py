@@ -34,28 +34,28 @@ class QuoteTickTests(unittest.TestCase):
         # These are based on timestamp for tick sorting
         tick1 = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             timestamp_ns=1,
         )
 
         tick2 = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             timestamp_ns=2,
         )
 
         tick3 = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             timestamp_ns=3,
         )
 
@@ -70,10 +70,10 @@ class QuoteTickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -92,10 +92,10 @@ class QuoteTickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -107,10 +107,10 @@ class QuoteTickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -120,18 +120,18 @@ class QuoteTickTests(unittest.TestCase):
         result3 = tick.extract_price(PriceType.BID)
 
         # Assert
-        self.assertEqual(Price("1.00001"), result1)
-        self.assertEqual(Price("1.000005"), result2)
-        self.assertEqual(Price("1.00000"), result3)
+        self.assertEqual(Price.from_str("1.00001"), result1)
+        self.assertEqual(Price.from_str("1.000005"), result2)
+        self.assertEqual(Price.from_str("1.00000"), result3)
 
     def test_extract_volume_with_invalid_price_raises_value_error(self):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -143,10 +143,10 @@ class QuoteTickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(500000),
-            Quantity(800000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(500000),
+            Quantity.from_int(800000),
             0,
         )
 
@@ -156,9 +156,9 @@ class QuoteTickTests(unittest.TestCase):
         result3 = tick.extract_volume(PriceType.BID)
 
         # Assert
-        self.assertEqual(Quantity(800000), result1)
-        self.assertEqual(Quantity(650000), result2)  # Average size
-        self.assertEqual(Quantity(500000), result3)
+        self.assertEqual(Quantity.from_int(800000), result1)
+        self.assertEqual(Quantity.from_int(650000), result2)  # Average size
+        self.assertEqual(Quantity.from_int(500000), result3)
 
     def test_from_serializable_given_malformed_string_raises_value_error(self):
         # Arrange
@@ -175,10 +175,10 @@ class QuoteTickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -194,10 +194,10 @@ class QuoteTickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00001"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
             0,
         )
 
@@ -214,8 +214,8 @@ class TradeTickTests(unittest.TestCase):
         # These are based on timestamp for tick sorting
         tick1 = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(50000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             1000,
@@ -223,8 +223,8 @@ class TradeTickTests(unittest.TestCase):
 
         tick2 = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(50000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             2000,
@@ -232,8 +232,8 @@ class TradeTickTests(unittest.TestCase):
 
         tick3 = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(50000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             3000,
@@ -249,8 +249,8 @@ class TradeTickTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(50000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -282,8 +282,8 @@ class TradeTickTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
@@ -301,8 +301,8 @@ class TradeTickTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00000"),
-            Quantity(10000),
+            Price.from_str("1.00000"),
+            Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,

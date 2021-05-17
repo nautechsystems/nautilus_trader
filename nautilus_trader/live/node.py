@@ -35,7 +35,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
@@ -44,6 +44,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
@@ -99,7 +100,9 @@ class TradingNode:
         config_system = config.get("system", {})
         config_log = config.get("logging", {})
         config_exec_db = config.get("exec_database", {})
-        config_risk = config.get("risk", {})
+        config_data = config.get("data_engine", {})
+        config_risk = config.get("risk_engine", {})
+        config_exec = config.get("exec_engine", {})
         config_strategy = config.get("strategy", {})
 
         # System config
@@ -165,7 +168,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
-            config={"qsize": 10000},
+            config=config_data,
         )
 
         self.portfolio.register_cache(self._data_engine.cache)
@@ -175,6 +178,7 @@ class TradingNode:
             exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
+                instrument_serializer=MsgPackInstrumentSerializer(),
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 config={
@@ -183,7 +187,7 @@ class TradingNode:
                 },
             )
         else:
-            exec_db = BypassExecutionDatabase(
+            exec_db = InMemoryExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
             )
@@ -194,7 +198,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
-            config={"qsize": 10000},
+            config=config_exec,
         )
 
         self._risk_engine = LiveRiskEngine(
@@ -206,8 +210,8 @@ class TradingNode:
             config=config_risk,
         )
 
-        self._exec_engine.load_cache()
         self._exec_engine.register_risk_engine(self._risk_engine)
+        self._exec_engine.load_cache()
 
         self.trader = Trader(
             trader_id=self.trader_id,

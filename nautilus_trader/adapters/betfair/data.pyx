@@ -26,6 +26,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
+from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
@@ -114,7 +115,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
-        self._subscribed_market_ids = set()      # type: set[InstrumentId]
+        self._subscribed_instruments = set()  # type: set[InstrumentId]
+        self._subscribed_market_ids = set()   # type: set[InstrumentId]
 
     cpdef void connect(self) except *:
         """
@@ -219,15 +221,23 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         else:
             super().request(data_type=data_type, correlation_id=correlation_id)
 
-    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe_order_book(
+        self, InstrumentId instrument_id,
+        OrderBookLevel level,
+        int depth=0,
+        dict kwargs=None,
+    ) except *:
         """
         Subscribe to `OrderBook` data for the given instrument identifier.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The Instrument id to subscribe to order books.
+            The order book instrument to subscribe to.
+        level : OrderBookLevel
+            The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -244,8 +254,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             self._log.warning(f"Already subscribed to market_id: {instrument.market_id} [Instrument: {instrument_id.symbol}] <OrderBook> data.")
             return
 
-        # If this is the first subscription request we're receiving, schedule a subscription after a short delay to
-        # allow other strategies to send their subscriptions (every change triggers a full snapshot).
+        # If this is the first subscription request we're receiving, schedule a
+        # subscription after a short delay to allow other strategies to send
+        # their subscriptions (every change triggers a full snapshot).
         self._subscribed_market_ids.add(instrument.market_id)
         if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
             self._loop.create_task(self.delayed_subscribe(delay=5))
@@ -302,7 +313,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cdef inline void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-
 # -- Debugging ---------------------------------------------------------------------------------------
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
@@ -315,7 +325,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void _on_market_update(self, bytes raw) except *:
         cdef dict update = orjson.loads(raw)  # type: dict
-        updates = on_market_update(instrument_provider=self.instrument_provider(), update=update)
+        updates = on_market_update(
+            instrument_provider=self._instrument_provider,
+            update=update,
+        )
         if not updates:
             if update.get('op') == 'connection' or update.get('connectionsAvailable'):
                 return

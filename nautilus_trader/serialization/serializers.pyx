@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
+
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
 
 import msgpack
 
@@ -26,6 +29,10 @@ from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -61,6 +68,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -73,6 +81,7 @@ from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
 
 
@@ -120,9 +129,161 @@ cdef class MsgPackSerializer:
         return msgpack.unpackb(message_bytes)
 
 
+cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
+    """
+    Provides an `Instrument` serializer for the `MessagePack` specification.
+
+    """
+
+    def __init__(self):
+        """
+        Initialize a new instance of the `MsgPackOrderSerializer` class.
+
+        """
+        super().__init__()
+
+        self.instrument_id_cache = ObjectCache(InstrumentId, InstrumentId.from_str_c)
+
+    cpdef bytes serialize(self, Instrument instrument):
+        """
+        Serialize the given instrument to `MessagePack` specification bytes.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to serialize.
+
+        Returns
+        -------
+        bytes
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        cdef str asset_class = AssetClassParser.to_str(instrument.asset_class)
+        cdef str asset_type = AssetTypeParser.to_str(instrument.asset_type)
+
+        cdef dict package = {
+            TYPE: type(instrument).__name__,
+            ID: instrument.id.value,
+            ASSET_CLASS: self.convert_snake_to_camel(asset_class),
+            ASSET_TYPE: self.convert_snake_to_camel(asset_type),
+            BASE_CURRENCY: instrument.base_currency.code if instrument.base_currency is not None else None,
+            QUOTE_CURRENCY: instrument.quote_currency.code,
+            SETTLEMENT_CURRENCY: instrument.settlement_currency.code,
+            IS_INVERSE: instrument.is_inverse,
+            PRICE_PRECISION: instrument.price_precision,
+            SIZE_PRECISION: instrument.size_precision,
+            TICK_SIZE: str(instrument.tick_size),
+            MULTIPLIER: str(instrument.multiplier),
+            LOT_SIZE: str(instrument.lot_size),
+            MAX_QUANTITY: str(instrument.max_quantity) if instrument.max_quantity is not None else None,
+            MIN_QUANTITY: str(instrument.min_quantity) if instrument.min_quantity is not None else None,
+            MAX_NOTIONAL: instrument.max_notional.to_str() if instrument.max_notional is not None else None,
+            MIN_NOTIONAL: instrument.min_notional.to_str() if instrument.min_notional is not None else None,
+            MAX_PRICE: str(instrument.max_price) if instrument.max_price is not None else None,
+            MIN_PRICE: str(instrument.min_price) if instrument.min_price is not None else None,
+            MARGIN_INIT: str(instrument.margin_init),
+            MARGIN_MAINT: str(instrument.margin_maint),
+            MAKER_FEE: str(instrument.maker_fee),
+            TAKER_FEE: str(instrument.taker_fee),
+            TIMESTAMP: instrument.timestamp_ns,
+        }
+
+        return MsgPackSerializer.serialize(package)
+
+    cpdef Instrument deserialize(self, bytes instrument_bytes):
+        """
+        Deserialize the given `MessagePack` specification bytes to an instrument.
+
+        Parameters
+        ----------
+        instrument_bytes : bytes
+            The instrument bytes to deserialize.
+
+        Returns
+        -------
+        Instrument
+
+        Raises
+        ------
+        ValueError
+            If instrument_bytes is empty.
+
+        """
+        Condition.not_empty(instrument_bytes, "instrument_bytes")
+
+        cdef dict unpacked = MsgPackSerializer.deserialize(instrument_bytes)
+
+        cdef str instrument_type = unpacked[TYPE]
+        cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[ID])
+        cdef AssetClass asset_class = AssetClassParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_CLASS]))
+        cdef AssetType asset_type = AssetTypeParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_TYPE]))
+
+        cdef str base_currency_str = unpacked.get(BASE_CURRENCY)
+        cdef Currency base_currency = Currency.from_str_c(base_currency_str) if base_currency_str is not None else None
+
+        cdef Currency quote_currency = Currency.from_str_c(unpacked[QUOTE_CURRENCY])
+        cdef Currency settlement_currency = Currency.from_str_c(unpacked[SETTLEMENT_CURRENCY])
+        cdef bint is_inverse = unpacked[IS_INVERSE]
+        cdef uint8_t price_precision = unpacked[PRICE_PRECISION]
+        cdef uint8_t size_precision = unpacked[SIZE_PRECISION]
+        cdef object tick_size = decimal.Decimal(unpacked[TICK_SIZE])
+        cdef object multiplier = decimal.Decimal(unpacked[MULTIPLIER])
+        cdef Quantity lot_size = Quantity.from_str_c(unpacked[LOT_SIZE])
+
+        # Parse limits
+        cdef str max_quantity_str = unpacked.get(MAX_QUANTITY)
+        cdef str min_quantity_str = unpacked.get(MIN_QUANTITY)
+        cdef str max_notional_str = unpacked.get(MAX_NOTIONAL)
+        cdef str min_notional_str = unpacked.get(MIN_NOTIONAL)
+        cdef str max_price_str = unpacked.get(MAX_PRICE)
+        cdef str min_price_str = unpacked.get(MIN_PRICE)
+        cdef Quantity max_quantity = Quantity.from_str_c(max_quantity_str) if max_quantity_str is not None else None
+        cdef Quantity min_quantity = Quantity.from_str_c(min_quantity_str) if min_quantity_str is not None else None
+        cdef Money max_notional = Money.from_str_c(max_notional_str.replace(',', '')) if max_notional_str is not None else None
+        cdef Money min_notional = Money.from_str_c(min_notional_str.replace(',', '')) if min_notional_str is not None else None
+        cdef Price max_price = Price.from_str_c(max_price_str) if max_price_str is not None else None
+        cdef Price min_price = Price.from_str_c(min_price_str) if min_price_str is not None else None
+
+        cdef object margin_init = decimal.Decimal(unpacked[MARGIN_INIT])
+        cdef object margin_maint = decimal.Decimal(unpacked[MARGIN_MAINT])
+        cdef object maker_fee = decimal.Decimal(unpacked[MAKER_FEE])
+        cdef object taker_fee = decimal.Decimal(unpacked[TAKER_FEE])
+        cdef int64_t timestamp_ns = unpacked[TIMESTAMP]
+
+        if instrument_type == Instrument.__name__:
+            return Instrument(
+                instrument_id=instrument_id,
+                asset_class=asset_class,
+                asset_type=asset_type,
+                base_currency=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=settlement_currency,
+                is_inverse=is_inverse,
+                price_precision=price_precision,
+                size_precision=size_precision,
+                tick_size=tick_size,
+                multiplier=multiplier,
+                lot_size=lot_size,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=max_notional,
+                min_notional=min_notional,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=margin_init,
+                margin_maint=margin_maint,
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
+                timestamp_ns=timestamp_ns,
+            )
+
+        raise ValueError(f"Invalid instrument type: was {instrument_type}")
+
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
-    Provides a `Command` serializer for the `MessagePack` specification.
+    Provides an `Order` serializer for the `MessagePack` specification.
 
     """
 
@@ -213,7 +374,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[INSTRUMENT_ID])
         cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
         cdef OrderType order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
-        cdef Quantity quantity = Quantity(unpacked[QUANTITY])
+        cdef Quantity quantity = Quantity.from_str_c(unpacked[QUANTITY])
         cdef TimeInForce time_in_force = TimeInForceParser.from_str(unpacked[TIME_IN_FORCE])
         cdef UUID init_id = UUID.from_str_c(unpacked[INIT_ID])
         cdef int64_t timestamp_ns = unpacked[TIMESTAMP]
@@ -237,7 +398,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 instrument_id=instrument_id,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE]),
+                price=Price.from_str_c(unpacked[PRICE]),
                 time_in_force=time_in_force,
                 expire_time=maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME)),
                 init_id=init_id,
@@ -254,7 +415,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 instrument_id=instrument_id,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE]),
+                price=Price.from_str_c(unpacked[PRICE]),
                 time_in_force=time_in_force,
                 expire_time=maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME)),
                 init_id=init_id,
@@ -269,8 +430,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 instrument_id=instrument_id,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE]),
-                trigger=Price(unpacked[TRIGGER]),
+                price=Price.from_str_c(unpacked[PRICE]),
+                trigger=Price.from_str_c(unpacked[TRIGGER]),
                 time_in_force=time_in_force,
                 expire_time=maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME)),
                 init_id=init_id,
@@ -422,8 +583,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 VenueOrderId(unpacked[VENUE_ORDER_ID]),
-                Quantity(unpacked[QUANTITY]),
-                Price(unpacked[PRICE]),
+                Quantity.from_str_c(unpacked[QUANTITY]),
+                Price.from_str_c(unpacked[PRICE]),
                 command_id,
                 timestamp_ns,
             )
@@ -595,8 +756,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LAST_PX] = str(event.last_px)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
-            package[COMMISSION_AMOUNT] = str(event.commission)
-            package[COMMISSION_CURRENCY] = event.commission.currency.code
+            package[COMMISSION] = event.commission.to_str().replace(',', '')
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_str(event.liquidity_side)
             package[EXECUTION_TIMESTAMP] = event.execution_ns
         else:
@@ -672,7 +832,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 order_type,
-                Quantity(unpacked[QUANTITY]),
+                Quantity.from_str_c(unpacked[QUANTITY]),
                 TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
                 event_id,
                 timestamp_ns,
@@ -763,8 +923,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 VenueOrderId(unpacked[VENUE_ORDER_ID]),
-                Quantity(unpacked[QUANTITY]),
-                Price(unpacked[PRICE]),
+                Quantity.from_str_c(unpacked[QUANTITY]),
+                Price.from_str_c(unpacked[PRICE]),
                 unpacked[UPDATED_TIMESTAMP],
                 event_id,
                 timestamp_ns,
@@ -797,7 +957,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 timestamp_ns,
             )
         elif event_type == OrderFilled.__name__:
-            commission_currency = Currency.from_str_c(unpacked[COMMISSION_CURRENCY])
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
@@ -807,11 +966,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                Quantity(unpacked[LAST_QTY]),
-                Price(unpacked[LAST_PX]),
+                Quantity.from_str_c(unpacked[LAST_QTY]),
+                Price.from_str_c(unpacked[LAST_PX]),
                 Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
-                Money(unpacked[COMMISSION_AMOUNT], commission_currency),
+                Money.from_str_c(unpacked[COMMISSION]),
                 LiquiditySideParser.from_str(unpacked[LIQUIDITY_SIDE]),
                 unpacked[EXECUTION_TIMESTAMP],
                 event_id,

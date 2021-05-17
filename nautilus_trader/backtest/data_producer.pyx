@@ -547,18 +547,18 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef inline QuoteTick _generate_quote_tick(self, int index):
         return QuoteTick(
             instrument_id=self._instrument_index[self._quote_instruments[index]],
-            bid=Price(self._quote_bids[index]),
-            ask=Price(self._quote_asks[index]),
-            bid_size=Quantity(self._quote_bid_sizes[index]),
-            ask_size=Quantity(self._quote_ask_sizes[index]),
+            bid=Price.from_str_c(self._quote_bids[index]),
+            ask=Price.from_str_c(self._quote_asks[index]),
+            bid_size=Quantity.from_str_c(self._quote_bid_sizes[index]),
+            ask_size=Quantity.from_str_c(self._quote_ask_sizes[index]),
             timestamp_ns=self._quote_timestamps[index],
         )
 
     cdef inline TradeTick _generate_trade_tick(self, int index):
         return TradeTick(
             instrument_id=self._instrument_index[self._trade_instruments[index]],
-            price=Price(self._trade_prices[index]),
-            size=Quantity(self._trade_sizes[index]),
+            price=Price.from_str_c(self._trade_prices[index]),
+            size=Quantity.from_str_c(self._trade_sizes[index]),
             aggressor_side=AggressorSideParser.from_str(self._trade_sides[index]),
             match_id=TradeMatchId(self._trade_match_ids[index]),
             timestamp_ns=self._trade_timestamps[index],

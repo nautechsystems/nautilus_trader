@@ -24,10 +24,10 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
-from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.enums import InstrumentCloseType
+from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import InstrumentId
@@ -324,6 +324,6 @@ def test_duplicate_trades(betfair_data_client):
     trades = [
         m
         for m in messages
-        if isinstance(m, TradeTick) and m.price == Price("0.69930", 5)
+        if isinstance(m, TradeTick) and m.price == Price.from_str("0.69930")
     ]
     assert len(trades) == 5

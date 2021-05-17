@@ -127,7 +127,9 @@ class TestBacktestEngineData:
                 level=OrderBookLevel.L2,
                 delta_type=OrderBookDeltaType.ADD,
                 order=Order(
-                    price=Price("13.0"), volume=Quantity("40"), side=OrderSide.SELL
+                    price=Price.from_str("13.0"),
+                    volume=Quantity.from_str("40"),
+                    side=OrderSide.SELL,
                 ),
                 timestamp_ns=0,
             ),
@@ -136,7 +138,9 @@ class TestBacktestEngineData:
                 level=OrderBookLevel.L2,
                 delta_type=OrderBookDeltaType.ADD,
                 order=Order(
-                    price=Price("12.0"), volume=Quantity("30"), side=OrderSide.SELL
+                    price=Price.from_str("12.0"),
+                    volume=Quantity.from_str("30"),
+                    side=OrderSide.SELL,
                 ),
                 timestamp_ns=0,
             ),
@@ -145,7 +149,9 @@ class TestBacktestEngineData:
                 level=OrderBookLevel.L2,
                 delta_type=OrderBookDeltaType.ADD,
                 order=Order(
-                    price=Price("11.0"), volume=Quantity("20"), side=OrderSide.SELL
+                    price=Price.from_str("11.0"),
+                    volume=Quantity.from_str("20"),
+                    side=OrderSide.SELL,
                 ),
                 timestamp_ns=0,
             ),
@@ -154,7 +160,9 @@ class TestBacktestEngineData:
                 level=OrderBookLevel.L2,
                 delta_type=OrderBookDeltaType.ADD,
                 order=Order(
-                    price=Price("10.0"), volume=Quantity("20"), side=OrderSide.BUY
+                    price=Price.from_str("10.0"),
+                    volume=Quantity.from_str("20"),
+                    side=OrderSide.BUY,
                 ),
                 timestamp_ns=0,
             ),
@@ -163,7 +171,9 @@ class TestBacktestEngineData:
                 level=OrderBookLevel.L2,
                 delta_type=OrderBookDeltaType.ADD,
                 order=Order(
-                    price=Price("9.0"), volume=Quantity("30"), side=OrderSide.BUY
+                    price=Price.from_str("9.0"),
+                    volume=Quantity.from_str("30"),
+                    side=OrderSide.BUY,
                 ),
                 timestamp_ns=0,
             ),
@@ -172,7 +182,9 @@ class TestBacktestEngineData:
                 level=OrderBookLevel.L2,
                 delta_type=OrderBookDeltaType.ADD,
                 order=Order(
-                    price=Price("0.0"), volume=Quantity("40"), side=OrderSide.BUY
+                    price=Price.from_str("0.0"),
+                    volume=Quantity.from_str("40"),
+                    side=OrderSide.BUY,
                 ),
                 timestamp_ns=0,
             ),
