@@ -178,9 +178,10 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
-      # Install / Build
+      # Install / Build (No need to copy built *.so files back into the source tree)
       - name: Install / Build
         run: |
+          export SKIP_BUILD_COPY=true
           poetry install
           poetry build --format sdist
 
