@@ -181,6 +181,7 @@ jobs:
       # Install / Build
       - name: Install / Build
         run: |
+          export SKIP_BUILD_COPY=true
           poetry install
           poetry build --format sdist
 
