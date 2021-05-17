@@ -111,8 +111,8 @@ class ReportProviderTests(unittest.TestCase):
         order1 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(1500000),
-            Price("0.80010"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80010"),
         )
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -121,8 +121,8 @@ class ReportProviderTests(unittest.TestCase):
         order2 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(1500000),
-            Price("0.80000"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80000"),
         )
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -132,7 +132,7 @@ class ReportProviderTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("0.80011"),
+            last_px=Price.from_str("0.80011"),
         )
 
         order1.apply(event)
@@ -161,8 +161,8 @@ class ReportProviderTests(unittest.TestCase):
         order1 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(1500000),
-            Price("0.80010"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80010"),
         )
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -171,8 +171,8 @@ class ReportProviderTests(unittest.TestCase):
         order2 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(1500000),
-            Price("0.80000"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80000"),
         )
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -183,7 +183,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
-            last_px=Price("0.80011"),
+            last_px=Price.from_str("0.80011"),
         )
 
         order1.apply(filled)
@@ -211,13 +211,13 @@ class ReportProviderTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
@@ -225,7 +225,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00010"),
+            last_px=Price.from_str("1.00010"),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -233,7 +233,7 @@ class ReportProviderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123457"),
             strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00010"),
+            last_px=Price.from_str("1.00010"),
         )
 
         position1 = Position(fill=fill1)

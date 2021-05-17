@@ -23,9 +23,6 @@ import pytest
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.currencies import AUD
-
-# from nautilus_trader.model.events import OrderCanceled
-# from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
@@ -113,7 +110,9 @@ async def test_post_order_submit_error(execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_update_order(mocker, execution_client, exec_engine):
+async def test_update_order(mocker, execution_client, exec_engine, risk_engine):
+    exec_engine.register_risk_engine(risk_engine)
+
     # Add sample order to the cache
     order = BetfairTestStubs.make_order(exec_engine)
     order.apply(BetfairTestStubs.event_order_submitted(order=order))
@@ -144,7 +143,9 @@ async def test_update_order(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_post_order_update_success(execution_client, exec_engine):
+async def test_post_order_update_success(execution_client, exec_engine, risk_engine):
+    exec_engine.register_risk_engine(risk_engine)
+
     # Add fake order to cache
     order = BetfairTestStubs.make_order(exec_engine)
     order.apply(BetfairTestStubs.event_order_submitted(order=order))
@@ -162,7 +163,7 @@ async def test_post_order_update_success(execution_client, exec_engine):
     await asyncio.sleep(0)
     event = exec_engine.events[0]
     assert isinstance(event, OrderUpdated)
-    assert event.price == Price("0.47619")
+    assert event.price == Price.from_str("0.47619")
 
 
 @pytest.mark.asyncio

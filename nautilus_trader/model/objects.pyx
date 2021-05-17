@@ -14,14 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines domain value objects.
+Defines fundamental value objects for the trading domain.
 
 The `BaseDecimal` class is intended to be used as the base class for fundamental
-domain model value types. The specification of precision is more straight
-forward than providing a decimal.Context. Also this type is able to be used as
-an operand for mathematical operations with `float` objects.
+domain model value types. The specification of precision is more explicit and
+straight forward than providing a decimal.Context. The `BaseDecimal` type and its
+subclasses are also able to be used as operands for mathematical operations with
+`float` objects. Return values are floats if one of the operands is a float, else
+a decimal.Decimal.
 
-The fundamental value objects for the trading domain are defined here.
 
 References
 ----------
@@ -38,81 +39,47 @@ from cpython.object cimport Py_GT
 from cpython.object cimport Py_LE
 from cpython.object cimport Py_LT
 from cpython.object cimport Py_NE
+from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport precision_from_str
 from nautilus_trader.model.currency cimport Currency
-
-
-cdef str ROUND_HALF_EVEN = decimal.ROUND_HALF_EVEN
 
 
 cdef class BaseDecimal:
     """
-    The abstract base class for all domain objects.
+    The abstract base class for all domain value objects.
 
     Represents a decimal number with a specified precision.
 
     This class should not be used directly, but through its concrete subclasses.
     """
 
-    def __init__(
-        self,
-        value=0,
-        precision=None,
-        str rounding not None=decimal.ROUND_HALF_EVEN,
-    ):
+    def __init__(self, value, uint8_t precision):
         """
         Initialize a new instance of the `BaseDecimal` class.
 
+        Use a precision of 0 for whole numbers (no fractional units).
+
         Parameters
         ----------
-        value : integer, float, string, Decimal or BaseDecimal
-            The value of the decimal. If value is a float, then a precision must
-            be specified.
-        precision : int, optional
-            The precision for the decimal. If a precision is specified then the
-            value will be rounded to the precision. Else the precision will be
-            inferred from the given value.
-        rounding : str, optional
-            The rounding mode to apply to the decimal. Must be a constant from
-            the decimal module. Only applicable if precision is specified.
+        value : integer, float, string or Decimal
+            The value of the decimal.
+        precision : uint8
+            The precision for the decimal.
 
         Raises
         ------
-        TypeError
-            If value is a float and precision is not specified.
-        ValueError
+        OverflowError
             If precision is negative (< 0).
-        TypeError
-            If rounding is invalid.
 
         """
-        Condition.not_none(value, "value")
-
-        if precision is None:  # Infer precision
-            if isinstance(value, float):
-                raise TypeError("precision cannot be inferred from a float, "
-                                "please specify a precision when passing a float")
-            elif isinstance(value, BaseDecimal):
-                self._value = value.as_decimal()
-            else:
-                self._value = decimal.Decimal(value)
+        if isinstance(value, decimal.Decimal):
+            self._value = round(value, precision)
         else:
-            Condition.not_negative_int(precision, "precision")
+            self._value = decimal.Decimal(f'{float(value):.{precision}f}')
 
-            if rounding == ROUND_HALF_EVEN:
-                if not isinstance(value, float):
-                    value = float(value)
-                self._value = self._make_decimal(value, precision)
-            else:
-                self._value = self._make_decimal_with_rounding(value, precision, rounding)
-
-    cdef inline object _make_decimal_with_rounding(self, value, int precision, str rounding):
-        exponent = decimal.Decimal(f"{1.0 / 10 ** precision:.{precision}f}")
-        return decimal.Decimal(value).quantize(exp=exponent, rounding=rounding)
-
-    cdef inline object _make_decimal(self, double value, int precision):
-        return decimal.Decimal(f'{value:.{precision}f}')
+        self.precision = precision
 
     def __eq__(self, other) -> bool:
         return BaseDecimal._compare(self, other, Py_EQ)
@@ -246,21 +213,6 @@ cdef class BaseDecimal:
 
         return PyObject_RichCompareBool(a, b, op)
 
-    @property
-    def precision(self):
-        """
-        The precision of the value.
-
-        Returns
-        -------
-        int
-
-        """
-        return self.precision_c()
-
-    cdef inline int precision_c(self) except *:
-        return abs(self._value.as_tuple().exponent)
-
     cpdef object as_decimal(self):
         """
         Return the value as a built-in `Decimal`.
@@ -299,44 +251,112 @@ cdef class Quantity(BaseDecimal):
 
     """
 
-    def __init__(
-        self,
-        value=0,
-        precision=None,
-        str rounding not None=decimal.ROUND_HALF_EVEN,
-    ):
+    def __init__(self, value, uint8_t precision):
         """
         Initialize a new instance of the `Quantity` class.
 
+        Use a precision of 0 for whole numbers (no fractional units).
+
         Parameters
         ----------
-        value : integer, float, string, Decimal or BaseDecimal
-            The value of the quantity. If value is a float, then a precision must
-            be specified.
-        precision : int, optional
-            The precision for the quantity. If a precision is specified then the
-            value will be rounded to the precision. Else the precision will be
-            inferred from the given value.
-        rounding : str, optional
-            The rounding mode to apply. Must be a constant from the decimal
-            module. Only applicable if precision is specified.
+        value : integer, float, string, Decimal
+            The value of the quantity.
+        precision : uint8
+            The precision for the quantity.
 
         Raises
         ------
-        TypeError
-            If value is a float and precision is not specified.
         ValueError
             If value is negative (< 0).
-        ValueError
+        OverflowError
             If precision is negative (< 0).
-        TypeError
-            If rounding is invalid.
 
         """
-        super().__init__(value, precision, rounding)
+        super().__init__(value, precision)
 
         # Post-condition
         Condition.true(self._value >= 0, f"quantity negative, was {self._value}")
+
+    @staticmethod
+    cdef Quantity zero_c(uint8_t precision):
+        return Quantity(0, precision)
+
+    @staticmethod
+    cdef Quantity from_str_c(str value):
+        return Quantity(value, precision=precision_from_str(value))
+
+    @staticmethod
+    cdef Quantity from_int_c(int value):
+        return Quantity(value, precision=0)
+
+    @staticmethod
+    def zero(uint8_t precision=0) -> Quantity:
+        """
+        Return a quantity with a value of zero.
+
+        precision : uint8, optional
+            The precision for the quantity.
+
+        Returns
+        -------
+        Quantity
+
+        Raises
+        ------
+        OverflowError
+            If precision is negative (< 0).
+
+        Warnings
+        --------
+        The default precision is zero.
+
+        """
+        return Quantity.zero_c(precision)
+
+    @staticmethod
+    def from_str(str value) -> Quantity:
+        """
+        Return a quantity parsed from the given string.
+
+        Parameters
+        ----------
+        value : str
+            The value to parse.
+
+        Returns
+        -------
+        Quantity
+
+        Warning
+        -------
+        The decimal precision will be inferred from the number of digits
+        following the '.' point (if no point then precision zero).
+
+        """
+        Condition.not_none(value, "value")
+
+        return Quantity.from_str_c(value)
+
+    @staticmethod
+    def from_int(int value) -> Quantity:
+        """
+        Return a quantity from the given integer value.
+
+        A precision of zero will be inferred.
+
+        Parameters
+        ----------
+        value : int
+            The value for the quantity.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        Condition.not_none(value, "value")
+
+        return Quantity.from_int_c(value)
 
     cpdef str to_str(self):
         """
@@ -347,7 +367,7 @@ cdef class Quantity(BaseDecimal):
         str
 
         """
-        return f"{self._value:,}"
+        return f"{self.as_decimal():,}"
 
 
 cdef class Price(BaseDecimal):
@@ -364,37 +384,74 @@ cdef class Price(BaseDecimal):
 
     """
 
-    def __init__(
-        self,
-        value=0,
-        precision=None,
-        str rounding not None=decimal.ROUND_HALF_EVEN,
-    ):
+    def __init__(self, value, uint8_t precision):
         """
         Initialize a new instance of the `Price` class.
 
+        Use a precision of 0 for whole numbers (no fractional units).
+
         Parameters
         ----------
-        value : integer, float, string, Decimal or BaseDecimal
-            The value of the price. If value is a float, then a precision must
-            be specified.
-        precision : int, optional
-            The precision for the price. If a precision is specified then the
-            value will be rounded to the precision. Else the precision will be
-            inferred from the given value.
-        rounding : str, optional
-            The rounding mode to apply. Must be a constant from the decimal
-            module. Only applicable if precision is specified.
+        value : integer, float, string or Decimal
+            The value of the price.
+        precision : uint8
+            The precision for the price.
 
         Raises
         ------
-        ValueError
+        OverflowError
             If precision is negative (< 0).
-        TypeError
-            If rounding is invalid.
 
         """
-        super().__init__(value, precision, rounding)
+        super().__init__(value, precision)
+
+    @staticmethod
+    cdef Price from_str_c(str value):
+        return Price(value, precision=precision_from_str(value))
+
+    @staticmethod
+    cdef Price from_int_c(int value):
+        return Price(value, precision=0)
+
+    @staticmethod
+    def from_str(str value) -> Price:
+        """
+        Return a price parsed from the given string.
+
+        Parameters
+        ----------
+        value : str
+            The value to parse.
+
+        Returns
+        -------
+        Price
+
+        """
+        Condition.not_none(value, "value")
+
+        return Price.from_str_c(value)
+
+    @staticmethod
+    def from_int(int value) -> Price:
+        """
+        Return a price from the given integer value.
+
+        A precision of zero will be inferred.
+
+        Parameters
+        ----------
+        value : int
+            The value for the price.
+
+        Returns
+        -------
+        Price
+
+        """
+        Condition.not_none(value, "value")
+
+        return Price.from_int_c(value)
 
 
 cdef class Money(BaseDecimal):
@@ -402,34 +459,21 @@ cdef class Money(BaseDecimal):
     Represents an amount of money including currency type.
     """
 
-    def __init__(
-        self,
-        value,
-        Currency currency not None,
-        str rounding not None=decimal.ROUND_HALF_EVEN,
-    ):
+    def __init__(self, value, Currency currency not None):
         """
         Initialize a new instance of the `Money` class.
 
         Parameters
         ----------
-        value : integer, float, string, Decimal or BaseDecimal
-            The value of the money.
+        value : integer, float, string or Decimal
+            The amount of money in the currency denomination.
         currency : Currency
             The currency of the money.
-        rounding : str, optional
-            The rounding mode to apply. Must be a constant from the decimal
-            module.
-
-        Raises
-        ------
-        TypeError
-            If rounding is invalid.
 
         """
         if value is None:
             value = 0
-        super().__init__(value, currency.precision, rounding)
+        super().__init__(value, currency.precision)
 
         self.currency = currency
 
@@ -456,6 +500,49 @@ cdef class Money(BaseDecimal):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self._value}', {self.currency})"
+
+    @staticmethod
+    cdef Money from_str_c(str value):
+        cdef tuple pieces = value.partition(' ')
+
+        if len(pieces) != 3:
+            raise ValueError(f"The `Money` string value was malformed, was {value}")
+
+        return Money(pieces[0], Currency.from_str_c(pieces[2]))
+
+    @staticmethod
+    def from_str(str value) -> Quantity:
+        """
+        Return money parsed from the given string.
+
+        Must be correctly formatted with a value and currency separated by a
+        whitespace delimiter.
+
+        Example: "1000000.00 USD".
+
+        Parameters
+        ----------
+        value : str
+            The value to parse.
+
+        Returns
+        -------
+        Money
+
+        Raises
+        ------
+        ValueError
+            If the value is malformed.
+
+        """
+        Condition.not_none(value, "value")
+
+        cdef tuple pieces = value.partition(' ')
+
+        if len(pieces) != 3:
+            raise ValueError(f"The `Money` string value was malformed, was {value}")
+
+        return Money.from_str_c(value)
 
     cpdef str to_str(self):
         """

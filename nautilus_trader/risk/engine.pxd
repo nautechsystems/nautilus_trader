@@ -16,32 +16,34 @@
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class RiskEngine(Component):
-    cdef dict _clients
     cdef Portfolio _portfolio
     cdef ExecutionEngine _exec_engine
 
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
+    cdef readonly ExecutionCache cache
+    """The engines execution cache.\n\n:returns: `ExecutionCache`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
     cdef readonly bint block_all_orders
     """If all orders are blocked from being sent.\n\n:returns: `bool`"""
-
-# -- REGISTRATION ----------------------------------------------------------------------------------
-
-    cpdef void register_client(self, ExecutionClient client) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -57,10 +59,12 @@ cdef class RiskEngine(Component):
 
     cdef inline void _execute_command(self, Command command) except *
     cdef inline void _handle_trading_command(self, TradingCommand command) except *
-    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
-    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
-    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
-    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
+    cdef inline void _handle_submit_order(self, SubmitOrder command) except *
+    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cdef inline void _handle_update_order(self, UpdateOrder command) except *
+    cdef inline void _handle_cancel_order(self, CancelOrder command) except *
+    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
+    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

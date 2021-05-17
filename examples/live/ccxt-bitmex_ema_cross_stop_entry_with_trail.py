@@ -43,7 +43,7 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
-        "loop_debug": False,  # The event loop debug mode
+        "loop_debug": False,  # If event loop debug mode
         "connection_timeout": 5.0,  # Timeout for successful connections for all engine clients
         "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
@@ -56,7 +56,9 @@ config = {
         "host": "localhost",
         "port": 6379,
     },
-    "risk": {},
+    "data_engine": {},
+    "risk_engine": {},
+    "exec_engine": {},
     "strategy": {
         "load_state": True,  # Strategy state is loaded from the database on start
         "save_state": True,  # Strategy state is saved to the database on shutdown

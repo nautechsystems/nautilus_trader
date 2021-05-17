@@ -63,6 +63,8 @@ cdef class LiveDataEngine(DataEngine):
         """
         if config is None:
             config = {}
+        if "qsize" not in config:
+            config["qsize"] = 10000
         super().__init__(
             portfolio,
             clock,
@@ -71,8 +73,8 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
-        self._data_queue = Queue(maxsize=config.get("qsize", 10000))
-        self._message_queue = Queue(maxsize=config.get("qsize", 10000))
+        self._data_queue = Queue(maxsize=config.get("qsize"))
+        self._message_queue = Queue(maxsize=config.get("qsize"))
 
         self._run_queues_task = None
         self.is_running = False

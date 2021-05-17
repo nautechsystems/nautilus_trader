@@ -61,7 +61,7 @@ class TestSerializationBase:
         order = order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity(100000, precision=0),
         )
 
         serializer = OrderSerializer()

@@ -48,7 +48,6 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
@@ -83,6 +82,7 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.risk.engine cimport RiskEngine
 
 
 # Events for WRN log level
@@ -130,7 +130,7 @@ cdef class TradingStrategy(Component):
         )
 
         self._data_engine = None  # Initialized when registered with the data engine
-        self._exec_engine = None  # Initialized when registered with the execution engine
+        self._risk_engine = None  # Initialized when registered with the execution engine
 
         # Identifiers
         self.trader_id = None     # Initialized when registered with a trader
@@ -148,8 +148,8 @@ cdef class TradingStrategy(Component):
         self.log = self._log
 
         self.data = None           # Initialized when registered with the data engine
-        self.execution = None      # Initialized when registered with the execution engine
-        self.portfolio = None      # Initialized when registered with the execution engine
+        self.execution = None      # Initialized when registered with the risk engine
+        self.portfolio = None      # Initialized when registered with the risk engine
         self.order_factory = None  # Initialized when registered with a trader
 
     def __eq__(self, TradingStrategy other) -> bool:
@@ -509,14 +509,14 @@ cdef class TradingStrategy(Component):
         self._data_engine = engine
         self.data = engine.cache
 
-    cpdef void register_execution_engine(self, ExecutionEngine engine) except *:
+    cpdef void register_risk_engine(self, RiskEngine engine) except *:
         """
-        Register the strategy with the given execution engine.
+        Register the strategy with the given risk engine.
 
         Parameters
         ----------
-        engine : ExecutionEngine
-            The execution engine to register.
+        engine : RiskEngine
+            The risk engine to register.
 
         Warnings
         --------
@@ -525,7 +525,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(engine, "engine")
 
-        self._exec_engine = engine
+        self._risk_engine = engine
         self.execution = engine.cache
 
     cpdef void register_portfolio(self, Portfolio portfolio) except *:
@@ -1326,7 +1326,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._exec_engine, "self._exec_engine")
+        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         if position_id is None:
             # Null object pattern
@@ -1366,7 +1366,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._exec_engine, "self._exec_engine")
+        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         cdef AccountId account_id = self.execution.account_id(bracket_order.entry.instrument_id.venue)
         if account_id is None:
@@ -1428,7 +1428,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._exec_engine, "self._exec_engine")
+        Condition.not_none(self._risk_engine, "self._risk_engine")
         if trigger is not None:
             Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
 
@@ -1494,7 +1494,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._exec_engine, "self._exec_engine")
+        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         if order.account_id is None:
             self.log.error(f"Cannot cancel order (no account assigned to order yet), {order}.")
@@ -1531,7 +1531,7 @@ cdef class TradingStrategy(Component):
 
         """
         # instrument_id can be None
-        Condition.not_none(self._exec_engine, "self._exec_engine")
+        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         cdef list working_orders = self.execution.orders_working(instrument_id, self.id)
 
@@ -1562,7 +1562,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(position, "position")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self.order_factory, "self.order_factory")
-        Condition.not_none(self._exec_engine, "self._exec_engine")
+        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         if position.is_closed_c():
             self.log.warning(
@@ -1606,7 +1606,7 @@ cdef class TradingStrategy(Component):
 
         """
         # instrument_id can be None
-        Condition.not_none(self._exec_engine, "self._exec_engine")
+        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         cdef list positions_open = self.execution.positions_open(instrument_id, self.id)
 
@@ -1973,4 +1973,4 @@ cdef class TradingStrategy(Component):
     cdef inline void _send_exec_cmd(self, TradingCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute(command)
+        self._risk_engine.execute(command)

@@ -26,8 +26,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -93,10 +91,10 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialize in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
-        self.instrument = None  # Initialize in on_start
         self.tick_size = None  # Initialize in on_start
 
         # Create the indicators for the strategy
@@ -215,7 +213,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
@@ -227,7 +225,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
@@ -246,8 +244,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            price=Price(price),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             reduce_only=True,
         )
 
@@ -262,8 +260,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             reduce_only=True,
         )
 

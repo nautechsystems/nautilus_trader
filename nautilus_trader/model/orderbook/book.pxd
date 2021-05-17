@@ -71,6 +71,17 @@ cdef class OrderBook:
     cpdef str pprint(self, int num_levels=*, show=*)
     cpdef int trade_side(self, TradeTick trade)
 
+    cdef double get_price_for_volume_c(self, bint is_buy, double volume)
+    cdef double get_price_for_quote_volume_c(self, bint is_buy, double quote_volume)
+    cdef double get_volume_for_price_c(self, bint is_buy, double price)
+    cdef double get_quote_volume_for_price_c(self, bint is_buy, double price)
+    cdef double get_vwap_for_volume_c(self, bint is_buy, double volume)
+
+    cpdef double get_price_for_volume(self, bint is_buy, double volume)
+    cpdef double get_price_for_quote_volume(self, bint is_buy, double quote_volume)
+    cpdef double get_volume_for_price(self, bint is_buy, double price)
+    cpdef double get_quote_volume_for_price(self, bint is_buy, double price)
+    cpdef double get_vwap_for_volume(self, bint is_buy, double volume)
 
 cdef class L3OrderBook(OrderBook):
     pass

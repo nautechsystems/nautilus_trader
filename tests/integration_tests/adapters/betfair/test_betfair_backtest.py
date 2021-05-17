@@ -12,14 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.enums import LogLevel
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.tick import TradeTick

@@ -145,7 +145,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._cached_filled[order.venue_order_id] = order.filled_qty.as_decimal()
 
         if self._client.check_required_credentials():
-            self._log.info("API credentials validated.", color=LogColor.GREEN)
+            self._log.info("API authenticated.", color=LogColor.GREEN)
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")

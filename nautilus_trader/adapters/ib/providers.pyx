@@ -141,7 +141,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             multiplier=int(details.contract.multiplier),
             price_precision=price_precision,
             tick_size=Decimal(f"{details.minTick:.{price_precision}f}"),
-            lot_size=Quantity(1),
+            lot_size=Quantity.from_int(1),
             timestamp_ns=unix_timestamp_ns(),
         )
 

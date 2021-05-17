@@ -30,6 +30,7 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currency import Currency
@@ -43,6 +44,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
@@ -591,7 +593,7 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def __init__(self, trader_id: TraderId, logger: Logger):
         """
-        Initialize a new instance of the `BypassExecutionDatabase` class.
+        Initialize a new instance of the `InMemoryExecutionDatabase` class.
 
         Parameters
         ----------
@@ -604,6 +606,7 @@ class MockExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         self.currencies = {}
+        self.instruments = {}
         self.accounts = {}
         self.orders = {}
         self.positions = {}
@@ -616,6 +619,9 @@ class MockExecutionDatabase(ExecutionDatabase):
     def load_currencies(self) -> dict:
         return self.currencies.copy()
 
+    def load_instruments(self) -> dict:
+        return self.instruments.copy()
+
     def load_accounts(self) -> dict:
         return self.accounts.copy()
 
@@ -627,6 +633,9 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def load_currency(self, code: str) -> Currency:
         return self.currencies.get(code)
+
+    def load_instrument(self, instrument_id: InstrumentId) -> InstrumentId:
+        return self.instruments.get(instrument_id)
 
     def load_account(self, account_id: AccountId) -> Account:
         return self.accounts.get(account_id)
@@ -645,6 +654,9 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def add_currency(self, currency: Currency) -> None:
         self.currencies[currency.code] = currency
+
+    def add_instrument(self, instrument: Instrument) -> None:
+        self.instruments[instrument.id] = instrument
 
     def add_account(self, account: Account) -> None:
         self.accounts[account.id] = account
@@ -668,28 +680,9 @@ class MockExecutionDatabase(ExecutionDatabase):
         pass  # Would persist the user state dict
 
 
-class MockLiveExecutionEngine(LiveExecutionEngine):
-    def __init__(
-        self,
-        loop,
-        database,
-        portfolio,
-        clock,
-        logger,
-        config=None,
-    ):
-        super().__init__(loop, database, portfolio, clock, logger, config)
-        self.commands = []
-        self.events = []
-
-    def execute(self, command):
-        self.commands.append(command)
-
-    def process(self, event):
-        self.events.append(event)
-
-
 class MockLiveDataEngine(LiveDataEngine):
+    """Provides a mock live data engine for testing."""
+
     def __init__(
         self,
         loop,
@@ -701,6 +694,7 @@ class MockLiveDataEngine(LiveDataEngine):
         super().__init__(
             loop=loop, portfolio=portfolio, clock=clock, logger=logger, config=config
         )
+
         self.commands = []
         self.events = []
         self.responses = []
@@ -713,3 +707,65 @@ class MockLiveDataEngine(LiveDataEngine):
 
     def receive(self, response):
         self.responses.append(response)
+
+
+class MockLiveExecutionEngine(LiveExecutionEngine):
+    """Provides a mock live execution engine for testing."""
+
+    def __init__(
+        self,
+        loop,
+        database,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(
+            loop=loop,
+            database=database,
+            portfolio=portfolio,
+            clock=clock,
+            logger=logger,
+            config=config,
+        )
+
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)
+
+
+class MockLiveRiskEngine(LiveRiskEngine):
+    """Provides a mock live risk engine for testing."""
+
+    def __init__(
+        self,
+        loop,
+        exec_engine,
+        portfolio,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(
+            loop=loop,
+            exec_engine=exec_engine,
+            portfolio=portfolio,
+            clock=clock,
+            logger=logger,
+            config=config,
+        )
+
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)

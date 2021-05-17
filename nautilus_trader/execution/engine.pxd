@@ -30,10 +30,8 @@ from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -65,9 +63,9 @@ cdef class ExecutionEngine(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
+    cpdef void register_risk_engine(self, RiskEngine engine) except *
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
-    cpdef void register_risk_engine(self, RiskEngine engine) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
 
@@ -94,8 +92,6 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
     cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
-    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
-    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
@@ -114,4 +110,3 @@ cdef class ExecutionEngine(Component):
     cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
-    cdef inline void _send_to_risk_engine(self, Event event) except *

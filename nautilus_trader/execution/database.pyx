@@ -17,6 +17,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -58,6 +59,10 @@ cdef class ExecutionDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef dict load_instruments(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef dict load_accounts(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -71,6 +76,10 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Currency load_currency(self, str code):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Instrument load_instrument(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -95,6 +104,10 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void add_currency(self, Currency currency) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_instrument(self, Instrument instrument) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -127,7 +140,7 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-cdef class BypassExecutionDatabase(ExecutionDatabase):
+cdef class InMemoryExecutionDatabase(ExecutionDatabase):
     """
     Provides a bypass execution database which does nothing.
 
@@ -135,7 +148,7 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the `BypassExecutionDatabase` class.
+        Initialize a new instance of the `InMemoryExecutionDatabase` class.
 
         Parameters
         ----------
@@ -147,12 +160,16 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
         """
         super().__init__(trader_id, logger)
 
+        self._instruments = {}
+
     cpdef void flush(self) except *:
-        # NO-OP
-        pass
+        self._instruments.clear()
 
     cpdef dict load_currencies(self):
         return {}
+
+    cpdef dict load_instruments(self):
+        return self._instruments.copy()
 
     cpdef dict load_accounts(self):
         return {}
@@ -165,6 +182,9 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
 
     cpdef Currency load_currency(self, str code):
         return None
+
+    cpdef Instrument load_instrument(self, InstrumentId instrument_id):
+        return self._instruments.get(instrument_id)
 
     cpdef Account load_account(self, AccountId account_id):
         return None
@@ -185,6 +205,9 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
     cpdef void add_currency(self, Currency currency) except *:
         # NO-OP
         pass
+
+    cpdef void add_instrument(self, Instrument instrument) except *:
+        self._instruments[instrument.id] = instrument
 
     cpdef void add_account(self, Account account) except *:
         # NO-OP

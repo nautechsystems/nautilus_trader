@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
 from decimal import Decimal
 
 import pytest
@@ -34,36 +33,47 @@ class TestBaseDecimal:
         with pytest.raises(TypeError):
             BaseDecimal(None)
 
-    def test_instantiate_with_float_value_raises_type_error(
-        self,
-    ):  # User should use .from_float()
+    def test_instantiate_with_negative_precision_raises_overflow_error(self):
         # Arrange
         # Act
         # Assert
-        with pytest.raises(TypeError):
-            BaseDecimal(1.1)
+        with pytest.raises(OverflowError):
+            BaseDecimal(1.11, precision=-1)
 
-    def test_instantiate_with_negative_precision_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(ValueError):
-            BaseDecimal(1.11, -1)
+    def test_instantiate_base_decimal_from_int(self):
+        # Arrange, Act
+        result = BaseDecimal(1, precision=1)
 
-    def test_rounding_with_bogus_mode_raises_type_error(self):
-        # Arrange
-        # Act
         # Assert
-        with pytest.raises(TypeError):
-            BaseDecimal(1.11, 1, "UNKNOWN")
+        assert str(result) == "1.0"
+
+    def test_instantiate_base_decimal_from_float(self):
+        # Arrange, Act
+        result = BaseDecimal(1.12300, precision=5)
+
+        # Assert
+        assert str(result) == "1.12300"
+
+    def test_instantiate_base_decimal_from_decimal(self):
+        # Arrange, Act
+        result = BaseDecimal(Decimal("1.23"), precision=1)
+
+        # Assert
+        assert str(result) == "1.2"
+
+    def test_instantiate_base_decimal_from_str(self):
+        # Arrange, Act
+        result = BaseDecimal("1.23", precision=1)
+
+        # Assert
+        assert str(result) == "1.2"
 
     @pytest.mark.parametrize(
         "value, precision, expected",
         [
-            [BaseDecimal("2.15"), -1, Decimal("0E+1")],
-            [BaseDecimal("2.15"), 0, Decimal("2")],
-            [BaseDecimal("2.15"), 1, Decimal("2.2")],
-            [BaseDecimal("2.255"), 2, Decimal("2.26")],
+            [BaseDecimal(2.15, precision=2), 0, Decimal("2")],
+            [BaseDecimal(2.15, precision=2), 1, Decimal("2.2")],
+            [BaseDecimal(2.255, precision=3), 2, Decimal("2.26")],
         ],
     )
     def test_round_with_various_digits_returns_expected_decimal(
@@ -74,16 +84,16 @@ class TestBaseDecimal:
         result = round(value, precision)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [BaseDecimal("-0"), Decimal("0")],
-            [BaseDecimal("0"), Decimal("0")],
-            [BaseDecimal("1"), Decimal("1")],
-            [BaseDecimal("-1"), Decimal("1")],
-            [BaseDecimal("-1.1"), Decimal("1.1")],
+            [BaseDecimal(-0, precision=0), Decimal("0")],
+            [BaseDecimal(0, precision=0), Decimal("0")],
+            [BaseDecimal(1, precision=0), Decimal("1")],
+            [BaseDecimal(-1, precision=0), Decimal("1")],
+            [BaseDecimal(-1.1, precision=1), Decimal("1.1")],
         ],
     )
     def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
@@ -92,16 +102,16 @@ class TestBaseDecimal:
         result = abs(value)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
         [
             [
-                BaseDecimal("-1"),
+                BaseDecimal(-1, precision=0),
                 Decimal("-1"),
             ],  # Matches built-in decimal.Decimal behaviour
-            [BaseDecimal("0"), Decimal("0")],
+            [BaseDecimal(0, 0), Decimal("0")],
         ],
     )
     def test_pos_with_various_values_returns_expected_decimal(self, value, expected):
@@ -110,11 +120,14 @@ class TestBaseDecimal:
         result = +value
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
-        [[BaseDecimal("1"), Decimal("-1")], [BaseDecimal("0"), Decimal("0")]],
+        [
+            [BaseDecimal(1, precision=0), Decimal("-1")],
+            [BaseDecimal(0, precision=0), Decimal("0")],
+        ],
     )
     def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
         # Arrange
@@ -122,50 +135,20 @@ class TestBaseDecimal:
         result = -value
 
         # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "value, precision, rounding, expected",
-        [
-            [1.15, 1, decimal.ROUND_HALF_EVEN, BaseDecimal("1.1")],
-            [Decimal("2.14"), 1, decimal.ROUND_UP, BaseDecimal("2.2")],
-            [Decimal("2.16"), 1, decimal.ROUND_DOWN, BaseDecimal("2.1")],
-            [Decimal("2.15"), 1, decimal.ROUND_HALF_UP, BaseDecimal("2.2")],
-            [Decimal("2.15"), 1, decimal.ROUND_HALF_DOWN, BaseDecimal("2.1")],
-            [Decimal("2.15"), 1, decimal.ROUND_HALF_EVEN, BaseDecimal("2.1")],
-        ],
-    )
-    def test_rounding_behaviour_with_various_values_returns_expected_decimal(
-        self,
-        value,
-        precision,
-        rounding,
-        expected,
-    ):
-        # Arrange
-        # Act
-        result = BaseDecimal(value, precision, rounding)
-
-        # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [0, BaseDecimal()],
-            [1, BaseDecimal("1")],
-            [-1, BaseDecimal("-1")],
-            ["0", BaseDecimal()],
-            ["0.0", BaseDecimal()],
-            ["-0.0", BaseDecimal()],
-            ["1.0", BaseDecimal("1")],
-            ["-1.0", BaseDecimal("-1")],
-            [Decimal(), BaseDecimal()],
-            [Decimal("1.1"), BaseDecimal("1.1")],
-            [Decimal("-1.1"), BaseDecimal("-1.1")],
-            [BaseDecimal(), BaseDecimal()],
-            [BaseDecimal("1.1"), BaseDecimal("1.1")],
-            [BaseDecimal("-1.1"), BaseDecimal("-1.1")],
+            [0, BaseDecimal(0, precision=0)],
+            [1, BaseDecimal(1, precision=0)],
+            [-1, BaseDecimal(-1, precision=0)],
+            [Decimal(), BaseDecimal(0, precision=0)],
+            [Decimal("1.1"), BaseDecimal(1.1, precision=1)],
+            [Decimal("-1.1"), BaseDecimal(-1.1, precision=1)],
+            [BaseDecimal(0, precision=0), BaseDecimal(0, precision=0)],
+            [BaseDecimal(1.1, precision=1), BaseDecimal(1.1, precision=1)],
+            [BaseDecimal(-1.1, precision=1), BaseDecimal(-1.1, precision=1)],
         ],
     )
     def test_instantiate_with_various_valid_inputs_returns_expected_decimal(
@@ -173,20 +156,20 @@ class TestBaseDecimal:
     ):
         # Arrange
         # Act
-        decimal_object = BaseDecimal(value)
+        decimal_object = BaseDecimal(value, 2)
 
         # Assert
-        assert expected == decimal_object
+        assert decimal_object == expected
 
     @pytest.mark.parametrize(
         "value, precision, expected",
         [
-            [0.0, 0, BaseDecimal("0")],
-            [1.0, 0, BaseDecimal("1")],
-            [-1.0, 0, BaseDecimal("-1")],
-            [1.123, 3, BaseDecimal("1.123")],
-            [-1.123, 3, BaseDecimal("-1.123")],
-            [1.155, 2, BaseDecimal("1.16")],
+            [0.0, 0, BaseDecimal(0, precision=0)],
+            [1.0, 0, BaseDecimal(1, precision=0)],
+            [-1.0, 0, BaseDecimal(-1, precision=0)],
+            [1.123, 3, BaseDecimal(1.123, precision=3)],
+            [-1.123, 3, BaseDecimal(-1.123, precision=3)],
+            [1.155, 2, BaseDecimal(1.16, precision=2)],
         ],
     )
     def test_instantiate_with_various_precisions_returns_expected_decimal(
@@ -197,24 +180,24 @@ class TestBaseDecimal:
         decimal_object = BaseDecimal(value, precision)
 
         # Assert
-        assert expected == decimal_object
-        assert precision == decimal_object.precision
+        assert decimal_object == expected
+        assert decimal_object.precision == precision
 
     @pytest.mark.parametrize(
         "value1, value2, expected",
         [
-            ["0", -0, True],
-            ["-0", 0, True],
-            ["-1", -1, True],
-            ["1", 1, True],
-            ["1.1", "1.1", True],
-            ["-1.1", "-1.1", True],
-            ["0", 1, False],
-            ["-1", 0, False],
-            ["-1", -2, False],
-            ["1", 2, False],
-            ["1.1", "1.12", False],
-            ["-1.12", "-1.1", False],
+            [0, -0, True],
+            [-0, 0, True],
+            [-1, -1, True],
+            [1, 1, True],
+            [1.1, 1.1, True],
+            [-1.1, -1.1, True],
+            [0, 1, False],
+            [-1, 0, False],
+            [-1, -2, False],
+            [1, 2, False],
+            [1.1, 1.12, False],
+            [-1.12, -1.1, False],
         ],
     )
     def test_equality_with_various_values_returns_expected_result(
@@ -222,22 +205,22 @@ class TestBaseDecimal:
     ):
         # Arrange
         # Act
-        result = BaseDecimal(value1) == BaseDecimal(value2)
+        result = BaseDecimal(value1, 2) == BaseDecimal(value2, 2)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value1, value2, expected",
         [
-            ["0", -0, True],
-            ["-0", 0, True],
-            ["-1", -1, True],
-            ["1", 1, True],
-            ["0", 1, False],
-            ["-1", 0, False],
-            ["-1", -2, False],
-            ["1", 2, False],
+            [0, -0, True],
+            [-0, 0, True],
+            [-1, -1, True],
+            [1, 1, True],
+            [0, 1, False],
+            [-1, 0, False],
+            [-1, -2, False],
+            [1, 2, False],
         ],
     )
     def test_equality_with_various_int_returns_expected_result(
@@ -245,30 +228,29 @@ class TestBaseDecimal:
     ):
         # Arrange
         # Act
-        result1 = BaseDecimal(value1) == value2
-        result2 = value2 == BaseDecimal(value1)
+        result1 = BaseDecimal(value1, 0) == value2
+        result2 = value2 == BaseDecimal(value1, 0)
 
         # Assert
-        assert expected == result1
-        assert expected == result2
+        assert result1 == expected
+        assert result2 == expected
 
     @pytest.mark.parametrize(
         "value1, value2, expected",
         [
-            [BaseDecimal(), Decimal(), True],
-            [BaseDecimal("0"), Decimal(-0), True],
-            [BaseDecimal("1"), Decimal(), False],
+            [BaseDecimal(0, precision=0), Decimal(), True],
+            [BaseDecimal(0, precision=0), Decimal(-0), True],
+            [BaseDecimal(1, precision=0), Decimal(), False],
         ],
     )
     def test_equality_with_various_decimals_returns_expected_result(
         self, value1, value2, expected
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = value1 == value2
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value1, value2, expected1, expected2, expected3, expected4",
@@ -276,9 +258,6 @@ class TestBaseDecimal:
             [0, 0, False, True, True, False],
             [1, 0, True, True, False, False],
             [-1, 0, False, False, True, True],
-            [BaseDecimal(0), Decimal(0), False, True, True, False],
-            [BaseDecimal(1), Decimal(0), True, True, False, False],
-            [BaseDecimal(-1), Decimal(0), False, False, True, True],
         ],
     )
     def test_comparisons_with_various_values_returns_expected_result(
@@ -290,34 +269,45 @@ class TestBaseDecimal:
         expected3,
         expected4,
     ):
-        # Arrange
-        # Act
-        result1 = BaseDecimal(value1) > BaseDecimal(value2)
-        result2 = BaseDecimal(value1) >= BaseDecimal(value2)
-        result3 = BaseDecimal(value1) <= BaseDecimal(value2)
-        result4 = BaseDecimal(value1) < BaseDecimal(value2)
-
-        # Assert
-        assert expected1 == result1
-        assert expected2 == result2
-        assert expected3 == result3
-        assert expected4 == result4
+        # Arrange, Act, Assert
+        assert (
+            BaseDecimal(value1, precision=0) > BaseDecimal(value2, precision=0)
+        ) == expected1
+        assert (
+            BaseDecimal(value1, precision=0) >= BaseDecimal(value2, precision=0)
+        ) == expected2
+        assert (
+            BaseDecimal(value1, precision=0) <= BaseDecimal(value2, precision=0)
+        ) == expected3
+        assert (
+            BaseDecimal(value1, precision=0) < BaseDecimal(value2, precision=0)
+        ) == expected4
 
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
         [
-            [BaseDecimal(), BaseDecimal(), Decimal, 0],
-            [BaseDecimal(), BaseDecimal("1.1"), Decimal, Decimal("1.1")],
-            [BaseDecimal(), 0, Decimal, 0],
-            [BaseDecimal(), 1, Decimal, 1],
-            [0, BaseDecimal(), Decimal, 0],
-            [1, BaseDecimal(), Decimal, 1],
-            [BaseDecimal(), 0.1, float, 0.1],
-            [BaseDecimal(), 1.1, float, 1.1],
-            [-1.1, BaseDecimal(), float, -1.1],
-            [1.1, BaseDecimal(), float, 1.1],
-            [BaseDecimal("1"), BaseDecimal("1.1"), Decimal, Decimal("2.1")],
-            [BaseDecimal("1"), Decimal("1.1"), Decimal, Decimal("2.1")],
+            [BaseDecimal(0, precision=0), BaseDecimal(0, precision=0), Decimal, 0],
+            [
+                BaseDecimal(0, precision=0),
+                BaseDecimal(1.1, precision=1),
+                Decimal,
+                Decimal("1.1"),
+            ],
+            [BaseDecimal(0, precision=0), 0, Decimal, 0],
+            [BaseDecimal(0, precision=0), 1, Decimal, 1],
+            [0, BaseDecimal(0, precision=0), Decimal, 0],
+            [1, BaseDecimal(0, precision=0), Decimal, 1],
+            [BaseDecimal(0, precision=0), 0.1, float, 0.1],
+            [BaseDecimal(0, precision=0), 1.1, float, 1.1],
+            [-1.1, BaseDecimal(0, precision=0), float, -1.1],
+            [1.1, BaseDecimal(0, precision=0), float, 1.1],
+            [
+                BaseDecimal(1, precision=0),
+                BaseDecimal(1.1, precision=1),
+                Decimal,
+                Decimal("2.1"),
+            ],
+            [BaseDecimal(1, precision=0), Decimal("1.1"), Decimal, Decimal("2.1")],
         ],
     )
     def test_addition_with_various_types_returns_expected_result(
@@ -332,24 +322,34 @@ class TestBaseDecimal:
         result = value1 + value2
 
         # Assert
-        assert expected_type == type(result)
-        assert expected_value == result
+        assert isinstance(result, expected_type)
+        assert result == expected_value
 
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
         [
-            [BaseDecimal(), BaseDecimal(), Decimal, 0],
-            [BaseDecimal(), BaseDecimal("1.1"), Decimal, Decimal("-1.1")],
-            [BaseDecimal(), 0, Decimal, 0],
-            [BaseDecimal(), 1, Decimal, -1],
-            [0, BaseDecimal(), Decimal, 0],
-            [1, BaseDecimal("1"), Decimal, 0],
-            [BaseDecimal(), 0.1, float, -0.1],
-            [BaseDecimal(), 1.1, float, -1.1],
-            [0.1, BaseDecimal("1"), float, -0.9],
-            [1.1, BaseDecimal("1"), float, 0.10000000000000009],
-            [BaseDecimal("1"), BaseDecimal("1.1"), Decimal, Decimal("-0.1")],
-            [BaseDecimal("1"), Decimal("1.1"), Decimal, Decimal("-0.1")],
+            [BaseDecimal(0, precision=0), BaseDecimal(0, precision=0), Decimal, 0],
+            [
+                BaseDecimal(0, precision=0),
+                BaseDecimal(1.1, precision=1),
+                Decimal,
+                Decimal("-1.1"),
+            ],
+            [BaseDecimal(0, precision=0), 0, Decimal, 0],
+            [BaseDecimal(0, precision=0), 1, Decimal, -1],
+            [0, BaseDecimal(0, precision=0), Decimal, 0],
+            [1, BaseDecimal(1, precision=0), Decimal, 0],
+            [BaseDecimal(0, precision=0), 0.1, float, -0.1],
+            [BaseDecimal(0, precision=0), 1.1, float, -1.1],
+            [0.1, BaseDecimal(1, precision=0), float, -0.9],
+            [1.1, BaseDecimal(1, precision=0), float, 0.10000000000000009],
+            [
+                BaseDecimal(1, precision=0),
+                BaseDecimal(1.1, precision=1),
+                Decimal,
+                Decimal("-0.1"),
+            ],
+            [BaseDecimal(1, precision=0), Decimal("1.1"), Decimal, Decimal("-0.1")],
         ],
     )
     def test_subtraction_with_various_types_returns_expected_result(
@@ -364,20 +364,20 @@ class TestBaseDecimal:
         result = value1 - value2
 
         # Assert
-        assert expected_type == type(result)
-        assert expected_value == result
+        assert type(result) == expected_type
+        assert result == expected_value
 
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
         [
-            [BaseDecimal(), 0, Decimal, 0],
-            [BaseDecimal(1), 1, Decimal, 1],
-            [1, BaseDecimal(1), Decimal, 1],
-            [2, BaseDecimal(3), Decimal, 6],
-            [BaseDecimal(2), 1.0, float, 2],
-            [1.1, BaseDecimal(2), float, 2.2],
-            [BaseDecimal("1.1"), BaseDecimal("1.1"), Decimal, Decimal("1.21")],
-            [BaseDecimal("1.1"), Decimal("1.1"), Decimal, Decimal("1.21")],
+            [BaseDecimal(0, 0), 0, Decimal, 0],
+            [BaseDecimal(1, 0), 1, Decimal, 1],
+            [1, BaseDecimal(1, 0), Decimal, 1],
+            [2, BaseDecimal(3, 0), Decimal, 6],
+            [BaseDecimal(2, 0), 1.0, float, 2],
+            [1.1, BaseDecimal(2, 0), float, 2.2],
+            [BaseDecimal(1.1, 1), BaseDecimal(1.1, 1), Decimal, Decimal("1.21")],
+            [BaseDecimal(1.1, 1), Decimal("1.1"), Decimal, Decimal("1.21")],
         ],
     )
     def test_multiplication_with_various_types_returns_expected_result(
@@ -392,27 +392,27 @@ class TestBaseDecimal:
         result = value1 * value2
 
         # Assert
-        assert expected_type == type(result)
-        assert expected_value == result
+        assert type(result) == expected_type
+        assert result == expected_value
 
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
         [
-            [1, BaseDecimal(1), Decimal, 1],
-            [1.1, BaseDecimal("1.1"), float, 1],
-            [BaseDecimal(), 1, Decimal, 0],
-            [BaseDecimal(1), 2, Decimal, Decimal("0.5")],
-            [2, BaseDecimal(1), Decimal, Decimal("2.0")],
-            [BaseDecimal(2), 1.1, float, 1.8181818181818181],
-            [1.1, BaseDecimal(2), float, 1.1 / 2],
+            [1, BaseDecimal(1, 0), Decimal, 1],
+            [1.1, BaseDecimal(1.1, 1), float, 1],
+            [BaseDecimal(0, 0), 1, Decimal, 0],
+            [BaseDecimal(1, 0), 2, Decimal, Decimal("0.5")],
+            [2, BaseDecimal(1, 0), Decimal, Decimal("2.0")],
+            [BaseDecimal(2, 0), 1.1, float, 1.8181818181818181],
+            [1.1, BaseDecimal(2, 0), float, 1.1 / 2],
             [
-                BaseDecimal("1.1"),
-                BaseDecimal("1.2"),
+                BaseDecimal(1.1, 1),
+                BaseDecimal(1.2, 1),
                 Decimal,
                 Decimal("0.9166666666666666666666666667"),
             ],
             [
-                BaseDecimal("1.1"),
+                BaseDecimal(1.1, 1),
                 Decimal("1.2"),
                 Decimal,
                 Decimal("0.9166666666666666666666666667"),
@@ -437,16 +437,16 @@ class TestBaseDecimal:
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
         [
-            [1, BaseDecimal(1), Decimal, 1],
-            [BaseDecimal(), 1, Decimal, 0],
-            [BaseDecimal(1), 2, Decimal, Decimal(0)],
-            [2, BaseDecimal(1), Decimal, Decimal(2)],
-            [2.1, BaseDecimal("1.1"), float, 1],
-            [4.4, BaseDecimal("1.1"), float, 4],
-            [BaseDecimal("2.1"), 1.1, float, 1],
-            [BaseDecimal("4.4"), 1.1, float, 4],
-            [BaseDecimal("1.1"), BaseDecimal("1.2"), Decimal, Decimal(0)],
-            [BaseDecimal("1.1"), Decimal("1.2"), Decimal, Decimal(0)],
+            [1, BaseDecimal(1, 0), Decimal, 1],
+            [BaseDecimal(0, 0), 1, Decimal, 0],
+            [BaseDecimal(1, 0), 2, Decimal, Decimal(0)],
+            [2, BaseDecimal(1, 0), Decimal, Decimal(2)],
+            [2.1, BaseDecimal(1.1, 1), float, 1],
+            [4.4, BaseDecimal(1.1, 1), float, 4],
+            [BaseDecimal(2.1, 1), 1.1, float, 1],
+            [BaseDecimal(4.4, 1), 1.1, float, 4],
+            [BaseDecimal(1.1, 1), BaseDecimal(1.2, 1), Decimal, Decimal(0)],
+            [BaseDecimal(1.1, 1), Decimal("1.2"), Decimal, Decimal(0)],
         ],
     )
     def test_floor_division_with_various_types_returns_expected_result(
@@ -467,16 +467,16 @@ class TestBaseDecimal:
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
         [
-            [1, BaseDecimal(1), Decimal, 0],
-            [BaseDecimal(100), 10, Decimal, 0],
-            [BaseDecimal(23), 2, Decimal, 1],
-            [2, BaseDecimal(1), Decimal, 0],
-            [2.1, BaseDecimal("1.1"), float, 1.0],
-            [1.1, BaseDecimal("2.1"), float, 1.1],
-            [BaseDecimal("2.1"), 1.1, float, 1.0],
-            [BaseDecimal("1.1"), 2.1, float, 1.1],
-            [BaseDecimal("1.1"), BaseDecimal("0.2"), Decimal, Decimal("0.1")],
-            [BaseDecimal("1.1"), Decimal("0.2"), Decimal, Decimal("0.1")],
+            [1, BaseDecimal(1, 0), Decimal, 0],
+            [BaseDecimal(100, 0), 10, Decimal, 0],
+            [BaseDecimal(23, 0), 2, Decimal, 1],
+            [2, BaseDecimal(1, 0), Decimal, 0],
+            [2.1, BaseDecimal(1.1, 1), float, 1.0],
+            [1.1, BaseDecimal(2.1, 1), float, 1.1],
+            [BaseDecimal(2.1, 1), 1.1, float, 1.0],
+            [BaseDecimal(1.1, 1), 2.1, float, 1.1],
+            [BaseDecimal(1.1, 1), BaseDecimal(0.2, 1), Decimal, Decimal("0.1")],
+            [BaseDecimal(1.1, 1), Decimal("0.2"), Decimal, Decimal("0.1")],
         ],
     )
     def test_mod_with_various_types_returns_expected_result(
@@ -497,9 +497,9 @@ class TestBaseDecimal:
     @pytest.mark.parametrize(
         "value1, value2, expected",
         [
-            [BaseDecimal(1), BaseDecimal(2), BaseDecimal(2)],
-            [BaseDecimal(1), 2, 2],
-            [BaseDecimal(1), Decimal(2), Decimal(2)],
+            [BaseDecimal(1, 0), BaseDecimal(2, 0), BaseDecimal(2, 0)],
+            [BaseDecimal(1, 0), 2, 2],
+            [BaseDecimal(1, 0), Decimal(2), Decimal(2)],
         ],
     )
     def test_max_with_various_types_returns_expected_result(
@@ -518,9 +518,9 @@ class TestBaseDecimal:
     @pytest.mark.parametrize(
         "value1, value2, expected",
         [
-            [BaseDecimal(1), BaseDecimal(2), BaseDecimal(1)],
-            [BaseDecimal(1), 2, BaseDecimal(1)],
-            [BaseDecimal(2), Decimal(1), Decimal(1)],
+            [BaseDecimal(1, 0), BaseDecimal(2, 0), BaseDecimal(1, 0)],
+            [BaseDecimal(1, 0), 2, BaseDecimal(1, 0)],
+            [BaseDecimal(2, 0), Decimal(1), Decimal(1)],
         ],
     )
     def test_min_with_various_types_returns_expected_result(
@@ -534,7 +534,7 @@ class TestBaseDecimal:
         result = min(value1, value2)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
@@ -542,16 +542,16 @@ class TestBaseDecimal:
     )
     def test_int(self, value, expected):
         # Arrange
-        decimal1 = BaseDecimal(value)
+        decimal1 = BaseDecimal(value, 1)
 
         # Act
         # Assert
-        assert expected == int(decimal1)
+        assert int(decimal1) == expected
 
     def test_hash(self):
         # Arrange
-        decimal1 = BaseDecimal("1.1")
-        decimal2 = BaseDecimal("1.1")
+        decimal1 = BaseDecimal(1.1, 1)
+        decimal2 = BaseDecimal(1.1, 1)
 
         # Act
         # Assert
@@ -559,112 +559,157 @@ class TestBaseDecimal:
         assert hash(decimal1) == hash(decimal2)
 
     @pytest.mark.parametrize(
-        "value, expected",
+        "value, precision, expected",
         [
-            ["0", "0"],
-            ["-0", "-0"],
-            ["-1", "-1"],
-            ["1", "1"],
-            ["1.1", "1.1"],
-            ["-1.1", "-1.1"],
+            [0, 0, "0"],
+            [-0, 0, "0"],
+            [-1, 0, "-1"],
+            [1, 0, "1"],
+            [1.1, 1, "1.1"],
+            [-1.1, 1, "-1.1"],
         ],
     )
     def test_str_with_various_values_returns_expected_string(
         self,
         value,
+        precision,
         expected,
     ):
         # Arrange
         # Act
-        decimal_object = BaseDecimal(value)
+        decimal_object = BaseDecimal(value, precision=precision)
 
         # Assert
-        assert expected == str(decimal_object)
+        assert str(decimal_object) == expected
 
     def test_repr(self):
         # Arrange
         # Act
-        result = repr(BaseDecimal("1.1"))
+        result = repr(BaseDecimal(1.1, 1))
 
         # Assert
         assert "BaseDecimal('1.1')" == result
 
     @pytest.mark.parametrize(
-        "value, expected",
+        "value, precision, expected",
         [
-            ["0", BaseDecimal()],
-            ["-0", BaseDecimal()],
-            ["-1", BaseDecimal("-1")],
-            ["1", BaseDecimal("1")],
-            ["1.1", BaseDecimal("1.1")],
-            ["-1.1", BaseDecimal("-1.1")],
+            [0, 0, BaseDecimal(0, 0)],
+            [-0, 0, BaseDecimal(0, 0)],
+            [-1, 0, BaseDecimal(-1, 0)],
+            [1, 0, BaseDecimal(1, 0)],
+            [1.1, 1, BaseDecimal(1.1, 1)],
+            [-1.1, 1, BaseDecimal(-1.1, 1)],
         ],
     )
     def test_as_decimal_with_various_values_returns_expected_value(
-        self, value, expected
+        self,
+        value,
+        precision,
+        expected,
     ):
-        # Arrange
-        # Act
-        result = BaseDecimal(value)
+        # Arrange, Act
+        result = BaseDecimal(value, precision=precision)
 
         # Assert
-        assert expected == result
+        assert result == expected
 
     @pytest.mark.parametrize(
         "value, expected",
-        [["0", 0], ["-0", 0], ["-1", -1], ["1", 1], ["1.1", 1.1], ["-1.1", -1.1]],
+        [[0, 0], [-0, 0], [-1, -1], [1, 1], [1.1, 1.1], [-1.1, -1.1]],
     )
     def test_as_double_with_various_values_returns_expected_value(
         self, value, expected
     ):
         # Arrange
         # Act
-        result = BaseDecimal(value).as_double()
+        result = BaseDecimal(value, 1).as_double()
 
         # Assert
-        assert expected == result
+        assert result == expected
 
 
 class TestPrice:
-    def test_str_repr(self):
-        # Arrange
-        price = Price(1.00000, 5)
+    def test_from_int_returns_expected_value(self):
+        # Arrange, Act
+        price = Price.from_int(100)
 
-        # Act
+        # Assert
+        assert str(price) == "100"
+        assert price.precision == 0
+
+    def test_from_str_returns_expected_value(self):
+        # Arrange, Act
+        price = Price.from_str("100.11")
+
+        # Assert
+        assert str(price) == "100.11"
+        assert price.precision == 2
+
+    def test_str_repr(self):
+        # Arrange, Act
+        price = Price(1.00000, precision=5)
+
         # Assert
         assert "1.00000" == str(price)
         assert "Price('1.00000')" == repr(price)
 
 
 class TestQuantity:
+    def test_zero_returns_zero_quantity(self):
+        # Arrange, Act
+        qty = Quantity.zero()
+
+        # Assert
+        assert qty == 0
+        assert str(qty) == "0"
+        assert qty.precision == 0
+
+    def test_from_int_returns_expected_value(self):
+        # Arrange, Act
+        qty = Quantity.from_int(1000)
+
+        # Assert
+        assert qty == 1000
+        assert str(qty) == "1000"
+        assert qty.precision == 0
+
+    def test_from_str_returns_expected_value(self):
+        # Arrange, Act
+        qty = Quantity.from_str("0.511")
+
+        # Assert
+        assert qty == Quantity(0.511, precision=3)
+        assert str(qty) == "0.511"
+        assert qty.precision == 3
+
     def test_instantiate_with_negative_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            Quantity(-1)
+            Quantity(-1, 0)
 
     @pytest.mark.parametrize(
         "value, expected",
         [
-            [Quantity("0"), "0"],
-            [Quantity("10.05"), "10.05"],
-            [Quantity("1000"), "1,000"],
-            [Quantity("1112"), "1,112"],
-            [Quantity("120100"), "120,100"],
-            [Quantity("200000"), "200,000"],
-            [Quantity("1000000"), "1,000,000"],
-            [Quantity("2500000"), "2,500,000"],
-            [Quantity("1111111"), "1,111,111"],
-            [Quantity("2523000"), "2,523,000"],
-            [Quantity("100000000"), "100,000,000"],
+            ["0", "0"],
+            ["10.05", "10.05"],
+            ["1000", "1,000"],
+            ["1112", "1,112"],
+            ["120100", "120,100"],
+            ["200000", "200,000"],
+            ["1000000", "1,000,000"],
+            ["2500000", "2,500,000"],
+            ["1111111", "1,111,111"],
+            ["2523000", "2,523,000"],
+            ["100000000", "100,000,000"],
         ],
     )
     def test_str_and_to_str(self, value, expected):
         # Arrange
         # Act
         # Assert
-        assert expected == Quantity(value).to_str()
+        assert Quantity.from_str(value).to_str() == expected
 
     def test_str_repr(self):
         # Arrange
@@ -706,9 +751,9 @@ class TestMoney:
             [Decimal(), Money(0, USD)],
             [Decimal("1.1"), Money("1.1", USD)],
             [Decimal("-1.1"), Money("-1.1", USD)],
-            [BaseDecimal(), Money(0, USD)],
-            [BaseDecimal("1.1"), Money("1.1", USD)],
-            [BaseDecimal("-1.1"), Money("-1.1", USD)],
+            [BaseDecimal(0, 0), Money(0, USD)],
+            [BaseDecimal(1.1, 1), Money("1.1", USD)],
+            [BaseDecimal(-1.1, 1), Money("-1.1", USD)],
         ],
     )
     def test_instantiate_with_various_valid_inputs_returns_expected_money(
@@ -719,7 +764,7 @@ class TestMoney:
         money = Money(value, USD)
 
         # Assert
-        assert expected == money
+        assert money == expected
 
     @pytest.mark.parametrize(
         "value1, value2, expected1, expected2",

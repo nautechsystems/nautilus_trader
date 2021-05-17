@@ -1,3 +1,47 @@
+# NautilusTrader 1.119.0 Beta - Release Notes
+
+This release applies another major refactoring to the value object API for
+`BaseDecimal` and its subclasses `Price` and `Quantity`. Previously a precision
+was not explicitly required when passing in a `decimal.Decimal` type which
+sometimes resulted in unexpected behavior when a user passed in a decimal with
+a very large precision (when wrapping a float with `decimal.Decimal`).
+
+Convenience methods have been added to `Price` and `Quantity` where precision
+is implicitly zero for ints, or implied in the number of digits after the '.'
+point for strings. Convenience methods have also been added to `Instrument` to
+assist the UX.
+
+The serialization of `Money` has been improved with the inclusion of the 
+currency code in the string delimited by whitespace. This avoids an additional
+field for the currency code.
+
+`RiskEngine` has been rewired ahead of `ExecutionEngine` which clarifies areas
+of responsibility and cleans up the registration sequence and allows a more
+natural flow of command and event messages.
+
+## Breaking Changes
+- Serializations involving `Money`.
+- Changed usage of `Price` and `Quantity`.
+- Renamed `BypassExecutionDatabase` to `InMemoryExecutionDatabase`.
+
+## Enhancements
+- Rewired `RiskEngine` and `ExecutionEngine` sequence.
+- Added `Instrument` database operations.
+- Added `MsgPackInstrumentSerializer`.
+- Added `Price.from_str()`.
+- Added `Price.from_int()`.
+- Added `Quantity.zero()`.
+- Added `Quantity.from_str()`.
+- Added `Quantity.from_int()`.
+- Added `Instrument.make_price()`.
+- Added `Instrument.make_qty()`.
+- Improved serialization of `Money`.
+
+## Fixes
+- Handling of precision for `decimal.Decimal` values passed to value objects.
+
+---
+
 # NautilusTrader 1.118.0 Beta - Release Notes
 
 This release simplifies the backtesting workflow by removing the need for the 

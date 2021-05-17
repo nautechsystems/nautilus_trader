@@ -70,14 +70,6 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        self.exec_client = MockExecutionClient(
-            ClientId(self.venue.value),
-            self.account_id,
-            self.exec_engine,
-            self.clock,
-            self.logger,
-        )
-
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
@@ -86,16 +78,16 @@ class TestRiskEngine:
             config={},
         )
 
-        self.exec_engine.register_client(self.exec_client)
+        self.exec_client = MockExecutionClient(
+            ClientId(self.venue.value),
+            self.account_id,
+            self.exec_engine,
+            self.clock,
+            self.logger,
+        )
+
         self.exec_engine.register_risk_engine(self.risk_engine)
-
-    def test_registered_clients_returns_expected_list(self):
-        # Arrange
-        # Act
-        result = self.risk_engine.registered_clients
-
-        # Assert
-        assert result == [ClientId("SIM")]
+        self.exec_engine.register_client(self.exec_client)
 
     def test_set_block_all_orders_changes_flag_value(self):
         # Arrange
@@ -143,7 +135,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -179,13 +171,13 @@ class TestRiskEngine:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         bracket = strategy.order_factory.bracket(
             entry_order=entry,
-            stop_loss=Price("1.00000"),
-            take_profit=Price("1.00010"),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitBracketOrder(
@@ -220,7 +212,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
@@ -237,11 +229,11 @@ class TestRiskEngine:
         self.risk_engine.set_block_all_orders()
 
         # Act
-        self.exec_engine.execute(submit_order)
+        self.risk_engine.execute(submit_order)
 
         # Assert
         assert self.exec_client.calls == ["connect"]
-        assert self.exec_engine.event_count == 1
+        assert self.risk_engine.command_count == 1
 
     def test_update_order_with_default_settings_sends_to_client(self):
         # Arrange
@@ -259,7 +251,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit = SubmitOrder(
@@ -281,7 +273,7 @@ class TestRiskEngine:
             order.client_order_id,
             order.venue_order_id,
             order.quantity,
-            Price("1.00010"),
+            Price.from_str("1.00010"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -293,6 +285,8 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_client.calls == ["connect", "submit_order", "update_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 2
 
     def test_cancel_order_with_default_settings_sends_to_client(self):
         # Arrange
@@ -310,7 +304,7 @@ class TestRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit = SubmitOrder(
@@ -342,6 +336,8 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 2
 
     def test_submit_bracket_when_block_all_orders_true_then_denies_order(self):
         # Arrange
@@ -359,13 +355,13 @@ class TestRiskEngine:
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         bracket = strategy.order_factory.bracket(
             entry_order=entry,
-            stop_loss=Price("1.00000"),
-            take_profit=Price("1.00010"),
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
         )
 
         submit_bracket = SubmitBracketOrder(
@@ -381,8 +377,9 @@ class TestRiskEngine:
         self.risk_engine.set_block_all_orders()
 
         # Act
-        self.exec_engine.execute(submit_bracket)
+        self.risk_engine.execute(submit_bracket)
 
         # Assert
         assert self.exec_client.calls == ["connect"]
+        assert self.risk_engine.command_count == 1
         assert self.exec_engine.event_count == 3

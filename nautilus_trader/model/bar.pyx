@@ -381,11 +381,11 @@ cdef class Bar(Data):
 
         return Bar(
             bar_type=bar_type,
-            open_price=Price(pieces[0]),
-            high_price=Price(pieces[1]),
-            low_price=Price(pieces[2]),
-            close_price=Price(pieces[3]),
-            volume=Quantity(pieces[4]),
+            open_price=Price.from_str(pieces[0]),
+            high_price=Price.from_str(pieces[1]),
+            low_price=Price.from_str(pieces[2]),
+            close_price=Price.from_str(pieces[3]),
+            volume=Quantity.from_str(pieces[4]),
             timestamp_ns=int(pieces[5]),
         )
 

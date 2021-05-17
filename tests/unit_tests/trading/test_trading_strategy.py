@@ -31,7 +31,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
@@ -53,6 +53,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import KaboomStrategy
@@ -97,7 +98,7 @@ class TradingStrategyTests(unittest.TestCase):
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
-        self.exec_db = BypassExecutionDatabase(
+        self.exec_db = InMemoryExecutionDatabase(
             trader_id=trader_id,
             logger=self.logger,
         )
@@ -108,6 +109,15 @@ class TradingStrategyTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
+
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_risk_engine(self.risk_engine)
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
@@ -711,7 +721,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIsNotNone(strategy.data)
 
-    def test_register_execution_engine(self):
+    def test_register_risk_engine(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -721,7 +731,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         # Act
-        strategy.register_execution_engine(self.exec_engine)
+        strategy.register_risk_engine(self.risk_engine)
 
         # Assert
         self.assertIsNotNone(strategy.execution)
@@ -817,11 +827,11 @@ class TradingStrategyTests(unittest.TestCase):
 
         bar = Bar(
             bar_type,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
             0,
         )
 
@@ -1796,7 +1806,7 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         # Act
@@ -1823,14 +1833,14 @@ class TradingStrategyTests(unittest.TestCase):
         entry = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            price=Price("90.100"),
+            Quantity.from_int(100000),
+            price=Price.from_str("90.100"),
         )
 
         order = strategy.order_factory.bracket(
             entry_order=entry,
-            stop_loss=Price("90.000"),
-            take_profit=Price("90.500"),
+            stop_loss=Price.from_str("90.000"),
+            take_profit=Price.from_str("90.500"),
         )
 
         # Act
@@ -1857,8 +1867,8 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.006"),
+            Quantity.from_int(100000),
+            Price.from_str("90.006"),
         )
 
         strategy.submit_order(order)
@@ -1892,14 +1902,16 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.001"),
+            Quantity.from_int(100000),
+            Price.from_str("90.001"),
         )
 
         strategy.submit_order(order)
 
         # Act
-        strategy.update_order(order, Quantity(100000), Price("90.001"))
+        strategy.update_order(
+            order, Quantity.from_int(100000), Price.from_str("90.001")
+        )
 
         # Assert
         self.assertEqual(1, self.exec_engine.command_count)
@@ -1918,20 +1930,24 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.limit(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.000"),
+            Quantity.from_int(100000),
+            Price.from_str("90.000"),
         )
 
         strategy.submit_order(order)
 
         # Act
-        strategy.update_order(order, Quantity(110000), Price("90.001"))
+        strategy.update_order(
+            order, Quantity.from_int(110000), Price.from_str("90.001")
+        )
 
         # Assert
         self.assertEqual(order, strategy.execution.orders()[0])
         self.assertEqual(OrderState.ACCEPTED, strategy.execution.orders()[0].state)
-        self.assertEqual(Quantity(110000), strategy.execution.orders()[0].quantity)
-        self.assertEqual(Price("90.001"), strategy.execution.orders()[0].price)
+        self.assertEqual(
+            Quantity.from_int(110000), strategy.execution.orders()[0].quantity
+        )
+        self.assertEqual(Price.from_str("90.001"), strategy.execution.orders()[0].price)
         self.assertTrue(strategy.execution.order_exists(order.client_order_id))
         self.assertTrue(strategy.execution.is_order_working(order.client_order_id))
         self.assertFalse(strategy.execution.is_order_completed(order.client_order_id))
@@ -1951,15 +1967,15 @@ class TradingStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.007"),
+            Quantity.from_int(100000),
+            Price.from_str("90.007"),
         )
 
         order2 = strategy.order_factory.stop_market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("90.006"),
+            Quantity.from_int(100000),
+            Price.from_str("90.006"),
         )
 
         strategy.submit_order(order1)
@@ -1992,13 +2008,13 @@ class TradingStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         strategy.submit_order(order1)
@@ -2028,7 +2044,7 @@ class TradingStrategyTests(unittest.TestCase):
         order = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         strategy.submit_order(order)
@@ -2061,13 +2077,13 @@ class TradingStrategyTests(unittest.TestCase):
         order1 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = strategy.order_factory.market(
             USDJPY_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         strategy.submit_order(order1)

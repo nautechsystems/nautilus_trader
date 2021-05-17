@@ -22,7 +22,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
@@ -67,7 +67,7 @@ class TestBacktestExecClientTests:
 
         self.analyzer = PerformanceAnalyzer()
 
-        database = BypassExecutionDatabase(
+        database = InMemoryExecutionDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
         )
@@ -153,7 +153,7 @@ class TestBacktestExecClientTests:
         order = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         command = SubmitOrder(
@@ -179,13 +179,13 @@ class TestBacktestExecClientTests:
         entry = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         bracket = self.order_factory.bracket(
             entry,
-            Price("500.00000"),
-            Price("600.00000"),
+            Price.from_str("500.00000"),
+            Price.from_str("600.00000"),
         )
 
         command = SubmitBracketOrder(
@@ -209,7 +209,7 @@ class TestBacktestExecClientTests:
         order = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         command = CancelOrder(
@@ -234,8 +234,8 @@ class TestBacktestExecClientTests:
         order = self.order_factory.stop_market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
-            Price("1000.00"),
+            Quantity.from_int(100),
+            Price.from_str("1000.00"),
         )
 
         command = UpdateOrder(
@@ -245,8 +245,8 @@ class TestBacktestExecClientTests:
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
-            Quantity(100),
-            Price("1010.00"),
+            Quantity.from_int(100),
+            Price.from_str("1010.00"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

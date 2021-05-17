@@ -62,11 +62,11 @@ class TestObjectPerformance(PerformanceHarness):
             target=Bar,
             args=(
                 TestStubs.bartype_audusd_1min_bid(),
-                Price("1.00001"),
-                Price("1.00004"),
-                Price("1.00002"),
-                Price("1.00003"),
-                Quantity("100000"),
+                Price.from_str("1.00001"),
+                Price.from_str("1.00004"),
+                Price.from_str("1.00002"),
+                Price.from_str("1.00003"),
+                Quantity.from_str("100000"),
                 0,
                 False,  # <-- no check
             ),
@@ -80,11 +80,11 @@ class TestObjectPerformance(PerformanceHarness):
             target=Bar,
             args=(
                 TestStubs.bartype_audusd_1min_bid(),
-                Price("1.00001"),
-                Price("1.00004"),
-                Price("1.00002"),
-                Price("1.00003"),
-                Quantity("100000"),
+                Price.from_str("1.00001"),
+                Price.from_str("1.00004"),
+                Price.from_str("1.00002"),
+                Price.from_str("1.00003"),
+                Quantity.from_str("100000"),
                 0,
                 True,  # <-- check
             ),

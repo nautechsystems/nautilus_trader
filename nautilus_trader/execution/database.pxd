@@ -17,9 +17,11 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -36,10 +38,12 @@ cdef class ExecutionDatabase:
 
     cpdef void flush(self) except *
     cpdef dict load_currencies(self)
+    cpdef dict load_instruments(self)
     cpdef dict load_accounts(self)
     cpdef dict load_orders(self)
     cpdef dict load_positions(self)
     cpdef Currency load_currency(self, str code)
+    cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
@@ -47,6 +51,7 @@ cdef class ExecutionDatabase:
     cpdef void delete_strategy(self, StrategyId strategy_id) except *
 
     cpdef void add_currency(self, Currency currency) except *
+    cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order) except *
     cpdef void add_position(self, Position position) except *
@@ -57,5 +62,5 @@ cdef class ExecutionDatabase:
     cpdef void update_strategy(self, TradingStrategy strategy) except *
 
 
-cdef class BypassExecutionDatabase(ExecutionDatabase):
-    pass
+cdef class InMemoryExecutionDatabase(ExecutionDatabase):
+    cdef dict _instruments

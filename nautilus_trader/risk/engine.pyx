@@ -28,7 +28,6 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -36,8 +35,11 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -78,50 +80,17 @@ cdef class RiskEngine(Component):
         if config:
             self._log.info(f"Config: {config}.")
 
-        self._clients = {}  # type: dict[ClientId, ExecutionClient]
         self._portfolio = portfolio
         self._exec_engine = exec_engine
+
+        self.trader_id = exec_engine.trader_id
+        self.cache = exec_engine.cache
 
         self.block_all_orders = False
 
         # Counters
         self.command_count = 0
         self.event_count = 0
-
-    @property
-    def registered_clients(self):
-        """
-        The execution clients registered with the engine.
-
-        Returns
-        -------
-        list[Venue]
-
-        """
-        return sorted(list(self._clients.keys()))
-
-# -- REGISTRATION ----------------------------------------------------------------------------------
-
-    cpdef void register_client(self, ExecutionClient client) except *:
-        """
-        Register the given execution client with the risk engine.
-
-        Parameters
-        ----------
-        client : ExecutionClient
-            The execution client to register.
-
-        Raises
-        ------
-        ValueError
-            If client is already registered with the risk engine.
-
-        """
-        Condition.not_none(client, "client")
-        Condition.not_in(client.id, self._clients, "client.id", "self._clients")
-
-        self._clients[client.id] = client
-        self._log.info(f"Registered {client}.")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -189,26 +158,35 @@ cdef class RiskEngine(Component):
             self._handle_trading_command(command)
 
     cdef inline void _handle_trading_command(self, TradingCommand command) except *:
-        cdef ExecutionClient client = self._clients.get(command.client_id)
-        if client is None:
-            self._log.error(f"Cannot handle command: "
-                            f"No client registered for "
-                            f"{command.instrument_id.venue.client_id.value}, "
-                            f"{command}.")
-            return  # No client to handle command
-
         if isinstance(command, SubmitOrder):
-            self._handle_submit_order(client, command)
+            self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
-            self._handle_submit_bracket_order(client, command)
+            self._handle_submit_bracket_order(command)
         elif isinstance(command, UpdateOrder):
-            self._handle_update_order(client, command)
+            self._handle_update_order(command)
         elif isinstance(command, CancelOrder):
-            self._handle_cancel_order(client, command)
+            self._handle_cancel_order(command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
+    cdef inline void _handle_submit_order(self, SubmitOrder command) except *:
+        # Validate command
+        if self.cache.order_exists(command.order.client_order_id):
+            self._log.error(f"Cannot submit order: "
+                            f"{repr(command.order.client_order_id)} already exists.")
+            return  # Invalid command
+
+        # Cache order
+        # *** Do not complete additional risk checks before here ***
+        self.cache.add_order(command.order, command.position_id)
+
+        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
+            self._invalidate_order(
+                command.order.client_order_id,
+                f"{repr(command.position_id)} does not exist",
+            )
+            return  # Invalid command
+
         cdef list risk_msgs = self._check_submit_order_risk(command)
 
         if self.block_all_orders:
@@ -217,11 +195,30 @@ cdef class RiskEngine(Component):
 
         if risk_msgs:
             self._deny_order(command.order, ",".join(risk_msgs))
-        else:
-            client.submit_order(command)
+            return  # Order denied
 
-    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
-        # TODO: Below currently just cut-and-pasted from above. Can refactor further.
+        self._exec_engine.execute(command)
+
+    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+        # Validate command
+        if self.cache.order_exists(command.bracket_order.entry.client_order_id):
+            self._invalidate_bracket_order(command.bracket_order)
+            return  # Invalid command
+        if self.cache.order_exists(command.bracket_order.stop_loss.client_order_id):
+            self._invalidate_bracket_order(command.bracket_order)
+            return  # Invalid command
+        if command.bracket_order.take_profit is not None \
+                and self.cache.order_exists(command.bracket_order.take_profit.client_order_id):
+            self._invalidate_bracket_order(command.bracket_order)
+            return  # Invalid command
+
+        # Cache all orders
+        # *** Do not complete additional risk checks before here ***
+        self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
+        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
+        if command.bracket_order.take_profit is not None:
+            self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
+
         cdef list risk_msgs = self._check_submit_bracket_order_risk(command)
 
         if self.block_all_orders:
@@ -232,16 +229,81 @@ cdef class RiskEngine(Component):
             self._deny_order(command.bracket_order.entry, ",".join(risk_msgs))
             self._deny_order(command.bracket_order.stop_loss, ",".join(risk_msgs))
             self._deny_order(command.bracket_order.take_profit, ",".join(risk_msgs))
+            return  # Orders denied
+
+        self._exec_engine.execute(command)
+
+    cdef inline void _handle_update_order(self, UpdateOrder command) except *:
+        # Validate command
+        if self.cache.is_order_completed(command.client_order_id):
+            self._log.warning(f"Cannot update order: "
+                              f"{repr(command.client_order_id)} already completed.")
+            return  # Invalid command
+
+        self._exec_engine.execute(command)
+
+    cdef inline void _handle_cancel_order(self, CancelOrder command) except *:
+        # Validate command
+        if self.cache.is_order_completed(command.client_order_id):
+            self._log.warning(f"Cannot cancel order: "
+                              f"{repr(command.client_order_id)} already completed.")
+            return  # Invalid command
+
+        self._exec_engine.execute(command)
+
+    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *:
+        # Generate event
+        cdef OrderInvalid invalid = OrderInvalid(
+            client_order_id,
+            reason,
+            self._uuid_factory.generate(),
+            self._clock.timestamp_ns(),
+        )
+
+        self._exec_engine.process(invalid)
+
+    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *:
+        cdef ClientOrderId entry_id = bracket_order.entry.client_order_id
+        cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.client_order_id
+        cdef ClientOrderId take_profit_id = None
+        if bracket_order.take_profit:
+            take_profit_id = bracket_order.take_profit.client_order_id
+
+        cdef list error_msgs = []
+
+        # Check entry ----------------------------------------------------------
+        if self.cache.order_exists(entry_id):
+            error_msgs.append(f"Duplicate {repr(entry_id)}")
         else:
-            client.submit_bracket_order(command)
+            # Add to cache to be able to invalidate
+            self.cache.add_order(bracket_order.entry, PositionId.null_c())
+            self._invalidate_order(
+                bracket_order.entry.client_order_id,
+                "Duplicate ClientOrderId in bracket.",
+            )
+        # Check stop-loss ------------------------------------------------------
+        if self.cache.order_exists(stop_loss_id):
+            error_msgs.append(f"Duplicate {repr(stop_loss_id)}")
+        else:
+            # Add to cache to be able to invalidate
+            self.cache.add_order(bracket_order.stop_loss, PositionId.null_c())
+            self._invalidate_order(
+                bracket_order.stop_loss.client_order_id,
+                "Duplicate ClientOrderId in bracket.",
+            )
+        # Check take-profit ----------------------------------------------------
+        if take_profit_id is not None and self.cache.order_exists(take_profit_id):
+            error_msgs.append(f"Duplicate {repr(take_profit_id)}")
+        else:
+            # Add to cache to be able to invalidate
+            self.cache.add_order(bracket_order.take_profit, PositionId.null_c())
+            self._invalidate_order(
+                bracket_order.take_profit.client_order_id,
+                "Duplicate ClientOrderId in bracket.",
+            )
 
-    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
-        # Pass-through for now
-        client.update_order(command)
-
-    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
-        # Pass-through for now
-        client.cancel_order(command)
+        # Finally log error
+        self._log.error(f"Cannot submit BracketOrder: {', '.join(error_msgs)}")
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

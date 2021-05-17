@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import pytest
 
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -134,6 +149,11 @@ def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
 
 
 @pytest.fixture()
+def risk_engine(event_loop, clock, live_logger, portfolio, trader_id):
+    return BetfairTestStubs.mock_live_risk_engine()
+
+
+@pytest.fixture()
 def betting_instrument(provider):
     return BetfairTestStubs.betting_instrument()
 
@@ -178,8 +198,7 @@ def betfair_data_client(betfair_client, data_engine, clock, live_logger):
         clock=clock,
         logger=live_logger,
         market_filter={},
-        load_instruments=False,
+        load_instruments=True,
     )
-    client.instrument_provider().load_all()
     data_engine.register_client(client)
     return client
