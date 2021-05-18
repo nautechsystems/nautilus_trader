@@ -356,7 +356,6 @@ cdef class LiveExecutionClient(ExecutionClient):
                 last_px=exec_report.last_px,
                 quote_currency=instrument.quote_currency,
                 commission=exec_report.commission,
-                is_inverse=instrument.is_inverse,
                 liquidity_side=exec_report.liquidity_side,
                 execution_ns=exec_report.execution_ns,
             )

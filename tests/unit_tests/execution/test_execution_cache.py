@@ -323,7 +323,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(fill=fill)
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
         self.cache.add_position(position)
@@ -375,7 +375,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(fill=fill)
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
         self.cache.add_position(position)
 
         # Act
@@ -516,7 +516,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position = Position(fill=fill1)
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
         # Act
         self.cache.add_position(position)
@@ -576,7 +576,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position = Position(fill=fill1)
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position)
 
         order2 = self.strategy.order_factory.market(
@@ -660,7 +660,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position1)
 
         # -- Position 2 --------------------------------------------------------
@@ -683,7 +683,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position2 = Position(fill=fill2)
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
         self.cache.add_position(position2)
 
         # Assert
@@ -723,7 +723,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position1)
 
         # -- Position 2 --------------------------------------------------------
@@ -746,7 +746,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position2 = Position(fill=fill2)
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
         self.cache.add_position(position2)
 
         order3 = self.strategy.order_factory.market(
@@ -830,7 +830,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
@@ -879,7 +879,7 @@ class ExecutionCacheTests(unittest.TestCase):
             position_id=position1_id,
             last_px=Price.from_str("1.00000"),
         )
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
@@ -933,7 +933,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 

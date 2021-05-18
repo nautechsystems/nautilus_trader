@@ -21,6 +21,7 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -30,23 +31,28 @@ cdef class Position:
     Represents a position in a financial market.
     """
 
-    def __init__(self, OrderFilled fill not None):
+    def __init__(self, Instrument instrument, OrderFilled fill not None):
         """
         Initialize a new instance of the `Position` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The trading instrument for the position.
         fill : OrderFilled
             The order fill event which opened the position.
 
         Raises
         ------
         ValueError
+            If instrument.id is not equal to fill.instrument_id.
+        ValueError
             If event.position_id has a 'NULL' value.
         ValueError
             If event.strategy_id has a 'NULL' value.
 
         """
+        Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.true(fill.position_id.not_null(), "event.position_id.value was 'NULL'")
         Condition.true(fill.strategy_id.not_null(), "event.strategy_id.value was 'NULL'")
 
@@ -66,16 +72,18 @@ cdef class Position:
         self.entry = fill.order_side
         self.side = Position.side_from_order_side(fill.order_side)
         self.relative_qty = Decimal()
-        self.quantity = Quantity.zero_c(precision=fill.last_qty.precision)
-        self.peak_qty = Quantity.zero_c(precision=fill.last_qty.precision)
+        self.quantity = Quantity.zero_c(precision=instrument.size_precision)
+        self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
         self.timestamp_ns = fill.execution_ns
         self.opened_timestamp_ns = fill.execution_ns
         self.closed_timestamp_ns = 0
         self.open_duration_ns = 0
         self.avg_px_open = fill.last_px.as_decimal()
         self.avg_px_close = None  # Can be None
-        self.quote_currency = fill.currency
-        self.is_inverse = fill.is_inverse
+        self.price_precision = instrument.price_precision
+        self.size_precision = instrument.size_precision
+        self.is_inverse = instrument.is_inverse
+        self.quote_currency = instrument.quote_currency
         self.realized_points = Decimal()
         self.realized_return = Decimal()
         self.realized_pnl = Money(0, self.quote_currency)
@@ -384,7 +392,7 @@ cdef class Position:
             self._handle_sell_order_fill(fill)
 
         # Set quantities  # TODO: Refactor when precision available
-        self.quantity = Quantity.from_str_c(str(abs(self.relative_qty)))
+        self.quantity = Quantity(abs(self.relative_qty), self.size_precision)
         if self.quantity > self.peak_qty:
             self.peak_qty = self.quantity
 

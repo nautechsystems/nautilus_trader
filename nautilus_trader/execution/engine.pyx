@@ -44,7 +44,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.time cimport unix_timestamp_us
+from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -65,6 +65,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
@@ -395,7 +396,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef int64_t ts = unix_timestamp_us()
+        cdef int64_t ts = unix_timestamp_ms()
 
         self.cache.cache_currencies()
         self.cache.cache_instruments()
@@ -406,7 +407,7 @@ cdef class ExecutionEngine(Component):
         self.cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {(unix_timestamp_us() - ts)}μs.")
+        self._log.info(f"Loaded cache in {(unix_timestamp_ms() - ts)}ms.")
 
         # Update portfolio
         for account in self.cache.accounts():
@@ -657,7 +658,13 @@ cdef class ExecutionEngine(Component):
             self._update_position(position, fill)
 
     cdef inline void _open_position(self, OrderFilled fill) except *:
-        cdef Position position = Position(fill=fill)
+        cdef Instrument instrument = self.cache.load_instrument(fill.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot open position: no instrument found for {fill.instrument_id.value}, {fill}.")
+            return
+
+        cdef Position position = Position(instrument, fill)
         self.cache.add_position(position)
 
         self._risk_engine.process(fill)
@@ -714,7 +721,6 @@ cdef class ExecutionEngine(Component):
             last_qty=position.quantity,  # Fill original position quantity remaining
             last_px=fill.last_px,
             currency=fill.currency,
-            is_inverse=fill.is_inverse,
             commission=Money(fill.commission * fill_percent1, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
             execution_ns=fill.execution_ns,
@@ -744,7 +750,6 @@ cdef class ExecutionEngine(Component):
             last_qty=difference,  # Fill difference from original as above
             last_px=fill.last_px,
             currency=fill.currency,
-            is_inverse=fill.is_inverse,
             commission=Money(fill.commission * fill_percent2, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
             execution_ns=fill.execution_ns,

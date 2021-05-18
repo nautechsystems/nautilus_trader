@@ -1,3 +1,18 @@
+# NautilusTrader 1.120.0 Beta - Release Notes
+
+
+## Breaking Changes
+- `Position` now requires an `Instrument` param.
+- `is_inverse` removed from `OrderFilled`.
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.119.0 Beta - Release Notes
 
 This release applies another major refactoring to the value object API for

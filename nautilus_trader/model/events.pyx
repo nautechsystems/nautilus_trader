@@ -996,7 +996,6 @@ cdef class OrderFilled(OrderEvent):
         Quantity last_qty not None,
         Price last_px not None,
         Currency currency not None,
-        bint is_inverse,
         Money commission not None,
         LiquiditySide liquidity_side,
         int64_t execution_ns,
@@ -1031,8 +1030,6 @@ cdef class OrderFilled(OrderEvent):
             The fill price for this execution (not average price).
         currency : Currency
             The currency of the price.
-        is_inverse : bool
-            If quantity is expressed in quote currency.
         commission : Money
             The fill commission.
         liquidity_side : LiquiditySide
@@ -1074,7 +1071,6 @@ cdef class OrderFilled(OrderEvent):
         self.last_qty = last_qty
         self.last_px = last_px
         self.currency = currency
-        self.is_inverse = is_inverse
         self.commission = commission
         self.liquidity_side = liquidity_side
         self.execution_ns = execution_ns
