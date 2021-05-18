@@ -148,7 +148,7 @@ python2 = ["typed-ast (>=1.4.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.50.6"
+version = "1.50.8"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -187,7 +187,7 @@ pycparser = "*"
 
 [[package]]
 name = "cfgv"
-version = "3.2.0"
+version = "3.3.0"
 description = "Validate configuration and produce human readable error messages."
 category = "dev"
 optional = false
@@ -1201,7 +1201,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "f6115245737a3df8737711c20c03dc00124428a16eefe4fcd91a2ef4267e651a"
+content-hash = "9588efdc968a924ae34c5097b0ccaacbfe9fede30a7897d19f5a9adc6c53eb86"
 
 [metadata.files]
 aiodns = [
@@ -1288,8 +1288,8 @@ black = [
     {file = "black-21.5b1.tar.gz", hash = "sha256:23695358dbcb3deafe7f0a3ad89feee5999a46be5fec21f4f1d108be0bcdb3b1"},
 ]
 ccxt = [
-    {file = "ccxt-1.50.6-py2.py3-none-any.whl", hash = "sha256:16c579ecb03be8fac396d22d9f9d27f1af0985b65f90152bb91896fe08924efb"},
-    {file = "ccxt-1.50.6.tar.gz", hash = "sha256:2cd385f1d61e07a3d6ad7181cba6df74c486a600f0f9c2206f6be90b4c911a84"},
+    {file = "ccxt-1.50.8-py2.py3-none-any.whl", hash = "sha256:ac42a9423dfdd60a748f0737d1ad97421f783c718129f0cc394555c574f00cf6"},
+    {file = "ccxt-1.50.8.tar.gz", hash = "sha256:2f5d97505c377f8c77e40b01d2af2e145f32683a7287b06da20b63bbe6d3c85f"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1335,8 +1335,8 @@ cffi = [
     {file = "cffi-1.14.5.tar.gz", hash = "sha256:fd78e5fee591709f32ef6edb9a015b4aa1a5022598e36227500c8f4e02328d9c"},
 ]
 cfgv = [
-    {file = "cfgv-3.2.0-py2.py3-none-any.whl", hash = "sha256:32e43d604bbe7896fe7c248a9c2276447dbef840feb28fe20494f62af110211d"},
-    {file = "cfgv-3.2.0.tar.gz", hash = "sha256:cf22deb93d4bcf92f345a5c3cd39d3d41d6340adc60c78bbbd6588c384fda6a1"},
+    {file = "cfgv-3.3.0-py2.py3-none-any.whl", hash = "sha256:b449c9c6118fe8cca7fa5e00b9ec60ba08145d281d52164230a69211c5d597a1"},
+    {file = "cfgv-3.3.0.tar.gz", hash = "sha256:9e600479b3b99e8af981ecdfc80a0296104ee610cab48a5ae4ffd0b668650eb1"},
 ]
 chardet = [
     {file = "chardet-4.0.0-py2.py3-none-any.whl", hash = "sha256:f864054d66fd9118f2e67044ac8981a54775ec5b67aed0441892edb553d21da5"},
