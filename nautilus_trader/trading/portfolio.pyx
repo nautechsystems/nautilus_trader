@@ -209,7 +209,7 @@ cdef class Portfolio(PortfolioFacade):
             self._update_initial_margin(venue)
 
         self._log.info(
-            f"Initialized {working_count} working order{'' if working_count == 1 else 's'}.",
+            f"Initialized {working_count} order{'' if working_count == 1 else 's'} working.",
             color=LogColor.BLUE if working_count else LogColor.NORMAL,
         )
 
@@ -257,12 +257,12 @@ cdef class Portfolio(PortfolioFacade):
                 self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(instrument_id)
 
         self._log.info(
-            f"Initialized {open_count} open position{'' if open_count == 1 else 's'}.",
+            f"Initialized {open_count} position{'' if open_count == 1 else 's'} open.",
             color=LogColor.BLUE if open_count else LogColor.NORMAL,
         )
 
         self._log.info(
-            f"Initialized {closed_count} closed position{'' if closed_count == 1 else 's'}.",
+            f"Initialized {closed_count} position{'' if closed_count == 1 else 's'} closed.",
             color=LogColor.BLUE if closed_count else LogColor.NORMAL,
         )
 
