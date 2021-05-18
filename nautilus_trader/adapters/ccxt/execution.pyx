@@ -435,6 +435,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     async def _load_instruments(self):
         await self._instrument_provider.load_all_async()
+
+        cdef Instrument instrument
+        for instrument in self._instrument_provider.get_all():
+            self._engine.cache.add_instrument(instrument)
+
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
     async def _update_instruments(self, delay):
