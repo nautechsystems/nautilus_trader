@@ -1184,7 +1184,6 @@ cdef class SimulatedExchange:
             last_qty=last_qty,
             last_px=last_px,
             quote_currency=instrument.quote_currency,
-            is_inverse=instrument.is_inverse,
             commission=commission,
             liquidity_side=liquidity_side,
             execution_ns=self._clock.timestamp_ns(),

@@ -410,7 +410,6 @@ class TestStubs:
             last_qty=last_qty,
             last_px=order.price if last_px is None else last_px,
             currency=instrument.quote_currency,
-            is_inverse=instrument.is_inverse,
             commission=commission,
             liquidity_side=liquidity_side,
             execution_ns=execution_ns,

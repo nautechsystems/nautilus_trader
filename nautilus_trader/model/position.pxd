@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -60,10 +61,14 @@ cdef class Position:
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
     """The peak directional quantity reached by the position.\n\n:returns: `Quantity`"""
-    cdef readonly Currency quote_currency
-    """The position quote currency.\n\n:returns: `Currency`"""
+    cdef readonly uint8_t price_precision
+    """The price precision for the position.\n\n:returns: `uint8`"""
+    cdef readonly uint8_t size_precision
+    """The size precision for the position.\n\n:returns: `uint8`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
+    cdef readonly Currency quote_currency
+    """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly int64_t timestamp_ns
     """The position initialization Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
     cdef readonly int64_t opened_timestamp_ns
