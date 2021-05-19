@@ -613,7 +613,6 @@ cdef class ExecutionClient:
         Quantity last_qty,
         Price last_px,
         Currency quote_currency,
-        bint is_inverse,
         Money commission,
         LiquiditySide liquidity_side,
         int64_t execution_ns,
@@ -641,8 +640,6 @@ cdef class ExecutionClient:
             The fill price for this execution (not average price).
         quote_currency : Currency
             The currency of the price.
-        is_inverse : bool
-            If quantity is expressed in quote currency.
         commission : Money
             The fill commission.
         liquidity_side : LiquiditySide
@@ -664,7 +661,6 @@ cdef class ExecutionClient:
             last_qty=last_qty,
             last_px=last_px,
             currency=quote_currency,
-            is_inverse=is_inverse,
             commission=commission,
             liquidity_side=liquidity_side,
             execution_ns=execution_ns,

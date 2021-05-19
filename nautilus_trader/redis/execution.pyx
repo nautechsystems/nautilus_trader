@@ -404,7 +404,14 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             return None
 
         cdef OrderFilled initial_fill = self._event_serializer.deserialize(events.pop(0))
-        cdef Position position = Position(fill=initial_fill)
+        cdef Instrument instrument = self.load_instrument(initial_fill.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot load position: no instrument found for {initial_fill.instrument_id}",
+            )
+            return
+
+        cdef Position position = Position(instrument, initial_fill)
 
         cdef bytes event_bytes
         for event_bytes in events:

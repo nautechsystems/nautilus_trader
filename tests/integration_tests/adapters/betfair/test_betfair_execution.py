@@ -23,9 +23,6 @@ import pytest
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.currencies import AUD
-
-# from nautilus_trader.model.events import OrderCanceled
-# from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled

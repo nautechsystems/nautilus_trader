@@ -195,8 +195,6 @@ cdef class OrderFilled(OrderEvent):
     """The fill price for this execution.\n\n:returns: `Price`"""
     cdef readonly Currency currency
     """The currency of the price.\n\n:returns: `Currency`"""
-    cdef readonly bint is_inverse
-    """If quantity is expressed in quote currency.\n\n:returns: `bool`"""
     cdef readonly Money commission
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side

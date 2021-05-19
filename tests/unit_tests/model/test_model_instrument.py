@@ -56,7 +56,7 @@ class TestInstrument:
         # Arrange
         # Act
         # Assert
-        assert type(hash(BTCUSDT_BINANCE)) == int
+        assert isinstance(hash(BTCUSDT_BINANCE), int)
         assert hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE)
 
     @pytest.mark.parametrize(

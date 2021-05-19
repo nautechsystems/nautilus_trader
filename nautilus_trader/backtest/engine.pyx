@@ -573,6 +573,8 @@ cdef class BacktestEngine:
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange (if None then no probabilistic fills).
+        order_book_level : OrderBookLevel
+            The default order book level for fill modelling.
 
         Raises
         ------
@@ -734,6 +736,7 @@ cdef class BacktestEngine:
                 self._data_producer = CachedProducer(self._data_producer)
 
         log_memory(self._log)
+        # TODO: get_size_of is often hanging - also a non-trivial function for Python
         # self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
 
         # Setup start datetime
@@ -777,6 +780,7 @@ cdef class BacktestEngine:
         # Prepare instruments
         for instrument in self._data_producer.instruments():
             self._data_engine.process(instrument)
+            self._exec_engine.cache.add_instrument(instrument)
 
         # Setup new strategies
         if strategies:

@@ -144,6 +144,10 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
+        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
+        self.exec_engine.cache.add_instrument(XBTUSD_BITMEX)
+
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.strategy.register_trader(
             self.trader_id,
@@ -1939,6 +1943,8 @@ class BitmexExchangeTests(unittest.TestCase):
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
+
+        self.exec_engine.cache.add_instrument(XBTUSD_BITMEX)
 
         self.strategy = MockStrategy(
             bar_type=TestStubs.bartype_btcusdt_binance_100tick_last()

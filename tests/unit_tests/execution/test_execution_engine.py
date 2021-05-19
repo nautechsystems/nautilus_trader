@@ -107,6 +107,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         self.cache = self.exec_engine.cache
+        self.cache.add_instrument(AUDUSD_SIM)
         self.exec_engine.process(TestStubs.event_account_state())
 
         self.venue = Venue("SIM")
@@ -273,7 +274,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         order.apply(fill1)
-        position = Position(fill=fill1)
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
 
         self.database.add_order(order)
         self.database.update_order(order)

@@ -115,7 +115,6 @@ cdef class ExecutionClient:
         Quantity last_qty,
         Price last_px,
         Currency quote_currency,
-        bint is_inverse,
         Money commission,
         LiquiditySide liquidity_side,
         int64_t execution_ns,
