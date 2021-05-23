@@ -67,7 +67,6 @@ class TraderTests(unittest.TestCase):
         )
         self.data_engine.process(USDJPY_SIM)
 
-        self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_db = InMemoryExecutionDatabase(
@@ -102,8 +101,6 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.data_engine.register_client(self.data_client)
-
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=account_id,
@@ -119,8 +116,12 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
+        # Wire up components
+        self.data_engine.register_client(self.data_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
+        self.portfolio.register_data_cache(self.data_engine.cache)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         strategies = [
             TradingStrategy("001"),
@@ -132,8 +133,8 @@ class TraderTests(unittest.TestCase):
             strategies=strategies,
             portfolio=self.portfolio,
             data_engine=self.data_engine,
-            exec_engine=self.exec_engine,
             risk_engine=self.risk_engine,
+            exec_engine=self.exec_engine,
             clock=clock,
             logger=logger,
         )

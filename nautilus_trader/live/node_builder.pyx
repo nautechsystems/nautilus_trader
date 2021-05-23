@@ -21,7 +21,6 @@ from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.live.risk_engine cimport LiveRiskEngine
 
 
 cdef class TradingNodeBuilder:
@@ -33,7 +32,6 @@ cdef class TradingNodeBuilder:
         self,
         LiveDataEngine data_engine not None,
         LiveExecutionEngine exec_engine not None,
-        LiveRiskEngine risk_engine not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         LoggerAdapter log not None,
@@ -47,8 +45,6 @@ cdef class TradingNodeBuilder:
             The data engine for the trading node.
         exec_engine : LiveExecutionEngine
             The execution engine for the trading node.
-        risk_engine : LiveExecutionEngine
-            The risk engine for the trading node.
         clock : LiveClock
             The clock for building clients.
         logger : LiveLogger
@@ -62,7 +58,6 @@ cdef class TradingNodeBuilder:
         self._log = log
         self._data_engine = data_engine
         self._exec_engine = exec_engine
-        self._risk_engine = risk_engine
 
         self._data_factories = {}  # type: dict[str, LiveDataClientFactory]
         self._exec_factories = {}  # type: dict[str, LiveExecutionClientFactory]

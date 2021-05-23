@@ -39,6 +39,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionEngine(Component):
+    cdef dict _routing_map
     cdef dict _clients
     cdef dict _strategies
     cdef PositionIdGenerator _pos_id_generator

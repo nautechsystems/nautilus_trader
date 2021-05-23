@@ -48,8 +48,8 @@ class TestPositionSizer:
         # Assert
         with pytest.raises(NotImplementedError):
             sizer.calculate(
-                Price.from_str("1.00100"),
-                Price.from_str("1.00000"),
+                Price.from_str("110.001"),
+                Price.from_str("110.000"),
                 Money(1_000_000, USD),
                 Decimal("0.001"),
                 Decimal(1000),

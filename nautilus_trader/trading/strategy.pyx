@@ -1328,22 +1328,10 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
-        if position_id is None:
-            # Null object pattern
-            position_id = PositionId.null_c()
-
-        cdef AccountId account_id = self.execution.account_id(order.instrument_id.venue)  # TODO: should be first()
-        if account_id is None:
-            self.log.error(f"Cannot submit order: "
-                           f"no account registered for {order.instrument_id.venue}, {order}.")
-            return  # Cannot send command
-
         cdef SubmitOrder command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            account_id,
             self.id,
-            position_id,
+            position_id if position_id is not None else PositionId.null_c(),
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1368,16 +1356,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
-        cdef AccountId account_id = self.execution.account_id(bracket_order.entry.instrument_id.venue)
-        if account_id is None:
-            self.log.error(f"Cannot submit bracket order: "
-                           f"no account registered for {bracket_order.entry.instrument_id.venue}, {bracket_order}.")
-            return  # Cannot send command
-
         cdef SubmitBracketOrder command = SubmitBracketOrder(
-            bracket_order.entry.instrument_id.venue.client_id,
             self.trader_id,
-            account_id,
             self.id,
             bracket_order,
             self.uuid_factory.generate(),
@@ -1465,9 +1445,8 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         cdef UpdateOrder command = UpdateOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            order.account_id,
+            self.id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
@@ -1486,6 +1465,8 @@ cdef class TradingStrategy(Component):
         A `CancelOrder` command will be created and then sent to the
         `ExecutionEngine`.
 
+        Logs an error if no `VenueOrderId` has been assigned to the order.
+
         Parameters
         ----------
         order : Order
@@ -1496,18 +1477,16 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
-        if order.account_id is None:
-            self.log.error(f"Cannot cancel order (no account assigned to order yet), {order}.")
-            return  # Cannot send command
-
         if order.venue_order_id.is_null():
-            self.log.error(f"Cannot cancel order (no venue_order_id assigned yet), {order}.")
+            self.log.error(
+                f"Cannot cancel order (no venue_order_id assigned yet), "
+                f"{order}.",
+            )
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            order.account_id,
+            self.id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
@@ -1533,14 +1512,20 @@ cdef class TradingStrategy(Component):
         # instrument_id can be None
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
-        cdef list working_orders = self.execution.orders_working(instrument_id, self.id)
+        cdef list working_orders = self.execution.orders_working(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+            strategy_id=self.id,
+        )
 
         if not working_orders:
             self.log.info("No working orders to cancel.")
             return
 
         cdef int count = len(working_orders)
-        self.log.info(f"Cancelling {count} working order{'' if count == 1 else 's'}...")
+        self.log.info(
+            f"Cancelling {count} working order{'' if count == 1 else 's'}...",
+        )
 
         cdef Order order
         for order in working_orders:
@@ -1580,9 +1565,7 @@ cdef class TradingStrategy(Component):
 
         # Create command
         cdef SubmitOrder command = SubmitOrder(
-            position.instrument_id.venue.client_id,
             self.trader_id,
-            position.account_id,
             self.id,
             position.id,
             order,
@@ -1608,7 +1591,11 @@ cdef class TradingStrategy(Component):
         # instrument_id can be None
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
-        cdef list positions_open = self.execution.positions_open(instrument_id, self.id)
+        cdef list positions_open = self.execution.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+            strategy_id=self.id,
+        )
 
         if not positions_open:
             self.log.info("No open positions to flatten.")

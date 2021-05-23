@@ -160,10 +160,10 @@ class AnalyzerTests(unittest.TestCase):
             last_px=Price.from_str("1.00020"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(fill=fill3)
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill3)
         position2.apply(fill4)
 
         self.analyzer.add_positions([position1, position2])

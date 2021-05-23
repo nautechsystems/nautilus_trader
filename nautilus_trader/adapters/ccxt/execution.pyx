@@ -54,6 +54,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -101,18 +102,20 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             load_all=False,
         )
 
+        cdef str exchange_name = client.name.upper()
         super().__init__(
-            ClientId(client.name.upper()),
+            ClientId(exchange_name),
             account_id,
             engine,
             instrument_provider,
             clock,
             logger,
             config={
-                "name": f"CCXTExecClient-{client.name.upper()}",
+                "name": f"CCXTExecClient-{exchange_name}",
             }
         )
 
+        self.venue = Venue(exchange_name)
         self._client = client
         self.is_connected = False
 
@@ -140,7 +143,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for order in orders_all:
             if order.is_completed_c():
                 continue
-            if order.instrument_id.venue.client_id == self.id:
+            if order.instrument_id.venue == self.venue:
                 self._cached_orders[order.venue_order_id] = order
                 self._cached_filled[order.venue_order_id] = order.filled_qty.as_decimal()
 
@@ -212,7 +215,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 id=order.venue_order_id.value,
                 symbol=order.instrument_id.symbol.value,
             )
-            # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._update_balances.__name__)
             return None
@@ -435,6 +437,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     async def _load_instruments(self):
         await self._instrument_provider.load_all_async()
+
+        cdef Instrument instrument
+        for instrument in self._instrument_provider.get_all().values():
+            self._engine.cache.add_instrument(instrument)
+
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
     async def _update_instruments(self, delay):
@@ -670,7 +677,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             last_qty=Quantity(event["amount"], instrument.size_precision),
             last_px=Price(event["price"], instrument.price_precision),
             quote_currency=instrument.quote_currency,
-            is_inverse=instrument.is_inverse,
             commission=self._parse_commission(event),
             liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
             execution_ns=(millis_to_nanos(millis=event["timestamp"])),
@@ -732,8 +738,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             The logger for the client.
 
         """
-        Condition.true(client.name.upper() == "BINANCE", "client.name != BINANCE")
-
+        cdef str exchange_name = client.name.upper()
+        Condition.true(exchange_name == "BINANCE", "client.name != BINANCE")
         super().__init__(
             client,
             account_id,
@@ -741,6 +747,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             clock,
             logger,
         )
+
+        self.venue = Venue(exchange_name)
 
 # -- COMMANDS ----------------------------------------------------------------------------------
 
@@ -834,8 +842,8 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             The logger for the client.
 
         """
-        Condition.true(client.name.upper() == "BITMEX", "client.name != BITMEX")
-
+        cdef str exchange_name = client.name.upper()
+        Condition.true(exchange_name == "BITMEX", "client.name != BITMEX")
         super().__init__(
             client,
             account_id,
@@ -843,6 +851,8 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             clock,
             logger,
         )
+
+        self.venue = Venue(exchange_name)
 
 # -- COMMANDS ----------------------------------------------------------------------------------
 

@@ -33,7 +33,6 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -49,8 +48,6 @@ cdef class ExecutionClient:
 
     cdef readonly ClientId id
     """The clients identifier.\n\n:returns: `ClientId`"""
-    cdef readonly Venue venue
-    """The clients venue.\n\n:returns: `Venue`"""
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
     cdef readonly bint is_connected
@@ -115,7 +112,6 @@ cdef class ExecutionClient:
         Quantity last_qty,
         Price last_px,
         Currency quote_currency,
-        bint is_inverse,
         Money commission,
         LiquiditySide liquidity_side,
         int64_t execution_ns,

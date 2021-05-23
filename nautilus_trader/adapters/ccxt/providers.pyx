@@ -81,7 +81,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         cdef InstrumentId instrument_id
         cdef Instrument instrument
         for k, v in self._client.markets.items():
-            instrument_id = InstrumentId(Symbol(k), self.venue)
+            instrument_id = InstrumentId(Symbol(k.replace(".", "")), self.venue)
             instrument = self._parse_instrument(instrument_id, v)
             if instrument is None:
                 continue  # Something went wrong in parsing
@@ -132,11 +132,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):
-        cdef:
-            dict precisions
-            str asset_type_str
-            bint is_inverse
-        precisions = values["precision"]
+        cdef dict precisions = values["precision"]
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
             price_precision = precisions.get("price")
             size_precision = precisions.get("amount", 8)
@@ -153,7 +149,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                                f"SIGNIFICANT_DIGITS precision which is not "
                                f"currently supported in this version.")
 
-        asset_type_str = values.get("type")
+        cdef str asset_type_str = values.get("type")
         if asset_type_str is not None:
             asset_type = AssetTypeParser.from_str(asset_type_str.upper())
         else:
@@ -205,15 +201,15 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         if maker_fee is None:
             maker_fee = Decimal()
         else:
-            maker_fee = Decimal(maker_fee)
+            maker_fee = Decimal(f"{maker_fee:.4f}")
 
         taker_fee = values.get("taker")
         if taker_fee is None:
             taker_fee = Decimal()
         else:
-            taker_fee = Decimal(taker_fee)
+            taker_fee = Decimal(f"{taker_fee:.4f}")
 
-        is_inverse = values.get("info", {}).get("isInverse", False)
+        cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
 
         return Instrument(
             instrument_id=instrument_id,

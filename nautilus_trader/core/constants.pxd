@@ -24,7 +24,6 @@ cdef str OPTIONS
 cdef str TIMESTAMP
 cdef str VENUE
 cdef str INSTRUMENT_ID
-cdef str CLIENT_ID
 cdef str TRADER_ID
 cdef str STRATEGY_ID
 cdef str ACCOUNT_ID

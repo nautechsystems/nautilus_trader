@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport Order
@@ -29,6 +30,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     cdef dict _cached_orders
     cdef dict _cached_filled
+
+    cdef readonly Venue venue
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

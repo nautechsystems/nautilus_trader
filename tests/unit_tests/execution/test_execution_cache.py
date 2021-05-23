@@ -323,7 +323,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(fill=fill)
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
         self.cache.add_position(position)
@@ -340,7 +340,8 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(
             position,
             self.cache.positions_open(
-                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+                instrument_id=position.instrument_id,
+                strategy_id=self.strategy.id,
             ),
         )
         self.assertNotIn(position, self.cache.positions_closed())
@@ -375,7 +376,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(fill=fill)
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
         self.cache.add_position(position)
 
         # Act
@@ -516,7 +517,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position = Position(fill=fill1)
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
         # Act
         self.cache.add_position(position)
@@ -576,7 +577,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position = Position(fill=fill1)
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position)
 
         order2 = self.strategy.order_factory.market(
@@ -608,15 +609,18 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(position, self.cache.positions())
         self.assertIn(position, self.cache.positions_closed())
         self.assertIn(
-            position, self.cache.positions_closed(instrument_id=position.instrument_id)
+            position,
+            self.cache.positions_closed(instrument_id=position.instrument_id),
         )
         self.assertIn(
-            position, self.cache.positions_closed(strategy_id=self.strategy.id)
+            position,
+            self.cache.positions_closed(strategy_id=self.strategy.id),
         )
         self.assertIn(
             position,
             self.cache.positions_closed(
-                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+                instrument_id=position.instrument_id,
+                strategy_id=self.strategy.id,
             ),
         )
         self.assertNotIn(position, self.cache.positions_open())
@@ -629,7 +633,8 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertNotIn(
             position,
             self.cache.positions_open(
-                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+                instrument_id=position.instrument_id,
+                strategy_id=self.strategy.id,
             ),
         )
         self.assertEqual(position, self.cache.position(position_id))
@@ -660,7 +665,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position1)
 
         # -- Position 2 --------------------------------------------------------
@@ -683,7 +688,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position2 = Position(fill=fill2)
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
         self.cache.add_position(position2)
 
         # Assert
@@ -691,10 +696,17 @@ class ExecutionCacheTests(unittest.TestCase):
         assert position2.is_open
         assert position1 in self.cache.positions()
         assert position2 in self.cache.positions()
-        assert self.cache.positions(AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions(GBPUSD_SIM.id) == [position2]
-        assert self.cache.positions_open(AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions_open(GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions(
+            venue=AUDUSD_SIM.venue, instrument_id=AUDUSD_SIM.id
+        ) == [position1]
+        assert self.cache.positions(
+            venue=GBPUSD_SIM.venue, instrument_id=GBPUSD_SIM.id
+        ) == [position2]
+        assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions(instrument_id=AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id) == [position2]
         assert position1 in self.cache.positions_open()
         assert position2 in self.cache.positions_open()
         assert position1 not in self.cache.positions_closed()
@@ -723,7 +735,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.add_position(position1)
 
         # -- Position 2 --------------------------------------------------------
@@ -746,7 +758,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00001"),
         )
 
-        position2 = Position(fill=fill2)
+        position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
         self.cache.add_position(position2)
 
         order3 = self.strategy.order_factory.market(
@@ -774,14 +786,17 @@ class ExecutionCacheTests(unittest.TestCase):
         assert position1.is_open
         assert position2.is_closed
         assert position1 in self.cache.positions()
-        assert position1 in self.cache.positions(AUDUSD_SIM.id)
+        assert position1 in self.cache.positions(instrument_id=AUDUSD_SIM.id)
         assert position2 in self.cache.positions()
-        assert position2 in self.cache.positions(GBPUSD_SIM.id)
-        assert self.cache.positions_open(BTCUSD_BINANCE.id) == []
-        assert self.cache.positions_open(AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions_open(GBPUSD_SIM.id) == []
-        assert self.cache.positions_closed(AUDUSD_SIM.id) == []
-        assert self.cache.positions_closed(GBPUSD_SIM.id) == [position2]
+        assert position2 in self.cache.positions(instrument_id=GBPUSD_SIM.id)
+        assert self.cache.positions_open(venue=BTCUSD_BINANCE.venue) == []
+        assert self.cache.positions_open(venue=AUDUSD_SIM.venue) == [position1]
+        assert self.cache.positions_open(instrument_id=BTCUSD_BINANCE.id) == []
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id) == []
+        assert self.cache.positions_closed(instrument_id=AUDUSD_SIM.id) == []
+        assert self.cache.positions_closed(venue=GBPUSD_SIM.venue) == [position2]
+        assert self.cache.positions_closed(instrument_id=GBPUSD_SIM.id) == [position2]
 
     def test_update_account(self):
         # Arrange
@@ -830,7 +845,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
@@ -838,7 +853,7 @@ class ExecutionCacheTests(unittest.TestCase):
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.0000"),
+            Price.from_str("1.00000"),
         )
 
         position2_id = PositionId("P-2")
@@ -879,7 +894,7 @@ class ExecutionCacheTests(unittest.TestCase):
             position_id=position1_id,
             last_px=Price.from_str("1.00000"),
         )
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
@@ -933,7 +948,7 @@ class ExecutionCacheTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 

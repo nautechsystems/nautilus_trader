@@ -581,14 +581,6 @@ cdef class SimulatedExchange:
         self._clean_up_child_orders(order.client_order_id)
 
     cdef inline void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *:
-        if qty <= 0:
-            self._generate_order_update_rejected(
-                order.client_order_id,
-                "update order",
-                f"new quantity {qty} invalid",
-            )
-            return  # Cannot update order
-
         # Generate event
         self._generate_order_pending_replace(order)
 
@@ -750,24 +742,6 @@ cdef class SimulatedExchange:
 
     cdef inline void _process_order(self, Order order) except *:
         Condition.not_in(order.client_order_id, self._working_orders, "order.client_order_id", "working_orders")
-
-        cdef Instrument instrument = self.instruments[order.instrument_id]
-
-        # Check order size is valid or reject
-        if instrument.max_quantity and order.quantity > instrument.max_quantity:
-            self._reject_order(
-                order,
-                f"order quantity of {order.quantity} exceeds the "
-                f"maximum trade size of {instrument.max_quantity}",
-            )
-            return  # Cannot accept order
-        if instrument.min_quantity and order.quantity < instrument.min_quantity:
-            self._reject_order(
-                order,
-                f"order quantity of {order.quantity} is less than the "
-                f"minimum trade size of {instrument.min_quantity}",
-            )
-            return  # Cannot accept order
 
         if order.type == OrderType.MARKET:
             self._process_market_order(order)
@@ -1184,7 +1158,6 @@ cdef class SimulatedExchange:
             last_qty=last_qty,
             last_px=last_px,
             quote_currency=instrument.quote_currency,
-            is_inverse=instrument.is_inverse,
             commission=commission,
             liquidity_side=liquidity_side,
             execution_ns=self._clock.timestamp_ns(),

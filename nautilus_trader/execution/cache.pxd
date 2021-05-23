@@ -22,6 +22,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
@@ -32,14 +33,16 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 cdef class ExecutionCache(ExecutionCacheFacade):
     cdef LoggerAdapter _log
     cdef ExecutionDatabase _database
-    cdef dict _cached_currencies
-    cdef dict _cached_instruments
-    cdef dict _cached_accounts
-    cdef dict _cached_orders
-    cdef dict _cached_positions
+    cdef dict _currencies
+    cdef dict _instruments
+    cdef dict _accounts
+    cdef dict _orders
+    cdef dict _positions
 
     cdef dict _index_venue_account
-    cdef dict _index_venue_order_ids
+    cdef dict _index_venue_orders
+    cdef dict _index_venue_positions
+    cdef dict _index_order_ids
     cdef dict _index_order_position
     cdef dict _index_order_strategy
     cdef dict _index_position_strategy
@@ -82,7 +85,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id) except *
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId client_order_id, StrategyId strategy_id) except *
+    cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position) except *
 
     cpdef void update_account(self, Account account) except *
@@ -94,5 +97,5 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef void _cache_venue_account_id(self, AccountId account_id) except *
     cdef void _build_indexes_from_orders(self) except *
     cdef void _build_indexes_from_positions(self) except *
-    cdef inline set _build_ord_query_filter_set(self, InstrumentId instrument_id, StrategyId strategy_id)
-    cdef inline set _build_pos_query_filter_set(self, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef inline set _build_ord_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef inline set _build_pos_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
