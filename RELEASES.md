@@ -5,9 +5,9 @@ This release focuses on simplifications and enhancements of existing machinery.
 ## Breaking Changes
 - `Position` now requires an `Instrument` param.
 - `is_inverse` removed from `OrderFilled`.
-- `TradingCommand` serialization.
 - `ClientId` removed from `TradingCommand` and subclasses.
 - `AccountId` removed from `TradingCommand` and subclasses.
+- `TradingCommand` serialization.
 
 ## Enhancements
 - Add `Instrument` methods to `ExecutionCache`.
