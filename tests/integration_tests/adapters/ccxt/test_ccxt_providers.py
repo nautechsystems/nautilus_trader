@@ -18,6 +18,8 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
+import pytest
+
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
@@ -48,18 +50,18 @@ async def async_magic():
 
 
 class CCXTInstrumentProviderTests(unittest.TestCase):
+    @pytest.mark.skip  # Tests real API
+    def test_real_api(self):
+        import ccxt
 
-    # Uncomment to test real API
-    # def test_real_api(self):
-    #     import ccxt
-    #     client = ccxt.binance()
-    #     provider = CCXTInstrumentProvider(client=client)
-    #
-    #     # Act
-    #     provider.load_all()
-    #
-    #     # Assert
-    #     self.assertTrue(provider.count > 0)  # No exceptions raised
+        client = ccxt.binance()
+        provider = CCXTInstrumentProvider(client=client)
+
+        # Act
+        provider.load_all()
+
+        # Assert
+        self.assertTrue(provider.count > 0)  # No exceptions raised
 
     def test_load_all_when_decimal_precision_mode_exchange(self):
         # Arrange

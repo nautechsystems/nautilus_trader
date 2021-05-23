@@ -51,15 +51,16 @@ class InstrumentSearch:
 
 
 # Notes
-# TODO - if you receive con=true flag on a market - then you are consuming data slower than the rate of deliver. If the
-#  socket buffer is full we won't attempt to push; so the next push will be conflated.
-#  We should warn about this.
+# TODO - if you receive con=true flag on a market - then you are consuming data
+#  slower than the rate of deliver. If the socket buffer is full we won't
+#  attempt to push; so the next push will be conflated. We should warn about this.
 
-# TODO - Betfair reports status:503 in messages if the stream is unhealthy. We should send out a warning / health
-#  message, potentially letting strategies know to temporarily "pause" ?
+# TODO - Betfair reports status:503 in messages if the stream is unhealthy.
+#  We should send out a warning / health message, potentially letting strategies
+#  know to temporarily "pause"?
 
-# TODO - segmentationEnabled=true segmentation breaks up large messages and improves: end to end performance, latency,
-#  time to first and last byte
+# TODO - segmentationEnabled=true segmentation breaks up large messages and
+#  improves: end to end performance, latency, time to first and last byte.
 
 
 cdef class BetfairDataClient(LiveMarketDataClient):
@@ -136,6 +137,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         # Pass any preloaded instruments into the engine
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
+            self._engine.cache.add_instrument(instrument)
 
         self._log.debug(f"DataEngine has {len(self._engine.cache.instruments(BETFAIR_VENUE))} Betfair instruments")
 
@@ -152,7 +154,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             await self._stream.send(orjson.dumps({'op': 'heartbeat'}))
 
     cpdef void disconnect(self) except *:
-        """ Disconnect the client """
+        """
+        Disconnect the client.
+        """
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):

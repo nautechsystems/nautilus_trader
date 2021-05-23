@@ -25,6 +25,7 @@ from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -54,6 +55,7 @@ cdef class RiskEngine(Component):
 
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
+    cpdef void set_block_all_orders(self, bint value=*) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -63,19 +65,23 @@ cdef class RiskEngine(Component):
     cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cdef inline void _handle_update_order(self, UpdateOrder command) except *
     cdef inline void _handle_cancel_order(self, CancelOrder command) except *
-    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
-    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef inline void _handle_event(self, Event event) except *
 
-# -- RISK MANAGEMENT -------------------------------------------------------------------------------
+# -- PRE-TRADE VALIDATION --------------------------------------------------------------------------
 
-    cdef list _check_submit_order_risk(self, SubmitOrder command)
-    cdef list _check_submit_bracket_order_risk(self, SubmitBracketOrder command)
-    cdef void _deny_order(self, Order order, str reason) except *
+    cdef inline void _check_duplicate_ids(self, BracketOrder bracket_order)
+    cdef inline list _check_order_values(self, Instrument instrument, Order order, list msgs)
 
-# -- TEMP ------------------------------------------------------------------------------------------
+# -- PRE-TRADE RISK --------------------------------------------------------------------------------
 
-    cpdef void set_block_all_orders(self, bint value=*) except *
+    cdef inline list _check_order_risk(self, Instrument instrument, Order order)
+    cdef inline list _check_bracket_order_risk(self, Instrument instrument, BracketOrder bracket_order)
+
+# -- EVENT GENERATION ------------------------------------------------------------------------------
+
+    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
+    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *
+    cdef inline void _deny_order(self, ClientOrderId client_order_id, str reason) except *

@@ -81,7 +81,7 @@ class TestLiveExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
+        self.portfolio.register_data_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -121,8 +121,10 @@ class TestLiveExecutionEngine:
             logger=self.logger,
         )
 
+        # Wired up components
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.client)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def teardown(self):
         self.exec_engine.dispose()
@@ -175,9 +177,7 @@ class TestLiveExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -222,9 +222,7 @@ class TestLiveExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -302,9 +300,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                order.instrument_id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -405,9 +401,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -462,9 +456,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -519,9 +511,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -576,9 +566,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -658,9 +646,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,

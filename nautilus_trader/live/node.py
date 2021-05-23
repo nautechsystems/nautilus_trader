@@ -171,7 +171,6 @@ class TradingNode:
             config=config_data,
         )
 
-        self.portfolio.register_cache(self._data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         if config_exec_db["type"] == "redis":
@@ -210,16 +209,19 @@ class TradingNode:
             config=config_risk,
         )
 
+        # Wire up components
         self._exec_engine.register_risk_engine(self._risk_engine)
         self._exec_engine.load_cache()
+        self.portfolio.register_data_cache(self._data_engine.cache)
+        self.portfolio.register_exec_cache(self._exec_engine.cache)
 
         self.trader = Trader(
             trader_id=self.trader_id,
             strategies=strategies,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
-            exec_engine=self._exec_engine,
             risk_engine=self._risk_engine,
+            exec_engine=self._exec_engine,
             clock=self._clock,
             logger=self._logger,
         )
@@ -230,7 +232,6 @@ class TradingNode:
         self._builder = TradingNodeBuilder(
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
-            risk_engine=self._risk_engine,
             clock=self._clock,
             logger=self._logger,
             log=self._log,

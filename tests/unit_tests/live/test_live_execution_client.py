@@ -74,7 +74,7 @@ class TestLiveExecutionClient:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
+        self.portfolio.register_data_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -110,8 +110,13 @@ class TestLiveExecutionClient:
             logger=self.logger,
         )
 
+        # Wire up components
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.client)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
+
+        # Prepare components
+        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
 
     def teardown(self):
         self.client.dispose()
@@ -160,9 +165,7 @@ class TestLiveExecutionClient:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -218,9 +221,7 @@ class TestLiveExecutionClient:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -278,9 +279,7 @@ class TestLiveExecutionClient:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,

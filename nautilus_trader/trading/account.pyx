@@ -20,10 +20,13 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+
+# TODO(cs): Add C @staticmethod(s)
 
 cdef class Account:
     """
@@ -397,7 +400,8 @@ cdef class Account:
         Condition.not_none(currency, "currency")
         Condition.not_none(self._portfolio, "self._portfolio")
 
-        cdef dict unrealized_pnls = self._portfolio.unrealized_pnls(self.id.issuer_as_venue())
+        # TODO: Assumption that issuer == venue
+        cdef dict unrealized_pnls = self._portfolio.unrealized_pnls(Venue(self.id.issuer))
         if unrealized_pnls is None:
             return None
 

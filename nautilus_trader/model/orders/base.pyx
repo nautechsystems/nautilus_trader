@@ -388,7 +388,7 @@ cdef class Order:
         If the order is closed/completed.
 
         An order is considered completed when its state can no longer change.
-        The possible states of completed orders include; `INVALID`, `DENIED`,
+        The possible states of completed orders include: `INVALID`, `DENIED`,
         `REJECTED`, `CANCELED`, `EXPIRED` and `FILLED`.
 
         Returns

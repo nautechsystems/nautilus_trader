@@ -118,6 +118,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 "name": "BetfairExecClient",
             }
         )
+
+        self.venue = BETFAIR_VENUE
         self._stream = BetfairOrderStreamClient(
             client=self._client, logger=logger, message_handler=self.handle_order_stream_update,
         )
@@ -171,8 +173,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         result = await asyncio.gather(*aws)
         account_details, account_funds = result
         account_state = betfair_account_to_account_state(
-            account_detail=account_details, account_funds=account_funds, event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns()
+            account_detail=account_details,
+            account_funds=account_funds,
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
         )
         self._handle_event(account_state)
 
@@ -398,7 +402,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     last_px=price_to_probability(order["p"]),
                                     # avg_px=Decimal(order['avp']),
                                     quote_currency=instrument.quote_currency,
-                                    is_inverse=False,
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.NONE,
                                     execution_ns=millis_to_nanos(order["md"]),
@@ -421,7 +424,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     last_qty=Quantity(order["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order['p']),
                                     quote_currency=instrument.quote_currency,
-                                    is_inverse=False,
                                     # avg_px=order['avp'],
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?

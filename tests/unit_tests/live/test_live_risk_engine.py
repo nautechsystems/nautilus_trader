@@ -71,7 +71,7 @@ class TestLiveRiskEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
+        self.portfolio.register_data_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -155,9 +155,7 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -200,9 +198,7 @@ class TestLiveRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -280,9 +276,7 @@ class TestLiveRiskEngine:
             )
 
             submit_order = SubmitOrder(
-                order.instrument_id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,

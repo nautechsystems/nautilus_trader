@@ -88,11 +88,7 @@ class TradingStrategyTests(unittest.TestCase):
                 "use_previous_close": False
             },  # To correctly reproduce historical data bars
         )
-        self.data_engine.process(AUDUSD_SIM)
-        self.data_engine.process(GBPUSD_SIM)
-        self.data_engine.process(USDJPY_SIM)
 
-        self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         trader_id = TraderId("TESTER", "000")
@@ -147,10 +143,21 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Wire up components
         self.exchange.register_client(self.exec_client)
         self.data_engine.register_client(self.data_client)
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
+        self.portfolio.register_data_cache(self.data_engine.cache)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
+
+        # Add instruments
+        self.data_engine.process(AUDUSD_SIM)
+        self.data_engine.process(GBPUSD_SIM)
+        self.data_engine.process(USDJPY_SIM)
+        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
+        self.exec_engine.cache.add_instrument(GBPUSD_SIM)
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
 
         self.exchange.process_tick(
             TestStubs.quote_tick_3decimal(USDJPY_SIM.id)

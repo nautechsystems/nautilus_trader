@@ -122,11 +122,11 @@ class TestEvents:
         # Act
         # Assert
         assert (
-            f"OrderInvalid(client_order_id=O-2020872378423, reason='DUPLICATE_CL_ORD_ID', event_id={uuid})"
+            f"OrderInvalid(client_order_id=O-2020872378423, reason=DUPLICATE_CL_ORD_ID, event_id={uuid})"
             == str(event)
         )
         assert (
-            f"OrderInvalid(client_order_id=O-2020872378423, reason='DUPLICATE_CL_ORD_ID', event_id={uuid})"
+            f"OrderInvalid(client_order_id=O-2020872378423, reason=DUPLICATE_CL_ORD_ID, event_id={uuid})"
             == repr(event)
         )
 
@@ -141,10 +141,10 @@ class TestEvents:
         )
 
         # Act
-        assert f"OrderDenied(client_order_id=O-2020872378423, reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", (
+        assert f"OrderDenied(client_order_id=O-2020872378423, reason=SINGLE_ORDER_RISK_EXCEEDED, event_id={uuid})", (
             str(event)
         )
-        assert f"OrderDenied(client_order_id=O-2020872378423, reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", (
+        assert f"OrderDenied(client_order_id=O-2020872378423, reason=SINGLE_ORDER_RISK_EXCEEDED, event_id={uuid})", (
             repr(event)
         )
 
@@ -347,7 +347,6 @@ class TestEvents:
             last_qty=Quantity.from_str("0.561000"),
             last_px=Price.from_str("15600.12445"),
             currency=USDT,
-            is_inverse=False,
             commission=Money("12.20000000", USDT),
             liquidity_side=LiquiditySide.MAKER,
             execution_ns=0,

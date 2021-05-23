@@ -238,3 +238,4 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         # 24/04/21  5375115 function calls (5337643 primitive calls) in 10.009 seconds (order book optimizations)
         # 26/04/21  5405727 function calls (5368039 primitive calls) in 7.469 seconds (order book optimizations)
         # 01/05/21  5405727 function calls (5368039 primitive calls) in 7.533 seconds (refactorings)
+        # 22/05/21  5517969 function calls (5479092 primitive calls) in 8.639 seconds (rewire risk engine)

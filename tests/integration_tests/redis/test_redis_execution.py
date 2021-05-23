@@ -140,6 +140,7 @@ class TestRedisExecutionDatabase:
             Quantity.from_int(100000),
         )
 
+        self.database.add_instrument(AUDUSD_SIM)
         self.database.add_order(order)
 
         position_id = PositionId("P-1")
@@ -150,7 +151,7 @@ class TestRedisExecutionDatabase:
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(fill=fill)
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
         self.database.add_position(position)
@@ -224,6 +225,8 @@ class TestRedisExecutionDatabase:
 
     def test_update_position_for_closed_position(self):
         # Arrange
+        self.database.add_instrument(AUDUSD_SIM)
+
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -250,7 +253,7 @@ class TestRedisExecutionDatabase:
         self.database.update_order(order1)
 
         # Act
-        position = Position(fill=order1.last_event)
+        position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
         order2 = self.strategy.order_factory.market(
@@ -416,6 +419,8 @@ class TestRedisExecutionDatabase:
 
     def test_load_order_when_position_in_database_returns_position(self):
         # Arrange
+        self.database.add_instrument(AUDUSD_SIM)
+
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -432,7 +437,7 @@ class TestRedisExecutionDatabase:
             last_px=Price.from_str("1.00000"),
         )
 
-        position = Position(fill=fill)
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         self.database.add_position(position)
 
@@ -494,6 +499,8 @@ class TestRedisExecutionDatabase:
 
     def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
+        self.database.add_instrument(AUDUSD_SIM)
+
         order1 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -515,7 +522,7 @@ class TestRedisExecutionDatabase:
             )
         )
 
-        position = Position(fill=order1.last_event)
+        position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
         # Act
@@ -551,7 +558,7 @@ class TestRedisExecutionDatabase:
             last_px=Price.from_str("1.00000"),
         )
 
-        position1 = Position(fill=fill)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill)
         self.database.update_order(order1)
         self.database.add_position(position1)
 

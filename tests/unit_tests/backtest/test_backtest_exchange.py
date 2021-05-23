@@ -47,6 +47,7 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -92,10 +93,6 @@ class SimulatedExchangeTests(unittest.TestCase):
             },  # To correctly reproduce historical data bars
         )
 
-        self.data_engine.cache.add_instrument(AUDUSD_SIM)
-        self.data_engine.cache.add_instrument(USDJPY_SIM)
-        self.portfolio.register_cache(self.data_engine.cache)
-
         self.analyzer = PerformanceAnalyzer()
         self.trader_id = TraderId("TESTER", "000")
         self.account_id = AccountId("SIM", "001")
@@ -140,10 +137,21 @@ class SimulatedExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Wire up components
+        self.data_engine.cache.add_instrument(AUDUSD_SIM)
+        self.data_engine.cache.add_instrument(USDJPY_SIM)
+
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
+        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
+        self.exec_engine.cache.add_instrument(XBTUSD_BITMEX)
+        self.portfolio.register_data_cache(self.data_engine.cache)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
+
+        # Create mock strategy
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.strategy.register_trader(
             self.trader_id,
@@ -153,6 +161,8 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         self.data_engine.register_strategy(self.strategy)
         self.exec_engine.register_strategy(self.strategy)
+
+        # Start components
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
@@ -254,7 +264,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.0000"),
+            Price.from_str("110.000"),
         )
 
         # Act
@@ -273,7 +283,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100000),
-            Price.from_str("1.0000"),
+            Price.from_str("110.000"),
         )
 
         # Act
@@ -345,7 +355,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.REJECTED, order.state)
 
-    def test_submit_order_when_quantity_below_min_then_gets_rejected(self):
+    def test_submit_order_when_quantity_below_min_then_gets_invalidated(self):
         # Arrange: Prepare market
         order = self.strategy.order_factory.market(
             USDJPY_SIM.id,
@@ -357,9 +367,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(OrderState.REJECTED, order.state)
+        self.assertEqual(OrderState.INVALID, order.state)
 
-    def test_submit_order_when_quantity_above_max_then_gets_rejected(self):
+    def test_submit_order_when_quantity_above_max_then_gets_invalidated(self):
         # Arrange: Prepare market
         order = self.strategy.order_factory.market(
             USDJPY_SIM.id,
@@ -371,7 +381,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(OrderState.REJECTED, order.state)
+        self.assertEqual(OrderState.INVALID, order.state)
 
     def test_submit_market_order(self):
         # Arrange: Prepare market
@@ -730,9 +740,8 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_cancel_stop_order_when_order_does_not_exist_generates_cancel_reject(self):
         # Arrange
         command = CancelOrder(
-            client_id=USDJPY_SIM.id.venue.client_id,
             trader_id=self.trader_id,
-            account_id=self.account_id,
+            strategy_id=StrategyId("SCALPER", "001"),
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
@@ -749,14 +758,13 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_update_stop_order_when_order_does_not_exist(self):
         # Arrange
         command = UpdateOrder(
-            client_id=USDJPY_SIM.id.venue.client_id,
             trader_id=self.trader_id,
-            account_id=self.account_id,
+            strategy_id=StrategyId("SCALPER", "001"),
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(100000),
-            price=Price.from_str("1.00000"),
+            price=Price.from_str("110.000"),
             command_id=self.uuid_factory.generate(),
             timestamp_ns=0,
         )
@@ -1888,8 +1896,6 @@ class BitmexExchangeTests(unittest.TestCase):
                 "use_previous_close": False
             },  # To correctly reproduce historical data bars
         )
-        self.data_engine.cache.add_instrument(XBTUSD_BITMEX)
-        self.portfolio.register_cache(self.data_engine.cache)
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -1936,9 +1942,15 @@ class BitmexExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Wire up components
+        self.data_engine.cache.add_instrument(XBTUSD_BITMEX)
+        self.portfolio.register_data_cache(self.data_engine.cache)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
+
+        self.exec_engine.cache.add_instrument(XBTUSD_BITMEX)
 
         self.strategy = MockStrategy(
             bar_type=TestStubs.bartype_btcusdt_binance_100tick_last()
@@ -1960,8 +1972,8 @@ class BitmexExchangeTests(unittest.TestCase):
         # Prepare market
         quote1 = QuoteTick(
             XBTUSD_BITMEX.id,
-            Price.from_str("11493.70"),
-            Price.from_str("11493.75"),
+            Price.from_str("11493.0"),
+            Price.from_str("11493.5"),
             Quantity.from_int(1500000),
             Quantity.from_int(1500000),
             0,
@@ -1980,7 +1992,7 @@ class BitmexExchangeTests(unittest.TestCase):
             XBTUSD_BITMEX.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("11493.65"),
+            Price.from_str("11492.5"),
         )
 
         # Act
@@ -1989,8 +2001,8 @@ class BitmexExchangeTests(unittest.TestCase):
 
         quote2 = QuoteTick(
             XBTUSD_BITMEX.id,
-            Price.from_str("11493.60"),
-            Price.from_str("11493.64"),
+            Price.from_str("11491.0"),
+            Price.from_str("11491.5"),
             Quantity.from_int(1500000),
             Quantity.from_int(1500000),
             0,
@@ -2009,11 +2021,11 @@ class BitmexExchangeTests(unittest.TestCase):
             self.strategy.object_storer.get_store()[5].liquidity_side,
         )
         self.assertEqual(
-            Money("0.00652526", BTC),
+            Money("0.00652543", BTC),
             self.strategy.object_storer.get_store()[1].commission,
         )
         self.assertEqual(
-            Money("-0.00217512", BTC),
+            Money("-0.00217552", BTC),
             self.strategy.object_storer.get_store()[5].commission,
         )
 
@@ -2038,16 +2050,6 @@ class OrderBookExchangeTests(unittest.TestCase):
                 "use_previous_close": False
             },  # To correctly reproduce historical data bars
         )
-
-        self.data_engine.cache.add_instrument(AUDUSD_SIM)
-        self.data_engine.cache.add_instrument(USDJPY_SIM)
-        self.data_engine.cache.add_order_book(
-            OrderBook.create(
-                instrument=USDJPY_SIM,
-                level=OrderBookLevel.L2,
-            )
-        )
-        self.portfolio.register_cache(self.data_engine.cache)
 
         self.analyzer = PerformanceAnalyzer()
         self.trader_id = TraderId("TESTER", "000")
@@ -2094,9 +2096,22 @@ class OrderBookExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Prepare components
+        self.data_engine.cache.add_instrument(AUDUSD_SIM)
+        self.data_engine.cache.add_instrument(USDJPY_SIM)
+        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
+        self.data_engine.cache.add_order_book(
+            OrderBook.create(
+                instrument=USDJPY_SIM,
+                level=OrderBookLevel.L2,
+            )
+        )
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
+        self.portfolio.register_data_cache(self.data_engine.cache)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.strategy.register_trader(
@@ -2113,6 +2128,8 @@ class OrderBookExchangeTests(unittest.TestCase):
 
     def test_submit_limit_order_aggressive_multiple_levels(self):
         # Arrange: Prepare market
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
+
         snapshot = TestStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
         )
@@ -2139,6 +2156,8 @@ class OrderBookExchangeTests(unittest.TestCase):
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
+
         snapshot = TestStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
         )
@@ -2163,6 +2182,7 @@ class OrderBookExchangeTests(unittest.TestCase):
 
     def test_passive_post_only_insert(self):
         # Arrange: Prepare market
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
@@ -2187,6 +2207,7 @@ class OrderBookExchangeTests(unittest.TestCase):
     @pytest.mark.skip
     def test_passive_partial_fill(self):
         # Arrange: Prepare market
+        self.exec_engine.cache.add_instrument(USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestStubs.order_book_snapshot(
             instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
@@ -2197,7 +2218,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         order = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(2000),
+            quantity=Quantity.from_int(1000),
             price=Price.from_str("14"),
             post_only=False,
         )
@@ -2216,7 +2237,7 @@ class OrderBookExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
-        self.assertEqual(Quantity.from_str("1000.0"), order.filled_qty)  # No slippage
+        self.assertEqual(Quantity.from_str("1000.0"), order.filled_qty)
         self.assertEqual(Decimal("15.0"), order.avg_px)
 
     # TODO - Need to discuss how we are going to support passive quotes trading now

@@ -76,8 +76,7 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_id : ClientId
-            The client identifier. It is assumed that the client_id will equal
-            the venue identifier.
+            The client identifier.
         account_id : AccountId
             The account identifier for the client.
         engine : ExecutionEngine
@@ -89,8 +88,13 @@ cdef class ExecutionClient:
         config : dict[str, object], optional
             The configuration options.
 
+        Raises
+        ------
+        ValueError
+            If client_id is not equal to account_id.issuer.
+
         """
-        Condition.equal(client_id.value, account_id.issuer_as_venue().value, "client_id.value", "account_id.issuer_as_venue().value")
+        Condition.equal(client_id.value, account_id.issuer, "client_id.value", "account_id.issuer")
 
         if config is None:
             config = {}
@@ -105,7 +109,6 @@ cdef class ExecutionClient:
         self._config = config
 
         self.id = client_id
-        self.venue = Venue(client_id.value)  # Assumption that ClientId == Venue
         self.account_id = account_id
         self.is_connected = False
 
@@ -613,7 +616,6 @@ cdef class ExecutionClient:
         Quantity last_qty,
         Price last_px,
         Currency quote_currency,
-        bint is_inverse,
         Money commission,
         LiquiditySide liquidity_side,
         int64_t execution_ns,
@@ -641,8 +643,6 @@ cdef class ExecutionClient:
             The fill price for this execution (not average price).
         quote_currency : Currency
             The currency of the price.
-        is_inverse : bool
-            If quantity is expressed in quote currency.
         commission : Money
             The fill commission.
         liquidity_side : LiquiditySide
@@ -664,7 +664,6 @@ cdef class ExecutionClient:
             last_qty=last_qty,
             last_px=last_px,
             currency=quote_currency,
-            is_inverse=is_inverse,
             commission=commission,
             liquidity_side=liquidity_side,
             execution_ns=execution_ns,
