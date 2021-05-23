@@ -172,6 +172,9 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
                 )
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
 
+        if config.get("defaultType"):
+            internal_config["options"]["defaultType"] = config["defaultType"]
+
         client = client_cls(internal_config)
         client.set_sandbox_mode(config.get("sandbox_mode", False))
 
