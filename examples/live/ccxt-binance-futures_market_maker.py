@@ -67,7 +67,7 @@ config = {
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
             "sandbox_mode": False,  # If client uses the testnet
-            "defaultType": "future"
+            "defaultType": "future" # If client uses the futures market
         },
     },
     "exec_clients": {
@@ -76,7 +76,7 @@ config = {
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
             "sandbox_mode": False,  # If client uses the testnet,
-            "defaultType": "future"
+            "defaultType": "future" # If client uses the futures market
         },
     },
 }
