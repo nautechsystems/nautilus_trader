@@ -185,7 +185,7 @@ def betfair_account_to_account_state(
     balance_locked = -float(account_funds["exposure"])
     balance_free = balance - balance_locked
     return AccountState(
-        AccountId(issuer=BETFAIR_VENUE.value, identifier=account_id),
+        AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
         [Money(value=balance, currency=currency)],
         [Money(value=balance_free, currency=currency)],
         [Money(value=balance_locked, currency=currency)],

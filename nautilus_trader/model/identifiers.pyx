@@ -74,7 +74,7 @@ cdef class Identifier:
 
 cdef class Symbol(Identifier):
     """
-    Represents a valid ticker symbol identifier for a financial market tradeable
+    Represents a valid ticker symbol identifier for a tradeable financial market
     instrument.
 
     The identifier value must be unique for a trading venue.
@@ -100,13 +100,11 @@ cdef class Symbol(Identifier):
 
 cdef class Venue(Identifier):
     """
-    Represents a valid trading venue identifier for a financial market tradeable
+    Represents a valid trading venue identifier for a tradeable financial market
     instrument.
-
-    The identifier value must be unique at the fund level.
     """
 
-    def __init__(self, str name, str broker=None):
+    def __init__(self, str name):
         """
         Initialize a new instance of the `Venue` class.
 
@@ -114,23 +112,14 @@ cdef class Venue(Identifier):
         ----------
         name : str
             The venue name identifier value.
-        broker : str, optional
-            The broker name identifier value.
 
         Raises
         ------
         ValueError
             If name is not a valid string.
-        ValueError
-            If broker is not None and not a valid string.
 
         """
-        if broker is not None:
-            Condition.valid_string(broker, "broker")
-            name = f"{broker}-{name}"
         super().__init__(name)
-
-        self.client_id = ClientId(name)
 
 
 cdef class InstrumentId(Identifier):
@@ -140,11 +129,7 @@ cdef class InstrumentId(Identifier):
     The symbol and venue combination should uniquely identify the instrument.
     """
 
-    def __init__(
-        self,
-        Symbol symbol not None,
-        Venue venue not None,
-    ):
+    def __init__(self, Symbol symbol not None, Venue venue not None):
         """
         Initialize a new instance of the `InstrumentId` class.
 
@@ -170,25 +155,16 @@ cdef class InstrumentId(Identifier):
         if len(pieces) != 3:
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        cdef tuple venue_pieces = pieces[2].partition('-')
-        if venue_pieces[2] != '':  # Venue contains a dash therefore a broker
-            return InstrumentId(
-                symbol=Symbol(pieces[0]),
-                venue=Venue(venue_pieces[2], broker=venue_pieces[0]),
-            )
-        else:
-            return InstrumentId(
-                symbol=Symbol(pieces[0]),
-                venue=Venue(pieces[2]),
-            )
+        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[2]))
 
     @staticmethod
     def from_str(value: str) -> InstrumentId:
         """
         Return an instrument identifier parsed from the given string value.
-        Must be correctly formatted including a single period and optional dash.
+        Must be correctly formatted including characters either side of a single
+        period.
 
-        Examples: "AUD/USD.IB-IDEALPRO", "BTC/USDT.BINANCE"
+        Examples: "AUD/USD.IDEALPRO", "BTC/USDT.BINANCE"
 
         Parameters
         ----------
@@ -392,29 +368,6 @@ cdef class StrategyId(Identifier):
         return _NULL_STRATEGY_ID
 
 
-cdef class Issuer(Identifier):
-    """
-    Represents an account issuer, may be a brokerage or exchange.
-    """
-
-    def __init__(self, str name):
-        """
-        Initialize a new instance of the `Issuer` class.
-
-        Parameters
-        ----------
-        name : str
-            The issuer identifier value.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-
-        """
-        super().__init__(name)
-
-
 cdef class AccountId(Identifier):
     """
     Represents a valid account identifier.
@@ -422,32 +375,31 @@ cdef class AccountId(Identifier):
     The issuer and identifier combination must be unique at the fund level.
     """
 
-    def __init__(self, str issuer, str identifier):
+    def __init__(self, str issuer, str number):
         """
         Initialize a new instance of the `AccountId` class.
 
         Parameters
         ----------
         issuer : str
-            The issuer identifier value (exchange/broker).
-        identifier : str
-            The account identifier value.
+            The account issuer (exchange/broker) identifier value.
+        number : str
+            The account 'number' identifier value.
 
         Raises
         ------
         ValueError
             If issuer is not a valid string.
         ValueError
-            If identifier is not a valid string.
+            If number is not a valid string.
 
         """
-        super().__init__(f"{issuer}-{identifier}")
+        Condition.valid_string(issuer, "issuer")
+        Condition.valid_string(number, "number")
+        super().__init__(f"{issuer}-{number}")
 
-        self.issuer = Issuer(issuer)
-        self.identifier = Identifier(identifier)
-
-    cdef Venue issuer_as_venue(self):
-        return Venue(self.issuer.value)
+        self.issuer = issuer
+        self.number = number
 
     @staticmethod
     cdef AccountId from_str_c(str value):
@@ -458,7 +410,7 @@ cdef class AccountId(Identifier):
         if len(pieces) != 2:
             raise ValueError(f"The AccountId string value was malformed, was {value}")
 
-        return AccountId(issuer=pieces[0], identifier=pieces[1])
+        return AccountId(issuer=pieces[0], number=pieces[1])
 
     @staticmethod
     def from_str(value: str) -> AccountId:
@@ -485,7 +437,7 @@ cdef class ClientId(Identifier):
     """
     Represents a system client identifier.
 
-    The identifier value must be unique per running `Trader` instance.
+    The identifier value must be unique per data or execution engine.
     """
 
     def __init__(self, str value):

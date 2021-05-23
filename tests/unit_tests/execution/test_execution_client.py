@@ -60,7 +60,7 @@ class ExecutionClientTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
-        portfolio.register_cache(DataCache(self.logger))
+        portfolio.register_data_cache(DataCache(self.logger))
 
         database = InMemoryExecutionDatabase(
             trader_id=self.trader_id, logger=self.logger
@@ -109,10 +109,8 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
-            StrategyId("SCALPER", "001"),
+            order.strategy_id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
@@ -137,10 +135,8 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            entry_order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
-            StrategyId("SCALPER", "001"),
+            entry_order.strategy_id,
             bracket_order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -154,9 +150,8 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = UpdateOrder(
-            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            StrategyId("SCALPER", "001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
@@ -173,9 +168,8 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = CancelOrder(
-            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            StrategyId("SCALPER", "001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),

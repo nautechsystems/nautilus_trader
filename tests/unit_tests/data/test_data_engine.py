@@ -82,11 +82,6 @@ class DataEngineTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
-        self.data_engine.process(BTCUSDT_BINANCE)
-        self.data_engine.process(ETHUSDT_BINANCE)
-        self.data_engine.process(XBTUSD_BITMEX)
-
-        self.portfolio.register_cache(self.data_engine.cache)
 
         self.binance_client = BacktestMarketDataClient(
             client_id=ClientId(BINANCE.value),
@@ -108,6 +103,12 @@ class DataEngineTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
+
+        self.data_engine.process(BTCUSDT_BINANCE)
+        self.data_engine.process(ETHUSDT_BINANCE)
+        self.data_engine.process(XBTUSD_BITMEX)
+
+        self.portfolio.register_data_cache(self.data_engine.cache)
 
     def test_registered_venues(self):
         # Arrange

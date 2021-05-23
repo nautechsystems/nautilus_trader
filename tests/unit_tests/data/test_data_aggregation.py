@@ -180,11 +180,11 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_type, use_previous_close=True)
 
         # Act
-        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
 
         # Assert
         self.assertEqual(5, builder.count)

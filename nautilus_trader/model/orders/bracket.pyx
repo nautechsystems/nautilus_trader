@@ -53,6 +53,7 @@ cdef class BracketOrder:
 
         """
         self.id = ClientOrderLinkId(f"B{entry.client_order_id.value}")
+        self.instrument_id = entry.instrument_id
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit
@@ -65,5 +66,4 @@ cdef class BracketOrder:
         return self.id.value != other.id.value
 
     def __repr__(self) -> str:
-        cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)
-        return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
+        return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={str(self.take_profit.price)})"

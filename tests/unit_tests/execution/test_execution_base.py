@@ -34,6 +34,16 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         # Fixture Setup
         self.facade = ExecutionCacheFacade()
 
+    def test_instrument_ids_when_no_instruments_returns_empty_list(self):
+        self.assertRaises(NotImplementedError, self.facade.instrument_ids, SIM)
+
+    def test_instruments_when_no_instruments_returns_empty_list(self):
+        self.assertRaises(
+            NotImplementedError,
+            self.facade.instruments,
+            SIM,
+        )
+
     def test_account_when_not_implemented_raises_exception(self):
         self.assertRaises(
             NotImplementedError, self.facade.account, AccountId("SIM", "000")

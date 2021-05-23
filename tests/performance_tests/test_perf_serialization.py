@@ -52,9 +52,7 @@ class TestSerializationPerformance(PerformanceHarness):
         )
 
         self.command = SubmitOrder(
-            AUDUSD.venue.client_id,
             self.trader_id,
-            self.account_id,
             StrategyId("SCALPER", "01"),
             PositionId("P-123456"),
             self.order,

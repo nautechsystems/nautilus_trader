@@ -67,15 +67,17 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._database = database
 
         # Cached objects
-        self._cached_currencies = {}           # type: dict[str, Currency]
-        self._cached_instruments = {}          # type: dict[InstrumentId, Instrument]
-        self._cached_accounts = {}             # type: dict[AccountId, Account]
-        self._cached_orders = {}               # type: dict[ClientOrderId, Order]
-        self._cached_positions = {}            # type: dict[PositionId, Position]
+        self._currencies = {}   # type: dict[str, Currency]
+        self._instruments = {}  # type: dict[InstrumentId, Instrument]
+        self._accounts = {}     # type: dict[AccountId, Account]
+        self._orders = {}       # type: dict[ClientOrderId, Order]
+        self._positions = {}    # type: dict[PositionId, Position]
 
         # Cached indexes
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
-        self._index_venue_order_ids = {}       # type: dict[VenueOrderId, ClientOrderId]
+        self._index_venue_orders = {}          # type: dict[Venue, set[ClientOrderId]]
+        self._index_venue_positions = {}       # type: dict[Venue, set[PositionId]]
+        self._index_order_ids = {}             # type: dict[VenueOrderId, ClientOrderId]
         self._index_order_position = {}        # type: dict[ClientOrderId, PositionId]
         self._index_order_strategy = {}        # type: dict[ClientOrderId, StrategyId]
         self._index_position_strategy = {}     # type: dict[PositionId, StrategyId]
@@ -103,17 +105,17 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        self._cached_currencies = self._database.load_currencies()
+        self._currencies = self._database.load_currencies()
 
         # Register currencies in internal `_CURRENCY_MAP`.
         cdef Currency currency
-        for currency in self._cached_currencies.values():
+        for currency in self._currencies.values():
             Currency.register_c(currency, overwrite=False)
 
-        cdef int count = len(self._cached_currencies)
+        cdef int count = len(self._currencies)
         self._log.info(
             f"Cached {count} currenc{'y' if count == 1 else 'ies'} from database.",
-            color=LogColor.BLUE if self._cached_currencies else LogColor.NORMAL,
+            color=LogColor.BLUE if self._currencies else LogColor.NORMAL,
         )
 
     cpdef void cache_instruments(self) except *:
@@ -123,12 +125,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         self._log.debug(f"Loading instruments from database...")
 
-        self._cached_instruments = self._database.load_instruments()
+        self._instruments = self._database.load_instruments()
 
-        cdef int count = len(self._cached_instruments)
+        cdef int count = len(self._instruments)
         self._log.info(
             f"Cached {count} instrument{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._cached_instruments else LogColor.NORMAL,
+            color=LogColor.BLUE if self._instruments else LogColor.NORMAL,
         )
 
     cpdef void cache_accounts(self) except *:
@@ -138,12 +140,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        self._cached_accounts = self._database.load_accounts()
+        self._accounts = self._database.load_accounts()
 
-        cdef int count = len(self._cached_accounts)
+        cdef int count = len(self._accounts)
         self._log.info(
             f"Cached {count} account{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._cached_accounts else LogColor.NORMAL,
+            color=LogColor.BLUE if self._accounts else LogColor.NORMAL,
         )
 
     cpdef void cache_orders(self) except *:
@@ -153,12 +155,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         self._log.debug(f"Loading orders from database...")
 
-        self._cached_orders = self._database.load_orders()
+        self._orders = self._database.load_orders()
 
-        cdef int count = len(self._cached_orders)
+        cdef int count = len(self._orders)
         self._log.info(
             f"Cached {count} order{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._cached_orders else LogColor.NORMAL,
+            color=LogColor.BLUE if self._orders else LogColor.NORMAL,
         )
 
     cpdef void cache_positions(self) except *:
@@ -168,12 +170,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         self._log.debug(f"Loading positions from database...")
 
-        self._cached_positions = self._database.load_positions()
+        self._positions = self._database.load_positions()
 
-        cdef int count = len(self._cached_positions)
+        cdef int count = len(self._positions)
         self._log.info(
             f"Cached {count} position{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._cached_positions else LogColor.NORMAL
+            color=LogColor.BLUE if self._positions else LogColor.NORMAL
         )
 
     cpdef void build_index(self) except *:
@@ -221,13 +223,14 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Check object caches
         # -------------------
-        for account_id in self._cached_accounts:
-            if account_id.issuer_as_venue() not in self._index_venue_account:
+        for account_id in self._accounts:
+            # TODO(cs): Assumption that venue == issuer
+            if Venue(account_id.issuer) not in self._index_venue_account:
                 self._log.error(f"{failure} in _cached_accounts: "
                                 f"{repr(account_id)} not found in self._index_venue_account")
                 error_count += 1
 
-        for client_order_id, order in self._cached_orders.items():
+        for client_order_id, order in self._orders.items():
             if client_order_id not in self._index_order_strategy:
                 self._log.error(f"{failure} in _cached_orders: "
                                 f"{repr(client_order_id)} not found in self._index_order_strategy")
@@ -245,7 +248,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(client_order_id)} not found in self._index_orders_completed")
                 error_count += 1
 
-        for position_id, position in self._cached_positions.items():
+        for position_id, position in self._positions.items():
             if position_id not in self._index_position_strategy:
                 self._log.error(f"{failure} in _cached_positions: "
                                 f"{repr(position_id)} not found in self._index_position_strategy")
@@ -270,44 +273,44 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         # Check indexes
         # -------------
         for account_id in self._index_venue_account.values():
-            if account_id not in self._cached_accounts:
+            if account_id not in self._accounts:
                 self._log.error(f"{failure} in _index_venue_account: "
                                 f"{repr(account_id)} not found in self._cached_accounts")
                 error_count += 1
 
-        for client_order_id in self._index_venue_order_ids.values():
-            if client_order_id not in self._cached_orders:
+        for client_order_id in self._index_order_ids.values():
+            if client_order_id not in self._orders:
                 self._log.error(f"{failure} in _index_venue_order_ids: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for client_order_id in self._index_order_position:
-            if client_order_id not in self._cached_orders:
+            if client_order_id not in self._orders:
                 self._log.error(f"{failure} in _index_order_position: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for client_order_id in self._index_order_strategy:
-            if client_order_id not in self._cached_orders:
+            if client_order_id not in self._orders:
                 self._log.error(f"{failure} in _index_order_strategy: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for position_id in self._index_position_strategy:
-            if position_id not in self._cached_positions:
+            if position_id not in self._positions:
                 self._log.error(f"{failure} in _index_position_strategy: "
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
         for position_id in self._index_position_orders:
-            if position_id not in self._cached_positions:
+            if position_id not in self._positions:
                 self._log.error(f"{failure} in _index_position_orders: "
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
         for instrument_id, client_order_ids in self._index_instrument_orders.items():
             for client_order_id in client_order_ids:
-                if client_order_id not in self._cached_orders:
+                if client_order_id not in self._orders:
                     self._log.error(f"{failure} in _index_instrument_orders: "
                                     f"{repr(instrument_id)} not found in self._cached_orders")
                     error_count += 1
@@ -320,50 +323,50 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         for client_order_ids in self._index_strategy_orders.values():
             for client_order_id in client_order_ids:
-                if client_order_id not in self._cached_orders:
+                if client_order_id not in self._orders:
                     self._log.error(f"{failure} in _index_strategy_orders: "
                                     f"{repr(client_order_id)} not found in self._cached_orders")
                     error_count += 1
 
         for position_ids in self._index_strategy_positions.values():
             for position_id in position_ids:
-                if position_id not in self._cached_positions:
+                if position_id not in self._positions:
                     self._log.error(f"{failure} in _index_strategy_positions: "
                                     f"{repr(position_id)} not found in self._caches_positions")
                     error_count += 1
 
         for client_order_id in self._index_orders:
-            if client_order_id not in self._cached_orders:
+            if client_order_id not in self._orders:
                 self._log.error(f"{failure} in _index_orders: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for client_order_id in self._index_orders_working:
-            if client_order_id not in self._cached_orders:
+            if client_order_id not in self._orders:
                 self._log.error(f"{failure} in _index_orders_working: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for client_order_id in self._index_orders_completed:
-            if client_order_id not in self._cached_orders:
+            if client_order_id not in self._orders:
                 self._log.error(f"{failure} in _index_orders_completed: "
                                 f"{repr(client_order_id)} not found in self._cached_orders")
                 error_count += 1
 
         for position_id in self._index_positions:
-            if position_id not in self._cached_positions:
+            if position_id not in self._positions:
                 self._log.error(f"{failure} in _index_positions: "
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
         for position_id in self._index_positions_open:
-            if position_id not in self._cached_positions:
+            if position_id not in self._positions:
                 self._log.error(f"{failure} in _index_positions_open: "
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
 
         for position_id in self._index_positions_closed:
-            if position_id not in self._cached_positions:
+            if position_id not in self._positions:
                 self._log.error(f"{failure} in _index_positions_closed: "
                                 f"{repr(position_id)} not found in self._cached_positions")
                 error_count += 1
@@ -436,11 +439,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         self._log.debug(f"Clearing cache...")
 
-        self._cached_currencies.clear()
-        self._cached_instruments.clear()
-        self._cached_accounts.clear()
-        self._cached_orders.clear()
-        self._cached_positions.clear()
+        self._currencies.clear()
+        self._instruments.clear()
+        self._accounts.clear()
+        self._orders.clear()
+        self._positions.clear()
 
         self._log.debug(f"Cleared cache.")
 
@@ -448,7 +451,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Clearing index...")
 
         self._index_venue_account.clear()
-        self._index_venue_order_ids.clear()
+        self._index_venue_orders.clear()
+        self._index_venue_positions.clear()
+        self._index_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
@@ -484,90 +489,100 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cdef void _build_index_venue_account(self) except *:
         cdef AccountId account_id
-        for account_id in self._cached_accounts.keys():
+        for account_id in self._accounts.keys():
             self._cache_venue_account_id(account_id)
 
     cdef void _cache_venue_account_id(self, AccountId account_id) except *:
-        self._index_venue_account[account_id.issuer_as_venue()] = account_id
+        # TODO(cs): Assumption that venue = account_id.issuer
+        self._index_venue_account[Venue(account_id.issuer)] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
         cdef ClientOrderId client_order_id
         cdef Order order
-        for client_order_id, order in self._cached_orders.items():
-            # 1: Build _index_venue_order_ids -> {VenueOrderId, ClientOrderId}
-            if order.venue_order_id.not_null():
-                self._index_venue_order_ids[order.venue_order_id] = order.client_order_id
+        for client_order_id, order in self._orders.items():
+            # 1: Build _index_venue_orders -> {Venue, {ClientOrderId}}
+            if order.instrument_id.venue not in self._index_venue_orders:
+                self._index_venue_orders[order.instrument_id.venue] = set()
+            self._index_venue_orders[order.instrument_id.venue].add(client_order_id)
 
-            # 2: Build _index_order_position -> {ClientOrderId, PositionId}
+            # 2: Build _index_order_ids -> {VenueOrderId, ClientOrderId}
+            if order.venue_order_id.not_null():
+                self._index_order_ids[order.venue_order_id] = order.client_order_id
+
+            # 3: Build _index_order_position -> {ClientOrderId, PositionId}
             if order.position_id.not_null():
                 self._index_order_position[client_order_id] = order.position_id
 
-            # 3: Build _index_order_strategy -> {ClientOrderId, StrategyId}
+            # 4: Build _index_order_strategy -> {ClientOrderId, StrategyId}
             if order.strategy_id.not_null():
                 self._index_order_strategy[client_order_id] = order.strategy_id
 
-            # 4: Build _index_instrument_orders -> {InstrumentId, {ClientOrderId}}
+            # 5: Build _index_instrument_orders -> {InstrumentId, {ClientOrderId}}
             if order.instrument_id not in self._index_instrument_orders:
                 self._index_instrument_orders[order.instrument_id] = set()
             self._index_instrument_orders[order.instrument_id].add(client_order_id)
 
-            # 5: Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
+            # 6: Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
             if order.strategy_id not in self._index_strategy_orders:
                 self._index_strategy_orders[order.strategy_id] = set()
             self._index_strategy_orders[order.strategy_id].add(client_order_id)
 
-            # 6: Build _index_orders -> {ClientOrderId}
+            # 7: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
 
-            # 7: Build _index_orders_working -> {ClientOrderId}
+            # 8: Build _index_orders_working -> {ClientOrderId}
             if order.is_working_c():
                 self._index_orders_working.add(client_order_id)
 
-            # 8: Build _index_orders_completed -> {ClientOrderId}
+            # 9: Build _index_orders_completed -> {ClientOrderId}
             if order.is_completed_c():
                 self._index_orders_completed.add(client_order_id)
 
-            # 9: Build _index_strategies -> {StrategyId}
+            # 10: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
         cdef ClientOrderId client_order_id
         cdef PositionId position_id
         cdef Position position
-        for position_id, position in self._cached_positions.items():
-            # 1: Build _index_position_strategy -> {PositionId, StrategyId}
+        for position_id, position in self._positions.items():
+            # 1: Build _index_venue_orders -> {Venue, {ClientOrderId}}
+            if position.instrument_id.venue not in self._index_venue_positions:
+                self._index_venue_positions[position.instrument_id.venue] = set()
+            self._index_venue_positions[position.instrument_id.venue].add(position_id)
+
+            # 2: Build _index_position_strategy -> {PositionId, StrategyId}
             if position.strategy_id is not None:
                 self._index_position_strategy[position_id] = position.strategy_id
 
-            # 2: Build _index_position_orders -> {PositionId, {ClientOrderId}}
+            # 3: Build _index_position_orders -> {PositionId, {ClientOrderId}}
             if position_id not in self._index_position_orders:
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
-
             for client_order_id in position.client_order_ids_c():
                 index_position_orders.add(client_order_id)
 
-            # 3: Build _index_instrument_positions -> {InstrumentId, {PositionId}}
+            # 4: Build _index_instrument_positions -> {InstrumentId, {PositionId}}
             if position.instrument_id not in self._index_instrument_positions:
                 self._index_instrument_positions[position.instrument_id] = set()
             self._index_instrument_positions[position.instrument_id].add(position_id)
 
-            # 4: Build _index_strategy_positions -> {StrategyId, {PositionId}}
+            # 5: Build _index_strategy_positions -> {StrategyId, {PositionId}}
             if position.strategy_id.not_null() and position.strategy_id not in self._index_strategy_positions:
                 self._index_strategy_positions[position.strategy_id] = set()
             self._index_strategy_positions[position.strategy_id].add(position.id)
 
-            # 5: Build _index_positions -> {PositionId}
+            # 6: Build _index_positions -> {PositionId}
             self._index_positions.add(position_id)
 
-            # 6: Build _index_positions_open -> {PositionId}
+            # 7: Build _index_positions_open -> {PositionId}
             if position.is_open_c():
                 self._index_positions_open.add(position_id)
-            # 7: Build _index_positions_closed -> {PositionId}
+            # 8: Build _index_positions_closed -> {PositionId}
             elif position.is_closed_c():
                 self._index_positions_closed.add(position_id)
 
-            # 8: Build _index_strategies -> {StrategyId}
+            # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
@@ -607,11 +622,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef Instrument instrument = self._cached_instruments.get(instrument_id)
+        cdef Instrument instrument = self._instruments.get(instrument_id)
         if instrument is None:
             instrument = self._database.load_instrument(instrument_id)
             if instrument:
-                self._cached_instruments[instrument.id] = instrument
+                self._instruments[instrument.id] = instrument
 
         return instrument
 
@@ -631,7 +646,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(account_id, "account_id")
 
-        return self._cached_accounts.get(account_id)
+        return self._accounts.get(account_id)
 
     cpdef Order load_order(self, ClientOrderId client_order_id):
         """
@@ -649,7 +664,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        return self._cached_orders.get(client_order_id)
+        return self._orders.get(client_order_id)
 
     cpdef Position load_position(self, PositionId position_id):
         """
@@ -667,7 +682,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(position_id, "position_id")
 
-        return self._cached_positions.get(position_id)
+        return self._positions.get(position_id)
 
     cpdef void add_currency(self, Currency currency) except *:
         """
@@ -681,7 +696,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(currency, "currency")
 
-        self._cached_currencies[currency.code] = currency
+        self._currencies[currency.code] = currency
         Currency.register_c(currency, overwrite=False)
 
         self._log.debug(f"Added currency {currency.code}.")
@@ -701,7 +716,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(instrument, "instrument")
 
-        self._cached_instruments[instrument.id] = instrument
+        self._instruments[instrument.id] = instrument
 
         self._log.debug(f"Added instrument {instrument.id.value}.")
 
@@ -724,9 +739,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         """
         Condition.not_none(account, "account")
-        Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
+        Condition.not_in(account.id, self._accounts, "account.id", "cached_accounts")
 
-        self._cached_accounts[account.id] = account
+        self._accounts[account.id] = account
         self._cache_venue_account_id(account.id)
 
         self._log.debug(f"Added Account(id={account.id.value}).")
@@ -761,26 +776,35 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
-        Condition.not_in(order.client_order_id, self._cached_orders, "order.client_order_id", "cached_orders")
+        Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "cached_orders")
         Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "index_orders")
         Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "index_order_position")
         Condition.not_in(order.client_order_id, self._index_order_strategy, "order.client_order_id", "index_order_strategy")
 
-        self._cached_orders[order.client_order_id] = order
+        self._orders[order.client_order_id] = order
         self._index_orders.add(order.client_order_id)
         self._index_order_strategy[order.client_order_id] = order.strategy_id
 
+        # Index: Venue -> Set[ClientOrderId]
+        cdef set venue_orders = self._index_venue_orders.get(order.instrument_id.venue)
+        if not venue_orders:
+            self._index_venue_orders[order.instrument_id.venue] = {order.client_order_id}
+        else:
+            venue_orders.add(order.client_order_id)
+
         # Index: InstrumentId -> Set[ClientOrderId]
-        if order.instrument_id not in self._index_instrument_orders:
+        cdef set instrument_orders = self._index_instrument_orders.get(order.instrument_id)
+        if not instrument_orders:
             self._index_instrument_orders[order.instrument_id] = {order.client_order_id}
         else:
-            self._index_instrument_orders[order.instrument_id].add(order.client_order_id)
+            instrument_orders.add(order.client_order_id)
 
         # Index: StrategyId -> Set[ClientOrderId]
-        if order.strategy_id not in self._index_strategy_orders:
+        cdef set strategy_orders = self._index_strategy_orders.get(order.strategy_id)
+        if not strategy_orders:
             self._index_strategy_orders[order.strategy_id] = {order.client_order_id}
         else:
-            self._index_strategy_orders[order.strategy_id].add(order.client_order_id)
+            strategy_orders.add(order.client_order_id)
 
         cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
         self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
@@ -790,9 +814,20 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         if position_id.is_null():
             return  # Do not index the NULL id
-        self.add_position_id(position_id, order.client_order_id, order.strategy_id)
+        self.add_position_id(
+            position_id,
+            order.instrument_id.venue,
+            order.client_order_id,
+            order.strategy_id,
+        )
 
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId client_order_id, StrategyId strategy_id) except *:
+    cpdef void add_position_id(
+        self,
+        PositionId position_id,
+        Venue venue,
+        ClientOrderId client_order_id,
+        StrategyId strategy_id,
+    ) except *:
         """
         Index the given position identifier with the other given identifiers.
 
@@ -800,45 +835,43 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         ----------
         position_id : PositionId
             The position identifier to index.
+        venue : Venue
+            The venue identifier to index with the position identifier.
         client_order_id : ClientOrderId
-            The client order identifier to index.
+            The client order identifier to index with the position identifier.
         strategy_id : StrategyId
-            The strategy identifier to index.
+            The strategy identifier to index with the position identifier.
 
         """
         Condition.not_none(position_id, "position_id")
+        Condition.not_none(venue, "venue")
         Condition.not_none(client_order_id, "client_order_id")
         Condition.not_none(strategy_id, "strategy_id")
 
         # Index: ClientOrderId -> PositionId
-        if client_order_id not in self._index_order_position:
-            self._index_order_position[client_order_id] = position_id
-        else:
-            if not position_id == self._index_order_position[client_order_id]:
-                self._log.error(f"Order indexing invalid for {position_id}.")
+        self._index_order_position[client_order_id] = position_id
 
         # Index: PositionId -> StrategyId
-        if position_id not in self._index_position_strategy:
-            self._index_position_strategy[position_id] = strategy_id
-        else:
-            if not strategy_id == self._index_position_strategy[position_id]:
-                self._log.error(f"Strategy indexing invalid for {position_id}.")
+        self._index_position_strategy[position_id] = strategy_id
 
         # Index: PositionId -> Set[ClientOrderId]
-        if position_id not in self._index_position_orders:
+        cdef set position_orders = self._index_position_orders.get(client_order_id)
+        if not position_orders:
             self._index_position_orders[position_id] = {client_order_id}
         else:
-            self._index_position_orders[position_id].add(client_order_id)
+            position_orders.add(client_order_id)
 
         # Index: StrategyId -> Set[PositionId]
-        if strategy_id not in self._index_strategy_positions:
+        cdef set strategy_positions = self._index_strategy_positions.get(strategy_id)
+        if not strategy_positions:
             self._index_strategy_positions[strategy_id] = {position_id}
         else:
-            self._index_strategy_positions[strategy_id].add(position_id)
+            strategy_positions.add(position_id)
 
-        self._log.debug(f"Indexed {repr(position_id)}, "
-                        f"client_order_id={client_order_id}, "
-                        f"strategy_id={strategy_id}).")
+        self._log.debug(
+            f"Indexed {repr(position_id)}, "
+            f"client_order_id={client_order_id}, "
+            f"strategy_id={strategy_id}).")
 
     cpdef void add_position(self, Position position) except *:
         """
@@ -860,21 +893,36 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         """
         Condition.not_none(position, "position")
-        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
+        Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
         Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
         Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
-        self._cached_positions[position.id] = position
+        self._positions[position.id] = position
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
 
-        self.add_position_id(position.id, position.from_order, position.strategy_id)
+        self.add_position_id(
+            position.id,
+            position.instrument_id.venue,
+            position.from_order,
+            position.strategy_id,
+        )
+
+        # Index: Venue -> Set[PositionId]
+        cdef Venue venue = position.instrument_id.venue
+        cdef set venue_positions = self._index_venue_positions.get(venue)
+        if not venue_positions:
+            self._index_venue_positions[venue] = {position.id}
+        else:
+            venue_positions.add(position.id)
 
         # Index: InstrumentId -> Set[PositionId]
-        if position.instrument_id not in self._index_instrument_positions:
-            self._index_instrument_positions[position.instrument_id] = {position.id}
+        cdef InstrumentId instrument_id = position.instrument_id
+        cdef set instrument_positions = self._index_instrument_positions.get(instrument_id)
+        if not instrument_positions:
+            self._index_instrument_positions[instrument_id] = {position.id}
         else:
-            self._index_instrument_positions[position.instrument_id].add(position.id)
+            instrument_positions.add(position.id)
 
         self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id}).")
 
@@ -909,7 +957,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         if order.venue_order_id.not_null():
             # Assumes order_id does not change
-            self._index_venue_order_ids[order.venue_order_id] = order.client_order_id
+            self._index_order_ids[order.venue_order_id] = order.client_order_id
 
         if order.is_completed_c():
             self._index_orders_completed.add(order.client_order_id)
@@ -988,6 +1036,58 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._database.delete_strategy(strategy.id)
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
+# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
+
+    cpdef Instrument instrument(self, InstrumentId instrument_id):
+        """
+        Return the instrument corresponding to the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier of the instrument to return.
+
+        Returns
+        -------
+        Instrument or None
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self._instruments.get(instrument_id)
+
+    cpdef list instrument_ids(self, Venue venue=None):
+        """
+        Return all instrument identifiers held by the data cache.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue filter for the query.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted([x for x in self._instruments.keys() if venue is None or venue == x.venue])
+
+    cpdef list instruments(self, Venue venue=None):
+        """
+        Return all instruments held by the data cache.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue filter for the query.
+
+        Returns
+        -------
+        list[Instrument]
+
+        """
+        return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
+
 # -- ACCOUNT QUERIES -------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):
@@ -1006,11 +1106,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(account_id, "account_id")
 
-        return self._cached_accounts.get(account_id)
+        return self._accounts.get(account_id)
 
     cpdef Account account_for_venue(self, Venue venue):
         """
-        Return the account for the given venue (if found).
+        Return the account matching the given client identifier (if found).
 
         Parameters
         ----------
@@ -1027,8 +1127,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef AccountId account_id = self._index_venue_account.get(venue)
         if account_id is None:
             return None
-
-        return self._cached_accounts.get(account_id)
+        return self._accounts.get(account_id)
 
     cpdef AccountId account_id(self, Venue venue):
         """
@@ -1037,7 +1136,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Parameters
         ----------
         venue : Venue
-            The venue for the account.
+            The venue for the account identifier.
 
         Returns
         -------
@@ -1057,16 +1156,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Account]
 
         """
-        return list(self._cached_accounts.values())
+        return list(self._accounts.values())
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cdef inline set _build_ord_query_filter_set(self, InstrumentId instrument_id, StrategyId strategy_id):
+    cdef inline set _build_ord_query_filter_set(
+        self,
+        Venue venue,
+        InstrumentId instrument_id,
+        StrategyId strategy_id,
+    ):
         cdef set query = None
 
         # Build potential query set
+        if venue is not None:
+            query = self._index_venue_orders.get(venue, set())
         if instrument_id is not None:
-            query = self._index_instrument_orders.get(instrument_id, set())
+            if query is None:
+                query = self._index_instrument_orders.get(instrument_id, set())
+            else:
+                query = query.intersection(self._index_instrument_orders.get(instrument_id, set()))
         if strategy_id is not None:
             if query is None:
                 query = self._index_strategy_orders.get(strategy_id, set())
@@ -1075,12 +1184,22 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cdef inline set _build_pos_query_filter_set(self, InstrumentId instrument_id, StrategyId strategy_id):
+    cdef inline set _build_pos_query_filter_set(
+        self,
+        Venue venue,
+        InstrumentId instrument_id,
+        StrategyId strategy_id,
+    ):
         cdef set query = None
 
         # Build potential query set
+        if venue is not None:
+            query = self._index_venue_positions.get(venue, set())
         if instrument_id is not None:
-            query = self._index_instrument_positions.get(instrument_id, set())
+            if query is None:
+                query = self._index_instrument_positions.get(instrument_id, set())
+            else:
+                query = query.intersection(self._index_instrument_positions.get(instrument_id, set()))
         if strategy_id is not None:
             if query is None:
                 query = self._index_strategy_positions.get(strategy_id, set())
@@ -1089,12 +1208,19 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cpdef set client_order_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all client order identifiers with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1105,20 +1231,27 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(instrument_id, strategy_id)
+        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders
         else:
             return self._index_orders.intersection(query)
 
-    cpdef set client_order_ids_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_working(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all working client order identifiers with the given query
         filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1129,20 +1262,27 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(instrument_id, strategy_id)
+        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders_working
         else:
             return self._index_orders_working.intersection(query)
 
-    cpdef set client_order_ids_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set client_order_ids_completed(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all completed client order identifiers with the given query
         filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1153,19 +1293,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         set[ClientOrderId]
 
         """
-        cdef set query = self._build_ord_query_filter_set(instrument_id, strategy_id)
+        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_orders_completed
         else:
             return self._index_orders_completed.intersection(query)
 
-    cpdef set position_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set position_ids(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all position identifiers with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1176,19 +1323,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
+        cdef set query = self._build_pos_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions
         else:
             return self._index_positions.intersection(query)
 
-    cpdef set position_open_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set position_open_ids(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all open position identifiers with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1199,19 +1353,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
+        cdef set query = self._build_pos_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions_open
         else:
             return self._index_positions_open.intersection(query)
 
-    cpdef set position_closed_ids(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef set position_closed_ids(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all closed position identifiers with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1222,7 +1383,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Set[PositionId]
 
         """
-        cdef set query = self._build_pos_query_filter_set(instrument_id, strategy_id)
+        cdef set query = self._build_pos_query_filter_set(venue, instrument_id, strategy_id)
 
         if query is None:
             return self._index_positions_closed
@@ -1253,7 +1414,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        return self._cached_orders.get(client_order_id)
+        return self._orders.get(client_order_id)
 
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id):
         """
@@ -1272,7 +1433,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(venue_order_id, "venue_order_id")
 
-        return self._index_venue_order_ids.get(venue_order_id)
+        return self._index_order_ids.get(venue_order_id)
 
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """
@@ -1286,17 +1447,24 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef Order order = self._cached_orders.get(client_order_id)
+        cdef Order order = self._orders.get(client_order_id)
         if order is None:
             return None
         return order.venue_order_id
 
-    cpdef list orders(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef list orders(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all orders with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1307,19 +1475,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set client_order_ids = self.client_order_ids(instrument_id, strategy_id)
+        cdef set client_order_ids = self.client_order_ids(venue, instrument_id, strategy_id)
 
         try:
-            return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
+            return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
 
-    cpdef list orders_working(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef list orders_working(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all working orders with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1330,19 +1505,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set client_order_ids = self.client_order_ids_working(instrument_id, strategy_id)
+        cdef set client_order_ids = self.client_order_ids_working(venue, instrument_id, strategy_id)
 
         try:
-            return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
+            return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
-    cpdef list orders_completed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef list orders_completed(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all completed orders with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1353,10 +1535,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Order]
 
         """
-        cdef set client_order_ids = self.client_order_ids_completed(instrument_id, strategy_id)
+        cdef set client_order_ids = self.client_order_ids_completed(venue, instrument_id, strategy_id)
 
         try:
-            return [self._cached_orders[client_order_id] for client_order_id in client_order_ids]
+            return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find Order object in cache " + str(ex))
 
@@ -1378,7 +1560,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(position_id, "position_id")
 
-        return self._cached_positions.get(position_id)
+        return self._positions.get(position_id)
 
     cpdef PositionId position_id(self, ClientOrderId client_order_id):
         """
@@ -1399,12 +1581,19 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._index_order_position.get(client_order_id)
 
-    cpdef list positions(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef list positions(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all positions with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1415,19 +1604,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Position]
 
         """
-        cdef set position_ids = self.position_ids(instrument_id, strategy_id)
+        cdef set position_ids = self.position_ids(venue, instrument_id, strategy_id)
 
         try:
-            return [self._cached_positions[position_id] for position_id in position_ids]
+            return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
 
-    cpdef list positions_open(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef list positions_open(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all open positions with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1438,19 +1634,26 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Position]
 
         """
-        cdef set position_ids = self.position_open_ids(instrument_id, strategy_id)
+        cdef set position_ids = self.position_open_ids(venue, instrument_id, strategy_id)
 
         try:
-            return [self._cached_positions[position_id] for position_id in position_ids]
+            return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
 
-    cpdef list positions_closed(self, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+    cpdef list positions_closed(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
         """
         Return all closed positions with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1461,10 +1664,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         list[Position]
 
         """
-        cdef set position_ids = self.position_closed_ids(instrument_id, strategy_id)
+        cdef set position_ids = self.position_closed_ids(venue, instrument_id, strategy_id)
 
         try:
-            return [self._cached_positions[position_id] for position_id in position_ids]
+            return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
             self._log.error("Cannot find Position object in cache " + str(ex))
 
@@ -1525,12 +1728,19 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return client_order_id in self._index_orders_completed
 
-    cpdef int orders_total_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_total_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
         """
         Return the total count of orders with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1541,14 +1751,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.client_order_ids(instrument_id, strategy_id))
+        return len(self.client_order_ids(venue, instrument_id, strategy_id))
 
-    cpdef int orders_working_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_working_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
         """
         Return the count of working orders with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1559,14 +1776,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.client_order_ids_working(instrument_id, strategy_id))
+        return len(self.client_order_ids_working(venue, instrument_id, strategy_id))
 
-    cpdef int orders_completed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_completed_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
         """
         Return the count of completed orders with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1577,7 +1801,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.client_order_ids_completed(instrument_id, strategy_id))
+        return len(self.client_order_ids_completed(venue, instrument_id, strategy_id))
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
@@ -1636,12 +1860,19 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return position_id in self._index_positions_closed
 
-    cpdef int positions_total_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_total_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
         """
         Return the total count of positions with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1652,14 +1883,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.position_ids(instrument_id, strategy_id))
+        return len(self.position_ids(venue, instrument_id, strategy_id))
 
-    cpdef int positions_open_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_open_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
         """
         Return the count of open positions with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1670,14 +1908,21 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.position_open_ids(instrument_id, strategy_id))
+        return len(self.position_open_ids(venue, instrument_id, strategy_id))
 
-    cpdef int positions_closed_count(self, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+    cpdef int positions_closed_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
         """
         Return the count of closed positions with the given query filters.
 
         Parameters
         ----------
+        venue : Venue, optional
+            The venue identifier query filter.
         instrument_id : InstrumentId, optional
             The instrument identifier query filter.
         strategy_id : StrategyId, optional
@@ -1688,7 +1933,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         int
 
         """
-        return len(self.position_closed_ids(instrument_id, strategy_id))
+        return len(self.position_closed_ids(venue, instrument_id, strategy_id))
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 

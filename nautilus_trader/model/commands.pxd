@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Command
-from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -29,19 +27,15 @@ from nautilus_trader.model.orders.bracket cimport BracketOrder
 
 
 cdef class TradingCommand(Command):
-    cdef readonly ClientId client_id
-    """The client identifier for the command.\n\n:returns: `ClientId`"""
     cdef readonly TraderId trader_id
     """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
-    cdef readonly AccountId account_id
-    """The account identifier associated with the command.\n\n:returns: `AccountId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy identifier associated with the command.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
     """The instrument identifier associated with the command.\n\n:returns: `InstrumentId`"""
 
 
 cdef class SubmitOrder(TradingCommand):
-    cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the command.\n\n:returns: `StrategyId`"""
     cdef readonly PositionId position_id
     """The position identifier associated with the command.\n\n:returns: `PositionId`"""
     cdef readonly Order order
@@ -49,8 +43,6 @@ cdef class SubmitOrder(TradingCommand):
 
 
 cdef class SubmitBracketOrder(TradingCommand):
-    cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the command.\n\n:returns: `StrategyId`"""
     cdef readonly BracketOrder bracket_order
     """The bracket order to submit.\n\n:returns: `BracketOrder`"""
 
