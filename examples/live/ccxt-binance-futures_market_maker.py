@@ -67,7 +67,7 @@ config = {
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
             "sandbox_mode": False,  # If client uses the testnet
-            "defaultType": "future" # If client uses the futures market
+            "defaultType": "future",  # If client uses the futures market
         },
     },
     "exec_clients": {
@@ -76,11 +76,10 @@ config = {
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
             "sandbox_mode": False,  # If client uses the testnet,
-            "defaultType": "future" # If client uses the futures market
+            "defaultType": "future",  # If client uses the futures market
         },
     },
 }
-
 
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
@@ -107,7 +106,6 @@ node = TradingNode(strategies=[strategy], config=config)
 node.add_data_client_factory("CCXT", CCXTDataClientFactory)
 node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
 node.build()
-
 
 # Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
