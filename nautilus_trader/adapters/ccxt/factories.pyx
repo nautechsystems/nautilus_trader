@@ -73,9 +73,8 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": engine.get_event_loop(),
-
-            # Set cache limits
             "options": {
+                "defaultType": config.get("defaultType", "spot"),
                 "OHLCVLimit": 1,
                 "balancesLimit": 1,
                 "tradesLimit": 1,
@@ -151,9 +150,8 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": engine.get_event_loop(),
-
-            # Set cache limits
             "options": {
+                "defaultType": config.get("defaultType", "spot"),
                 "OHLCVLimit": 1,
                 "balancesLimit": 1,
                 "tradesLimit": 1,
@@ -171,9 +169,6 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
                     "installation instructions can be found at https://ccxt.pro"
                 )
             client_cls: ccxtpro.Exchange = getattr(ccxtpro, name.partition("-")[2].lower())
-
-        if config.get("defaultType"):
-            internal_config["options"]["defaultType"] = config["defaultType"]
 
         client = client_cls(internal_config)
         client.set_sandbox_mode(config.get("sandbox_mode", False))
