@@ -387,7 +387,7 @@ class TestStubs:
         if strategy_id is None:
             strategy_id = order.strategy_id
         if last_px is None:
-            last_px = Price.from_str("1.00000")
+            last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
         if last_qty is None:
             last_qty = order.quantity
 

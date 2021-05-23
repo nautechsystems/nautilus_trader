@@ -184,11 +184,14 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         # Get account identifier env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 
+        # Set exchange name
+        exchange_name = client.name.upper()
+
         # Set account identifier
-        account_id = AccountId(client.name.upper(), account_id_env_var)
+        account_id = AccountId(issuer=exchange_name, number=account_id_env_var)
 
         # Create client
-        if client.name.upper() == "BINANCE":
+        if exchange_name == "BINANCE":
             return BinanceCCXTExecutionClient(
                 client=client,
                 account_id=account_id,
@@ -196,7 +199,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
                 clock=clock,
                 logger=logger,
             )
-        elif client.name.upper() == "BITMEX":
+        elif exchange_name == "BITMEX":
             return BitmexCCXTExecutionClient(
                 client=client,
                 account_id=account_id,

@@ -63,7 +63,6 @@ class TestBacktestExecClientTests:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -105,6 +104,10 @@ class TestBacktestExecClientTests:
             strategy_id=StrategyId("SCALPER", "000"),
             clock=self.clock,
         )
+
+        # Wire up components
+        self.portfolio.register_data_cache(DataCache(self.logger))
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange
@@ -157,9 +160,7 @@ class TestBacktestExecClientTests:
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -189,9 +190,7 @@ class TestBacktestExecClientTests:
         )
 
         command = SubmitBracketOrder(
-            entry.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
@@ -213,9 +212,8 @@ class TestBacktestExecClientTests:
         )
 
         command = CancelOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            self.order_factory.strategy_id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
@@ -239,9 +237,8 @@ class TestBacktestExecClientTests:
         )
 
         command = UpdateOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            order.strategy_id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,

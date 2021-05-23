@@ -118,6 +118,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 "name": "BetfairExecClient",
             }
         )
+
+        self.venue = BETFAIR_VENUE
         self._stream = BetfairOrderStreamClient(
             client=self._client, logger=logger, message_handler=self.handle_order_stream_update,
         )

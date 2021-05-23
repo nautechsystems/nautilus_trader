@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -333,6 +334,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             return False  # Cannot reconcile state
 
         cdef ExecutionReport exec_report
+        cdef Instrument instrument
         for exec_report in exec_reports:
             if exec_report.id in order.execution_ids_c():
                 continue  # Trade already applied
@@ -343,7 +345,9 @@ cdef class LiveExecutionClient(ExecutionClient):
 
             instrument = self._instrument_provider.find(order.instrument_id)
             if instrument is None:
-                self._log.error(f"Cannot fill order: no instrument found for {order.instrument_id}")
+                self._log.error(f"Cannot fill order: "
+                                f"no instrument found for {order.instrument_id}")
+                return False  # Cannot reconcile state
 
             self.generate_order_filled(
                 client_order_id=order.client_order_id,

@@ -340,7 +340,8 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(
             position,
             self.cache.positions_open(
-                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+                instrument_id=position.instrument_id,
+                strategy_id=self.strategy.id,
             ),
         )
         self.assertNotIn(position, self.cache.positions_closed())
@@ -608,15 +609,18 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(position, self.cache.positions())
         self.assertIn(position, self.cache.positions_closed())
         self.assertIn(
-            position, self.cache.positions_closed(instrument_id=position.instrument_id)
+            position,
+            self.cache.positions_closed(instrument_id=position.instrument_id),
         )
         self.assertIn(
-            position, self.cache.positions_closed(strategy_id=self.strategy.id)
+            position,
+            self.cache.positions_closed(strategy_id=self.strategy.id),
         )
         self.assertIn(
             position,
             self.cache.positions_closed(
-                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+                instrument_id=position.instrument_id,
+                strategy_id=self.strategy.id,
             ),
         )
         self.assertNotIn(position, self.cache.positions_open())
@@ -629,7 +633,8 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertNotIn(
             position,
             self.cache.positions_open(
-                instrument_id=position.instrument_id, strategy_id=self.strategy.id
+                instrument_id=position.instrument_id,
+                strategy_id=self.strategy.id,
             ),
         )
         self.assertEqual(position, self.cache.position(position_id))
@@ -691,10 +696,17 @@ class ExecutionCacheTests(unittest.TestCase):
         assert position2.is_open
         assert position1 in self.cache.positions()
         assert position2 in self.cache.positions()
-        assert self.cache.positions(AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions(GBPUSD_SIM.id) == [position2]
-        assert self.cache.positions_open(AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions_open(GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions(
+            venue=AUDUSD_SIM.venue, instrument_id=AUDUSD_SIM.id
+        ) == [position1]
+        assert self.cache.positions(
+            venue=GBPUSD_SIM.venue, instrument_id=GBPUSD_SIM.id
+        ) == [position2]
+        assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions(instrument_id=AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id) == [position2]
         assert position1 in self.cache.positions_open()
         assert position2 in self.cache.positions_open()
         assert position1 not in self.cache.positions_closed()
@@ -774,14 +786,17 @@ class ExecutionCacheTests(unittest.TestCase):
         assert position1.is_open
         assert position2.is_closed
         assert position1 in self.cache.positions()
-        assert position1 in self.cache.positions(AUDUSD_SIM.id)
+        assert position1 in self.cache.positions(instrument_id=AUDUSD_SIM.id)
         assert position2 in self.cache.positions()
-        assert position2 in self.cache.positions(GBPUSD_SIM.id)
-        assert self.cache.positions_open(BTCUSD_BINANCE.id) == []
-        assert self.cache.positions_open(AUDUSD_SIM.id) == [position1]
-        assert self.cache.positions_open(GBPUSD_SIM.id) == []
-        assert self.cache.positions_closed(AUDUSD_SIM.id) == []
-        assert self.cache.positions_closed(GBPUSD_SIM.id) == [position2]
+        assert position2 in self.cache.positions(instrument_id=GBPUSD_SIM.id)
+        assert self.cache.positions_open(venue=BTCUSD_BINANCE.venue) == []
+        assert self.cache.positions_open(venue=AUDUSD_SIM.venue) == [position1]
+        assert self.cache.positions_open(instrument_id=BTCUSD_BINANCE.id) == []
+        assert self.cache.positions_open(instrument_id=AUDUSD_SIM.id) == [position1]
+        assert self.cache.positions_open(instrument_id=GBPUSD_SIM.id) == []
+        assert self.cache.positions_closed(instrument_id=AUDUSD_SIM.id) == []
+        assert self.cache.positions_closed(venue=GBPUSD_SIM.venue) == [position2]
+        assert self.cache.positions_closed(instrument_id=GBPUSD_SIM.id) == [position2]
 
     def test_update_account(self):
         # Arrange
@@ -838,7 +853,7 @@ class ExecutionCacheTests(unittest.TestCase):
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-            Price.from_str("1.0000"),
+            Price.from_str("1.00000"),
         )
 
         position2_id = PositionId("P-2")

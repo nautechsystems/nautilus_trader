@@ -1,12 +1,20 @@
 # NautilusTrader 1.120.0 Beta - Release Notes
 
+This release focuses on simplifications and enhancements of existing machinery.
 
 ## Breaking Changes
 - `Position` now requires an `Instrument` param.
 - `is_inverse` removed from `OrderFilled`.
+- `TradingCommand` serialization.
+- `ClientId` removed from `TradingCommand` and subclasses.
+- `AccountId` removed from `TradingCommand` and subclasses.
 
 ## Enhancements
-None
+- Add `Instrument` methods to `ExecutionCache`.
+- Add `Venue` filter to cache queries.
+- Move order validations into `RiskEngine`.
+- Refactor `RiskEngine`.
+- Remove routing type information from identifiers.
 
 ## Fixes
 None

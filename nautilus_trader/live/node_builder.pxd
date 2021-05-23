@@ -18,7 +18,6 @@ from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.live.risk_engine cimport LiveRiskEngine
 
 
 cdef class TradingNodeBuilder:
@@ -27,7 +26,6 @@ cdef class TradingNodeBuilder:
     cdef LoggerAdapter _log
     cdef LiveDataEngine _data_engine
     cdef LiveExecutionEngine _exec_engine
-    cdef LiveRiskEngine _risk_engine
     cdef dict _data_factories
     cdef dict _exec_factories
 

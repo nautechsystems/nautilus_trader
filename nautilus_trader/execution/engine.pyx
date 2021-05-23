@@ -65,6 +65,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -113,8 +114,9 @@ cdef class ExecutionEngine(Component):
         if config:
             self._log.info(f"Config: {config}.")
 
-        self._clients = {}     # type: dict[ClientId, ExecutionClient]
-        self._strategies = {}  # type: dict[StrategyId, TradingStrategy]
+        self._routing_map = {}  # type: dict[Venue, ExecutionClient]
+        self._clients = {}      # type: dict[ClientId, ExecutionClient]
+        self._strategies = {}   # type: dict[StrategyId, TradingStrategy]
         self._pos_id_generator = PositionIdGenerator(
             id_tag_trader=database.trader_id.tag,
             clock=clock,
@@ -280,6 +282,8 @@ cdef class ExecutionEngine(Component):
         Condition.not_in(client.id, self._clients, "client.id", "self._clients")
 
         self._clients[client.id] = client
+        # TODO(cs): Assumption that venue == client_id
+        self._routing_map[Venue(client.id.value)] = client
         self._log.info(f"Registered {client}.")
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
@@ -323,6 +327,8 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(client, "client")
         Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
+        # TODO(cs): Assumption that venue == client_id
+        del self._routing_map[Venue(client.id.value)]
         del self._clients[client.id]
         self._log.info(f"Deregistered {client}.")
 
@@ -363,8 +369,8 @@ cdef class ExecutionEngine(Component):
             client.connect()
 
         # Initialize portfolio
-        self._portfolio.initialize_orders(set(self.cache.orders_working()))
-        self._portfolio.initialize_positions(set(self.cache.positions_open()))
+        self._portfolio.initialize_orders()
+        self._portfolio.initialize_positions()
 
         self._on_start()
 
@@ -483,10 +489,11 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._clients.get(command.client_id)
+        cdef ExecutionClient client = self._routing_map.get(command.instrument_id.venue)
         if client is None:
-            self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.client_id.value}, {command}.")
+            self._log.error(
+                f"Cannot execute command: "
+                f"No execution client configured for {command.instrument_id}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
@@ -634,7 +641,10 @@ cdef class ExecutionEngine(Component):
             return
 
         # Check for open positions
-        cdef list positions_open = self.cache.positions_open(instrument_id=fill.instrument_id)
+        cdef list positions_open = self.cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=fill.instrument_id,
+        )
         if not positions_open:
             # Assign new identifier to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
@@ -661,7 +671,8 @@ cdef class ExecutionEngine(Component):
         cdef Instrument instrument = self.cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot open position: no instrument found for {fill.instrument_id.value}, {fill}.")
+                f"Cannot open position: "
+                f"no instrument found for {fill.instrument_id.value}, {fill}.")
             return
 
         cdef Position position = Position(instrument, fill)

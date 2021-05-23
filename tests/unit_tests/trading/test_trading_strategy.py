@@ -89,7 +89,6 @@ class TradingStrategyTests(unittest.TestCase):
             },  # To correctly reproduce historical data bars
         )
 
-        self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         trader_id = TraderId("TESTER", "000")
@@ -144,10 +143,13 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Wire up components
         self.exchange.register_client(self.exec_client)
         self.data_engine.register_client(self.data_client)
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
+        self.portfolio.register_data_cache(self.data_engine.cache)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         # Add instruments
         self.data_engine.process(AUDUSD_SIM)

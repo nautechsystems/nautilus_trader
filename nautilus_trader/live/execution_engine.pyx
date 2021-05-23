@@ -34,6 +34,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -164,7 +165,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Build order state map
         cdef Order order
         for order in active_orders.values():
-            client_id = order.instrument_id.venue.client_id
+            # TODO(cs): Assumption that venue == client_id
+            client_id = ClientId(order.instrument_id.venue.value)
             if client_id in client_orders:
                 client_orders[client_id].append(order)
             else:
@@ -200,7 +202,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
             resolved = True
             for order in active_orders.values():
-                client_id = order.instrument_id.venue.client_id
+                # TODO(cs): Assumption that venue == client_id
+                client_id = ClientId(order.instrument_id.venue.value)
                 report = client_mass_status[client_id].order_reports().get(order.venue_order_id)
                 if report is None:
                     return False  # Will never reconcile

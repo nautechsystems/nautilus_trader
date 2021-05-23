@@ -20,7 +20,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Issuer
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -202,7 +201,6 @@ class TestIdentifiers:
         assert account_id1 == account_id1
         assert account_id1 != account_id2
         assert "SIM-02851908", account_id1.value
-        assert Issuer("SIM") == account_id1.issuer
         assert account_id1 == AccountId("SIM", "02851908")
 
     def test_position_identifier(self):
@@ -226,7 +224,7 @@ class TestVenue:
     def test_instrument_id_equality(self):
         # Arrange
         venue1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        venue2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO", broker="IB"))
+        venue2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
         venue3 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
 
         # Act
@@ -237,21 +235,19 @@ class TestVenue:
 
     def test_instrument_id_str(self):
         # Arrange
-        venue1 = Venue("SIM")
-        venue2 = Venue("IDEALPRO", broker="IB")
+        venue = Venue("NYMEX")
 
         # Act
         # Assert
-        assert str(venue1) == "SIM"
-        assert str(venue2) == "IB-IDEALPRO"
+        assert str(venue) == "NYMEX"
 
     def test_venue_repr(self):
         # Arrange
-        venue = Venue("NYMEX", broker="IB")
+        venue = Venue("NYMEX")
 
         # Act
         # Assert
-        assert repr(venue) == "Venue('IB-NYMEX')"
+        assert repr(venue) == "Venue('NYMEX')"
 
 
 class TestInstrumentId:
@@ -283,7 +279,7 @@ class TestInstrumentId:
         # Assert
         assert "InstrumentId('AUD/USD.SIM')" == repr(instrument_id)
 
-    def test_parse_instrument_id_from_str1(self):
+    def test_parse_instrument_id_from_str(self):
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
@@ -292,13 +288,3 @@ class TestInstrumentId:
 
         # Assert
         assert instrument_id == result
-
-    def test_parse_instrument_id_from_str2(self):
-        # Arrange
-        instrument_id = InstrumentId(Symbol("CL"), Venue("NYMEX", broker="IB"))
-
-        # Act
-        result = InstrumentId.from_str(str(instrument_id))
-
-        # Assert
-        assert result == instrument_id

@@ -34,6 +34,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -43,6 +44,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
+BINANCE = Venue("BINANCE")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
@@ -54,13 +56,12 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.trader_id = TraderId("TESTER", "000")
         self.logger = Logger(self.clock, bypass_logging=True)
 
-        self.account_id = AccountId("BINANCE", "001")
+        self.account_id = AccountId(BINANCE.value, "001")
 
         self.portfolio = Portfolio(
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -95,9 +96,12 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
+        # Wire up components
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(exec_client)
         self.exec_engine.process(TestStubs.event_account_state(self.account_id))
+        self.portfolio.register_data_cache(DataCache(self.logger))
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(
@@ -130,9 +134,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             self.strategy.id,
             PositionId.null(),
             order,

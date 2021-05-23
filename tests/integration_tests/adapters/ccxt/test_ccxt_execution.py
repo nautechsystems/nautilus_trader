@@ -56,7 +56,7 @@ class CCXTExecutionClientTests(unittest.TestCase):
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.trader_id = TraderId("TESTER", "001")
-        self.account_id = AccountId("BINANCE", "001")
+        self.account_id = AccountId(BINANCE.value, "001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -83,6 +83,7 @@ class CCXTExecutionClientTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         with open(TEST_PATH + "markets.json") as response:
             markets = json.load(response)
