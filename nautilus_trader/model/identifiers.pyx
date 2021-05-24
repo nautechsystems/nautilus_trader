@@ -71,6 +71,12 @@ cdef class Identifier:
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
 
+    cdef inline bint is_null(self) except *:
+        return self.value == _NULL_ID
+
+    cdef inline bint not_null(self) except *:
+        return self.value != _NULL_ID
+
 
 cdef class Symbol(Identifier):
     """
@@ -179,31 +185,6 @@ cdef class InstrumentId(Identifier):
         return InstrumentId.from_str_c(value)
 
 
-cdef class IdTag(Identifier):
-    """
-    Represents a valid identifier tag.
-
-    Can be used as part of a more complex identifier.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the `IdTag` class.
-
-        Parameters
-        ----------
-        value : str
-            The identifier tag value.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-
-        """
-        super().__init__(value)
-
-
 cdef class TraderId(Identifier):
     """
     Represents a valid trader identifier.
@@ -211,71 +192,46 @@ cdef class TraderId(Identifier):
     The name and tag combination identifier value must be unique at the fund level.
     """
 
-    def __init__(self, str name, str tag):
+    def __init__(self, str value):
         """
         Initialize a new instance of the `TraderId` class.
 
-        Parameters
-        ----------
-        name : str
-            The trader name identifier value. Used for internal system
-            identification, it is never used for identifiers which may
-            be sent outside of the Nautilus stack, such as on order identifiers.
-        tag : str
-            The trader identifier tag value. Used to tag client order identifiers
-            which relate to a particular trader.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-        ValueError
-            If tag is not a valid string.
-
-        """
-        Condition.valid_string(name, "name")
-        Condition.valid_string(tag, "tag")
-        super().__init__(f"{name}-{tag}")
-
-        self.name = name
-        self.tag = IdTag(tag)
-
-    @staticmethod
-    cdef TraderId from_str_c(str value):
-        Condition.valid_string(value, "value")
-
-        cdef tuple pieces = value.partition('-')
-
-        if len(pieces) != 3:
-            raise ValueError(f"The TraderId string value was malformed, was {value}")
-
-        return TraderId(name=pieces[0], tag=pieces[2])
-
-    @staticmethod
-    def from_str(value: str) -> TraderId:
-        """
-        Return a trader identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        It is expected a trader identifier is the abbreviated name of the
-        trader with an order identifier tag number separated by a hyphen.
+        Must be correctly formatted with two valid strings either side of a hyphen.
+        It is expected a trader identifier is the abbreviated name of the trader
+        with an order identifier tag number separated by a hyphen.
 
         Example: "TESTER-001".
 
         Parameters
         ----------
         value : str
-            The value for the strategy identifier.
+            The trader identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string containing a hyphen.
+
+        """
+        Condition.true(
+            value == _NULL_ID or "-" in value,
+            "identifier incorrectly formatted (did not contain '-' hyphen)",
+        )
+        super().__init__(value)
+
+    cpdef str get_tag(self):
+        """
+        Return the order identifier tag value for this identifier.
 
         Returns
         -------
-        TraderId
+        str
 
         """
-        return TraderId.from_str_c(value)
+        return self.value.partition("-")[2]
 
 
-cdef StrategyId _NULL_STRATEGY_ID = StrategyId(_NULL_ID, _NULL_ID)
+cdef StrategyId _NULL_STRATEGY_ID = StrategyId(_NULL_ID)
 
 cdef class StrategyId(Identifier):
     """
@@ -284,58 +240,9 @@ cdef class StrategyId(Identifier):
     The name and tag combination must be unique at the trader level.
     """
 
-    def __init__(self, str name, str tag):
+    def __init__(self, str value):
         """
         Initialize a new instance of the `StrategyId` class.
-
-        Parameters
-        ----------
-        name : str
-            The strategy name identifier value.
-        tag : str
-            The strategy identifier tag value. Used to tag client order
-            identifiers which relate to a particular strategy.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-        ValueError
-            If tag is not a valid string.
-
-        """
-        Condition.valid_string(name, "name")
-        Condition.valid_string(tag, "tag")
-        super().__init__(f"{name}-{tag}")
-
-        self.name = name
-        self.tag = IdTag(tag)
-
-    @staticmethod
-    cdef inline StrategyId null_c():
-        return _NULL_STRATEGY_ID
-
-    cdef inline bint is_null(self) except *:
-        return self.value == "NULL-NULL"
-
-    cdef inline bint not_null(self) except *:
-        return self.value != "NULL-NULL"
-
-    @staticmethod
-    cdef StrategyId from_str_c(str value):
-        Condition.valid_string(value, "value")
-
-        cdef tuple pieces = value.partition('-')
-
-        if len(pieces) != 3:
-            raise ValueError(f"The StrategyId string value was malformed, was {value}")
-
-        return StrategyId(name=pieces[0], tag=pieces[2])
-
-    @staticmethod
-    def from_str(value: str) -> StrategyId:
-        """
-        Return a strategy identifier parsed from the given string value.
 
         Must be correctly formatted with two valid strings either side of a hyphen.
         Is is expected a strategy identifier is the class name of the strategy with
@@ -346,14 +253,34 @@ cdef class StrategyId(Identifier):
         Parameters
         ----------
         value : str
-            The value for the strategy identifier.
+            The strategy identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string containing a hyphen.
+
+        """
+        Condition.true(
+            value == _NULL_ID or "-" in value,
+            "identifier incorrectly formatted (did not contain '-' hyphen)",
+        )
+        super().__init__(value)
+
+    cpdef str get_tag(self):
+        """
+        Return the order identifier tag value for this identifier.
 
         Returns
         -------
-        StrategyId
+        str
 
         """
-        return StrategyId.from_str_c(value)
+        return self.value.partition("-")[2]
+
+    @staticmethod
+    cdef inline StrategyId null_c():
+        return _NULL_STRATEGY_ID
 
     @staticmethod
     def null():
@@ -457,29 +384,6 @@ cdef class ClientId(Identifier):
         """
         super().__init__(value)
 
-    @staticmethod
-    cdef ClientId from_str_c(str value):
-        Condition.valid_string(value, "value")
-
-        return ClientId(value)
-
-    @staticmethod
-    def from_str(value: str) -> ClientId:
-        """
-        Return a client identifier parsed from the given string value.
-
-        Parameters
-        ----------
-        value : str
-            The client identifier string value to parse.
-
-        Returns
-        -------
-        ClientId
-
-        """
-        return ClientId.from_str_c(value)
-
 
 cdef class ClientOrderId(Identifier):
     """
@@ -496,6 +400,11 @@ cdef class ClientOrderId(Identifier):
         ----------
         value : str
             The client order identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
 
         """
         super().__init__(value)
@@ -526,6 +435,11 @@ cdef class ClientOrderLinkId(Identifier):
         ----------
         value : str
             The client order link identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
 
         """
         super().__init__(value)
@@ -563,12 +477,6 @@ cdef class VenueOrderId(Identifier):
     @staticmethod
     cdef VenueOrderId null_c():
         return _NULL_ORDER_ID
-
-    cdef bint is_null(self) except *:
-        return self.value == _NULL_ID
-
-    cdef bint not_null(self) except *:
-        return self.value != _NULL_ID
 
     @staticmethod
     def null():
@@ -615,12 +523,6 @@ cdef class PositionId(Identifier):
     @staticmethod
     cdef PositionId null_c():
         return _NULL_POSITION_ID
-
-    cdef bint is_null(self) except *:
-        return self.value == _NULL_ID
-
-    cdef bint not_null(self) except *:
-        return self.value != _NULL_ID
 
     @staticmethod
     def null():

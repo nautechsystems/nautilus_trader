@@ -154,11 +154,11 @@ class PortfolioTests(unittest.TestCase):
         # Fixture Setup
         clock = TestClock()
         logger = Logger(clock)
-        trader_id = TraderId("TESTER", "000")
+        trader_id = TraderId("TESTER-000")
 
         self.order_factory = OrderFactory(
             trader_id=trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -435,7 +435,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=BTCUSDT_BINANCE,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("10500.00"),
     #     )
     #
@@ -499,7 +499,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=BTCUSDT_BINANCE,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("15000.00"),
     #     )
     #
@@ -600,7 +600,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=ETHUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("376.05"),
     #     )
     #
@@ -656,7 +656,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=ETHUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("376.05"),
     #     )
     #
@@ -701,7 +701,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=ETHUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("376.05"),
     #     )
     #

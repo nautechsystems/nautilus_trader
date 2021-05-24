@@ -161,7 +161,7 @@ cdef class ReportProvider:
         return {
             "position_id": position.id.value,
             "instrument_id": position.instrument_id.value,
-            "strategy_id": position.strategy_id.tag.value,
+            "strategy_id": position.strategy_id.value,
             "entry": OrderSideParser.to_str(position.entry),
             "peak_qty": position.peak_qty,
             "opened_time": nanos_to_unix_dt(position.opened_timestamp_ns),

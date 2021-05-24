@@ -127,8 +127,7 @@ class TradingNode:
 
         # Setup identifiers
         self.trader_id = TraderId(
-            name=config_trader["name"],
-            tag=config_trader["id_tag"],
+            f"{config_trader['name']}-{config_trader['id_tag']}",
         )
 
         # Setup logging

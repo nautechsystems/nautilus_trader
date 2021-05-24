@@ -92,7 +92,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        trader_id = TraderId("TESTER", "000")
+        trader_id = TraderId("TESTER-000")
         account_id = TestStubs.account_id()
 
         self.exec_db = InMemoryExecutionDatabase(
@@ -195,7 +195,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(StrategyId("TradingStrategy", "001"), strategy.id)
+        self.assertEqual(StrategyId("TradingStrategy-001"), strategy.id)
 
     def test_initialization(self):
         # Arrange
@@ -426,7 +426,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -441,7 +441,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -456,7 +456,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -471,7 +471,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -486,7 +486,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -501,7 +501,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -515,7 +515,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -532,7 +532,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -551,7 +551,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -565,7 +565,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -579,7 +579,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -592,7 +592,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -605,7 +605,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -623,7 +623,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -641,7 +641,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -659,7 +659,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -677,7 +677,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -697,7 +697,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -715,7 +715,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -730,7 +730,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -745,7 +745,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -761,7 +761,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -781,7 +781,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -802,7 +802,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -825,7 +825,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -856,7 +856,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -875,7 +875,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -893,7 +893,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -914,7 +914,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -935,7 +935,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -957,7 +957,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -978,7 +978,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -999,7 +999,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1015,7 +1015,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1031,7 +1031,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1049,7 +1049,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1067,7 +1067,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1087,7 +1087,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = KaboomStrategy()
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1105,7 +1105,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1125,7 +1125,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1143,7 +1143,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1163,7 +1163,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1184,7 +1184,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1204,7 +1204,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1223,7 +1223,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1244,7 +1244,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1263,7 +1263,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1284,7 +1284,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1304,7 +1304,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = TradingStrategy("000")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1321,7 +1321,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_handle_data_when_not_running_does_not_send_to_on_data(self):
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1338,7 +1338,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_handle_data_when_running_sends_to_on_data(self):
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1359,7 +1359,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1382,7 +1382,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1407,7 +1407,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1428,7 +1428,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1450,7 +1450,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1469,7 +1469,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1490,7 +1490,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1509,7 +1509,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1530,7 +1530,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1551,7 +1551,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1573,7 +1573,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1594,7 +1594,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1616,7 +1616,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1637,7 +1637,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1659,7 +1659,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1679,7 +1679,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1701,7 +1701,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1722,7 +1722,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1741,7 +1741,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1760,7 +1760,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1785,7 +1785,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1801,7 +1801,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1828,7 +1828,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1862,7 +1862,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1897,7 +1897,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1925,7 +1925,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1962,7 +1962,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -2001,7 +2001,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -2037,7 +2037,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -2067,7 +2067,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )

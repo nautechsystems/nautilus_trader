@@ -122,7 +122,7 @@ cdef class ExecutionEngine(Component):
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._default_client = None  # type: Optional[ExecutionClient]
         self._pos_id_generator = PositionIdGenerator(
-            id_tag_trader=database.trader_id.tag,
+            trader_id=database.trader_id,
             clock=clock,
         )
         self._portfolio = portfolio
@@ -305,10 +305,14 @@ cdef class ExecutionEngine(Component):
         if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
             if self._default_client is None:
                 self._default_client = client
-                self._log.info(f"Registered {client} BROKERAGE_MULTI_VENUE as default client.")
+                self._log.info(
+                    f"Registered {client} BROKERAGE_MULTI_VENUE as default client.",
+                )
         else:
             self._routing_map[client.venue] = client
-            self._log.info(f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}.")
+            self._log.info(
+                f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}.",
+            )
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
         """
@@ -327,8 +331,10 @@ cdef class ExecutionEngine(Component):
 
         self._default_client = client
 
-        self._log.info(f"Registered {client} "
-                       f"{VenueTypeParser.to_str(client.venue_type)}  as default client.")
+        self._log.info(
+            f"Registered {client} "
+            f"{VenueTypeParser.to_str(client.venue_type)}  as default client.",
+        )
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
         """
@@ -353,8 +359,10 @@ cdef class ExecutionEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(f"Registered {client} {VenueTypeParser.to_str(client.venue_type)} "
-                       f"for routing to {venue}.")
+        self._log.info(
+            f"Registered {client} {VenueTypeParser.to_str(client.venue_type)} "
+            f"for routing to {venue}.",
+        )
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """

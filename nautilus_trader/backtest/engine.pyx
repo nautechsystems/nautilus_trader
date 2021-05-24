@@ -116,7 +116,7 @@ cdef class BacktestEngine:
 
         """
         if trader_id is None:
-            trader_id = TraderId("BACKTESTER", "000")
+            trader_id = TraderId("BACKTESTER-000")
         Condition.valid_string(exec_db_type, "exec_db_type")
 
         # Options

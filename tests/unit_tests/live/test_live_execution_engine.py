@@ -63,18 +63,18 @@ class TestLiveExecutionEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=self.clock,
         )
 
         self.random_order_factory = OrderFactory(
-            trader_id=TraderId("RANDOM", "042"),
-            strategy_id=StrategyId("S", "042"),
+            trader_id=TraderId("RANDOM-042"),
+            strategy_id=StrategyId("S-042"),
             clock=self.clock,
         )
 
@@ -165,7 +165,7 @@ class TestLiveExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -210,7 +210,7 @@ class TestLiveExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -288,7 +288,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -330,7 +330,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -365,7 +365,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -388,7 +388,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -443,7 +443,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -498,7 +498,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -553,7 +553,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -633,7 +633,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )

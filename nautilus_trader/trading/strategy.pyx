@@ -119,7 +119,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        cdef StrategyId strategy_id = StrategyId(type(self).__name__, order_id_tag)
+        cdef StrategyId strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
         cdef Clock clock = LiveClock()
         super().__init__(
             clock=clock,

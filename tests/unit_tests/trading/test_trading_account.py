@@ -53,10 +53,10 @@ class AccountTests(unittest.TestCase):
         # Fixture Setup
         clock = TestClock()
         logger = Logger(clock)
-        trader_id = TraderId("TESTER", "000")
+        trader_id = TraderId("TESTER-000")
         self.order_factory = OrderFactory(
             trader_id=trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
