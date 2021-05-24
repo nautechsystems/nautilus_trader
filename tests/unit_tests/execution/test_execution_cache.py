@@ -29,6 +29,7 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -998,8 +999,9 @@ class ExecutionCacheIntegrityCheckTests(unittest.TestCase):
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             modules=[],

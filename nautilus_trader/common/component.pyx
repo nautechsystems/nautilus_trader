@@ -125,6 +125,12 @@ cdef class Component:
         if log_initialized:
             self._log.info(f"state={self._fsm.state_string_c()}...")
 
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        return self.name
+
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
 

@@ -65,7 +65,6 @@ from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderUpdateRejected
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -157,9 +156,6 @@ cdef class TradingStrategy(Component):
 
     def __ne__(self, TradingStrategy other) -> bool:
         return self.id.value != other.id.value
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value})"
 
     cdef inline void _check_trader_registered(self) except *:
         if self.trader_id is None:

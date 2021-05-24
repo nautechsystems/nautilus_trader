@@ -405,6 +405,7 @@ class MockExecutionClient(ExecutionClient):
     def __init__(
         self,
         client_id,
+        venue_type,
         account_id,
         engine,
         clock,
@@ -417,6 +418,8 @@ class MockExecutionClient(ExecutionClient):
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account_id for the client.
         engine : ExecutionEngine
@@ -429,6 +432,7 @@ class MockExecutionClient(ExecutionClient):
         """
         super().__init__(
             client_id,
+            venue_type,
             account_id,
             engine,
             clock,
@@ -485,6 +489,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         client_id,
+        venue_type,
         account_id,
         engine,
         instrument_provider,
@@ -498,6 +503,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account_id for the client.
         engine : ExecutionEngine
@@ -512,6 +519,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         """
         super().__init__(
             client_id,
+            venue_type,
             account_id,
             engine,
             instrument_provider,

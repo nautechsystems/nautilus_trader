@@ -51,6 +51,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport AccountId
@@ -546,9 +547,10 @@ cdef class BacktestEngine:
             f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
             f"Bar data elements.")
 
-    def add_exchange(
+    def add_venue(
         self,
         Venue venue,
+        VenueType venue_type,
         OMSType oms_type,
         list starting_balances,
         bint is_frozen_account=False,
@@ -562,13 +564,15 @@ cdef class BacktestEngine:
         Parameters
         ----------
         venue : Venue
-            The venue for the exchange.
+            The exchange venue identifier.
+        venue_type : VenueType
+            The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType
             The order management system type for the exchange. If HEDGING and
             no position_id for an order then will generate a new position_id.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
-        is_frozen_account : bool, optional
+        is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
@@ -597,6 +601,7 @@ cdef class BacktestEngine:
         # Create exchange
         exchange = SimulatedExchange(
             venue=venue,
+            venue_type=venue_type,
             oms_type=oms_type,
             is_frozen_account=is_frozen_account,
             starting_balances=starting_balances,

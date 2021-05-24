@@ -32,6 +32,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -80,6 +81,7 @@ class TestBacktestExecClientTests:
 
         self.exchange = SimulatedExchange(
             venue=Venue("BINANCE"),
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],

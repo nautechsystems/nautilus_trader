@@ -29,6 +29,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -103,6 +104,7 @@ class TestLiveExecutionClient:
 
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
+            venue_type=VenueType.ECN,
             account_id=self.account_id,
             engine=self.exec_engine,
             instrument_provider=InstrumentProvider(),

@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -71,6 +72,7 @@ cdef class SimulatedExchange:
     def __init__(
         self,
         Venue venue not None,
+        VenueType venue_type,
         OMSType oms_type,
         bint is_frozen_account,
         list starting_balances not None,
@@ -89,6 +91,8 @@ cdef class SimulatedExchange:
         ----------
         venue : Venue
             The venue to simulate for the backtest.
+        venue_type : VenueType
+            The venues type.
         oms_type : OMSType
             The order management system type used by the exchange (HEDGING or NETTING).
         is_frozen_account : bool
@@ -132,6 +136,7 @@ cdef class SimulatedExchange:
         )
 
         self.id = venue
+        self.venue_type = venue_type
         self.oms_type = oms_type
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
         self.exchange_order_book_level = exchange_order_book_level

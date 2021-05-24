@@ -26,6 +26,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -59,6 +60,8 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     """The exchange identifier.\n\n:returns: `Venue`"""
+    cdef readonly VenueType venue_type
+    """The venues type.\n\n:returns: `VenueType`"""
     cdef readonly OMSType oms_type
     """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly OrderBookLevel exchange_order_book_level
