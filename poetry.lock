@@ -148,7 +148,7 @@ python2 = ["typed-ast (>=1.4.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.50.24"
+version = "1.50.30"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -310,7 +310,7 @@ dev = ["nose (==1.3.7)", "parameterized (==0.6.1)", "flake8 (==2.5.1)"]
 
 [[package]]
 name = "eventkit"
-version = "0.8.6"
+version = "0.8.7"
 description = "Event-driven data pipelines"
 category = "main"
 optional = false
@@ -1201,7 +1201,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "b6374581e5601aea19f87594df318a09a0f59b2beba3244b2aa35412aab3b6d5"
+content-hash = "0dce89d186d4f1ea783cb8624e257b0de44d277dd5f440296920b0b7bdb88cd2"
 
 [metadata.files]
 aiodns = [
@@ -1288,8 +1288,8 @@ black = [
     {file = "black-21.5b1.tar.gz", hash = "sha256:23695358dbcb3deafe7f0a3ad89feee5999a46be5fec21f4f1d108be0bcdb3b1"},
 ]
 ccxt = [
-    {file = "ccxt-1.50.24-py2.py3-none-any.whl", hash = "sha256:81af9578aaf3d656192467f4c3fd53370808b972a4e5bdfea45aff849b4a3f32"},
-    {file = "ccxt-1.50.24.tar.gz", hash = "sha256:081e5463f7bf0cc8055834fa635329bc0604538b551671cdf17851ec962e8019"},
+    {file = "ccxt-1.50.30-py2.py3-none-any.whl", hash = "sha256:5df241c049bdab26e53baecd501eeb498e6f1a4cef0f2f827245b8ab242fe1ba"},
+    {file = "ccxt-1.50.30.tar.gz", hash = "sha256:4c469e185e71a43669ed5286d3bc148f4f94e669dcea26e7fb890a25005b2e74"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1463,8 +1463,8 @@ empyrical = [
     {file = "empyrical-0.5.5.tar.gz", hash = "sha256:84320f36931496774e948d7ca9f03494ae2dd94451b320eeda378639e5eba950"},
 ]
 eventkit = [
-    {file = "eventkit-0.8.6-py3-none-any.whl", hash = "sha256:7ff6d05d6dc2991e093eebb3c86cfeadce215e1256a294dca8e30c6c64422e0e"},
-    {file = "eventkit-0.8.6.tar.gz", hash = "sha256:ca9ef8eb42e0846381c2f79e5cf6c572224ea25b52c6410f6e17090ce761ae10"},
+    {file = "eventkit-0.8.7-py3-none-any.whl", hash = "sha256:7cfbe37975fe419c8031115094e0accbade333675600444d5c05a2f595b0cfcd"},
+    {file = "eventkit-0.8.7.tar.gz", hash = "sha256:1174a5796454b220ad27bee2456444e373a348022e7a8b9cd3a957077991becb"},
 ]
 execnet = [
     {file = "execnet-1.8.0-py2.py3-none-any.whl", hash = "sha256:7a13113028b1e1cc4c6492b28098b3c6576c9dccc7973bfe47b342afadafb2ac"},
