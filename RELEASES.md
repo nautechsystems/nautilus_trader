@@ -1,3 +1,21 @@
+# NautilusTrader 1.121.0 Beta - Release Notes
+
+
+## Breaking Changes
+- `BacktestEngine.add_venue` added `venue_type` to method params.
+- `ExecutionClient` added `venue_type` to constructor params.
+
+## Enhancements
+- Improve `ExecutionEngine` order routing.
+- Improve `ExecutionEngine` client registration.
+- Add order routing configuration.
+- Add `VenueType` enum and parser.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.120.0 Beta - Release Notes
 
 This release focuses on simplifications and enhancements of existing machinery.

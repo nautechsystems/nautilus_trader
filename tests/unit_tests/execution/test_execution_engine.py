@@ -30,6 +30,7 @@ from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
@@ -108,6 +109,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
+            venue_type=VenueType.ECN,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -117,13 +119,56 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
 
-    def test_registered_venues_returns_expected(self):
+    def test_registered_clients_returns_expected(self):
         # Arrange
         # Act
         result = self.exec_engine.registered_clients
 
         # Assert
-        self.assertEqual([ClientId("SIM")], result)
+        assert result == [ClientId("SIM")]
+        assert self.exec_engine.default_client is None
+
+    def test_register_brokerage_multi_venue_exec_client(self):
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("IB"),
+            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
+            account_id=AccountId("IB", "U1258001"),
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        self.exec_engine.register_client(exec_client)
+
+        # Assert
+        assert self.exec_engine.default_client == exec_client.id
+        assert self.exec_engine.registered_clients == [
+            exec_client.id,
+            self.exec_client.id,
+        ]
+
+    def test_register_venue_routing(self):
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("IB"),
+            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
+            account_id=AccountId("IB", "U1258001"),
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        self.exec_engine.register_venue_routing(exec_client, Venue("NYMEX"))
+
+        # Assert
+        assert self.exec_engine.default_client is None
+        assert self.exec_engine.registered_clients == [
+            exec_client.id,
+            self.exec_client.id,
+        ]
 
     def test_deregister_client_removes_client(self):
         # Arrange

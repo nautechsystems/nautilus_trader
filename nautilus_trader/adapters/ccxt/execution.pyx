@@ -43,6 +43,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -105,6 +106,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef str exchange_name = client.name.upper()
         super().__init__(
             ClientId(exchange_name),
+            VenueType.EXCHANGE,
             account_id,
             engine,
             instrument_provider,
@@ -115,7 +117,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             }
         )
 
-        self.venue = Venue(exchange_name)
         self._client = client
         self.is_connected = False
 

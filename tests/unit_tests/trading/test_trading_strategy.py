@@ -42,6 +42,7 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -117,6 +118,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
@@ -184,12 +186,8 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(
-            "TradingStrategy(id=TradingStrategy-GBP/USD-MM)", str(strategy)
-        )
-        self.assertEqual(
-            "TradingStrategy(id=TradingStrategy-GBP/USD-MM)", repr(strategy)
-        )
+        self.assertEqual("TradingStrategy-GBP/USD-MM", str(strategy))
+        self.assertEqual("TradingStrategy-GBP/USD-MM", repr(strategy))
 
     def test_id(self):
         # Arrange

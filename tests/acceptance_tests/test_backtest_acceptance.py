@@ -29,6 +29,7 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
@@ -64,8 +65,9 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
@@ -178,8 +180,9 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, GBP)],
             modules=[fx_rollover_interest],
@@ -225,8 +228,9 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, AUD)],
             modules=[fx_rollover_interest],
@@ -286,8 +290,9 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 
         self.engine.add_instrument(self.ethusdt)
         self.engine.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(1_000_000, USDT)],
         )
@@ -332,8 +337,9 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.engine.add_quote_ticks(
             self.instrument.id, TestDataProvider.tardis_quotes()
         )
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(1_000_000, USDT)],
         )

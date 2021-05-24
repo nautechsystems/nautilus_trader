@@ -29,6 +29,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -63,8 +64,9 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        engine.add_exchange(
+        engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
@@ -119,8 +121,9 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        engine.add_exchange(
+        engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
         )
@@ -170,8 +173,9 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        engine.add_exchange(
+        engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],

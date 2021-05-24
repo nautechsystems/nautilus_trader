@@ -29,9 +29,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef public set pending_update_order_client_ids
     cdef public object published_executions
 
-    cdef readonly Venue venue
-    """The clients venue.\n\n:returns: `Venue`"""
-
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef BetfairInstrumentProvider instrument_provider(self)

@@ -42,6 +42,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
@@ -118,6 +119,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=SIM,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
@@ -1796,6 +1798,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Arrange
         exchange = SimulatedExchange(
             venue=SIM,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=True,  # <-- Freezing account
             starting_balances=[Money(1_000_000, USD)],
@@ -1923,7 +1926,8 @@ class BitmexExchangeTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
-            oms_type=OMSType.HEDGING,
+            venue_type=VenueType.EXCHANGE,
+            oms_type=OMSType.NETTING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
             exec_cache=self.exec_engine.cache,
@@ -2076,6 +2080,7 @@ class OrderBookExchangeTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=SIM,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],

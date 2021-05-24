@@ -25,6 +25,7 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -81,6 +82,7 @@ class TestRiskEngine:
 
         self.exec_client = MockExecutionClient(
             ClientId(self.venue.value),
+            VenueType.ECN,
             self.account_id,
             self.exec_engine,
             self.clock,

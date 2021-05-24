@@ -31,8 +31,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef dict _cached_orders
     cdef dict _cached_filled
 
-    cdef readonly Venue venue
-
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *

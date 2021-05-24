@@ -31,6 +31,7 @@ from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -90,6 +91,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     def __init__(
         self,
         ClientId client_id not None,
+        VenueType venue_type,
         AccountId account_id not None,
         LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
@@ -104,6 +106,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account identifier for the client.
         engine : LiveDataEngine
@@ -120,6 +124,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         super().__init__(
             client_id,
+            venue_type,
             account_id,
             engine,
             clock,

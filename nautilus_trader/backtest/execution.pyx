@@ -58,11 +58,12 @@ cdef class BacktestExecClient(ExecutionClient):
 
         """
         super().__init__(
-            ClientId(exchange.id.value),
-            account_id,
-            engine,
-            clock,
-            logger,
+            client_id=ClientId(exchange.id.value),
+            venue_type=exchange.venue_type,
+            account_id=account_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self._exchange = exchange
