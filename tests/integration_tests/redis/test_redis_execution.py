@@ -60,7 +60,7 @@ class TestRedisExecutionDatabase:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(self.trader_id, self.clock, self.logger)

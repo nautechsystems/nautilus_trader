@@ -53,8 +53,8 @@ class PositionTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -91,7 +91,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -153,7 +153,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -203,7 +203,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(50000),
         )
@@ -248,7 +248,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(50000),
         )
@@ -258,7 +258,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
             last_qty=Quantity.from_int(50000),
         )
@@ -305,7 +305,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             execution_ns=1_000_000_000,
         )
@@ -318,7 +318,7 @@ class PositionTests(unittest.TestCase):
             VenueOrderId("2"),
             ExecutionId("E2"),
             PositionId("T123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             order.instrument_id,
             OrderSide.SELL,
             order.quantity,
@@ -390,7 +390,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(50000),
         )
@@ -400,7 +400,7 @@ class PositionTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00003"),
             last_qty=Quantity.from_int(50000),
         )
@@ -461,7 +461,7 @@ class PositionTests(unittest.TestCase):
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00000"),
         )
 
@@ -529,14 +529,14 @@ class PositionTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
         )
 
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -544,7 +544,7 @@ class PositionTests(unittest.TestCase):
             order3,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00010"),
         )
 
@@ -638,7 +638,7 @@ class PositionTests(unittest.TestCase):
             order3,
             instrument=ETHUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_int(101),
         )
 
@@ -651,7 +651,7 @@ class PositionTests(unittest.TestCase):
             order4,
             instrument=ETHUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_int(105),
         )
 
@@ -664,7 +664,7 @@ class PositionTests(unittest.TestCase):
             order5,
             instrument=ETHUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_int(103),
         )
 
@@ -735,7 +735,7 @@ class PositionTests(unittest.TestCase):
             order3,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10001.00"),
         )
 
@@ -748,7 +748,7 @@ class PositionTests(unittest.TestCase):
             order4,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10003.00"),
         )
 
@@ -761,7 +761,7 @@ class PositionTests(unittest.TestCase):
             order5,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-19700101-000000-000-001-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10005"),
         )
 
@@ -786,7 +786,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -814,7 +814,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -852,7 +852,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -890,7 +890,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -929,7 +929,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -968,7 +968,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=XBTUSD_BITMEX,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price(10000.00, precision=2),
         )
 
@@ -1004,7 +1004,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=ETHUSD_BITMEX,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("375.95"),
         )
 
@@ -1037,7 +1037,7 @@ class PositionTests(unittest.TestCase):
             order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1045,7 +1045,7 @@ class PositionTests(unittest.TestCase):
             order2,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10500.00"),
         )
 
@@ -1073,7 +1073,7 @@ class PositionTests(unittest.TestCase):
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("10505.60"),
         )
 
@@ -1100,7 +1100,7 @@ class PositionTests(unittest.TestCase):
     #         order,
     #         instrument=XBTUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("10500.00"),
     #     )
     #
@@ -1127,7 +1127,7 @@ class PositionTests(unittest.TestCase):
     #         order,
     #         instrument=XBTUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("15500.00"),
     #     )
     #

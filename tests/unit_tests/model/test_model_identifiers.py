@@ -17,7 +17,6 @@ import pytest
 
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
@@ -64,7 +63,7 @@ class TestIdentifiers:
         id1 = Venue("BINANCE")
         id2 = Venue("BINANCE")
         id3 = InstrumentId(Symbol("BINANCE"), Venue("BINANCE"))  # Invalid
-        id4 = IdTag("BINANCE")
+        id4 = Identifier("BINANCE")
 
         # Act
         # Assert
@@ -156,40 +155,38 @@ class TestIdentifiers:
         # Act
         # Assert
         with pytest.raises(ValueError):
-            StrategyId.from_str("BAD_STRING")
+            StrategyId("BAD_STRING")
 
     def test_trader_id_given_malformed_string_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            TraderId.from_str("BAD_STRING")
+            TraderId("BAD_STRING")
 
     def test_trader_identifier(self):
         # Arrange
         # Act
-        trader_id1 = TraderId("TESTER", "000")
-        trader_id2 = TraderId("TESTER", "001")
+        trader_id1 = TraderId("TESTER-000")
+        trader_id2 = TraderId("TESTER-001")
 
         # Assert
         assert trader_id1 == trader_id1
         assert trader_id1 != trader_id2
         assert "TESTER-000" == trader_id1.value
-        assert "TESTER" == trader_id1.name
-        assert trader_id1 == TraderId.from_str("TESTER-000")
+        assert trader_id1.get_tag() == "000"
 
     def test_strategy_identifier(self):
         # Arrange
         # Act
         strategy_id1 = StrategyId.null()
-        strategy_id2 = StrategyId("SCALPER", "01")
+        strategy_id2 = StrategyId("SCALPER-001")
 
         # Assert
-        assert "NULL-NULL" == strategy_id1.value
+        assert "NULL" == strategy_id1.value
         assert strategy_id1 == strategy_id1
         assert strategy_id1 != strategy_id2
-        assert "NULL" == strategy_id1.name
-        assert strategy_id2 == StrategyId.from_str("SCALPER-01")
+        assert strategy_id2.get_tag() == "001"
 
     def test_account_identifier(self):
         # Arrange

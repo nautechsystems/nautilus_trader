@@ -78,8 +78,8 @@ cdef class OrderFactory:
         self.strategy_id = strategy_id
 
         self._id_generator = ClientOrderIdGenerator(
-            id_tag_trader=trader_id.tag,
-            id_tag_strategy=strategy_id.tag,
+            trader_id=trader_id,
+            strategy_id=strategy_id,
             clock=clock,
             initial_count=initial_count,
         )

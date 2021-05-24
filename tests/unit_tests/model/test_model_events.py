@@ -87,7 +87,7 @@ class TestEvents:
         uuid = uuid4()
         event = OrderInitialized(
             client_order_id=ClientOrderId("O-2020872378423"),
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
@@ -341,7 +341,7 @@ class TestEvents:
             venue_order_id=VenueOrderId("123456"),
             execution_id=ExecutionId("1"),
             position_id=PositionId("2"),
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             order_side=OrderSide.BUY,
             last_qty=Quantity.from_str("0.561000"),

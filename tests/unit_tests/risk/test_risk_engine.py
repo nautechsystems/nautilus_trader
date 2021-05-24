@@ -52,7 +52,7 @@ class TestRiskEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
         self.venue = Venue("SIM")
 
@@ -109,7 +109,7 @@ class TestRiskEngine:
         # Arrange
         random = TradingCommand(
             self.trader_id,
-            StrategyId("SCALPER", "001"),
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -132,7 +132,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -166,7 +166,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -205,7 +205,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -242,7 +242,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -292,7 +292,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -340,7 +340,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )

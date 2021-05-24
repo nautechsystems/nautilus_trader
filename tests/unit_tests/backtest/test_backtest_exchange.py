@@ -95,7 +95,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         )
 
         self.analyzer = PerformanceAnalyzer()
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("SIM", "001")
 
         exec_db = InMemoryExecutionDatabase(
@@ -743,7 +743,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Arrange
         command = CancelOrder(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
@@ -761,7 +761,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Arrange
         command = UpdateOrder(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
@@ -1902,7 +1902,7 @@ class BitmexExchangeTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BITMEX", "001")
 
         exec_db = InMemoryExecutionDatabase(
@@ -2056,7 +2056,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         )
 
         self.analyzer = PerformanceAnalyzer()
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("SIM", "001")
 
         exec_db = InMemoryExecutionDatabase(

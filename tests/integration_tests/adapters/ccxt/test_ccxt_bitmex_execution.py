@@ -55,7 +55,7 @@ class BitmexExecutionClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "001")
+        self.trader_id = TraderId("TESTER-001")
         self.account_id = AccountId(BITMEX.value, "001")
 
         # Fresh isolated loop testing pattern

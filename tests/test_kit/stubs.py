@@ -284,7 +284,7 @@ class TestStubs:
 
     @staticmethod
     def trader_id() -> TraderId:
-        return TraderId("TESTER", "000")
+        return TraderId("TESTER-000")
 
     @staticmethod
     def account_id() -> AccountId:
@@ -292,7 +292,7 @@ class TestStubs:
 
     @staticmethod
     def strategy_id() -> StrategyId:
-        return StrategyId(name="Test", tag="1")
+        return StrategyId("Test-1")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:

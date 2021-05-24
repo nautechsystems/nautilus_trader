@@ -4,12 +4,15 @@
 ## Breaking Changes
 - `BacktestEngine.add_venue` added `venue_type` to method params.
 - `ExecutionClient` added `venue_type` to constructor params.
+- Simplified `TraderId` constructor.
+- Simplified `StrategyId` constructor.
 
 ## Enhancements
 - Improve `ExecutionEngine` order routing.
 - Improve `ExecutionEngine` client registration.
 - Add order routing configuration.
 - Add `VenueType` enum and parser.
+- Improve param typing for identifier generators.
 
 ## Fixes
 None

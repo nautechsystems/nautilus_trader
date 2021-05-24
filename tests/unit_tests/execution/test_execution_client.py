@@ -55,7 +55,7 @@ class ExecutionClientTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         portfolio = Portfolio(
@@ -86,8 +86,8 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -171,7 +171,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Act
         command = UpdateOrder(
             self.trader_id,
-            StrategyId("SCALPER", "001"),
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
@@ -189,7 +189,7 @@ class ExecutionClientTests(unittest.TestCase):
         # Act
         command = CancelOrder(
             self.trader_id,
-            StrategyId("SCALPER", "001"),
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
@@ -213,7 +213,7 @@ class ExecutionClientTests(unittest.TestCase):
     #         order,
     #         AUDUSD_SIM,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("1.00001"),
     #     )
     #

@@ -59,12 +59,12 @@ class ExecutionCacheTests(unittest.TestCase):
         clock = TestClock()
         logger = Logger(clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             clock,
             logger,
         )
@@ -275,7 +275,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
         self.assertNotIn(
             order.client_order_id,
-            self.cache.client_order_ids(strategy_id=StrategyId("S", "ZX1")),
+            self.cache.client_order_ids(strategy_id=StrategyId("S-ZX1")),
         )
         self.assertIn(
             order.client_order_id,

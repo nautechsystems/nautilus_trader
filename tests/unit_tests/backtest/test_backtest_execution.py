@@ -57,7 +57,7 @@ class TestBacktestExecClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BINANCE", "000")
 
         self.portfolio = Portfolio(
@@ -103,7 +103,7 @@ class TestBacktestExecClientTests:
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "000"),
+            strategy_id=StrategyId("SCALPER-001"),
             clock=self.clock,
         )
 

@@ -459,7 +459,7 @@ class BetfairTestStubs(TestStubs):
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             BetfairTestStubs.clock(),
             BetfairTestStubs.logger(),
         )

@@ -370,7 +370,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         cdef ClientOrderId client_order_id = ClientOrderId(unpacked[ID])
-        cdef StrategyId strategy_id = StrategyId.from_str_c(unpacked[STRATEGY_ID])
+        cdef StrategyId strategy_id = StrategyId(unpacked[STRATEGY_ID])
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[INSTRUMENT_ID])
         cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
         cdef OrderType order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
