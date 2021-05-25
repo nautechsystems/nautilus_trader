@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -177,7 +178,8 @@ cdef class ReportProvider:
 
     cdef dict _account_state_to_dict(self, AccountState event):
         cdef dict data = {"timestamp": nanos_to_unix_dt(event.timestamp_ns)}
+        cdef AccountBalance balance
         for balance in event.balances:
-            data[f"balance_{balance.currency}"] = balance
+            data[f"balance_{balance.currency}"] = balance.total
 
         return data

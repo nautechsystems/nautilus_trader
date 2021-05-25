@@ -112,14 +112,11 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             self._currencies[code] = currency
 
     cdef inline int _tick_size_to_precision(self, double tick_size) except *:
-        cdef str tick_size_str
-        if f"{tick_size}".find('e') > -1:
-            # Significant decimal points are lost when
-            # converting scientific notation to format string.
-            tick_size_str = f"{tick_size}"
+        cdef tick_size_str = str(tick_size)
+        if tick_size_str.find("e") > -1:
+            # Scientific notation string
             return int(tick_size_str.partition('e-')[2])
         else:
-            tick_size_str = f"{Decimal(tick_size):f}"
             return len(tick_size_str.partition('.')[2].rstrip('0'))
 
     cdef inline int _get_precision(self, double value, int mode) except *:
@@ -138,16 +135,18 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             size_precision = precisions.get("amount", 8)
             tick_size = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
         elif self._client.precisionMode == 4:  # TICK_SIZE
-            tick_size = Decimal(precisions.get("price"))
             price_precision = self._tick_size_to_precision(precisions.get("price"))
+            tick_size = Decimal(f"{precisions.get('price'):.{price_precision}f}")
             size_precision = precisions.get("amount")
             if size_precision is None:
                 size_precision = 0
             size_precision = self._tick_size_to_precision(size_precision)
         else:
-            raise RuntimeError(f"The {self._client.name} exchange is using "
-                               f"SIGNIFICANT_DIGITS precision which is not "
-                               f"currently supported in this version.")
+            raise RuntimeError(
+                f"The {self._client.name} exchange is using "
+                f"SIGNIFICANT_DIGITS precision which is not "
+                f"currently supported in this version.",
+            )
 
         cdef str asset_type_str = values.get("type")
         if asset_type_str is not None:
@@ -166,6 +165,17 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         quote_currency = Currency.from_str_c(values["quote"])
         if quote_currency is None:
             quote_currency = self._currencies[values["quote"]]
+
+        settlement_currency_str = values["info"].get("settlCurrency")
+        if settlement_currency_str is None or settlement_currency_str == "":
+            if values["spot"]:
+                settlement_currency = base_currency
+            else:
+                settlement_currency = quote_currency
+        else:
+            if settlement_currency_str.upper() == "XBT":
+                settlement_currency_str = "BTC"
+            settlement_currency = self._currencies[settlement_currency_str]
 
         max_quantity = values["limits"].get("amount").get("max")
         if max_quantity is not None:
@@ -217,7 +227,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             asset_type=asset_type,
             base_currency=base_currency,
             quote_currency=quote_currency,
-            settlement_currency=quote_currency,
+            settlement_currency=settlement_currency,
             is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,

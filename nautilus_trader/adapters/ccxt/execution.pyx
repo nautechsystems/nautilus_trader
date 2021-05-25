@@ -58,6 +58,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -217,7 +218,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 symbol=order.instrument_id.symbol.value,
             )
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self._update_balances.__name__)
+            self._log_ccxt_error(ex, self.generate_order_status_report.__name__)
             return None
 
         if response is None:
@@ -285,7 +286,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 since=dt_to_unix_millis(since),
             )
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self.generate_trades.__name__)
+            self._log_ccxt_error(ex, self.generate_exec_reports.__name__)
             return reports
 
         if response is None:
@@ -464,7 +465,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log_ccxt_error(ex, self._update_balances.__name__)
             return
 
-        self._on_account_state(response)
+        self._on_account_state(response, initial=True)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
@@ -569,64 +570,76 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event) except *:
+    cdef inline void _on_account_state(self, dict event, bint initial=False) except *:
+        del event["info"]
+        del event["free"]
+        del event["used"]
+        del event["total"]
+
         cdef list balances = []
-        cdef list balances_free = []
-        cdef list balances_locked = []
-
-        cdef dict event_free = event["free"]
-        cdef dict event_used = event["used"]
-        cdef dict event_total = event["total"]
-
-        if event_free == self._account_last_free \
-                and event_used == self._account_last_used \
-                and event_total == self._account_last_used:
-            return  # No updates
-
-        self._account_last_free = event_free
-        self._account_last_used = event_used
-        self._account_last_total = event_total
 
         cdef str code
-        cdef Currency currency
+        for code, amounts in event.items():
+            if not isinstance(amounts, dict):
+                continue
+            currency = self._instrument_provider.currency(code)
+            if currency is None:
+                self._log.error(f"Cannot update total balance for {code} "
+                                f"(no currency loaded).")
 
-        # Update total balances
-        for code, amount in event_total.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances.append(Money(amount, currency))
+            total = Money(amounts["total"], currency)
 
-        # Update free balances
-        for code, amount in event_free.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances_free.append(Money(amount, currency))
+            used_value = amounts["used"]
+            if used_value is None:
+                locked = Money(0, currency)
+            else:
+                locked = Money(used_value, currency)
 
-        # Update locked balances
-        for code, amount in event_used.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances_locked.append(Money(amount, currency))
+            free_value = amounts["free"]
+            if free_value is None:
+                free = Money(0, currency)
+            else:
+                free = Money(free_value, currency)
+
+            if (
+                initial
+                and total.as_decimal() == 0
+                and locked.as_decimal() == 0
+                and free.as_decimal() == 0
+            ):
+                # Skip initial account state with all zero balances
+                continue
+
+            balances.append(
+                AccountBalance(
+                    currency=currency,
+                    total=Money(amounts["total"], currency),
+                    locked=locked,
+                    free=free,
+                ),
+            )
+
+        timestamp = event.get("timestamp")
+        if timestamp is None:
+            update_ns = self._clock.timestamp_ns()
+        else:
+            update_ns = millis_to_nanos(timestamp)
 
         # Generate event
         self.generate_account_state(
-            balances,
-            balances_free,
-            balances_locked,
+            balances=balances,
+            updated_ns=update_ns,
         )
 
     cdef inline void _on_order_status(self, dict event) except *:
-        cdef ClientOrderId client_order_id = ClientOrderId(event["clientOrderId"])
         cdef VenueOrderId venue_order_id = VenueOrderId(event["id"])
+
+        # Attempt to parse ClientOrderId
+        client_order_id_str = event.get("clientOrderId")
+        if client_order_id_str is None:
+            self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
+            return
+        cdef ClientOrderId client_order_id = ClientOrderId(client_order_id_str)
 
         if venue_order_id not in self._cached_orders:
             order = self._engine.cache.order(client_order_id)

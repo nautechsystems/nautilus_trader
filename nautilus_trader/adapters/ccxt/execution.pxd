@@ -37,7 +37,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event) except *
+    cdef inline void _on_account_state(self, dict event, bint initial=*) except *
     cdef inline void _on_order_status(self, dict event) except *
     cdef inline void _on_exec_report(self, dict event) except *
     cdef inline Money _parse_commission(self, dict event)

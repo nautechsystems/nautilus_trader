@@ -48,6 +48,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -147,9 +148,15 @@ cdef class SimulatedExchange:
         self.is_frozen_account = is_frozen_account
         self.starting_balances = starting_balances
         self.default_currency = None if len(starting_balances) > 1 else starting_balances[0].currency
-        self.account_balances = {b.currency: b for b in starting_balances}
-        self.account_balances_free = {b.currency: b for b in starting_balances}
-        self.account_balances_locked = {b.currency: Money(0, b.currency) for b in starting_balances}
+        self.account_balances = {
+            money.currency: AccountBalance(
+                currency=money.currency,
+                total=money,
+                locked=Money(0, money.currency),
+                free=money,
+            )
+            for money in starting_balances
+        }
         self.total_commissions = {}  # type: dict[Currency, Money]
 
         self.xrate_calculator = ExchangeRateCalculator()
@@ -366,14 +373,16 @@ cdef class SimulatedExchange:
             The adjustment for the account.
 
         """
+        cdef AccountBalance balance
+
         Condition.not_none(adjustment, "adjustment")
 
         if self.is_frozen_account:
             return  # Nothing to adjust
 
         balance = self.account_balances[adjustment.currency]
-        self.account_balances[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
-        self.account_balances_free[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
+        balance.total = Money(balance.total + adjustment, adjustment.currency)
+        balance.free = Money(balance.free + adjustment, adjustment.currency)
 
         # Generate and handle event
         self._generate_account_state()
@@ -464,9 +473,15 @@ cdef class SimulatedExchange:
         for module in self.modules:
             module.reset()
 
-        self.account_balances = {b.currency: b for b in self.starting_balances}
-        self.account_balances_free = {b.currency: b for b in self.starting_balances}
-        self.account_balances_locked = {b.currency: Money(0, b.currency) for b in self.starting_balances}
+        self.account_balances = {
+            money.currency: AccountBalance(
+                currency=money.currency,
+                total=money,
+                locked=Money(0, money.currency),
+                free=money,
+            )
+            for money in self.starting_balances
+        }
         self.total_commissions = {}
 
         self._generate_account_state()
@@ -634,8 +649,7 @@ cdef class SimulatedExchange:
         # Generate event
         self.exec_client.generate_account_state(
             balances=list(self.account_balances.values()),
-            balances_free=list(self.account_balances_free.values()),
-            balances_locked=list(self.account_balances_locked.values()),
+            updated_ns=self._clock.timestamp_ns(),
             info=info,
         )
 
