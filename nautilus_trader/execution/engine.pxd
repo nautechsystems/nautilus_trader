@@ -32,6 +32,7 @@ from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -41,6 +42,8 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 cdef class ExecutionEngine(Component):
     cdef dict _clients
     cdef dict _strategies
+    cdef dict _routing_map
+    cdef ExecutionClient _default_client
     cdef PositionIdGenerator _pos_id_generator
     cdef Portfolio _portfolio
     cdef RiskEngine _risk_engine
@@ -65,6 +68,8 @@ cdef class ExecutionEngine(Component):
 
     cpdef void register_risk_engine(self, RiskEngine engine) except *
     cpdef void register_client(self, ExecutionClient client) except *
+    cpdef void register_default_client(self, ExecutionClient client) except *
+    cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *

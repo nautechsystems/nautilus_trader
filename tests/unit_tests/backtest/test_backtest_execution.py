@@ -32,6 +32,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -56,14 +57,13 @@ class TestBacktestExecClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BINANCE", "000")
 
         self.portfolio = Portfolio(
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -81,6 +81,7 @@ class TestBacktestExecClientTests:
 
         self.exchange = SimulatedExchange(
             venue=Venue("BINANCE"),
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
@@ -102,9 +103,13 @@ class TestBacktestExecClientTests:
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "000"),
+            strategy_id=StrategyId("SCALPER-001"),
             clock=self.clock,
         )
+
+        # Wire up components
+        self.portfolio.register_data_cache(DataCache(self.logger))
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange
@@ -157,9 +162,7 @@ class TestBacktestExecClientTests:
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -189,9 +192,7 @@ class TestBacktestExecClientTests:
         )
 
         command = SubmitBracketOrder(
-            entry.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
@@ -213,9 +214,8 @@ class TestBacktestExecClientTests:
         )
 
         command = CancelOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            self.order_factory.strategy_id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
@@ -239,9 +239,8 @@ class TestBacktestExecClientTests:
         )
 
         command = UpdateOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            order.strategy_id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,

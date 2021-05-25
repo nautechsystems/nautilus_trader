@@ -257,7 +257,7 @@ cdef class OrderInvalid(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"client_order_id={self.client_order_id}, "
-                f"reason='{self.reason}', "
+                f"reason={self.reason}, "
                 f"event_id={self.id})")
 
 
@@ -309,7 +309,7 @@ cdef class OrderDenied(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"client_order_id={self.client_order_id}, "
-                f"reason='{self.reason}', "
+                f"reason={self.reason}, "
                 f"event_id={self.id})")
 
 

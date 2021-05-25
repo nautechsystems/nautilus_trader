@@ -25,8 +25,10 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -50,7 +52,7 @@ class TestRiskEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
         self.venue = Venue("SIM")
 
@@ -58,7 +60,7 @@ class TestRiskEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
+        self.portfolio.register_data_cache(DataCache(self.logger))
 
         self.database = MockExecutionDatabase(
             trader_id=self.trader_id, logger=self.logger
@@ -80,14 +82,20 @@ class TestRiskEngine:
 
         self.exec_client = MockExecutionClient(
             ClientId(self.venue.value),
+            VenueType.ECN,
             self.account_id,
             self.exec_engine,
             self.clock,
             self.logger,
         )
 
+        # Wire up components
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
+
+        # Prepare data
+        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
 
     def test_set_block_all_orders_changes_flag_value(self):
         # Arrange
@@ -100,9 +108,8 @@ class TestRiskEngine:
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
-            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -125,7 +132,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -139,9 +146,7 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -161,7 +166,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -181,9 +186,7 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            entry.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
@@ -202,7 +205,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -216,9 +219,7 @@ class TestRiskEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -241,7 +242,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -255,9 +256,7 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -266,9 +265,8 @@ class TestRiskEngine:
         )
 
         update = UpdateOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            strategy.id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
@@ -294,7 +292,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -308,9 +306,7 @@ class TestRiskEngine:
         )
 
         submit = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -319,9 +315,8 @@ class TestRiskEngine:
         )
 
         cancel = CancelOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            strategy.id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
@@ -345,7 +340,7 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -365,9 +360,7 @@ class TestRiskEngine:
         )
 
         submit_bracket = SubmitBracketOrder(
-            entry.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),

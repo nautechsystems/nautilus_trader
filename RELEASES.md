@@ -1,12 +1,41 @@
+# NautilusTrader 1.121.0 Beta - Release Notes
+
+
+## Breaking Changes
+- `BacktestEngine.add_venue` added `venue_type` to method params.
+- `ExecutionClient` added `venue_type` to constructor params.
+- Simplified `TraderId` constructor.
+- Simplified `StrategyId` constructor.
+
+## Enhancements
+- Improve `ExecutionEngine` order routing.
+- Improve `ExecutionEngine` client registration.
+- Add order routing configuration.
+- Add `VenueType` enum and parser.
+- Improve param typing for identifier generators.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.120.0 Beta - Release Notes
 
+This release focuses on simplifications and enhancements of existing machinery.
 
 ## Breaking Changes
 - `Position` now requires an `Instrument` param.
 - `is_inverse` removed from `OrderFilled`.
+- `ClientId` removed from `TradingCommand` and subclasses.
+- `AccountId` removed from `TradingCommand` and subclasses.
+- `TradingCommand` serialization.
 
 ## Enhancements
-None
+- Add `Instrument` methods to `ExecutionCache`.
+- Add `Venue` filter to cache queries.
+- Move order validations into `RiskEngine`.
+- Refactor `RiskEngine`.
+- Remove routing type information from identifiers.
 
 ## Fixes
 None

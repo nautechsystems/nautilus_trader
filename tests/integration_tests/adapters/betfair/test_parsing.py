@@ -97,7 +97,7 @@ def test_account_statement(betfair_client, uuid, clock):
         timestamp_ns=clock.timestamp_ns(),
     )
     expected = AccountState(
-        AccountId(issuer="betfair", identifier="Testy-McTest"),
+        AccountId(issuer="BETFAIR", number="Testy-McTest"),
         [Money(1000.0, Currency.from_str("AUD"))],
         [Money(1000.0, Currency.from_str("AUD"))],
         [Money(-0.00, Currency.from_str("AUD"))],

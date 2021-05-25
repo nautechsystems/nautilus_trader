@@ -33,6 +33,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
@@ -62,18 +63,18 @@ class TestLiveExecutionEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=self.clock,
         )
 
         self.random_order_factory = OrderFactory(
-            trader_id=TraderId("RANDOM", "042"),
-            strategy_id=StrategyId("S", "042"),
+            trader_id=TraderId("RANDOM-042"),
+            strategy_id=StrategyId("S-042"),
             clock=self.clock,
         )
 
@@ -81,7 +82,7 @@ class TestLiveExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
+        self.portfolio.register_data_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -114,6 +115,7 @@ class TestLiveExecutionEngine:
 
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
+            venue_type=VenueType.ECN,
             account_id=self.account_id,
             engine=self.exec_engine,
             instrument_provider=self.instrument_provider,
@@ -121,8 +123,10 @@ class TestLiveExecutionEngine:
             logger=self.logger,
         )
 
+        # Wired up components
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.client)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def teardown(self):
         self.exec_engine.dispose()
@@ -161,7 +165,7 @@ class TestLiveExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -175,9 +179,7 @@ class TestLiveExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -208,7 +210,7 @@ class TestLiveExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -222,9 +224,7 @@ class TestLiveExecutionEngine:
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -288,7 +288,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -302,9 +302,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                order.instrument_id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -332,7 +330,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -367,7 +365,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -390,7 +388,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -405,9 +403,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -447,7 +443,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -462,9 +458,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -504,7 +498,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -519,9 +513,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -561,7 +553,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -576,9 +568,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -643,7 +633,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -658,9 +648,7 @@ class TestLiveExecutionEngine:
             )
 
             submit_order = SubmitOrder(
-                AUDUSD_SIM.id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,

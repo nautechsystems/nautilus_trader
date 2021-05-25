@@ -21,6 +21,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.tick import TradeTick
@@ -67,8 +68,9 @@ def test_betfair_backtest(instrument_provider):
         ]
         engine.add_trade_tick_objects(instrument_id=instrument.id, data=trade_data)
 
-    engine.add_exchange(
+    engine.add_venue(
         venue=BETFAIR_VENUE,
+        venue_type=VenueType.EXCHANGE,
         oms_type=OMSType.NETTING,
         starting_balances=[Money(100_000, GBP)],
         order_book_level=OrderBookLevel.L2,

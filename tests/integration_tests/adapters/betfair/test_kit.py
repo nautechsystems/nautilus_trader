@@ -459,7 +459,7 @@ class BetfairTestStubs(TestStubs):
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             BetfairTestStubs.clock(),
             BetfairTestStubs.logger(),
         )
@@ -477,9 +477,7 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def submit_order_command():
         return SubmitOrder(
-            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
-            account_id=BetfairTestStubs.account_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
@@ -505,9 +503,8 @@ class BetfairTestStubs(TestStubs):
         if instrument_id is None:
             instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
-            client_id=instrument_id.venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
-            account_id=BetfairTestStubs.account_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
             instrument_id=instrument_id,
             client_order_id=client_order_id
             or ClientOrderId("O-20210410-022422-001-001-1"),
@@ -521,9 +518,8 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def cancel_order_command():
         return CancelOrder(
-            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
-            account_id=BetfairTestStubs.account_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("229597791245"),

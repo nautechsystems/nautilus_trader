@@ -17,11 +17,9 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.base cimport DataCacheFacade
+from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.events cimport PositionChanged
-from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -58,25 +56,22 @@ cdef class Portfolio(PortfolioFacade):
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
-    cdef DataCacheFacade _data
+    cdef DataCacheFacade _data_cache
+    cdef ExecutionCacheFacade _exec_cache
 
-    cdef dict _ticks
-    cdef dict _accounts
-    cdef dict _orders_working
-    cdef dict _positions_open
-    cdef dict _positions_closed
     cdef dict _unrealized_pnls
     cdef dict _net_positions
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_cache(self, DataCacheFacade cache) except *
+    cpdef void register_data_cache(self, DataCacheFacade cache) except *
+    cpdef void register_exec_cache(self, ExecutionCacheFacade cache) except *
     cpdef void register_account(self, Account account) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void initialize_orders(self, set orders) except *
-    cpdef void initialize_positions(self, set positions) except *
+    cpdef void initialize_orders(self) except *
+    cpdef void initialize_positions(self) except *
     cpdef void update_tick(self, QuoteTick tick) except *
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, PositionEvent event) except *
@@ -85,13 +80,9 @@ cdef class Portfolio(PortfolioFacade):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline object _net_position(self, InstrumentId instrument_id)
-    cdef inline set _instruments_open_for_venue(self, Venue venue)
-    cdef inline void _handle_position_opened(self, PositionOpened event) except *
-    cdef inline void _handle_position_changed(self, PositionChanged event) except *
-    cdef inline void _handle_position_closed(self, PositionClosed event) except *
-    cdef inline void _update_net_position(self, InstrumentId instrument_id, set positions_open) except *
-    cdef inline void _update_initial_margin(self, Venue venue) except *
-    cdef inline void _update_maint_margin(self, Venue venue) except *
+    cdef inline void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
+    cdef inline void _update_initial_margin(self, Venue venue, list orders_working) except *
+    cdef inline void _update_maint_margin(self, Venue venue, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
     cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side)
     cdef inline Price _get_last_price(self, Position position)

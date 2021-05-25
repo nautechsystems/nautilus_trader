@@ -21,6 +21,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -50,7 +51,9 @@ cdef class ExecutionClient:
     cdef readonly ClientId id
     """The clients identifier.\n\n:returns: `ClientId`"""
     cdef readonly Venue venue
-    """The clients venue.\n\n:returns: `Venue`"""
+    """The clients venue identifier (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
+    cdef readonly VenueType venue_type
+    """The clients venue type.\n\n:returns: `VenueType`"""
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
     cdef readonly bint is_connected

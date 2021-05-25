@@ -284,7 +284,7 @@ class TestStubs:
 
     @staticmethod
     def trader_id() -> TraderId:
-        return TraderId("TESTER", "000")
+        return TraderId("TESTER-000")
 
     @staticmethod
     def account_id() -> AccountId:
@@ -292,7 +292,7 @@ class TestStubs:
 
     @staticmethod
     def strategy_id() -> StrategyId:
-        return StrategyId(name="Test", tag="1")
+        return StrategyId("Test-1")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:
@@ -387,7 +387,7 @@ class TestStubs:
         if strategy_id is None:
             strategy_id = order.strategy_id
         if last_px is None:
-            last_px = Price.from_str("1.00000")
+            last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
         if last_qty is None:
             last_qty = order.quantity
 

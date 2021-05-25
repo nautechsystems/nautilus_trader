@@ -60,8 +60,8 @@ class OrderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -112,7 +112,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.zero(),
@@ -128,7 +128,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100),
@@ -144,7 +144,7 @@ class OrderTests(unittest.TestCase):
             TypeError,
             StopMarketOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -162,7 +162,7 @@ class OrderTests(unittest.TestCase):
             TypeError,
             StopLimitOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -781,7 +781,7 @@ class OrderTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -812,7 +812,7 @@ class OrderTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -846,7 +846,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(20000),
         )
@@ -856,7 +856,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
             last_qty=Quantity.from_int(40000),
         )
@@ -890,7 +890,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(20000),
         )
@@ -900,7 +900,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
             last_qty=Quantity.from_int(40000),
         )
@@ -910,7 +910,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("3"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00003"),
             last_qty=Quantity.from_int(40000),
         )

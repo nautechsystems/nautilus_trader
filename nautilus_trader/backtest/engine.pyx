@@ -51,6 +51,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport AccountId
@@ -115,7 +116,7 @@ cdef class BacktestEngine:
 
         """
         if trader_id is None:
-            trader_id = TraderId("BACKTESTER", "000")
+            trader_id = TraderId("BACKTESTER-000")
         Condition.valid_string(exec_db_type, "exec_db_type")
 
         # Options
@@ -123,12 +124,12 @@ cdef class BacktestEngine:
         self._use_data_cache = use_data_cache
 
         # Data
-        self._generic_data = []             # type: list[GenericData]
-        self._order_book_data = []          # type: list[OrderBookData]
-        self._quote_ticks = {}              # type: dict[InstrumentId, pd.DataFrame]
-        self._trade_ticks = {}              # type: dict[InstrumentId, pd.DataFrame]
-        self._bars_bid = {}                 # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
-        self._bars_ask = {}                 # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self._generic_data = []     # type: list[GenericData]
+        self._order_book_data = []  # type: list[OrderBookData]
+        self._quote_ticks = {}      # type: dict[InstrumentId, pd.DataFrame]
+        self._trade_ticks = {}      # type: dict[InstrumentId, pd.DataFrame]
+        self._bars_bid = {}         # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
+        self._bars_ask = {}         # type: dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
 
         # Setup components
         self._clock = LiveClock()
@@ -203,8 +204,6 @@ cdef class BacktestEngine:
             config=config_data,
         )
 
-        self.portfolio.register_cache(self._data_engine.cache)
-
         self._exec_engine = ExecutionEngine(
             database=exec_db,
             portfolio=self.portfolio,
@@ -221,16 +220,19 @@ cdef class BacktestEngine:
             config=config_risk,
         )
 
+        # Wire up components
         self._exec_engine.register_risk_engine(self._risk_engine)
         self._exec_engine.load_cache()
+        self.portfolio.register_data_cache(self._data_engine.cache)
+        self.portfolio.register_exec_cache(self._exec_engine.cache)
 
         self.trader = Trader(
             trader_id=trader_id,
             strategies=[],  # Added in `run()`
             portfolio=self.portfolio,
             data_engine=self._data_engine,
-            exec_engine=self._exec_engine,
             risk_engine=self._risk_engine,
+            exec_engine=self._exec_engine,
             clock=self._test_clock,
             logger=self._test_logger,
             warn_no_strategies=False,
@@ -302,7 +304,7 @@ cdef class BacktestEngine:
         Condition.not_none(instrument, "instrument")
 
         # Check client has been registered
-        self._add_market_data_client_if_not_exists(instrument.id.venue.client_id)
+        self._add_market_data_client_if_not_exists(instrument.id.venue)
 
         # Add data
         self._data_engine.process(instrument)
@@ -337,7 +339,7 @@ cdef class BacktestEngine:
         )
 
         # Check client has been registered
-        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+        self._add_market_data_client_if_not_exists(instrument_id.venue)
 
         # Add data
         self._order_book_data = sorted(
@@ -382,7 +384,7 @@ cdef class BacktestEngine:
         )
 
         # Check client has been registered
-        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+        self._add_market_data_client_if_not_exists(instrument_id.venue)
 
         # Add data
         self._quote_ticks[instrument_id] = data
@@ -426,7 +428,7 @@ cdef class BacktestEngine:
         )
 
         # Check client has been registered
-        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+        self._add_market_data_client_if_not_exists(instrument_id.venue)
 
         # Add data
         self._trade_ticks[instrument_id] = data
@@ -457,7 +459,7 @@ cdef class BacktestEngine:
         Condition.list_type(data, TradeTick, "data")
 
         # Check client has been registered
-        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+        self._add_market_data_client_if_not_exists(instrument_id.venue)
 
         # Add data
         self._trade_ticks[instrument_id] = data
@@ -505,7 +507,7 @@ cdef class BacktestEngine:
         )
 
         # Check client has been registered
-        self._add_data_client_if_not_exists(instrument_id.venue.client_id)
+        self._add_market_data_client_if_not_exists(instrument_id.venue)
 
         # Add data
         if price_type == PriceType.BID:
@@ -545,9 +547,10 @@ cdef class BacktestEngine:
             f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
             f"Bar data elements.")
 
-    def add_exchange(
+    def add_venue(
         self,
         Venue venue,
+        VenueType venue_type,
         OMSType oms_type,
         list starting_balances,
         bint is_frozen_account=False,
@@ -561,13 +564,15 @@ cdef class BacktestEngine:
         Parameters
         ----------
         venue : Venue
-            The venue for the exchange.
+            The exchange venue identifier.
+        venue_type : VenueType
+            The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType
             The order management system type for the exchange. If HEDGING and
             no position_id for an order then will generate a new position_id.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
-        is_frozen_account : bool, optional
+        is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
@@ -596,6 +601,7 @@ cdef class BacktestEngine:
         # Create exchange
         exchange = SimulatedExchange(
             venue=venue,
+            venue_type=venue_type,
             oms_type=oms_type,
             is_frozen_account=is_frozen_account,
             starting_balances=starting_balances,
@@ -888,7 +894,7 @@ cdef class BacktestEngine:
                 account_balances_starting = ', '.join([b.to_str() for b in exchange.starting_balances])
                 account_balances_ending = ', '.join([b.to_str() for b in exchange.account_balances.values()])
                 account_commissions = ', '.join([b.to_str() for b in exchange.total_commissions.values()])
-                unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(exchange.id).values()])
+                unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()])
                 account_starting_length = len(account_balances_starting)
                 account_balances_ending = pad_string(account_balances_ending, account_starting_length)
                 account_commissions = pad_string(account_commissions, account_starting_length)
@@ -913,7 +919,7 @@ cdef class BacktestEngine:
                     positions.append(position)
 
             # Calculate statistics
-            account = self._exec_engine.cache.account_for_venue(exchange.id)
+            account = self._exec_engine.cache.account_for_venue(Venue(exchange.id.value))
             self.analyzer.calculate_statistics(account, positions)
 
             # Present PnL performance stats per asset
@@ -939,7 +945,9 @@ cdef class BacktestEngine:
             )
             self._data_engine.register_client(client)
 
-    def _add_market_data_client_if_not_exists(self, ClientId client_id) -> None:
+    def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
+        # TODO(cs): Assumption that client_id = venue
+        cdef ClientId client_id = ClientId(venue.value)
         if client_id not in self._data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,

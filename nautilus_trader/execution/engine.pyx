@@ -33,6 +33,7 @@ just need to override the `execute` and `process` methods.
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -49,6 +50,8 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -65,6 +68,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -113,10 +117,12 @@ cdef class ExecutionEngine(Component):
         if config:
             self._log.info(f"Config: {config}.")
 
-        self._clients = {}     # type: dict[ClientId, ExecutionClient]
-        self._strategies = {}  # type: dict[StrategyId, TradingStrategy]
+        self._clients = {}           # type: dict[ClientId, ExecutionClient]
+        self._strategies = {}        # type: dict[StrategyId, TradingStrategy]
+        self._routing_map = {}       # type: dict[Venue, ExecutionClient]
+        self._default_client = None  # type: Optional[ExecutionClient]
         self._pos_id_generator = PositionIdGenerator(
-            id_tag_trader=database.trader_id.tag,
+            trader_id=database.trader_id,
             clock=clock,
         )
         self._portfolio = portfolio
@@ -140,6 +146,18 @@ cdef class ExecutionEngine(Component):
 
         """
         return sorted(list(self._clients.keys()))
+
+    @property
+    def default_client(self):
+        """
+        The default execution client registered with the engine.
+
+        Returns
+        -------
+        Optional[ClientId]
+
+        """
+        return self._default_client.id if self._default_client is not None else None
 
     @property
     def registered_strategies(self):
@@ -265,6 +283,9 @@ cdef class ExecutionEngine(Component):
         """
         Register the given execution client with the execution engine.
 
+        If the client.venue_type == BROKERAGE_MULTI_VENUE and a default client
+        has not been previously registered then will be registered as such.
+
         Parameters
         ----------
         client : ExecutionClient
@@ -280,7 +301,68 @@ cdef class ExecutionEngine(Component):
         Condition.not_in(client.id, self._clients, "client.id", "self._clients")
 
         self._clients[client.id] = client
-        self._log.info(f"Registered {client}.")
+
+        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+            if self._default_client is None:
+                self._default_client = client
+                self._log.info(
+                    f"Registered {client} BROKERAGE_MULTI_VENUE as default client.",
+                )
+        else:
+            self._routing_map[client.venue] = client
+            self._log.info(
+                f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}.",
+            )
+
+    cpdef void register_default_client(self, ExecutionClient client) except *:
+        """
+        Register the given client as the default client (when a specific venue
+        routing cannot be found).
+
+        Any existing default client will be overwritten.
+
+        Parameters
+        ----------
+        client : ExecutionClient
+            The client to register.
+
+        """
+        Condition.not_none(client, "client")
+
+        self._default_client = client
+
+        self._log.info(
+            f"Registered {client} "
+            f"{VenueTypeParser.to_str(client.venue_type)}  as default client.",
+        )
+
+    cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
+        """
+        Register the given client to route orders to the given venue.
+
+        Any existing client in the routing map for the given venue will be
+        overwritten.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue to route orders to.
+        client : ExecutionClient
+            The client for the venue routing.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.not_none(venue, "venue")
+
+        if client.id not in self._clients:
+            self._clients[client.id] = client
+
+        self._routing_map[venue] = client
+
+        self._log.info(
+            f"Registered {client} {VenueTypeParser.to_str(client.venue_type)} "
+            f"for routing to {venue}.",
+        )
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
@@ -324,6 +406,13 @@ cdef class ExecutionEngine(Component):
         Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
         del self._clients[client.id]
+
+        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+            if self._default_client == client:
+                self._default_client = None
+        else:
+            del self._routing_map[client.venue]
+
         self._log.info(f"Deregistered {client}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
@@ -363,8 +452,8 @@ cdef class ExecutionEngine(Component):
             client.connect()
 
         # Initialize portfolio
-        self._portfolio.initialize_orders(set(self.cache.orders_working()))
-        self._portfolio.initialize_positions(set(self.cache.positions_open()))
+        self._portfolio.initialize_orders()
+        self._portfolio.initialize_positions()
 
         self._on_start()
 
@@ -483,10 +572,14 @@ cdef class ExecutionEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._clients.get(command.client_id)
+        cdef ExecutionClient client = self._routing_map.get(
+            command.instrument_id.venue,
+            self._default_client,
+        )
         if client is None:
-            self._log.error(f"Cannot handle command: "
-                            f"No client registered for {command.client_id.value}, {command}.")
+            self._log.error(
+                f"Cannot execute command: "
+                f"No execution client configured for {command.instrument_id}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
@@ -634,7 +727,10 @@ cdef class ExecutionEngine(Component):
             return
 
         # Check for open positions
-        cdef list positions_open = self.cache.positions_open(instrument_id=fill.instrument_id)
+        cdef list positions_open = self.cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=fill.instrument_id,
+        )
         if not positions_open:
             # Assign new identifier to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
@@ -661,7 +757,8 @@ cdef class ExecutionEngine(Component):
         cdef Instrument instrument = self.cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot open position: no instrument found for {fill.instrument_id.value}, {fill}.")
+                f"Cannot open position: "
+                f"no instrument found for {fill.instrument_id.value}, {fill}.")
             return
 
         cdef Position position = Position(instrument, fill)

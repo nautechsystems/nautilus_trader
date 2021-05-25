@@ -55,8 +55,8 @@ class BitmexExecutionClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "001")
-        self.account_id = AccountId("BITMEX", "001")
+        self.trader_id = TraderId("TESTER-001")
+        self.account_id = AccountId(BITMEX.value, "001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -114,7 +114,9 @@ class BitmexExecutionClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Wire up components
         self.exec_engine.register_client(self.client)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def tearDown(self):
         self.loop.stop()

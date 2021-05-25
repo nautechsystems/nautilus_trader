@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -71,6 +72,7 @@ cdef class SimulatedExchange:
     def __init__(
         self,
         Venue venue not None,
+        VenueType venue_type,
         OMSType oms_type,
         bint is_frozen_account,
         list starting_balances not None,
@@ -89,6 +91,8 @@ cdef class SimulatedExchange:
         ----------
         venue : Venue
             The venue to simulate for the backtest.
+        venue_type : VenueType
+            The venues type.
         oms_type : OMSType
             The order management system type used by the exchange (HEDGING or NETTING).
         is_frozen_account : bool
@@ -132,6 +136,7 @@ cdef class SimulatedExchange:
         )
 
         self.id = venue
+        self.venue_type = venue_type
         self.oms_type = oms_type
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
         self.exchange_order_book_level = exchange_order_book_level
@@ -581,14 +586,6 @@ cdef class SimulatedExchange:
         self._clean_up_child_orders(order.client_order_id)
 
     cdef inline void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *:
-        if qty <= 0:
-            self._generate_order_update_rejected(
-                order.client_order_id,
-                "update order",
-                f"new quantity {qty} invalid",
-            )
-            return  # Cannot update order
-
         # Generate event
         self._generate_order_pending_replace(order)
 
@@ -750,24 +747,6 @@ cdef class SimulatedExchange:
 
     cdef inline void _process_order(self, Order order) except *:
         Condition.not_in(order.client_order_id, self._working_orders, "order.client_order_id", "working_orders")
-
-        cdef Instrument instrument = self.instruments[order.instrument_id]
-
-        # Check order size is valid or reject
-        if instrument.max_quantity and order.quantity > instrument.max_quantity:
-            self._reject_order(
-                order,
-                f"order quantity of {order.quantity} exceeds the "
-                f"maximum trade size of {instrument.max_quantity}",
-            )
-            return  # Cannot accept order
-        if instrument.min_quantity and order.quantity < instrument.min_quantity:
-            self._reject_order(
-                order,
-                f"order quantity of {order.quantity} is less than the "
-                f"minimum trade size of {instrument.min_quantity}",
-            )
-            return  # Cannot accept order
 
         if order.type == OrderType.MARKET:
             self._process_market_order(order)

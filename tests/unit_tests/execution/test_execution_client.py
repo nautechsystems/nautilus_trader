@@ -28,6 +28,8 @@ from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -53,14 +55,14 @@ class ExecutionClientTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         portfolio = Portfolio(
             clock=self.clock,
             logger=self.logger,
         )
-        portfolio.register_cache(DataCache(self.logger))
+        portfolio.register_data_cache(DataCache(self.logger))
 
         database = InMemoryExecutionDatabase(
             trader_id=self.trader_id, logger=self.logger
@@ -76,6 +78,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
+            venue_type=VenueType.BROKERAGE,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -83,10 +86,27 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
+
+    def test_venue_when_brokerage_returns_client_id_value_as_venue(self):
+        assert self.client.venue == self.venue
+
+    def test_venue_when_brokerage_multi_venue_returns_none(self):
+        # Arrange
+        client = ExecutionClient(
+            client_id=ClientId("IB"),
+            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
+            account_id=AccountId("IB", "U1258001"),
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act, Assert
+        assert client.venue is None
 
     def test_connect_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.client.connect)
@@ -109,10 +129,8 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
-            StrategyId("SCALPER", "001"),
+            order.strategy_id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
@@ -137,10 +155,8 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         command = SubmitBracketOrder(
-            entry_order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
-            StrategyId("SCALPER", "001"),
+            entry_order.strategy_id,
             bracket_order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -154,9 +170,8 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = UpdateOrder(
-            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
@@ -173,9 +188,8 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = CancelOrder(
-            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
@@ -199,7 +213,7 @@ class ExecutionClientTests(unittest.TestCase):
     #         order,
     #         AUDUSD_SIM,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("1.00001"),
     #     )
     #

@@ -55,6 +55,7 @@ from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Money
@@ -109,6 +110,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         super().__init__(
             ClientId(BETFAIR_VENUE.value),
+            VenueType.EXCHANGE,
             account_id,
             engine,
             instrument_provider,
@@ -118,6 +120,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 "name": "BetfairExecClient",
             }
         )
+
+        self.venue = BETFAIR_VENUE
         self._stream = BetfairOrderStreamClient(
             client=self._client, logger=logger, message_handler=self.handle_order_stream_update,
         )

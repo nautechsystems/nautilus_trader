@@ -21,6 +21,8 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.cache import DataCache
+from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import JPY
@@ -49,16 +51,31 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class AccountTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.clock = TestClock()
-        logger = Logger(self.clock)
+        clock = TestClock()
+        logger = Logger(clock)
+        trader_id = TraderId("TESTER-000")
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=trader_id,
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
-        self.portfolio = Portfolio(self.clock, logger)
-        self.portfolio.register_cache(DataCache(logger))
+        self.portfolio = Portfolio(clock, logger)
+
+        exec_db = InMemoryExecutionDatabase(
+            trader_id=trader_id,
+            logger=logger,
+        )
+        self.exec_engine = ExecutionEngine(
+            database=exec_db,
+            portfolio=self.portfolio,
+            clock=clock,
+            logger=logger,
+        )
+
+        # Wire up components
+        self.portfolio.register_data_cache(DataCache(logger))
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange
@@ -191,7 +208,7 @@ class AccountTests(unittest.TestCase):
         # Act
         account = Account(event)
 
-        # Wire up account to portfolio
+        # Prepare components
         account.register_portfolio(self.portfolio)
         self.portfolio.register_account(account)
 
@@ -218,7 +235,7 @@ class AccountTests(unittest.TestCase):
         # Act
         account = Account(event)
 
-        # Wire up account to portfolio
+        # Prepare components
         account.register_portfolio(self.portfolio)
         self.portfolio.register_account(account)
 
@@ -255,7 +272,7 @@ class AccountTests(unittest.TestCase):
         # Act
         account = Account(event)
 
-        # Wire up account to portfolio
+        # Prepare components
         account.register_portfolio(self.portfolio)
         self.portfolio.register_account(account)
 

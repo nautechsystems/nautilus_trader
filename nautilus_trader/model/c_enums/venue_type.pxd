@@ -13,23 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+
+cpdef enum VenueType:
+    EXCHANGE = 1,
+    ECN = 2,
+    BROKERAGE = 3,
+    BROKERAGE_MULTI_VENUE = 4,
 
 
-cdef class TradingNodeBuilder:
-    cdef LiveClock _clock
-    cdef LiveLogger _logger
-    cdef LoggerAdapter _log
-    cdef LiveDataEngine _data_engine
-    cdef LiveExecutionEngine _exec_engine
-    cdef dict _data_factories
-    cdef dict _exec_factories
+cdef class VenueTypeParser:
 
-    cpdef void add_data_client_factory(self, str name, factory) except *
-    cpdef void add_exec_client_factory(self, str name, factory) except *
-    cpdef void build_data_clients(self, dict config) except *
-    cpdef void build_exec_clients(self, dict config) except *
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef VenueType from_str(str value) except *

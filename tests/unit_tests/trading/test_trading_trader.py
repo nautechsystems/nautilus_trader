@@ -28,8 +28,8 @@ from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -51,7 +51,7 @@ class TraderTests(unittest.TestCase):
         clock = TestClock()
         logger = Logger(clock)
 
-        trader_id = TraderId("TESTER", "000")
+        trader_id = TraderId("TESTER-000")
         account_id = TestStubs.account_id()
 
         self.portfolio = Portfolio(
@@ -67,7 +67,6 @@ class TraderTests(unittest.TestCase):
         )
         self.data_engine.process(USDJPY_SIM)
 
-        self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_db = InMemoryExecutionDatabase(
@@ -84,6 +83,7 @@ class TraderTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
@@ -102,8 +102,6 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.data_engine.register_client(self.data_client)
-
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=account_id,
@@ -119,8 +117,12 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
+        # Wire up components
+        self.data_engine.register_client(self.data_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
+        self.portfolio.register_data_cache(self.data_engine.cache)
+        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         strategies = [
             TradingStrategy("001"),
@@ -132,8 +134,8 @@ class TraderTests(unittest.TestCase):
             strategies=strategies,
             portfolio=self.portfolio,
             data_engine=self.data_engine,
-            exec_engine=self.exec_engine,
             risk_engine=self.risk_engine,
+            exec_engine=self.exec_engine,
             clock=clock,
             logger=logger,
         )
@@ -144,8 +146,7 @@ class TraderTests(unittest.TestCase):
         trader_id = self.trader.id
 
         # Assert
-        self.assertEqual(TraderId("TESTER", "000"), trader_id)
-        self.assertEqual(IdTag("000"), trader_id.tag)
+        self.assertEqual(TraderId("TESTER-000"), trader_id)
         self.assertEqual(ComponentState.INITIALIZED, self.trader.state)
         self.assertEqual(2, len(self.trader.strategy_states()))
 
@@ -155,10 +156,10 @@ class TraderTests(unittest.TestCase):
         status = self.trader.strategy_states()
 
         # Assert
-        self.assertTrue(StrategyId("TradingStrategy", "001") in status)
-        self.assertTrue(StrategyId("TradingStrategy", "002") in status)
-        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy", "001")])
-        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy", "002")])
+        self.assertTrue(StrategyId("TradingStrategy-001") in status)
+        self.assertTrue(StrategyId("TradingStrategy-002") in status)
+        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy-001")])
+        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy-002")])
         self.assertEqual(2, len(status))
 
     def test_change_strategies(self):
@@ -200,12 +201,8 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(ComponentState.RUNNING, self.trader.state)
-        self.assertEqual(
-            "RUNNING", strategy_states[StrategyId("TradingStrategy", "001")]
-        )
-        self.assertEqual(
-            "RUNNING", strategy_states[StrategyId("TradingStrategy", "002")]
-        )
+        self.assertEqual("RUNNING", strategy_states[StrategyId("TradingStrategy-001")])
+        self.assertEqual("RUNNING", strategy_states[StrategyId("TradingStrategy-002")])
 
     def test_stop_a_running_trader(self):
         # Arrange
@@ -218,9 +215,5 @@ class TraderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(ComponentState.STOPPED, self.trader.state)
-        self.assertEqual(
-            "STOPPED", strategy_states[StrategyId("TradingStrategy", "001")]
-        )
-        self.assertEqual(
-            "STOPPED", strategy_states[StrategyId("TradingStrategy", "002")]
-        )
+        self.assertEqual("STOPPED", strategy_states[StrategyId("TradingStrategy-001")])
+        self.assertEqual("STOPPED", strategy_states[StrategyId("TradingStrategy-002")])

@@ -370,7 +370,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         cdef ClientOrderId client_order_id = ClientOrderId(unpacked[ID])
-        cdef StrategyId strategy_id = StrategyId.from_str_c(unpacked[STRATEGY_ID])
+        cdef StrategyId strategy_id = StrategyId(unpacked[STRATEGY_ID])
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[INSTRUMENT_ID])
         cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
         cdef OrderType order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
@@ -488,33 +488,23 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         }
 
         if isinstance(command, TradingCommand):
-            package[CLIENT_ID] = command.client_id.value
+            package[TRADER_ID] = command.trader_id.value
+            package[STRATEGY_ID] = command.strategy_id.value
+            package[INSTRUMENT_ID] = command.instrument_id.value
 
         if isinstance(command, SubmitOrder):
-            package[TRADER_ID] = command.trader_id.value
-            package[ACCOUNT_ID] = command.account_id.value
-            package[STRATEGY_ID] = command.strategy_id.value
             package[POSITION_ID] = command.position_id.value
             package[ORDER] = self.order_serializer.serialize(command.order)
         elif isinstance(command, SubmitBracketOrder):
-            package[TRADER_ID] = command.trader_id.value
-            package[ACCOUNT_ID] = command.account_id.value
-            package[STRATEGY_ID] = command.strategy_id.value
             package[ENTRY] = self.order_serializer.serialize(command.bracket_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
         elif isinstance(command, UpdateOrder):
-            package[TRADER_ID] = command.trader_id.value
-            package[ACCOUNT_ID] = command.account_id.value
-            package[INSTRUMENT_ID] = command.instrument_id.value
             package[CLIENT_ORDER_ID] = command.client_order_id.value
             package[VENUE_ORDER_ID] = command.venue_order_id.value
             package[QUANTITY] = str(command.quantity)
             package[PRICE] = str(command.price)
         elif isinstance(command, CancelOrder):
-            package[TRADER_ID] = command.trader_id.value
-            package[ACCOUNT_ID] = command.account_id.value
-            package[INSTRUMENT_ID] = command.instrument_id.value
             package[CLIENT_ORDER_ID] = command.client_order_id.value
             package[VENUE_ORDER_ID] = command.venue_order_id.value
         else:
@@ -552,11 +542,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef int64_t timestamp_ns = unpacked[TIMESTAMP]
 
         if command_type == SubmitOrder.__name__:
-
             return SubmitOrder(
-                self.identifier_cache.get_client_id(unpacked[CLIENT_ID]),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 PositionId(unpacked[POSITION_ID]),
                 self.order_serializer.deserialize(unpacked[ORDER]),
@@ -565,21 +552,20 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == SubmitBracketOrder.__name__:
             return SubmitBracketOrder(
-                self.identifier_cache.get_client_id(unpacked[CLIENT_ID]),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
-                BracketOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
-                             self.order_serializer.deserialize(unpacked[STOP_LOSS]),
-                             self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
+                BracketOrder(
+                    self.order_serializer.deserialize(unpacked[ENTRY]),
+                    self.order_serializer.deserialize(unpacked[STOP_LOSS]),
+                    self.order_serializer.deserialize(unpacked[TAKE_PROFIT]),
+                ),
                 command_id,
                 timestamp_ns,
             )
         elif command_type == UpdateOrder.__name__:
             return UpdateOrder(
-                self.identifier_cache.get_client_id(unpacked[CLIENT_ID]),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 VenueOrderId(unpacked[VENUE_ORDER_ID]),
@@ -590,9 +576,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == CancelOrder.__name__:
             return CancelOrder(
-                self.identifier_cache.get_client_id(unpacked[CLIENT_ID]),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 VenueOrderId(unpacked[VENUE_ORDER_ID]),

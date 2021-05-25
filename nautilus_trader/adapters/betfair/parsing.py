@@ -79,7 +79,7 @@ uuid_factory = UUIDFactory()
 
 
 def make_custom_order_ref(client_order_id, strategy_id):
-    return client_order_id.value.rsplit("-" + strategy_id.tag.value, maxsplit=1)[0]
+    return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
 def determine_order_price(order: Order):
@@ -185,7 +185,7 @@ def betfair_account_to_account_state(
     balance_locked = -float(account_funds["exposure"])
     balance_free = balance - balance_locked
     return AccountState(
-        AccountId(issuer=BETFAIR_VENUE.value, identifier=account_id),
+        AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
         [Money(value=balance, currency=currency)],
         [Money(value=balance_free, currency=currency)],
         [Money(value=balance_locked, currency=currency)],

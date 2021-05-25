@@ -206,11 +206,6 @@ cdef class Position:
         -------
         list[ExecutionId]
 
-        Notes
-        -----
-        Assumption that all `ExecutionId`s were, unique, so the list
-        may contain duplicates.
-
         """
         return self.execution_ids_c()
 

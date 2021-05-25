@@ -31,10 +31,12 @@ from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -89,6 +91,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     def __init__(
         self,
         ClientId client_id not None,
+        VenueType venue_type,
         AccountId account_id not None,
         LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
@@ -103,6 +106,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account identifier for the client.
         engine : LiveDataEngine
@@ -119,6 +124,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         super().__init__(
             client_id,
+            venue_type,
             account_id,
             engine,
             clock,
@@ -333,6 +339,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             return False  # Cannot reconcile state
 
         cdef ExecutionReport exec_report
+        cdef Instrument instrument
         for exec_report in exec_reports:
             if exec_report.id in order.execution_ids_c():
                 continue  # Trade already applied
@@ -343,7 +350,9 @@ cdef class LiveExecutionClient(ExecutionClient):
 
             instrument = self._instrument_provider.find(order.instrument_id)
             if instrument is None:
-                self._log.error(f"Cannot fill order: no instrument found for {order.instrument_id}")
+                self._log.error(f"Cannot fill order: "
+                                f"no instrument found for {order.instrument_id}")
+                return False  # Cannot reconcile state
 
             self.generate_order_filled(
                 client_order_id=order.client_order_id,

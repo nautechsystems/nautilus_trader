@@ -20,6 +20,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -64,6 +65,7 @@ cdef class ExecutionClient:
     def __init__(
         self,
         ClientId client_id not None,
+        VenueType venue_type,
         AccountId account_id not None,
         ExecutionEngine engine not None,
         Clock clock not None,
@@ -76,8 +78,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_id : ClientId
-            The client identifier. It is assumed that the client_id will equal
-            the venue identifier.
+            The client identifier.
+        venue_type : VenueType
+            The venue type for the client (determines venue -> client_id mapping).
         account_id : AccountId
             The account identifier for the client.
         engine : ExecutionEngine
@@ -89,8 +92,13 @@ cdef class ExecutionClient:
         config : dict[str, object], optional
             The configuration options.
 
+        Raises
+        ------
+        ValueError
+            If client_id is not equal to account_id.issuer.
+
         """
-        Condition.equal(client_id.value, account_id.issuer_as_venue().value, "client_id.value", "account_id.issuer_as_venue().value")
+        Condition.equal(client_id.value, account_id.issuer, "client_id.value", "account_id.issuer")
 
         if config is None:
             config = {}
@@ -105,7 +113,9 @@ cdef class ExecutionClient:
         self._config = config
 
         self.id = client_id
-        self.venue = Venue(client_id.value)  # Assumption that ClientId == Venue
+        if venue_type != VenueType.BROKERAGE_MULTI_VENUE:
+            self.venue = Venue(client_id.value)
+        self.venue_type = venue_type
         self.account_id = account_id
         self.is_connected = False
 

@@ -407,7 +407,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef Instrument instrument = self.load_instrument(initial_fill.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot load position: no instrument found for {initial_fill.instrument_id}",
+                f"Cannot load position: "
+                f"no instrument found for {initial_fill.instrument_id}",
             )
             return
 
