@@ -63,7 +63,7 @@ cdef str CURRENCY
 cdef str TIME_IN_FORCE
 cdef str LIQUIDITY_SIDE
 cdef str ACCOUNT_NUMBER
-cdef str BALANCE
+cdef str BALANCES
 cdef str MARGIN_BALANCE
 cdef str MARGIN_AVAILABLE
 cdef str BAR
@@ -72,8 +72,6 @@ cdef str INTERVAL
 cdef str LEVEL
 cdef str DEPTH
 cdef str KWARGS
-
-cdef str BALANCES
 
 cdef str INSTRUMENT
 cdef str ASSET_CLASS
