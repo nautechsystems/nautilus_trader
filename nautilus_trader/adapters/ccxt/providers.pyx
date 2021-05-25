@@ -112,14 +112,11 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             self._currencies[code] = currency
 
     cdef inline int _tick_size_to_precision(self, double tick_size) except *:
-        cdef str tick_size_str
-        if f"{tick_size}".find('e') > -1:
-            # Significant decimal points are lost when
-            # converting scientific notation to format string.
-            tick_size_str = f"{tick_size}"
+        cdef tick_size_str = str(tick_size)
+        if tick_size_str.find("e") > -1:
+            # Scientific notation string
             return int(tick_size_str.partition('e-')[2])
         else:
-            tick_size_str = f"{Decimal(tick_size):f}"
             return len(tick_size_str.partition('.')[2].rstrip('0'))
 
     cdef inline int _get_precision(self, double value, int mode) except *:
@@ -138,17 +135,18 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             size_precision = precisions.get("amount", 8)
             tick_size = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
         elif self._client.precisionMode == 4:  # TICK_SIZE
-            # TODO(cs): Investigate precision of tick size
-            tick_size = Decimal(precisions.get("price"))
             price_precision = self._tick_size_to_precision(precisions.get("price"))
+            tick_size = Decimal(f"{precisions.get('price'):.{price_precision}f}")
             size_precision = precisions.get("amount")
             if size_precision is None:
                 size_precision = 0
             size_precision = self._tick_size_to_precision(size_precision)
         else:
-            raise RuntimeError(f"The {self._client.name} exchange is using "
-                               f"SIGNIFICANT_DIGITS precision which is not "
-                               f"currently supported in this version.")
+            raise RuntimeError(
+                f"The {self._client.name} exchange is using "
+                f"SIGNIFICANT_DIGITS precision which is not "
+                f"currently supported in this version.",
+            )
 
         cdef str asset_type_str = values.get("type")
         if asset_type_str is not None:

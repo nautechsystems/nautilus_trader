@@ -218,7 +218,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 symbol=order.instrument_id.symbol.value,
             )
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self._update_balances.__name__)
+            self._log_ccxt_error(ex, self.generate_order_status_report.__name__)
             return None
 
         if response is None:
@@ -286,7 +286,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 since=dt_to_unix_millis(since),
             )
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self.generate_trades.__name__)
+            self._log_ccxt_error(ex, self.generate_exec_reports.__name__)
             return reports
 
         if response is None:
@@ -465,7 +465,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log_ccxt_error(ex, self._update_balances.__name__)
             return
 
-        self._on_account_state(response)
+        self._on_account_state(response, initial=True)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
@@ -570,7 +570,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event) except *:
+    cdef inline void _on_account_state(self, dict event, bint initial=False) except *:
         del event["info"]
         del event["free"]
         del event["used"]
@@ -579,12 +579,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef list balances = []
 
         cdef str code
-        cdef dict amounts
         for code, amounts in event.items():
+            if not isinstance(amounts, dict):
+                continue
             currency = self._instrument_provider.currency(code)
             if currency is None:
                 self._log.error(f"Cannot update total balance for {code} "
                                 f"(no currency loaded).")
+
+            total = Money(amounts["total"], currency)
 
             used_value = amounts["used"]
             if used_value is None:
@@ -598,6 +601,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             else:
                 free = Money(free_value, currency)
 
+            if (
+                initial
+                and total.as_decimal() == 0
+                and locked.as_decimal() == 0
+                and free.as_decimal() == 0
+            ):
+                # Skip initial account state with all zero balances
+                continue
+
             balances.append(
                 AccountBalance(
                     currency=currency,
@@ -607,10 +619,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 ),
             )
 
+        timestamp = event.get("timestamp")
+        if timestamp is None:
+            update_ns = self._clock.timestamp_ns()
+        else:
+            update_ns = millis_to_nanos(timestamp)
+
         # Generate event
         self.generate_account_state(
             balances=balances,
-            updated_ns=self._clock.timestamp_ns(),  # CCXT unified API does not include timestamp
+            updated_ns=update_ns,
         )
 
     cdef inline void _on_order_status(self, dict event) except *:
