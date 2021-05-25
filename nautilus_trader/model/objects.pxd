@@ -63,3 +63,14 @@ cdef class Money(BaseDecimal):
     cdef Money from_str_c(str value)
 
     cpdef str to_str(self)
+
+
+cdef class AccountBalance:
+    cdef readonly Currency currency
+    """The currency of the account .\n\n:returns: `Currency`"""
+    cdef readonly Quantity total
+    """The total account balance.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity free
+    """The account balance free for trading.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity locked
+    """The account balance locked (assigned to pending orders).\n\n:returns: `Quantity`"""

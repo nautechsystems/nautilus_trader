@@ -98,7 +98,5 @@ cdef class Account:
 
     cdef inline void _update_balances(
         self,
-        list balances,
-        list balances_free,
-        list balances_locked,
+        list account_balances,
     ) except *

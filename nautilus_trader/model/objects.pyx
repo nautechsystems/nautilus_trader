@@ -554,3 +554,40 @@ cdef class Money(BaseDecimal):
 
         """
         return f"{self._value:,} {self.currency}"
+
+
+cdef class AccountBalance:
+    def __init__(
+        self,
+        Currency currency not None,
+        Quantity total not None,
+        Quantity free not None,
+        Quantity locked not None,
+    ):
+        """
+        Initialize a new instance of the `AccountState` class.
+
+        Parameters
+        ----------
+        total : Money
+            The total account balance.
+        free : Money
+            The account balance free for trading.
+        locked : Money
+            The account balance locked (assigned as margin collateral).
+
+        """
+
+        self.currency = currency
+        self.total = total
+        self.free = free
+        self.locked = locked
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"currency={self.currency},"
+            f"total={self.total}, "
+            f"free={self.free}, "
+            f"locked={self.locked})"
+        )

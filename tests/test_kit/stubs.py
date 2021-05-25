@@ -55,7 +55,7 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
@@ -301,9 +301,14 @@ class TestStubs:
 
         return AccountState(
             account_id,
-            [Money(1_000_000, USD)],
-            [Money(1_000_000, USD)],
-            [Money(0, USD)],
+            [
+                AccountBalance(
+                    USD,
+                    Quantity.from_int(1_000_000),
+                    Quantity.from_int(1_000_000),
+                    Quantity.from_int(0),
+                )
+            ],
             {"default_currency": "USD"},
             uuid4(),
             0,

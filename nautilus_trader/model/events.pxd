@@ -41,12 +41,8 @@ from nautilus_trader.model.position cimport Position
 cdef class AccountState(Event):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly list balances
-    """The account balances.\n\n:returns: `list[Money]`"""
-    cdef readonly list balances_free
-    """The account balances free for trading.\n\n:returns: `list[Money]`"""
-    cdef readonly list balances_locked
-    """The account balances locked (assigned to pending orders).\n\n:returns: `list[Money]`"""
+    cdef readonly list account_balances
+    """The account balances.\n\n:returns: `list[AccountBalance]`"""
     cdef readonly dict info
     """The additional implementation specific account information.\n\n:returns: `dict[str, object]`"""
 

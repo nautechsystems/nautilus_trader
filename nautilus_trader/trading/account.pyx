@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -59,7 +60,7 @@ cdef class Account:
         maint_margins = event.info.get("maint_margins", {})
 
         self._events = [event]
-        self._starting_balances = {b.currency: b for b in event.balances}
+        self._starting_balances = {b.currency: b.total for b in event.account_balances}
         self._balances = {}                      # type: dict[Currency, Money]
         self._balances_free = {}                 # type: dict[Currency, Money]
         self._balances_locked = {}               # type: dict[Currency, Money]
@@ -67,11 +68,7 @@ cdef class Account:
         self._maint_margins = maint_margins      # type: dict[Currency, Money]
         self._portfolio = None  # Initialized when registered with portfolio
 
-        self._update_balances(
-            event.balances,
-            event.balances_free,
-            event.balances_locked,
-        )
+        self._update_balances(event.account_balances)
 
     def __eq__(self, Account other) -> bool:
         return self.id.value == other.id.value
@@ -168,11 +165,7 @@ cdef class Account:
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
-        self._update_balances(
-            event.balances,
-            event.balances_free,
-            event.balances_locked,
-        )
+        self._update_balances(event.account_balances)
 
     cpdef void update_initial_margin(self, Money margin) except *:
         """
@@ -777,19 +770,13 @@ cdef class Account:
 
     cdef inline void _update_balances(
         self,
-        list balances,
-        list balances_free,
-        list balances_locked,
+        list account_balances,
     ) except *:
         # Update the balances. Note that there is no guarantee that every
         # account currency is included in the event, which is my we don't just
         # assign a dict.
-        cdef Money balance
-        for balance in balances:
-            self._balances[balance.currency] = balance
-
-        for balance in balances_free:
-            self._balances_free[balance.currency] = balance
-
-        for balance in balances_locked:
-            self._balances_locked[balance.currency] = balance
+        cdef AccountBalance balance
+        for balance in account_balances:
+            self._balances[balance.currency] = balance.total
+            self._balances_free[balance.currency] = balance.free
+            self._balances_locked[balance.currency] = balance.locked

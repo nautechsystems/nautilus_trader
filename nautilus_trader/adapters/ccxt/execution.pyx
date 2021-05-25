@@ -618,11 +618,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 balances_locked.append(Money(amount, currency))
 
         # Generate event
-        self.generate_account_state(
-            balances,
-            balances_free,
-            balances_locked,
-        )
+        self.generate_account_state(balances)
 
     cdef inline void _on_order_status(self, dict event) except *:
         cdef ClientOrderId client_order_id = ClientOrderId(event["clientOrderId"])

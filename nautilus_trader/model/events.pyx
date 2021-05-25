@@ -54,9 +54,7 @@ cdef class AccountState(Event):
     def __init__(
         self,
         AccountId account_id not None,
-        list balances not None,
-        list balances_free not None,
-        list balances_locked not None,
+        list account_balances not None,
         dict info not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -68,12 +66,8 @@ cdef class AccountState(Event):
         ----------
         account_id : AccountId
             The account identifier.
-        balances : list[Money]
-            The current account balances.
-        balances_free : list[Money]
-            The account balances free for trading.
-        balances_locked : list[Money]
-            The account balances locked (assigned as margin collateral).
+        account_balances : list[AccountBalance]
+            The account balances
         info : dict [str, object]
             The additional implementation specific account information.
         event_id : UUID
@@ -85,16 +79,13 @@ cdef class AccountState(Event):
         super().__init__(event_id, timestamp_ns)
 
         self.account_id = account_id
-        self.balances = balances
-        self.balances_free = balances_free
-        self.balances_locked = balances_locked
+        self.account_balances = account_balances
         self.info = info
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"free=[{', '.join([b.to_str() for b in self.balances_free])}], "
-                f"locked=[{', '.join([b.to_str() for b in self.balances_locked])}], "
+                f"account_balances=[{', '.join([str(b) for b in self.account_balances])}], "
                 f"event_id={self.id})")
 
 
