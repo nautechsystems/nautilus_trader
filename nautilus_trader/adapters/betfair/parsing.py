@@ -64,6 +64,7 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instrument import BettingInstrument
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBookDelta
@@ -177,6 +178,7 @@ def betfair_account_to_account_state(
     account_detail,
     account_funds,
     event_id,
+    updated_ns,
     timestamp_ns,
     account_id="001",
 ) -> AccountState:
@@ -186,11 +188,17 @@ def betfair_account_to_account_state(
     free = balance - locked
     return AccountState(
         account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
-        account_balances=[
-            AccountBalance(currency=currency, total=balance, free=free, locked=locked)
+        balances=[
+            AccountBalance(
+                currency=currency,
+                total=Money(balance, currency),
+                locked=Money(locked, currency),
+                free=Money(free, currency),
+            ),
         ],
         info={"funds": account_funds, "detail": account_detail},
         event_id=event_id,
+        updated_ns=updated_ns,
         timestamp_ns=timestamp_ns,
     )
 

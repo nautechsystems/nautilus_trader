@@ -179,7 +179,7 @@ cdef class ReportProvider:
     cdef dict _account_state_to_dict(self, AccountState event):
         cdef dict data = {"timestamp": nanos_to_unix_dt(event.timestamp_ns)}
         cdef AccountBalance balance
-        for balance in event.account_balances:
+        for balance in event.balances:
             data[f"balance_{balance.currency}"] = balance.total
 
         return data

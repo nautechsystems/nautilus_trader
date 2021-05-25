@@ -74,8 +74,6 @@ cdef str DEPTH
 cdef str KWARGS
 
 cdef str BALANCES
-cdef str BALANCES_FREE
-cdef str BALANCES_LOCKED
 
 cdef str INSTRUMENT
 cdef str ASSET_CLASS

@@ -151,9 +151,9 @@ cdef class SimulatedExchange:
         self.account_balances = {
             money.currency: AccountBalance(
                 currency=money.currency,
-                total=Quantity(money.as_decimal(), precision=money.precision),
-                free=Quantity(money.as_decimal(), precision=money.precision),
-                locked=Quantity(0, precision=money.precision),
+                total=money,
+                locked=Money(0, money.currency),
+                free=money,
             )
             for money in starting_balances
         }
@@ -381,8 +381,8 @@ cdef class SimulatedExchange:
             return  # Nothing to adjust
 
         balance = self.account_balances[adjustment.currency]
-        balance.total = Quantity(balance.total + adjustment, precision=balance.total.precision)
-        balance.free = Quantity(balance.free + adjustment, precision=balance.free.precision)
+        balance.total = Money(balance.total + adjustment, adjustment.currency)
+        balance.free = Money(balance.free + adjustment, adjustment.currency)
 
         # Generate and handle event
         self._generate_account_state()
@@ -473,7 +473,15 @@ cdef class SimulatedExchange:
         for module in self.modules:
             module.reset()
 
-        self.account_balances = self.starting_balances
+        self.account_balances = {
+            money.currency: AccountBalance(
+                currency=money.currency,
+                total=money,
+                locked=Money(0, money.currency),
+                free=money,
+            )
+            for money in self.starting_balances
+        }
         self.total_commissions = {}
 
         self._generate_account_state()
@@ -640,7 +648,8 @@ cdef class SimulatedExchange:
             info = {"default_currency": self.default_currency.code}
         # Generate event
         self.exec_client.generate_account_state(
-            account_balances=list(self.account_balances.values()),
+            balances=list(self.account_balances.values()),
+            updated_ns=self._clock.timestamp_ns(),
             info=info,
         )
 

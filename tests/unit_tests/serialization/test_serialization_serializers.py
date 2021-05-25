@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -446,17 +447,21 @@ class TestMsgPackEventSerializer:
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "000"),
-            balances=[Money(1525000, USD)],
-            balances_free=[Money(1425000, USD)],
-            balances_locked=[Money(0, USD)],
+            balances=[
+                AccountBalance(
+                    USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD)
+                )
+            ],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            timestamp_ns=0,
+            updated_ns=0,
+            timestamp_ns=1_000_000_000,
         )
 
         # Act
         serialized = self.serializer.serialize(event)
         deserialized = self.serializer.deserialize(serialized)
+        print(deserialized)
 
         # Assert
         assert deserialized == event

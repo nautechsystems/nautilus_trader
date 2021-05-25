@@ -74,7 +74,7 @@ cdef class ExecutionClient:
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void generate_account_state(self, list account_balances, dict info=*) except *
+    cpdef void generate_account_state(self, list balances, int64_t updated_ns, dict info=*) except *
     cpdef void generate_order_invalid(self, ClientOrderId client_order_id, str reason) except *
     cpdef void generate_order_submitted(self, ClientOrderId client_order_id, int64_t submitted_ns) except *
     cpdef void generate_order_rejected(self, ClientOrderId client_order_id, str reason, int64_t rejected_ns) except *

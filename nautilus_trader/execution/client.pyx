@@ -175,7 +175,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_account_state(
         self,
-        list account_balances,
+        list balances,
+        int64_t updated_ns,
         dict info=None,
     ) except *:
         """
@@ -185,6 +186,8 @@ cdef class ExecutionClient:
         ----------
         balances : list[AccountBalance]
             The account balances.
+        updated_ns : int64
+            The Unix timestamp (nanos) of the account update.
         info : dict [str, object]
             The additional implementation specific account information.
 
@@ -195,9 +198,10 @@ cdef class ExecutionClient:
         # Generate event
         cdef AccountState account_state = AccountState(
             account_id=self.account_id,
-            account_balances=account_balances,
+            balances=balances,
             info=info,
             event_id=self._uuid_factory.generate(),
+            updated_ns=updated_ns,
             timestamp_ns=self._clock.timestamp_ns(),
         )
 

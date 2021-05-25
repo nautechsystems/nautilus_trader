@@ -15,7 +15,6 @@
 
 import unittest
 
-from model.objects import AccountBalance
 from nautilus_trader.analysis.reports import ReportProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -28,6 +27,8 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
@@ -56,16 +57,17 @@ class ReportProviderTests(unittest.TestCase):
         # Arrange
         state = AccountState(
             account_id=AccountId("BITMEX", "1513111"),
-            account_balances=[
+            balances=[
                 AccountBalance(
                     currency=BTC,
-                    total=Quantity.from_str("10.00000000"),
-                    free=Quantity.from_str("10.00000000"),
-                    locked=Quantity.from_str("0.00000000"),
+                    total=Money("10.00000000", BTC),
+                    free=Money("10.00000000", BTC),
+                    locked=Money("0.00000000", BTC),
                 )
             ],
             info={},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 

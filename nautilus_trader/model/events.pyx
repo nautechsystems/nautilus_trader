@@ -54,9 +54,10 @@ cdef class AccountState(Event):
     def __init__(
         self,
         AccountId account_id not None,
-        list account_balances not None,
+        list balances not None,
         dict info not None,
         UUID event_id not None,
+        int64_t updated_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -66,12 +67,14 @@ cdef class AccountState(Event):
         ----------
         account_id : AccountId
             The account identifier.
-        account_balances : list[AccountBalance]
+        balances : list[AccountBalance]
             The account balances
         info : dict [str, object]
             The additional implementation specific account information.
         event_id : UUID
             The event identifier.
+        updated_ns : int64
+            The Unix timestamp (nanos) of the account update.
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
@@ -79,13 +82,14 @@ cdef class AccountState(Event):
         super().__init__(event_id, timestamp_ns)
 
         self.account_id = account_id
-        self.account_balances = account_balances
+        self.balances = balances
         self.info = info
+        self.updated_ns = updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"account_balances=[{', '.join([str(b) for b in self.account_balances])}], "
+                f"balances=[{', '.join([str(b) for b in self.balances])}], "
                 f"event_id={self.id})")
 
 
