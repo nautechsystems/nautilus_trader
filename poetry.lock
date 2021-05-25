@@ -148,7 +148,7 @@ python2 = ["typed-ast (>=1.4.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.50.36"
+version = "1.50.37"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -953,14 +953,6 @@ security = ["pyOpenSSL (>=0.14)", "cryptography (>=1.3.4)"]
 socks = ["PySocks (>=1.5.6,!=1.5.7)", "win-inet-pton"]
 
 [[package]]
-name = "ruuid"
-version = "0.3.1"
-description = "A fast UUID generator for Python using Rust"
-category = "main"
-optional = false
-python-versions = "*"
-
-[[package]]
 name = "scipy"
 version = "1.6.1"
 description = "SciPy: Scientific Library for Python"
@@ -1215,7 +1207,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "8fa46cae6835fe7b89daecc1cb6de4a07548fbf3511177b43a3150aa4c66c9ba"
+content-hash = "e63f4b2c1068d178e9893bedf9a43ab462df8328c702055252ae1ddd850346be"
 
 [metadata.files]
 aiodns = [
@@ -1302,8 +1294,8 @@ black = [
     {file = "black-21.5b1.tar.gz", hash = "sha256:23695358dbcb3deafe7f0a3ad89feee5999a46be5fec21f4f1d108be0bcdb3b1"},
 ]
 ccxt = [
-    {file = "ccxt-1.50.36-py2.py3-none-any.whl", hash = "sha256:90ea189c191787876b392ae73fa67f08ef242c350d2bb4b88ec77e1bb3708a81"},
-    {file = "ccxt-1.50.36.tar.gz", hash = "sha256:db4bbebd50da8f79105c197d546f616815dbb3a99e6a01b0c6491ba046891c36"},
+    {file = "ccxt-1.50.37-py2.py3-none-any.whl", hash = "sha256:1ffd173b79926c48443a852dfd546c9e59fb9335619c6a611a19132e51e212c4"},
+    {file = "ccxt-1.50.37.tar.gz", hash = "sha256:706aaa05b5585c6950e9c39d87e6a81a3e9f295896b19ce7e99d33e5ceb1c832"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -2062,10 +2054,6 @@ regex = [
 requests = [
     {file = "requests-2.25.1-py2.py3-none-any.whl", hash = "sha256:c210084e36a42ae6b9219e00e48287def368a26d03a048ddad7bfee44f75871e"},
     {file = "requests-2.25.1.tar.gz", hash = "sha256:27973dd4a904a4f13b263a19c866c13b92a39ed1c964655f025f3f8d3d75b804"},
-]
-ruuid = [
-    {file = "ruuid-0.3.1-cp36-abi3-manylinux2010_x86_64.whl", hash = "sha256:128bb30ddde0a1ca8ed149544f2b7559a37f5212037183bf14e45b307105548a"},
-    {file = "ruuid-0.3.1.tar.gz", hash = "sha256:fb09b1605f7f91b2140e2cef3f7375d0b9badc2728bb745c18ef40992f252b3b"},
 ]
 scipy = [
     {file = "scipy-1.6.1-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:a15a1f3fc0abff33e792d6049161b7795909b40b97c6cc2934ed54384017ab76"},
