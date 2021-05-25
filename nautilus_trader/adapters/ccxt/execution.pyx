@@ -632,8 +632,14 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
     cdef inline void _on_order_status(self, dict event) except *:
-        cdef ClientOrderId client_order_id = ClientOrderId(event["clientOrderId"])
         cdef VenueOrderId venue_order_id = VenueOrderId(event["id"])
+
+        # Attempt to parse ClientOrderId
+        client_order_id_str = event.get("clientOrderId")
+        if client_order_id_str is None:
+            self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
+            return
+        cdef ClientOrderId client_order_id = ClientOrderId(client_order_id_str)
 
         if venue_order_id not in self._cached_orders:
             order = self._engine.cache.order(client_order_id)
