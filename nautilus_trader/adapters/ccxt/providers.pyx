@@ -166,6 +166,17 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         if quote_currency is None:
             quote_currency = self._currencies[values["quote"]]
 
+        settlement_currency_str = values["info"].get("settlCurrency")
+        if settlement_currency_str is None or settlement_currency_str == "":
+            if values["spot"]:
+                settlement_currency = base_currency
+            else:
+                settlement_currency = quote_currency
+        else:
+            if settlement_currency_str.upper() == "XBT":
+                settlement_currency_str = "BTC"
+            settlement_currency = self._currencies[settlement_currency_str]
+
         max_quantity = values["limits"].get("amount").get("max")
         if max_quantity is not None:
             max_quantity = Quantity(max_quantity, precision=size_precision)
@@ -216,7 +227,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             asset_type=asset_type,
             base_currency=base_currency,
             quote_currency=quote_currency,
-            settlement_currency=quote_currency,
+            settlement_currency=settlement_currency,
             is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,
