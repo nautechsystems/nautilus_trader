@@ -1,7 +1,0 @@
-[run]
-plugins = Cython.Coverage
-source = nautilus_trader
-
-[report]
-fail_under = 0
-show_missing = True
