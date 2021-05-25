@@ -18,7 +18,7 @@ from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.data cimport Data
 
 
-cdef enum SubscriptionStatus:
+cpdef enum SubscriptionStatus:
     UNSUBSCRIBED = 0
     PENDING_STARTUP = 1
     RUNNING = 2
