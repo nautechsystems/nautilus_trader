@@ -28,13 +28,9 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.functions cimport format_bytes
-
-from nautilus_trader.core.functions import get_size_of  # Not cimport
-
-from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
@@ -357,7 +353,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 idx for idx, data in enumerate(reversed(self._stream)) if stop_ns <= data.timestamp_ns
             )
 
-            total_size += get_size_of(self._stream)
             # Prepare initial data
             self._iterate_stream()
 
@@ -379,14 +374,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 [dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index],
                 dtype=np.int64,
             )
-
-            # Calculate cumulative data size
-            total_size += get_size_of(self._quote_instruments)
-            total_size += get_size_of(self._quote_bids)
-            total_size += get_size_of(self._quote_asks)
-            total_size += get_size_of(self._quote_bid_sizes)
-            total_size += get_size_of(self._quote_ask_sizes)
-            total_size += get_size_of(self._quote_timestamps)
 
             # Set indexing
             self._quote_index = 0
@@ -410,14 +397,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 dtype=np.int64,
             )
 
-            # Calculate cumulative data size
-            total_size += get_size_of(self._trade_instruments)
-            total_size += get_size_of(self._trade_prices)
-            total_size += get_size_of(self._trade_sizes)
-            total_size += get_size_of(self._trade_match_ids)
-            total_size += get_size_of(self._trade_sides)
-            total_size += get_size_of(self._trade_timestamps)
-
             # Set indexing
             self._trade_index = 0
             self._trade_index_last = len(trade_ticks_slice) - 1
@@ -426,8 +405,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._iterate_trade_ticks()
 
         self.has_data = True
-
-        self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
     cpdef void reset(self) except *:
         """
