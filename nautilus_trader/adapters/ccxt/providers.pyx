@@ -138,6 +138,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             size_precision = precisions.get("amount", 8)
             tick_size = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
         elif self._client.precisionMode == 4:  # TICK_SIZE
+            # TODO(cs): Investigate precision of tick size
             tick_size = Decimal(precisions.get("price"))
             price_precision = self._tick_size_to_precision(precisions.get("price"))
             size_precision = precisions.get("amount")

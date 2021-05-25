@@ -31,8 +31,6 @@ cdef class Account:
     cdef list _events
     cdef dict _starting_balances
     cdef dict _balances
-    cdef dict _balances_free
-    cdef dict _balances_locked
     cdef dict _initial_margins
     cdef dict _maint_margins
     cdef PortfolioFacade _portfolio
@@ -98,7 +96,5 @@ cdef class Account:
 
     cdef inline void _update_balances(
         self,
-        list balances,
-        list balances_free,
-        list balances_locked,
+        list account_balances,
     ) except *

@@ -74,8 +74,6 @@ DEPTH = "Depth"
 KWARGS = "Kwargs"
 
 BALANCES = "Balances"
-BALANCES_FREE = "BalancesFree"
-BALANCES_LOCKED = "BalancesLocked"
 
 INSTRUMENT = "Instrument"
 ASSET_CLASS = "AssetClass"

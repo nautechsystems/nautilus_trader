@@ -48,6 +48,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -61,24 +62,30 @@ class TestEvents:
     def test_account_state_str_repr(self):
         # Arrange
         uuid = uuid4()
+        balance = AccountBalance(
+            currency=USD,
+            total=Money(1525000, USD),
+            locked=Money(0, USD),
+            free=Money(1525000, USD),
+        )
         event = AccountState(
             account_id=AccountId("SIM", "000"),
-            balances=[Money(1525000, USD)],
-            balances_free=[Money(1525000, USD)],
-            balances_locked=[Money(0, USD)],
+            balances=[balance],
             info={},
             event_id=uuid,
+            updated_ns=0,
             timestamp_ns=0,
         )
 
+        print(event)
         # Act
         # Assert
         assert (
-            f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})"
+            f"AccountState(account_id=SIM-000, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == str(event)
         )
         assert (
-            f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})"
+            f"AccountState(account_id=SIM-000, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == repr(event)
         )
 

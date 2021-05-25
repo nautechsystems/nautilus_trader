@@ -20,6 +20,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -175,8 +176,7 @@ cdef class ExecutionClient:
     cpdef void generate_account_state(
         self,
         list balances,
-        list balances_free,
-        list balances_locked,
+        int64_t updated_ns,
         dict info=None,
     ) except *:
         """
@@ -184,12 +184,10 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        balances : list[Money]
-            The current account balances.
-        balances_free : list[Money]
-            The account balances free for trading.
-        balances_locked : list[Money]
-            The account balances locked (assigned as margin collateral).
+        balances : list[AccountBalance]
+            The account balances.
+        updated_ns : int64
+            The Unix timestamp (nanos) of the account update.
         info : dict [str, object]
             The additional implementation specific account information.
 
@@ -201,10 +199,9 @@ cdef class ExecutionClient:
         cdef AccountState account_state = AccountState(
             account_id=self.account_id,
             balances=balances,
-            balances_free=balances_free,
-            balances_locked=balances_locked,
             info=info,
             event_id=self._uuid_factory.generate(),
+            updated_ns=updated_ns,
             timestamp_ns=self._clock.timestamp_ns(),
         )
 

@@ -69,6 +69,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -632,9 +633,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
-            package[BALANCES] = {b.currency.code: str(b) for b in event.balances}
-            package[BALANCES_FREE] = {b.currency.code: str(b) for b in event.balances_free}
-            package[BALANCES_LOCKED] = {b.currency.code: str(b) for b in event.balances_locked}
+            package[BALANCES] = [[b.currency.code, str(b.total), str(b.locked), str(b.free)] for b in event.balances]
+            package[UPDATED_TIMESTAMP] = event.updated_ns
             package[INFO] = event.info
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
@@ -782,11 +782,16 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == AccountState.__name__:
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES].items()],
-                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES_FREE].items()],
-                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES_LOCKED].items()],
+                [AccountBalance(
+                    currency=Currency.from_str_c(b[0]),
+                    total=Money(b[1], Currency.from_str_c(b[0])),
+                    locked=Money(b[2], Currency.from_str_c(b[0])),
+                    free=Money(b[3], Currency.from_str_c(b[0])),
+                )
+                    for b in unpacked[BALANCES]],
                 unpacked[INFO],
                 event_id,
+                unpacked[UPDATED_TIMESTAMP],
                 timestamp_ns,
             )
         elif event_type == OrderInitialized.__name__:

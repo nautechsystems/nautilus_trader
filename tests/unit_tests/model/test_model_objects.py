@@ -832,8 +832,8 @@ class TestMoney:
         result2 = Money(5005.556666, USD)
 
         # Assert
-        assert "1,000.33 USD" == result1.to_str()
-        assert "5,005.56 USD" == result2.to_str()
+        assert "1_000.33 USD" == result1.to_str()
+        assert "5_005.56 USD" == result2.to_str()
 
     def test_hash(self):
         # Arrange
@@ -855,7 +855,7 @@ class TestMoney:
         assert "0.00" == str(money0)
         assert "1.00" == str(money1)
         assert "1000000.00" == str(money2)
-        assert "1,000,000.00 USD" == money2.to_str()
+        assert "1_000_000.00 USD" == money2.to_str()
 
     def test_repr(self):
         # Arrange

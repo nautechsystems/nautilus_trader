@@ -29,6 +29,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
@@ -207,11 +208,17 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         account_state = AccountState(
             account_id=AccountId("BINANCE", "1513111"),
-            balances=[Money("10.00000000", BTC)],
-            balances_free=[Money("0.00000000", BTC)],
-            balances_locked=[Money("0.00000000", BTC)],
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                )
+            ],
             info={},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
         self.exec_engine.process(account_state)
