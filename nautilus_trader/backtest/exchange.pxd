@@ -78,11 +78,7 @@ cdef class SimulatedExchange:
     cdef readonly Currency default_currency
     """The account default currency.\n\n:returns: `Currency` or None"""
     cdef readonly dict account_balances
-    """The current account balances.\n\n:returns: `dict[Currency, Money]`"""
-    cdef readonly dict account_balances_free
-    """The current account balances free.\n\n:returns: `dict[Currency, Money]`"""
-    cdef readonly dict account_balances_locked
-    """The current account balances locked.\n\n:returns: `dict[Currency, Money]`"""
+    """The current account balances.\n\n:returns: `dict[Currency, AccountBalance]`"""
     cdef readonly dict total_commissions
     """The total commissions generated with the exchange.\n\n:returns: `dict[Currency, Money]`"""
 

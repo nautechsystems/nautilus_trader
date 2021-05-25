@@ -892,7 +892,7 @@ cdef class BacktestEngine:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 account_balances_starting = ', '.join([b.to_str() for b in exchange.starting_balances])
-                account_balances_ending = ', '.join([b.to_str() for b in exchange.account_balances.values()])
+                account_balances_ending = ', '.join([b.total.to_str() for b in exchange.account_balances.values()])
                 account_commissions = ', '.join([b.to_str() for b in exchange.total_commissions.values()])
                 unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()])
                 account_starting_length = len(account_balances_starting)

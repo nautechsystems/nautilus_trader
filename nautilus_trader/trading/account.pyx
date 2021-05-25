@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -59,19 +60,13 @@ cdef class Account:
         maint_margins = event.info.get("maint_margins", {})
 
         self._events = [event]
-        self._starting_balances = {b.currency: b for b in event.balances}
-        self._balances = {}                      # type: dict[Currency, Money]
-        self._balances_free = {}                 # type: dict[Currency, Money]
-        self._balances_locked = {}               # type: dict[Currency, Money]
+        self._starting_balances = {b.currency: b.total for b in event.balances}
+        self._balances = {}                      # type: dict[Currency, AccountBalance]
         self._initial_margins = initial_margins  # type: dict[Currency, Money]
         self._maint_margins = maint_margins      # type: dict[Currency, Money]
         self._portfolio = None  # Initialized when registered with portfolio
 
-        self._update_balances(
-            event.balances,
-            event.balances_free,
-            event.balances_locked,
-        )
+        self._update_balances(event.balances)
 
     def __eq__(self, Account other) -> bool:
         return self.id.value == other.id.value
@@ -168,11 +163,7 @@ cdef class Account:
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
-        self._update_balances(
-            event.balances,
-            event.balances_free,
-            event.balances_locked,
-        )
+        self._update_balances(event.balances)
 
     cpdef void update_initial_margin(self, Money margin) except *:
         """
@@ -243,7 +234,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._balances.copy()
+        return {c: b.total for c, b in self._balances.items()}
 
     cpdef dict balances_free(self):
         """
@@ -254,7 +245,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._balances_free.copy()
+        return {c: b.free for c, b in self._balances.items()}
 
     cpdef dict balances_locked(self):
         """
@@ -265,11 +256,11 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._balances_locked.copy()
+        return {c: b.locked for c, b in self._balances.items()}
 
     cpdef Money balance(self, Currency currency=None):
         """
-        Return the current account balance.
+        Return the current account balance total.
 
         For multi-currency accounts, specify the currency for the query.
 
@@ -298,7 +289,10 @@ cdef class Account:
             currency = self.default_currency
         Condition.not_none(currency, "currency")
 
-        return self._balances.get(currency)
+        cdef AccountBalance balance = self._balances.get(currency)
+        if balance is None:
+            return None
+        return balance.total
 
     cpdef Money balance_free(self, Currency currency=None):
         """
@@ -331,7 +325,10 @@ cdef class Account:
             currency = self.default_currency
         Condition.not_none(currency, "currency")
 
-        return self._balances_free.get(currency)
+        cdef AccountBalance balance = self._balances.get(currency)
+        if balance is None:
+            return None
+        return balance.free
 
     cpdef Money balance_locked(self, Currency currency=None):
         """
@@ -364,7 +361,10 @@ cdef class Account:
             currency = self.default_currency
         Condition.not_none(currency, "currency")
 
-        return self._balances_locked.get(currency)
+        cdef AccountBalance balance = self._balances.get(currency)
+        if balance is None:
+            return None
+        return balance.locked
 
     cpdef Money unrealized_pnl(self, Currency currency=None):
         """
@@ -446,7 +446,7 @@ cdef class Account:
         if unrealized_pnl is None:
             return None
 
-        return Money(balance + unrealized_pnl, currency)
+        return Money(balance.free + unrealized_pnl, currency)
 
     @staticmethod
     def market_value(
@@ -778,18 +778,10 @@ cdef class Account:
     cdef inline void _update_balances(
         self,
         list balances,
-        list balances_free,
-        list balances_locked,
     ) except *:
         # Update the balances. Note that there is no guarantee that every
-        # account currency is included in the event, which is my we don't just
+        # account currency is included in the event, which is why we don't just
         # assign a dict.
-        cdef Money balance
+        cdef AccountBalance balance
         for balance in balances:
             self._balances[balance.currency] = balance
-
-        for balance in balances_free:
-            self._balances_free[balance.currency] = balance
-
-        for balance in balances_locked:
-            self._balances_locked[balance.currency] = balance

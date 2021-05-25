@@ -42,13 +42,11 @@ cdef class AccountState(Event):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly list balances
-    """The account balances.\n\n:returns: `list[Money]`"""
-    cdef readonly list balances_free
-    """The account balances free for trading.\n\n:returns: `list[Money]`"""
-    cdef readonly list balances_locked
-    """The account balances locked (assigned to pending orders).\n\n:returns: `list[Money]`"""
+    """The account balances.\n\n:returns: `list[AccountBalance]`"""
     cdef readonly dict info
     """The additional implementation specific account information.\n\n:returns: `dict[str, object]`"""
+    cdef readonly int64_t updated_ns
+    """The Unix timestamp (nanos) of the account update.\n\n:returns: `int64`"""
 
 
 cdef class OrderEvent(Event):
@@ -98,14 +96,14 @@ cdef class OrderRejected(OrderEvent):
     cdef readonly str reason
     """The reason the order was rejected.\n\n:returns: `str`"""
     cdef readonly int64_t rejected_ns
-    """The order rejected time.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the order was rejected.\n\n:returns: `int64`"""
 
 
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t accepted_ns
-    """The order accepted time.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the order was accepted.\n\n:returns: `int64`"""
 
 
 cdef class OrderPendingReplace(OrderEvent):
@@ -130,7 +128,7 @@ cdef class OrderUpdateRejected(OrderEvent):
     cdef readonly str reason
     """The reason for order update rejection.\n\n:returns: `str`"""
     cdef readonly int64_t rejected_ns
-    """The requests rejected time of the event.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the update was rejected.\n\n:returns: `int64`"""
 
 
 cdef class OrderCancelRejected(OrderEvent):
@@ -141,7 +139,7 @@ cdef class OrderCancelRejected(OrderEvent):
     cdef readonly str reason
     """The reason for order cancel rejection.\n\n:returns: `str`"""
     cdef readonly int64_t rejected_ns
-    """The requests rejected time of the event.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the cancel was rejected.\n\n:returns: `int64`"""
 
 
 cdef class OrderUpdated(OrderEvent):
@@ -152,28 +150,28 @@ cdef class OrderUpdated(OrderEvent):
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
     cdef readonly int64_t updated_ns
-    """The order updated time.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the order was updated.\n\n:returns: `int64`"""
 
 
 cdef class OrderCanceled(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t canceled_ns
-    """The order canceled time.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the order was canceled.\n\n:returns: `int64`"""
 
 
 cdef class OrderTriggered(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t triggered_ns
-    """The order triggered time.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the order was triggered.\n\n:returns: `int64`"""
 
 
 cdef class OrderExpired(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t expired_ns
-    """The order expired time.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the order expired.\n\n:returns: `int64`"""
 
 
 cdef class OrderFilled(OrderEvent):
@@ -200,7 +198,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly LiquiditySide liquidity_side
     """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t execution_ns
-    """The Unix timestamp (nanos) of the execution.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when the order was executed.\n\n:returns: `int64`"""
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 
