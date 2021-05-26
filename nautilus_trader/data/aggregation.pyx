@@ -205,7 +205,8 @@ cdef class BarBuilder:
             high_price=self._high,
             low_price=self._low,
             close_price=self._close,
-            volume=Quantity.from_str_c(str(self.volume)),  # TODO: TODO: Refactor when precision available
+            volume=Quantity.from_str_c(str(self.volume)),  # TODO: Refactor when precision available
+            timestamp_origin_ns=timestamp_ns,  # TODO: Hardcoded identical for now...
             timestamp_ns=timestamp_ns,
         )
 

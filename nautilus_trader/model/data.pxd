@@ -17,8 +17,10 @@ from libc.stdint cimport int64_t
 
 
 cdef class Data:
+    cdef readonly int64_t timestamp_origin_ns
+    """The Unix timestamp (nanos) when originally occurred.\n\n:returns: `int64`"""
     cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the data.\n\n:returns: `int64`"""
+    """The Unix timestamp (nanos) when received by the Nautilus system.\n\n:returns: `int64`"""
 
 
 cdef class DataType:

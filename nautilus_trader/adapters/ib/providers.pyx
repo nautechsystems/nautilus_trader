@@ -123,6 +123,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
 
         cdef int price_precision = self._tick_size_to_precision(details.minTick)
 
+        timestamp = unix_timestamp_ns()
         cdef Future future = Future(
             instrument_id=instrument_id,
             asset_class=asset_class,
@@ -142,7 +143,8 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             price_precision=price_precision,
             tick_size=Decimal(f"{details.minTick:.{price_precision}f}"),
             lot_size=Quantity.from_int(1),
-            timestamp_ns=unix_timestamp_ns(),
+            timestamp_origin_ns=timestamp,
+            timestamp_ns=timestamp,
         )
 
         return future

@@ -52,7 +52,7 @@ cdef class BaseDecimal:
 
     Represents a decimal number with a specified precision.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, value, uint8_t precision):

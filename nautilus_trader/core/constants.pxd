@@ -21,6 +21,7 @@ cdef str ID
 cdef str ORDER
 cdef str INFO
 cdef str OPTIONS
+cdef str TIMESTAMP_ORIGIN
 cdef str TIMESTAMP
 cdef str VENUE
 cdef str INSTRUMENT_ID

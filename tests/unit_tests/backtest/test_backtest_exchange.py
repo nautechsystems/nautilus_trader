@@ -239,6 +239,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1209,6 +1210,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
         )
 
         # Act
@@ -1245,6 +1247,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(200000),
             Quantity.from_int(200000),
             0,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1253,6 +1256,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("96.711"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1295,6 +1299,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1331,6 +1336,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             1_000_000_000,
+            1_000_000_000,
         )
 
         self.exchange.process_tick(tick2)
@@ -1366,6 +1372,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         # Act
@@ -1375,6 +1382,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("90.001"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1412,6 +1420,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(200000),
             Quantity.from_int(200000),
             0,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1420,6 +1429,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("90.001"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1461,6 +1471,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1499,6 +1510,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("90.102"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1544,6 +1556,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("89.999"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1592,6 +1605,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1613,6 +1627,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AggressorSide.SELL,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         tick2 = TradeTick(
@@ -1621,6 +1636,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             AggressorSide.BUY,
             TradeMatchId("123456790"),
+            0,
             0,
         )
 
@@ -1651,6 +1667,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             AggressorSide.BUY,  # Lowers bid price
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -1697,6 +1714,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1705,6 +1723,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("91.203"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1770,6 +1789,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("100.004"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1838,6 +1858,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(1_000_000),
             Quantity.from_int(1_000_000),
             0,
+            0,
         )
 
         self.data_engine.process(open_quote)
@@ -1858,6 +1879,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("100.004"),
             Quantity.from_int(1_000_000),
             Quantity.from_int(1_000_000),
+            0,
             0,
         )
 
@@ -1993,6 +2015,7 @@ class BitmexExchangeTests(unittest.TestCase):
             Quantity.from_int(1500000),
             Quantity.from_int(1500000),
             0,
+            0,
         )
 
         self.data_engine.process(quote1)
@@ -2021,6 +2044,7 @@ class BitmexExchangeTests(unittest.TestCase):
             Price.from_str("11491.5"),
             Quantity.from_int(1500000),
             Quantity.from_int(1500000),
+            0,
             0,
         )
 
@@ -2288,6 +2312,7 @@ class OrderBookExchangeTests(unittest.TestCase):
             Quantity.from_int(1000),
             OrderSide.SELL,
             TradeMatchId("123456789"),
+            0,
             0,
         )
         self.exchange.process_tick(tick1)

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-
+from libc.stdint cimport int64_t
 import ccxt
 
 from nautilus_trader.common.providers cimport InstrumentProvider
@@ -220,7 +220,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             taker_fee = Decimal(f"{taker_fee:.4f}")
 
         cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
-
+        cdef int64_t timestamp = unix_timestamp_ns()
         return Instrument(
             instrument_id=instrument_id,
             asset_class=AssetClass.CRYPTO,
@@ -244,6 +244,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             margin_maint=Decimal(),  # Margin trading not implemented
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            timestamp_ns=unix_timestamp_ns(),
+            timestamp_origin_ns=timestamp,
+            timestamp_ns=timestamp,
             info=values,
         )

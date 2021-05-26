@@ -132,10 +132,12 @@ cdef class BarSpecification:
         bool
 
         """
-        return self.aggregation == BarAggregation.SECOND\
-            or self.aggregation == BarAggregation.MINUTE\
-            or self.aggregation == BarAggregation.HOUR\
+        return (
+            self.aggregation == BarAggregation.SECOND
+            or self.aggregation == BarAggregation.MINUTE
+            or self.aggregation == BarAggregation.HOUR
             or self.aggregation == BarAggregation.DAY
+        )
 
     cpdef bint is_threshold_aggregated(self) except *:
         """
@@ -154,12 +156,14 @@ cdef class BarSpecification:
         bool
 
         """
-        return self.aggregation == BarAggregation.TICK\
-            or self.aggregation == BarAggregation.TICK_IMBALANCE\
-            or self.aggregation == BarAggregation.VOLUME\
-            or self.aggregation == BarAggregation.VOLUME_IMBALANCE\
-            or self.aggregation == BarAggregation.VALUE\
+        return (
+            self.aggregation == BarAggregation.TICK
+            or self.aggregation == BarAggregation.TICK_IMBALANCE
+            or self.aggregation == BarAggregation.VOLUME
+            or self.aggregation == BarAggregation.VOLUME_IMBALANCE
+            or self.aggregation == BarAggregation.VALUE
             or self.aggregation == BarAggregation.VALUE_IMBALANCE
+        )
 
     cpdef bint is_information_aggregated(self) except *:
         """
@@ -175,9 +179,11 @@ cdef class BarSpecification:
         bool
 
         """
-        return self.aggregation == BarAggregation.TICK_RUNS\
-            or self.aggregation == BarAggregation.VOLUME_RUNS\
+        return (
+            self.aggregation == BarAggregation.TICK_RUNS
+            or self.aggregation == BarAggregation.VOLUME_RUNS
             or self.aggregation == BarAggregation.VALUE_RUNS
+        )
 
 
 cdef class BarType:
@@ -217,9 +223,11 @@ cdef class BarType:
         self.is_internal_aggregation = internal_aggregation
 
     def __eq__(self, BarType other) -> bool:
-        return self.instrument_id == other.instrument_id \
-            and self.spec == other.spec \
+        return (
+            self.instrument_id == other.instrument_id
+            and self.spec == other.spec
             and self.is_internal_aggregation == other.is_internal_aggregation
+        )
 
     def __ne__(self, BarType other) -> bool:
         return not self == other
@@ -300,6 +308,7 @@ cdef class Bar(Data):
         Price low_price not None,
         Price close_price not None,
         Quantity volume not None,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
         bint check=False,
     ):
@@ -320,8 +329,10 @@ cdef class Bar(Data):
             The bars close price.
         volume : Quantity
             The bars volume.
+        timestamp_origin_ns : int64
+            The Unix timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the bar close.
+            The Unix timestamp (nanos) when received by the Nautilus system.
         check : bool
             If bar parameters should be checked valid.
 
@@ -339,7 +350,7 @@ cdef class Bar(Data):
             Condition.true(high_price >= low_price, 'high_price was < low_price')
             Condition.true(high_price >= close_price, 'high_price was < close_price')
             Condition.true(low_price <= close_price, 'low_price was > close_price')
-        super().__init__(timestamp_ns)
+        super().__init__(timestamp_origin_ns, timestamp_ns)
 
         self.type = bar_type
         self.open = open_price
@@ -350,22 +361,24 @@ cdef class Bar(Data):
         self.checked = check
 
     def __eq__(self, Bar other) -> bool:
-        return self.type == other.type \
-            and self.open == other.open \
-            and self.high == other.high \
-            and self.low == other.low \
-            and self.close == other.close \
-            and self.volume == other.volume \
+        return (
+            self.type == other.type
+            and self.open == other.open
+            and self.high == other.high
+            and self.low == other.low
+            and self.close == other.close
+            and self.volume == other.volume
             and self.timestamp_ns == other.timestamp_ns
+        )
 
     def __ne__(self, Bar other) -> bool:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash((self.type, self.open, self.high, self.low, self.close, self.volume, self.timestamp_ns))
+        return hash((self.type, self.open, self.high, self.low, self.close, self.volume, self.timestamp_origin_ns))
 
     def __str__(self) -> str:
-        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_ns}"
+        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_origin_ns}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -374,9 +387,9 @@ cdef class Bar(Data):
     cdef Bar from_serializable_str_c(BarType bar_type, str values):
         Condition.valid_string(values, 'values')
 
-        cdef list pieces = values.split(',', maxsplit=5)
+        cdef list pieces = values.split(',', maxsplit=6)
 
-        if len(pieces) != 6:
+        if len(pieces) != 7:
             raise ValueError(f"The Bar string value was malformed, was {values}")
 
         return Bar(
@@ -386,7 +399,8 @@ cdef class Bar(Data):
             low_price=Price.from_str(pieces[2]),
             close_price=Price.from_str(pieces[3]),
             volume=Quantity.from_str(pieces[4]),
-            timestamp_ns=int(pieces[5]),
+            timestamp_origin_ns=int(pieces[5]),
+            timestamp_ns=int(pieces[6]),
         )
 
     @staticmethod
@@ -417,4 +431,4 @@ cdef class Bar(Data):
         str
 
         """
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_ns}"
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_origin_ns},{self.timestamp_ns}"

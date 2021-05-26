@@ -253,6 +253,7 @@ class TestBar:
                 Price.from_str("1.00003"),
                 Quantity.from_int(100000),
                 0,
+                0,
                 True,
             )
 
@@ -268,6 +269,7 @@ class TestBar:
                 Price.from_str("1.00000"),
                 Price.from_str("1.00005"),
                 Quantity.from_int(100000),
+                0,
                 0,
                 True,
             )
@@ -285,6 +287,7 @@ class TestBar:
                 Price.from_str("0.99999"),  # Close below low
                 Quantity.from_int(100000),
                 0,
+                0,
                 True,
             )
 
@@ -298,6 +301,7 @@ class TestBar:
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         bar2 = Bar(
@@ -307,6 +311,7 @@ class TestBar:
             Price.from_str("1.00002"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -324,6 +329,7 @@ class TestBar:
             Price.from_str("1.00002"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -349,13 +355,14 @@ class TestBar:
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         # Act
         serializable = bar.to_serializable_str()
 
         # Assert
-        assert serializable == "1.00001,1.00004,1.00002,1.00003,100000,0"
+        assert serializable == "1.00001,1.00004,1.00002,1.00003,100000,0,0"
 
     def test_from_serializable_string_given_malformed_string_raises_value_error(self):
         # Arrange
@@ -366,6 +373,7 @@ class TestBar:
             Price.from_str("1.00002"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
+            0,
             0,
         )
 

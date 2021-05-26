@@ -8,6 +8,7 @@
 - Simplified `StrategyId` constructor.
 
 ## Enhancements
+- Add `timestamp_origin_ns` timestamp when originally occurred to data.
 - Improve `ExecutionEngine` order routing.
 - Improve `ExecutionEngine` client registration.
 - Add order routing configuration.
