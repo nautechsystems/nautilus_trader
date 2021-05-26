@@ -69,7 +69,7 @@ cdef class LiveDataClient(DataClient):
     """
     The abstract base class for all live data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -112,7 +112,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
     """
     The abstract base class for all live data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(

@@ -239,6 +239,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         self.cache.add_quote_ticks([tick])
@@ -257,6 +258,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -278,6 +280,7 @@ class DataCacheTests(unittest.TestCase):
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         self.cache.add_trade_ticks([tick])
@@ -296,6 +299,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -319,6 +323,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.cache.add_bars([bar])
@@ -339,6 +344,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00002"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -376,6 +382,7 @@ class DataCacheTests(unittest.TestCase):
             level=OrderBookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -410,6 +417,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -427,6 +435,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -446,6 +455,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(10000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -475,6 +485,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -493,6 +504,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -514,6 +526,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         tick2 = QuoteTick(
@@ -522,6 +535,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00003"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -544,6 +558,7 @@ class DataCacheTests(unittest.TestCase):
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         self.cache.add_trade_tick(tick)
@@ -564,6 +579,7 @@ class DataCacheTests(unittest.TestCase):
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         tick2 = TradeTick(
@@ -572,6 +588,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity.from_int(20000),
             AggressorSide.SELL,
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -596,6 +613,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.cache.add_bar(bar)
@@ -618,6 +636,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         bar2 = Bar(
@@ -627,6 +646,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("1.00004"),
             Price.from_str("1.00005"),
             Quantity.from_int(200000),
+            0,
             0,
         )
 
@@ -650,6 +670,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("110.80010"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -679,6 +700,7 @@ class DataCacheTests(unittest.TestCase):
             Price.from_str("0.80010"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 

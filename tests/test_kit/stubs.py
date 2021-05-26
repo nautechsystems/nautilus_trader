@@ -171,6 +171,7 @@ class TestStubs:
             Price.from_str("1.00003"),
             Quantity.from_int(1_000_000),
             0,
+            0,
         )
 
     @staticmethod
@@ -182,6 +183,7 @@ class TestStubs:
             Price.from_str("90.001"),
             Price.from_str("90.003"),
             Quantity.from_int(1_000_000),
+            0,
             0,
         )
 
@@ -196,6 +198,7 @@ class TestStubs:
             bid_volume or Quantity.from_int(1_000_000),
             ask_volume or Quantity.from_int(1_000_000),
             0,
+            0,
         )
 
     @staticmethod
@@ -206,6 +209,7 @@ class TestStubs:
             ask or Price.from_str("1.00003"),
             Quantity.from_int(1_000_000),
             Quantity.from_int(1_000_000),
+            0,
             0,
         )
 
@@ -219,6 +223,7 @@ class TestStubs:
             quantity or Quantity.from_int(100000),
             aggressor_side or AggressorSide.BUY,
             TradeMatchId("123456"),
+            0,
             0,
         )
 
@@ -280,6 +285,7 @@ class TestStubs:
             level=level,
             bids=[(bid_price - i, bid_volume * (1 + i)) for i in range(bid_levels)],
             asks=[(ask_price + i, ask_volume * (1 + i)) for i in range(ask_levels)],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 

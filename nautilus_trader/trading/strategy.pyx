@@ -98,7 +98,7 @@ cdef class TradingStrategy(Component):
     """
     The abstract base class for all trading strategies.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, str order_id_tag not None):

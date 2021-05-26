@@ -61,6 +61,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
         # Act
         # Assert
@@ -76,6 +77,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         tick2 = QuoteTick(
@@ -84,6 +86,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
             Price.from_str("0.80008"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 

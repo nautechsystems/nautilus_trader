@@ -41,7 +41,7 @@ cdef class SimulationModule:
     """
     The abstract base class for all simulation modules.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):

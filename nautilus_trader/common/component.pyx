@@ -84,7 +84,7 @@ cdef class Component:
     """
     The abstract base class for all system components.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(

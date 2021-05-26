@@ -122,7 +122,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_data_sends_to_data_engine(self):
         # Arrange
         data_type = DataType(str, {"Type": "NEWS_WIRE"})
-        data = GenericData(data_type, "Some news headline", 0)
+        data = GenericData(data_type, "Some news headline", 0, 0)
 
         # Act
         self.client._handle_data_py(data)
@@ -133,7 +133,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_data_response_sends_to_data_engine(self):
         # Arrange
         data_type = DataType(str, {"Type": "ECONOMIC_DATA", "topic": "unemployment"})
-        data = GenericData(data_type, "may 2020, 6.9%", 0)
+        data = GenericData(data_type, "may 2020, 6.9%", 0, 0)
 
         # Act
         self.client._handle_data_response_py(data, self.uuid_factory.generate())
@@ -350,6 +350,7 @@ class MarketDataClientTests(unittest.TestCase):
             level=OrderBookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -365,6 +366,7 @@ class MarketDataClientTests(unittest.TestCase):
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             deltas=[],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -383,6 +385,7 @@ class MarketDataClientTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         # Act
@@ -399,6 +402,7 @@ class MarketDataClientTests(unittest.TestCase):
             Quantity.from_int(1),
             AggressorSide.BUY,
             TradeMatchId("123456"),
+            0,
             0,
         )
 
@@ -419,6 +423,7 @@ class MarketDataClientTests(unittest.TestCase):
             Price.from_str("1.00002"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
+            0,
             0,
         )
 

@@ -38,6 +38,7 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            timestamp_origin_ns=1,
             timestamp_ns=1,
         )
 
@@ -47,6 +48,7 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            timestamp_origin_ns=2,
             timestamp_ns=2,
         )
 
@@ -56,6 +58,7 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            timestamp_origin_ns=3,
             timestamp_ns=3,
         )
 
@@ -74,6 +77,7 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -97,6 +101,7 @@ class QuoteTickTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         # Act
@@ -111,6 +116,7 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -133,6 +139,7 @@ class QuoteTickTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         # Act
@@ -147,6 +154,7 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(500000),
             Quantity.from_int(800000),
+            0,
             0,
         )
 
@@ -180,6 +188,7 @@ class QuoteTickTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         # Act
@@ -199,13 +208,14 @@ class QuoteTickTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         # Act
         result = tick.to_serializable_str()
 
         # Assert
-        self.assertEqual("1.00000,1.00001,1,1,0", result)
+        self.assertEqual("1.00000,1.00001,1,1,0,0", result)
 
 
 class TradeTickTests(unittest.TestCase):
@@ -218,6 +228,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            0,
             1000,
         )
 
@@ -227,6 +238,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            1000,
             2000,
         )
 
@@ -236,6 +248,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            2000,
             3000,
         )
 
@@ -253,6 +266,7 @@ class TradeTickTests(unittest.TestCase):
             Quantity.from_int(50000),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -287,6 +301,7 @@ class TradeTickTests(unittest.TestCase):
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         # Act
@@ -306,10 +321,11 @@ class TradeTickTests(unittest.TestCase):
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         # Act
         result = tick.to_serializable_str()
 
         # Assert
-        self.assertEqual("1.00000,10000,BUY,123456789,0", result)
+        self.assertEqual("1.00000,10000,BUY,123456789,0,0", result)

@@ -670,6 +670,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
             Quantity.from_int(1),
             Quantity.from_int(1),
             dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
+            self._clock.timestamp_ns(),
         )
 
     cdef inline Bar _parse_bar(
@@ -695,6 +696,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
             Price(prices["c"], instrument.price_precision),
             Quantity(values["volume"], instrument.size_precision),
             dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
+            self._clock.timestamp_ns(),
         )
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------

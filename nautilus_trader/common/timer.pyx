@@ -123,7 +123,7 @@ cdef class Timer:
     """
     The abstract base class for all timers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -331,7 +331,7 @@ cdef class LiveTimer(Timer):
     """
     The abstract base class for all live timers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(

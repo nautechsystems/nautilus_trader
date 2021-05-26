@@ -23,7 +23,7 @@ cdef class Serializer:
     """
     The abstract base class for all serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
     cdef inline str convert_camel_to_snake(self, str value):
         return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
@@ -42,7 +42,7 @@ cdef class InstrumentSerializer(Serializer):
     """
     The abstract base class for all instrument serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
@@ -65,7 +65,7 @@ cdef class OrderSerializer(Serializer):
     """
     The abstract base class for all order serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
@@ -88,7 +88,7 @@ cdef class CommandSerializer(Serializer):
     """
     The abstract base class for all command serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
@@ -110,7 +110,7 @@ cdef class EventSerializer(Serializer):
     """
     The abstract base class for all event serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):

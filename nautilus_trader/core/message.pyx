@@ -78,7 +78,7 @@ cdef class Message:
     """
     The abstract base class for all messages.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -121,7 +121,7 @@ cdef class Command(Message):
     """
     The abstract base class for all commands.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, UUID identifier not None, int64_t timestamp_ns):
@@ -143,7 +143,7 @@ cdef class Document(Message):
     """
     The abstract base class for all documents.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -169,7 +169,7 @@ cdef class Event(Message):
     """
     The abstract base class for all events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -195,7 +195,7 @@ cdef class Request(Message):
     """
     The abstract base class for all requests.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, UUID identifier not None, int64_t timestamp_ns):
@@ -217,7 +217,7 @@ cdef class Response(Message):
     """
     The abstract base class for all responses.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(

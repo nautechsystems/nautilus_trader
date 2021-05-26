@@ -33,6 +33,7 @@ class TestOrderBookSnapshot:
             level=OrderBookLevel.L2,
             bids=[[1010, 2], [1009, 1]],
             asks=[[1020, 2], [1021, 1]],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -53,6 +54,7 @@ class TestOrderBookOperation:
             level=OrderBookLevel.L2,
             delta_type=OrderBookDeltaType.ADD,
             order=order,
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 

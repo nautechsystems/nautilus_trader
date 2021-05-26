@@ -188,6 +188,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             MARGIN_MAINT: str(instrument.margin_maint),
             MAKER_FEE: str(instrument.maker_fee),
             TAKER_FEE: str(instrument.taker_fee),
+            TIMESTAMP_ORIGIN: instrument.timestamp_origin_ns,
             TIMESTAMP: instrument.timestamp_ns,
         }
 
@@ -251,6 +252,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef object margin_maint = decimal.Decimal(unpacked[MARGIN_MAINT])
         cdef object maker_fee = decimal.Decimal(unpacked[MAKER_FEE])
         cdef object taker_fee = decimal.Decimal(unpacked[TAKER_FEE])
+        cdef int64_t timestamp_origin_ns = unpacked[TIMESTAMP_ORIGIN]
         cdef int64_t timestamp_ns = unpacked[TIMESTAMP]
 
         if instrument_type == Instrument.__name__:
@@ -277,6 +279,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 margin_maint=margin_maint,
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
+                timestamp_origin_ns=timestamp_origin_ns,
                 timestamp_ns=timestamp_ns,
             )
 

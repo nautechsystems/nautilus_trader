@@ -329,7 +329,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy = TradingStrategy("000")
 
         # Act
-        strategy.on_data(GenericData(DataType(str), "DATA", 0))
+        strategy.on_data(GenericData(DataType(str), "DATA", 0, 0))
 
         # Assert
         self.assertTrue(True)  # Exception not raised
@@ -690,7 +690,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertRaises(
             RuntimeError,
             strategy.handle_data,
-            GenericData(DataType(str), "SOME_DATA", 0),
+            GenericData(DataType(str), "SOME_DATA", 0, 0),
         )
 
     def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self):
@@ -837,6 +837,7 @@ class TradingStrategyTests(unittest.TestCase):
             Price.from_str("1.00002"),
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1326,7 +1327,7 @@ class TradingStrategyTests(unittest.TestCase):
             self.logger,
         )
 
-        data = GenericData(DataType(str), "SOME_DATA", 0)
+        data = GenericData(DataType(str), "SOME_DATA", 0, 0)
 
         # Act
         strategy.handle_data(data)
@@ -1345,7 +1346,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.start()
 
-        data = GenericData(DataType(str), "SOME_DATA", 0)
+        data = GenericData(DataType(str), "SOME_DATA", 0, 0)
 
         # Act
         strategy.handle_data(data)

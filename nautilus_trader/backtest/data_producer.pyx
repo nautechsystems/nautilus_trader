@@ -528,6 +528,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             ask=Price.from_str_c(self._quote_asks[index]),
             bid_size=Quantity.from_str_c(self._quote_bid_sizes[index]),
             ask_size=Quantity.from_str_c(self._quote_ask_sizes[index]),
+            timestamp_origin_ns=self._quote_timestamps[index],
             timestamp_ns=self._quote_timestamps[index],
         )
 
@@ -538,6 +539,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             size=Quantity.from_str_c(self._trade_sizes[index]),
             aggressor_side=AggressorSideParser.from_str(self._trade_sides[index]),
             match_id=TradeMatchId(self._trade_match_ids[index]),
+            timestamp_origin_ns=self._trade_timestamps[index],  # TODO(cs): Hardcoded identical for now
             timestamp_ns=self._trade_timestamps[index],
         )
 

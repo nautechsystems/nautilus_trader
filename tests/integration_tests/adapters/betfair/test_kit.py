@@ -167,6 +167,7 @@ class BetfairTestStubs(TestStubs):
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            timestamp_origin_ns=BetfairTestStubs.clock().timestamp_ns(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
 

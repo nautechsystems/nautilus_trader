@@ -299,6 +299,7 @@ def test_orderbook_snapshot(empty_l2_book):
         level=OrderBookLevel.L2,
         bids=[[1550.15, 0.51], [1580.00, 1.20]],
         asks=[[1552.15, 1.51], [1582.00, 2.20]],
+        timestamp_origin_ns=0,
         timestamp_ns=0,
     )
     empty_l2_book.apply_snapshot(snapshot)
@@ -317,6 +318,7 @@ def test_orderbook_operation_update(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
+        timestamp_origin_ns=clock.timestamp(),
         timestamp_ns=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
@@ -334,6 +336,7 @@ def test_orderbook_operation_add(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
+        timestamp_origin_ns=clock.timestamp(),
         timestamp_ns=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
@@ -351,12 +354,14 @@ def test_orderbook_operations(empty_l2_book):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
+        timestamp_origin_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     deltas = OrderBookDeltas(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
         deltas=[delta],
+        timestamp_origin_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
         timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     empty_l2_book.apply_deltas(deltas)
@@ -369,6 +374,7 @@ def test_apply(empty_l2_book, clock):
         level=OrderBookLevel.L2,
         bids=[[150.0, 0.51]],
         asks=[[160.0, 1.51]],
+        timestamp_origin_ns=0,
         timestamp_ns=0,
     )
     empty_l2_book.apply_snapshot(snapshot)
@@ -383,6 +389,7 @@ def test_apply(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
+        timestamp_origin_ns=clock.timestamp(),
         timestamp_ns=clock.timestamp(),
     )
     empty_l2_book.apply(delta)
@@ -408,6 +415,7 @@ def test_timestamp_ns(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
+        timestamp_origin_ns=clock.timestamp(),
         timestamp_ns=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)

@@ -85,7 +85,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
     The abstract base class for all live execution clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
