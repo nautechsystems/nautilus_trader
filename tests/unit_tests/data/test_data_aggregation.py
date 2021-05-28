@@ -88,6 +88,7 @@ class BarBuilderTests(unittest.TestCase):
             low_price=Price.from_str("1.00000"),
             close_price=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
+            timestamp_origin_ns=1_000_000_000,
             timestamp_ns=1_000_000_000,
         )
 
@@ -117,6 +118,7 @@ class BarBuilderTests(unittest.TestCase):
             low_price=Price.from_str("1.00000"),
             close_price=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
+            timestamp_origin_ns=1_000_000_000,
             timestamp_ns=1_000_000_000,
         )
 
@@ -127,6 +129,7 @@ class BarBuilderTests(unittest.TestCase):
             low_price=Price.from_str("2.00000"),
             close_price=Price.from_str("2.00002"),
             volume=Quantity.from_str("2"),
+            timestamp_origin_ns=1_000_000_000,
             timestamp_ns=3_000_000_000,
         )
 
@@ -262,6 +265,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -286,6 +290,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -310,6 +315,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -319,6 +325,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -328,6 +335,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -359,6 +367,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -368,6 +377,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -377,6 +387,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -469,6 +480,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -493,6 +505,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -517,6 +530,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -526,6 +540,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(4000),
             ask_size=Quantity.from_int(2000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -535,6 +550,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -566,6 +582,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -575,6 +592,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(4000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -584,6 +602,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -615,6 +634,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(2000),
             ask_size=Quantity.from_int(2000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -624,6 +644,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(3000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -633,6 +654,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(25000),
             ask_size=Quantity.from_int(25000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -674,6 +696,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(2000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -683,6 +706,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -692,6 +716,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_int(25000),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -794,6 +819,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -819,6 +845,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_str("3.5"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -844,6 +871,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(20000),
             ask_size=Quantity.from_int(20000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -853,6 +881,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(60000),
             ask_size=Quantity.from_int(20000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -862,6 +891,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(30500),
             ask_size=Quantity.from_int(20000),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -894,6 +924,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_str("3000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -903,6 +934,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_str("4000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123457"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -912,6 +944,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             size=Quantity.from_str("5000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id=TradeMatchId("123458"),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -1078,6 +1111,7 @@ class TestTimeBarAggregator(unittest.TestCase):
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -1087,6 +1121,7 @@ class TestTimeBarAggregator(unittest.TestCase):
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -1096,6 +1131,7 @@ class TestTimeBarAggregator(unittest.TestCase):
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
+            timestamp_origin_ns=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
             timestamp_ns=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
         )
 

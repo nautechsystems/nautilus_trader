@@ -26,7 +26,7 @@ cdef class PositionSizer:
     """
     The abstract base class for all position sizers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, Instrument instrument not None):

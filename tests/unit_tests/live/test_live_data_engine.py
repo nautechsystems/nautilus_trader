@@ -179,7 +179,7 @@ class LiveDataEngineTests(unittest.TestCase):
             config={"qsize": 1},
         )
 
-        data = Data(1_000_000_000)
+        data = Data(1_000_000_000, 1_000_000_000)
 
         # Act
         self.engine.process(data)

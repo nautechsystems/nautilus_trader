@@ -71,6 +71,7 @@ class SwingsTests(unittest.TestCase):
             Price.from_str("1.00003"),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         # Act

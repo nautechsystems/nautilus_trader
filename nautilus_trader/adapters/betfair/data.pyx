@@ -216,6 +216,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
                 data=GenericData(
                     data_type=data_type,
                     data=InstrumentSearch(instruments=instruments),
+                    timestamp_origin_ns=self._clock.timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
                     timestamp_ns=self._clock.timestamp_ns(),
                 ),
                 correlation_id=correlation_id
@@ -253,7 +254,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         cdef BettingInstrument instrument = self._instrument_provider.find(instrument_id)  # type: BettingInstrument
 
         if instrument.market_id in self._subscribed_market_ids:
-            self._log.warning(f"Already subscribed to market_id: {instrument.market_id} [Instrument: {instrument_id.symbol}] <OrderBook> data.")
+            self._log.warning(
+                f"Already subscribed to market_id: {instrument.market_id} "
+                f"[Instrument: {instrument_id.symbol}] <OrderBook> data.",
+            )
             return
 
         # If this is the first subscription request we're receiving, schedule a

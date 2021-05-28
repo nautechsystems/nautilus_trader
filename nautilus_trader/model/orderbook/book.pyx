@@ -1007,13 +1007,14 @@ cdef class OrderBookData(Data):
     """
     The abstract base class for all `OrderBook` data.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
         OrderBookLevel level,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -1025,11 +1026,13 @@ cdef class OrderBookData(Data):
             The instrument identifier for the book.
         level : OrderBookLevel
             The order book level (L1, L2, L3).
+        timestamp_origin_ns : int64
+            The Unix timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the snapshot.
+            The Unix timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(timestamp_ns)
+        super().__init__(timestamp_origin_ns, timestamp_ns)
 
         self.instrument_id = instrument_id
         self.level = level
@@ -1046,6 +1049,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         OrderBookLevel level,
         list bids not None,
         list asks not None,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -1061,11 +1065,13 @@ cdef class OrderBookSnapshot(OrderBookData):
             The bids for the snapshot.
         asks : list
             The asks for the snapshot.
+        timestamp_origin_ns : int64
+            The Unix timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the snapshot.
+            The Unix timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_ns)
+        super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
 
         self.bids = bids
         self.asks = asks
@@ -1089,6 +1095,7 @@ cdef class OrderBookDeltas(OrderBookData):
         InstrumentId instrument_id not None,
         OrderBookLevel level,
         list deltas not None,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -1102,11 +1109,13 @@ cdef class OrderBookDeltas(OrderBookData):
             The order book level (L1, L2, L3).
         deltas : list[OrderBookDelta]
             The list of order book changes.
+        timestamp_origin_ns : int64
+            The Unix timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the deltas.
+            The Unix timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_ns)
+        super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
 
         self.deltas = deltas
 
@@ -1129,6 +1138,7 @@ cdef class OrderBookDelta(OrderBookData):
         OrderBookLevel level,
         OrderBookDeltaType delta_type,
         Order order not None,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -1140,11 +1150,13 @@ cdef class OrderBookDelta(OrderBookData):
             The type of change (ADD, UPDATED, DELETE).
         order : Order
             The order to apply.
+        timestamp_origin_ns : int64
+            The Unix timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the delta.
+            The Unix timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_ns)
+        super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
 
         self.type = delta_type
         self.order = order

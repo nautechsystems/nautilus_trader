@@ -23,7 +23,7 @@ cdef class DataCommand(Command):
     """
     The abstract base class for all data commands.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(

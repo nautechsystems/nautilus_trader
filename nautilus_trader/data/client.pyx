@@ -44,7 +44,7 @@ cdef class DataClient:
     """
     The abstract base class for all data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -159,7 +159,7 @@ cdef class MarketDataClient(DataClient):
     """
     The abstract base class for all market data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(

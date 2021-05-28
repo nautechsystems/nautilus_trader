@@ -12,7 +12,7 @@ print(ccxt.name)
 # print(json.dumps(precisions, sort_keys=True, indent=4))
 
 instruments = {k: v for k, v in ccxt.markets.items()}
-print(json.dumps(instruments["BTC/USD"], sort_keys=True, indent=4))
+print(json.dumps(instruments, sort_keys=True, indent=4))
 
 # currencies = {k: v for k, v in ccxt.currencies.items()}
 # print(json.dumps(currencies, sort_keys=True, indent=4))
