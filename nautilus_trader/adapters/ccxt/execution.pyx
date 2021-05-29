@@ -587,8 +587,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._log.error(f"Cannot update total balance for {code} "
                                 f"(no currency loaded).")
 
-            total = Money(amounts["total"], currency)
-
             used_value = amounts["used"]
             if used_value is None:
                 locked = Money(0, currency)
@@ -600,6 +598,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 free = Money(0, currency)
             else:
                 free = Money(free_value, currency)
+
+            total = Money(free + locked, currency)
 
             if (
                 initial
@@ -613,7 +613,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             balances.append(
                 AccountBalance(
                     currency=currency,
-                    total=Money(amounts["total"], currency),
+                    total=total,
                     locked=locked,
                     free=free,
                 ),
