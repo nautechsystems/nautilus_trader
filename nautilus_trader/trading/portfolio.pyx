@@ -930,7 +930,7 @@ cdef class Portfolio(PortfolioFacade):
                 )
                 return None  # Cannot calculate
 
-            pnl: Money = position.unrealized_pnl(last)
+            pnl = position.unrealized_pnl(last)
 
             if account.default_currency is not None:
                 xrate = self._calculate_xrate(
