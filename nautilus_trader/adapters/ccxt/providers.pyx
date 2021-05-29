@@ -137,11 +137,11 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         elif self._client.precisionMode == 4:  # TICK_SIZE
             price_precision = precision_from_str(str(precisions.get("price")))
             price_increment = Price(precisions.get("price"), precision=price_precision)
-            size_precision = precision_from_str(str(precisions.get("amount")))
-            amount_prec_str = precisions.get("amount")
-            if amount_prec_str is None:
-                amount_prec_str = "1"
-            size_increment = Quantity(amount_prec_str, precision=size_precision)
+            size_precision = precision_from_str(str(precisions.get("amount")).rstrip(".0"))
+            amount_prec = precisions.get("amount", 1)
+            if amount_prec is None:
+                amount_prec = 1
+            size_increment = Quantity(float(amount_prec) / 10 ** size_precision, size_precision)
         else:
             raise RuntimeError(
                 f"The {self._client.name} exchange is using SIGNIFICANT_DIGITS "
