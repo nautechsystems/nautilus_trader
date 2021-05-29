@@ -202,9 +202,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
             resolved = True
             for order in active_orders.values():
-                # TODO(cs): Assumption that venue == client_id
-                client_id = ClientId(order.instrument_id.venue.value)
-                report = client_mass_status[client_id].order_reports().get(order.venue_order_id)
+                client_id = self._routing_map.get(order.instrument_id.venue)
+                mass_status = client_mass_status.get(client_id)
+                if mass_status is None:
+                    return False  # Will never reconcile
+                report = mass_status.order_reports().get(order.venue_order_id)
                 if report is None:
                     return False  # Will never reconcile
                 if order.state_c() != report.order_state:
