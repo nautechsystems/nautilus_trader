@@ -142,7 +142,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             True if states reconcile within timeout, else False.
 
         """
-        # TODO: Refactor pass on this, plus above docs
         cdef dict active_orders = {
             order.client_order_id: order for order in self.cache.orders() if not order.is_completed_c()
         }  # type: dict[ClientOrderId, Order]
@@ -165,13 +164,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Build order state map
         cdef Order order
         for order in active_orders.values():
-            # TODO(cs): Assumption that venue == client_id
-            client_id = ClientId(order.instrument_id.venue.value)
+            client_id = self._routing_map.get(order.instrument_id.venue)
             if client_id in client_orders:
                 client_orders[client_id].append(order)
             else:
-                self._log.error(f"Cannot reconcile state. No registered"
-                                f"execution client for {client_id.value} for active {order}.")
+                self._log.error(
+                    f"Cannot reconcile state: "
+                    f"No registered client for {client_id.value} for active {order}."
+                )
                 continue
 
         cdef dict client_mass_status = {}  # type: dict[ClientId, ExecutionMassStatus]
