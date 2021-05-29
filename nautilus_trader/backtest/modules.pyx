@@ -175,13 +175,13 @@ cdef class FXRolloverInterestModule(SimulationModule):
             if self._exchange.default_currency is not None:
                 currency = self._exchange.default_currency
                 xrate = self._exchange.get_xrate(
-                    from_currency=instrument.pnl_currency,
+                    from_currency=instrument.cost_currency,
                     to_currency=currency,
                     price_type=PriceType.MID,
                 )
                 rollover *= xrate
             else:
-                currency = instrument.pnl_currency
+                currency = instrument.cost_currency
 
             rollover_total = self._rollover_totals.get(currency, Decimal())
             rollover_total = Money(rollover_total + rollover, currency)

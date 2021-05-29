@@ -174,7 +174,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             ASSET_CLASS: self.convert_snake_to_camel(asset_class),
             ASSET_TYPE: self.convert_snake_to_camel(asset_type),
             QUOTE_CURRENCY: instrument.quote_currency.code,
-            PNL_CURRENCY: instrument.pnl_currency.code,
+            COST_CURRENCY: instrument.cost_currency.code,
             IS_INVERSE: instrument.is_inverse,
             PRICE_PRECISION: instrument.price_precision,
             SIZE_PRECISION: instrument.size_precision,
@@ -253,7 +253,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef AssetClass asset_class = AssetClassParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_CLASS]))
         cdef AssetType asset_type = AssetTypeParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_TYPE]))
         cdef Currency quote_currency = Currency.from_str_c(unpacked[QUOTE_CURRENCY])
-        cdef Currency pnl_currency = Currency.from_str_c(unpacked[PNL_CURRENCY])
+        cdef Currency cost_currency = Currency.from_str_c(unpacked[COST_CURRENCY])
         cdef bint is_inverse = unpacked[IS_INVERSE]
         cdef uint8_t price_precision = unpacked[PRICE_PRECISION]
         cdef uint8_t size_precision = unpacked[SIZE_PRECISION]
@@ -290,7 +290,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 asset_class=asset_class,
                 asset_type=asset_type,
                 quote_currency=quote_currency,
-                pnl_currency=pnl_currency,
+                cost_currency=cost_currency,
                 is_inverse=is_inverse,
                 price_precision=price_precision,
                 size_precision=size_precision,

@@ -504,7 +504,7 @@ cdef class Portfolio(PortfolioFacade):
 
             if xrate == 0:
                 self._log.error(f"Cannot calculate market value (insufficient data for "
-                                f"{instrument.pnl_currency}/{account.default_currency}).")
+                                f"{instrument.cost_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
             market_value = market_values.get(instrument.quote_currency, Decimal(0))
@@ -601,7 +601,7 @@ cdef class Portfolio(PortfolioFacade):
 
             if xrate == 0:
                 self._log.error(f"Cannot calculate market value (insufficient data for "
-                                f"{instrument.pnl_currency}/{account.default_currency}).")
+                                f"{instrument.cost_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
             market_value += Account.market_value(
@@ -762,7 +762,7 @@ cdef class Portfolio(PortfolioFacade):
 
                 if xrate == 0:
                     self._log.error(f"Cannot calculate initial margin (insufficient data for "
-                                    f"{instrument.pnl_currency}/{currency}).")
+                                    f"{instrument.cost_currency}/{currency}).")
                     continue  # Cannot calculate
 
                 margin *= xrate
@@ -828,7 +828,7 @@ cdef class Portfolio(PortfolioFacade):
 
                 if xrate == 0:
                     self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
-                                    f"{instrument.pnl_currency}/{currency}).")
+                                    f"{instrument.cost_currency}/{currency}).")
                     continue  # Cannot calculate
 
                 margin *= xrate
@@ -878,7 +878,7 @@ cdef class Portfolio(PortfolioFacade):
             if account.default_currency is not None:
                 return Money(0, account.default_currency)
             else:
-                return Money(0, instrument.pnl_currency)
+                return Money(0, instrument.cost_currency)
 
         total_pnl: Decimal = Decimal(0)
 
@@ -904,7 +904,7 @@ cdef class Portfolio(PortfolioFacade):
 
                 if xrate == 0:
                     self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
-                                    f"{instrument.pnl_currency}/{currency}).")
+                                    f"{instrument.cost_currency}/{currency}).")
                     return None  # Cannot calculate
 
                 pnl *= xrate
@@ -917,7 +917,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.default_currency is not None:
             return self._data_cache.get_xrate(
                 venue=instrument.id.venue,
-                from_currency=instrument.pnl_currency,
+                from_currency=instrument.cost_currency,
                 to_currency=account.default_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )

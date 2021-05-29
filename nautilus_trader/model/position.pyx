@@ -85,12 +85,12 @@ cdef class Position:
         self.size_precision = instrument.size_precision
         self.multiplier = instrument.multiplier
         self.quote_currency = instrument.quote_currency
-        self.pnl_currency = instrument.pnl_currency
+        self.cost_currency = instrument.cost_currency
         self.is_inverse = instrument.is_inverse
         self.realized_points = Decimal()
         self.realized_return = Decimal()
-        self.realized_pnl = Money(0, self.pnl_currency)
-        self.commission = Money(0, self.pnl_currency)
+        self.realized_pnl = Money(0, self.cost_currency)
+        self.commission = Money(0, self.cost_currency)
 
         self.apply(fill)
 
@@ -379,7 +379,7 @@ cdef class Position:
         cdef Currency currency = fill.commission.currency
         cdef Money cum_commission = Money(self._commissions.get(currency, Decimal()) + fill.commission, currency)
         self._commissions[currency] = cum_commission
-        if currency == self.pnl_currency:
+        if currency == self.cost_currency:
             self.commission = cum_commission
 
         # Calculate avg prices, points, return, PnL
@@ -459,7 +459,7 @@ cdef class Position:
             quantity=quantity,
         )
 
-        return Money(pnl, self.pnl_currency)
+        return Money(pnl, self.cost_currency)
 
     cpdef Money unrealized_pnl(self, Price last):
         """
@@ -487,7 +487,7 @@ cdef class Position:
             quantity=self.quantity,
         )
 
-        return Money(pnl, self.pnl_currency)
+        return Money(pnl, self.cost_currency)
 
     cpdef Money total_pnl(self, Price last):
         """
@@ -508,7 +508,7 @@ cdef class Position:
 
         pnl: Decimal = self.realized_pnl + self.unrealized_pnl(last)
 
-        return Money(pnl, self.pnl_currency)
+        return Money(pnl, self.cost_currency)
 
     cpdef list commissions(self):
         """
@@ -523,7 +523,7 @@ cdef class Position:
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
-        if fill.commission.currency == self.pnl_currency:
+        if fill.commission.currency == self.cost_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
         else:
             realized_pnl: Decimal = Decimal()
@@ -538,7 +538,7 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px, fill.last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.pnl_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.cost_currency)
 
         # Update quantities
         self._buy_qty = self._buy_qty + fill.last_qty
@@ -546,7 +546,7 @@ cdef class Position:
 
     cdef inline void _handle_sell_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
-        if fill.commission.currency == self.pnl_currency:
+        if fill.commission.currency == self.cost_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
         else:
             realized_pnl: Decimal = Decimal()
@@ -561,7 +561,7 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px, fill.last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.pnl_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.cost_currency)
 
         # Update quantities
         self._sell_qty = self._sell_qty + fill.last_qty

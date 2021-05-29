@@ -480,7 +480,7 @@ cdef class Account:
             close_price = 1 / close_price
 
         market_value: Decimal = (quantity * instrument.multiplier * close_price)
-        return Money(market_value, instrument.pnl_currency)
+        return Money(market_value, instrument.cost_currency)
 
     @staticmethod
     def notional_value(Instrument instrument, Quantity quantity, close_price: Decimal):
@@ -542,13 +542,13 @@ cdef class Account:
         # TODO: Temporarily no margin
         leverage = 1
         if leverage == 1:
-            return Money(0, instrument.pnl_currency)
+            return Money(0, instrument.cost_currency)
 
         notional = Account.notional_value(quantity, price)
         margin = notional / leverage * instrument.margin_init
         margin += notional * instrument.taker_fee * 2
 
-        return Money(margin, instrument.pnl_currency)
+        return Money(margin, instrument.cost_currency)
 
     @staticmethod
     def calculate_maint_margin(
@@ -584,13 +584,13 @@ cdef class Account:
         # TODO: Temporarily no margin
         leverage = 1
         if leverage == 1:
-            return Money(0, instrument.pnl_currency)  # No margin necessary
+            return Money(0, instrument.cost_currency)  # No margin necessary
 
         cdef Money notional = Account.notional_value(instrument, quantity, last)
         margin = (notional / leverage) * instrument.margin_maint
         margin += notional * instrument.taker_fee
 
-        return Money(margin, instrument.pnl_currency)
+        return Money(margin, instrument.cost_currency)
 
     @staticmethod
     def calculate_commission(
@@ -643,7 +643,7 @@ cdef class Account:
         if instrument.is_inverse:
             commission *= 1 / last_px
 
-        return Money(commission, instrument.pnl_currency)
+        return Money(commission, instrument.cost_currency)
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 

@@ -69,8 +69,8 @@ cdef class Position:
     """The multiplier for the positions instrument.\n\n:returns: `Quantity`"""
     cdef readonly Currency quote_currency
     """The position quote currency.\n\n:returns: `Currency`"""
-    cdef readonly Currency pnl_currency
-    """The currency used for PnL calculations.\n\n:returns: `Currency`"""
+    cdef readonly Currency cost_currency
+    """The currency used for costing calculations.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
     cdef readonly int64_t timestamp_ns
