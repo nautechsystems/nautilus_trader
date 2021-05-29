@@ -1224,7 +1224,7 @@ cdef class SimulatedExchange:
             # Final PnL
             pnl = Money(pnl - commission, self.default_currency)
         else:
-            currency = instrument.pnl_currency
+            currency = instrument.cost_currency
             if not pnl:
                 pnl = commission
 

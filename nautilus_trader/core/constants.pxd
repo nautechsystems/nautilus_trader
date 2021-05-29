@@ -79,7 +79,7 @@ cdef str ASSET_CLASS
 cdef str ASSET_TYPE
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
-cdef str PNL_CURRENCY
+cdef str COST_CURRENCY
 cdef str SETTLEMENT_CURRENCY
 cdef str IS_INVERSE
 cdef str BROKER_SYMBOL

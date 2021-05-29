@@ -142,7 +142,7 @@ cdef class CryptoSwap(Instrument):
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             quote_currency=quote_currency,
-            pnl_currency=base_currency if is_inverse else quote_currency,
+            cost_currency=base_currency if is_inverse else quote_currency,
             is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,
