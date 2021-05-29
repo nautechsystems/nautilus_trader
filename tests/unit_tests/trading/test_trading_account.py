@@ -132,7 +132,7 @@ class AccountTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money("8.70049419", BTC), value)
+        self.assertEqual(Money("100000.00", USD), value)
 
     def test_calculate_commission_for_maker_crypto(self):
         # Arrange

@@ -47,7 +47,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -300,8 +300,9 @@ cdef class SimulatedExchange:
         if book is None:
             instrument = self.instruments.get(instrument_id)
             if instrument is None:
-                raise RuntimeError(f"Cannot create OrderBook: "
-                                   f"no instrument for {instrument_id.value}")
+                raise RuntimeError(
+                    f"Cannot create OrderBook: no instrument for {instrument_id.value}"
+                )
             book = OrderBook.create(
                 instrument=instrument,
                 level=self.exchange_order_book_level,
@@ -1090,9 +1091,9 @@ cdef class SimulatedExchange:
             if self.exchange_order_book_level == OrderBookLevel.L1 and self.fill_model.is_slipped():
                 instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
                 if order.side == OrderSide.BUY:
-                    fill_px = Price(fill_px + instrument.tick_size, instrument.price_precision)
+                    fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
                 else:  # => OrderSide.SELL
-                    fill_px = Price(fill_px - instrument.tick_size, instrument.price_precision)
+                    fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             self._fill_order(
                 order=order,
                 last_px=fill_px,
@@ -1105,9 +1106,9 @@ cdef class SimulatedExchange:
             fill_px = fills[-1][0]
             instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
             if order.side == OrderSide.BUY:
-                fill_px = Price(fill_px + instrument.tick_size, instrument.price_precision)
+                fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
             else:  # => OrderSide.SELL
-                fill_px = Price(fill_px - instrument.tick_size, instrument.price_precision)
+                fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             self._fill_order(
                 order=order,
                 last_px=fill_px,
@@ -1223,7 +1224,7 @@ cdef class SimulatedExchange:
             # Final PnL
             pnl = Money(pnl - commission, self.default_currency)
         else:
-            currency = instrument.settlement_currency
+            currency = instrument.pnl_currency
             if not pnl:
                 pnl = commission
 

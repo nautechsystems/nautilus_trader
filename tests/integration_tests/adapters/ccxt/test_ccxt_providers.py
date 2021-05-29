@@ -29,7 +29,7 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.currency import CurrencySpot
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -239,12 +239,11 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instrument = provider.find(instrument_id)
 
         # Assert
-        self.assertEqual(Instrument, type(instrument))
+        self.assertEqual(CurrencySpot, type(instrument))
         self.assertEqual(AssetClass.CRYPTO, instrument.asset_class)
         self.assertEqual(AssetType.SPOT, instrument.asset_type)
         self.assertEqual(BTC, instrument.base_currency)
         self.assertEqual(USDT, instrument.quote_currency)
-        self.assertEqual(USDT, instrument.settlement_currency)
 
     def test_get_btc_currency_when_loaded_returns_expected_currency(self):
         # Arrange

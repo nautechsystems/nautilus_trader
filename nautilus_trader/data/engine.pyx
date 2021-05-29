@@ -67,7 +67,7 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
@@ -1283,9 +1283,11 @@ cdef class DataEngine(Component):
                 logger=self._log.get_logger(),
             )
         else:
-            raise RuntimeError(f"Cannot start aggregator, "
-                               f"BarAggregation.{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
-                               f"not currently supported in this version")
+            raise RuntimeError(
+                f"Cannot start aggregator, "
+                f"BarAggregation.{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
+                f"not currently supported in this version"
+            )
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator

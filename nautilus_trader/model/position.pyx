@@ -21,7 +21,7 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -60,6 +60,7 @@ cdef class Position:
         self._execution_ids = []  # type: list[ExecutionId]
         self._buy_qty = Decimal()
         self._sell_qty = Decimal()
+        self._commissions = {}
 
         # Identifiers
         self.id = fill.position_id
@@ -82,13 +83,14 @@ cdef class Position:
         self.avg_px_close = None  # Can be None
         self.price_precision = instrument.price_precision
         self.size_precision = instrument.size_precision
-        self.is_inverse = instrument.is_inverse
+        self.multiplier = instrument.multiplier
         self.quote_currency = instrument.quote_currency
+        self.pnl_currency = instrument.pnl_currency
+        self.is_inverse = instrument.is_inverse
         self.realized_points = Decimal()
         self.realized_return = Decimal()
-        self.realized_pnl = Money(0, self.quote_currency)
-        self.commission = Money(0, self.quote_currency)
-        self._commissions = {}
+        self.realized_pnl = Money(0, self.pnl_currency)
+        self.commission = Money(0, self.pnl_currency)
 
         self.apply(fill)
 
@@ -377,7 +379,7 @@ cdef class Position:
         cdef Currency currency = fill.commission.currency
         cdef Money cum_commission = Money(self._commissions.get(currency, Decimal()) + fill.commission, currency)
         self._commissions[currency] = cum_commission
-        if currency == self.quote_currency:
+        if currency == self.pnl_currency:
             self.commission = cum_commission
 
         # Calculate avg prices, points, return, PnL
@@ -386,7 +388,7 @@ cdef class Position:
         else:  # event.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
 
-        # Set quantities  # TODO: Refactor when precision available
+        # Set quantities
         self.quantity = Quantity(abs(self.relative_qty), self.size_precision)
         if self.quantity > self.peak_qty:
             self.peak_qty = self.quantity
@@ -419,9 +421,9 @@ cdef class Position:
         Condition.not_none(last, "last")
 
         if self.is_inverse:
-            return Money(self.quantity, self.quote_currency)
+            return Money(self.quantity * self.multiplier, self.quote_currency)
         else:
-            return Money(self.quantity * last, self.quote_currency)
+            return Money(self.quantity * self.multiplier * last, self.quote_currency)
 
     cpdef Money calculate_pnl(
         self,
@@ -444,7 +446,7 @@ cdef class Position:
         Returns
         -------
         Money
-            In the settlement currency.
+            In quote currency.
 
         """
         Condition.type(avg_px_open, (Decimal, Price), "avg_px_open")
@@ -457,7 +459,7 @@ cdef class Position:
             quantity=quantity,
         )
 
-        return Money(pnl, self.quote_currency)
+        return Money(pnl, self.pnl_currency)
 
     cpdef Money unrealized_pnl(self, Price last):
         """
@@ -484,7 +486,8 @@ cdef class Position:
             avg_px_close=last,
             quantity=self.quantity,
         )
-        return Money(pnl, self.quote_currency)
+
+        return Money(pnl, self.pnl_currency)
 
     cpdef Money total_pnl(self, Price last):
         """
@@ -503,7 +506,9 @@ cdef class Position:
         """
         Condition.not_none(last, "last")
 
-        return Money(self.realized_pnl + self.unrealized_pnl(last), self.quote_currency)
+        pnl: Decimal = self.realized_pnl + self.unrealized_pnl(last)
+
+        return Money(pnl, self.pnl_currency)
 
     cpdef list commissions(self):
         """
@@ -518,7 +523,7 @@ cdef class Position:
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
-        if fill.commission.currency == self.quote_currency:
+        if fill.commission.currency == self.pnl_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
         else:
             realized_pnl: Decimal = Decimal()
@@ -533,7 +538,7 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px, fill.last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.quote_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.pnl_currency)
 
         # Update quantities
         self._buy_qty = self._buy_qty + fill.last_qty
@@ -541,7 +546,7 @@ cdef class Position:
 
     cdef inline void _handle_sell_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
-        if fill.commission.currency == self.quote_currency:
+        if fill.commission.currency == self.pnl_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
         else:
             realized_pnl: Decimal = Decimal()
@@ -556,7 +561,7 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
             realized_pnl += self._calculate_pnl(self.avg_px_open, fill.last_px, fill.last_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.quote_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.pnl_currency)
 
         # Update quantities
         self._sell_qty = self._sell_qty + fill.last_qty
@@ -612,6 +617,6 @@ cdef class Position:
         quantity: Decimal,
     ):
         if self.is_inverse:
-            return self._calculate_return(avg_px_open, avg_px_close) * quantity
+            return quantity * self.multiplier * self._calculate_points_inverse(avg_px_open, avg_px_close)
         else:
-            return self._calculate_points(avg_px_open, avg_px_close) * quantity
+            return quantity * self.multiplier * self._calculate_points(avg_px_open, avg_px_close)

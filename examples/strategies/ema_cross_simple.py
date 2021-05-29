@@ -23,7 +23,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.tick import QuoteTick

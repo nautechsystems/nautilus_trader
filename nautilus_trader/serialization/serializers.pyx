@@ -68,7 +68,11 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
+from nautilus_trader.model.instruments.cfd cimport CFDInstrument
+from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -169,15 +173,15 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             ID: instrument.id.value,
             ASSET_CLASS: self.convert_snake_to_camel(asset_class),
             ASSET_TYPE: self.convert_snake_to_camel(asset_type),
-            BASE_CURRENCY: instrument.base_currency.code if instrument.base_currency is not None else None,
             QUOTE_CURRENCY: instrument.quote_currency.code,
-            SETTLEMENT_CURRENCY: instrument.settlement_currency.code,
+            PNL_CURRENCY: instrument.pnl_currency.code,
             IS_INVERSE: instrument.is_inverse,
             PRICE_PRECISION: instrument.price_precision,
             SIZE_PRECISION: instrument.size_precision,
-            TICK_SIZE: str(instrument.tick_size),
+            PRICE_INCREMENT: str(instrument.price_increment),
+            SIZE_INCREMENT: str(instrument.size_increment),
             MULTIPLIER: str(instrument.multiplier),
-            LOT_SIZE: str(instrument.lot_size),
+            LOT_SIZE: str(instrument.lot_size) if instrument.lot_size is not None else None,
             MAX_QUANTITY: str(instrument.max_quantity) if instrument.max_quantity is not None else None,
             MIN_QUANTITY: str(instrument.min_quantity) if instrument.min_quantity is not None else None,
             MAX_NOTIONAL: instrument.max_notional.to_str() if instrument.max_notional is not None else None,
@@ -191,6 +195,33 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             TIMESTAMP_ORIGIN: instrument.timestamp_origin_ns,
             TIMESTAMP: instrument.timestamp_ns,
         }
+
+        if isinstance(instrument, CurrencySpot):
+            package[BASE_CURRENCY] = instrument.base_currency.code
+        elif isinstance(instrument, CryptoSwap):
+            package[BASE_CURRENCY] = instrument.base_currency.code
+            package[SETTLEMENT_CURRENCY] = instrument.settlement_currency.code
+        elif isinstance(instrument, BettingInstrument):
+            package["BettingInfo"] = {
+                "event_type_id": instrument.event_type_id,
+                "event_type_name": instrument.event_type_name,
+                "competition_id": instrument.competition_id,
+                "competition_name": instrument.competition_name,
+                "event_id": instrument.event_id,
+                "event_name": instrument.event_name,
+                "event_country_code": instrument.event_country_code,
+                "event_open_date": instrument.event_open_date,
+                "betting_type": instrument.betting_type,
+                "market_id": instrument.market_id,
+                "market_name": instrument.market_name,
+                "market_start_time": instrument.market_start_time,
+                "market_type": instrument.market_type,
+                "selection_id": instrument.selection_id,
+                "selection_name": instrument.selection_name,
+                "selection_handicap": instrument.selection_handicap,
+            }
+
+        # TODO(cs): Other instruments as required
 
         return MsgPackSerializer.serialize(package)
 
@@ -221,26 +252,24 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[ID])
         cdef AssetClass asset_class = AssetClassParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_CLASS]))
         cdef AssetType asset_type = AssetTypeParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_TYPE]))
-
-        cdef str base_currency_str = unpacked.get(BASE_CURRENCY)
-        cdef Currency base_currency = Currency.from_str_c(base_currency_str) if base_currency_str is not None else None
-
         cdef Currency quote_currency = Currency.from_str_c(unpacked[QUOTE_CURRENCY])
-        cdef Currency settlement_currency = Currency.from_str_c(unpacked[SETTLEMENT_CURRENCY])
+        cdef Currency pnl_currency = Currency.from_str_c(unpacked[PNL_CURRENCY])
         cdef bint is_inverse = unpacked[IS_INVERSE]
         cdef uint8_t price_precision = unpacked[PRICE_PRECISION]
         cdef uint8_t size_precision = unpacked[SIZE_PRECISION]
-        cdef object tick_size = decimal.Decimal(unpacked[TICK_SIZE])
-        cdef object multiplier = decimal.Decimal(unpacked[MULTIPLIER])
-        cdef Quantity lot_size = Quantity.from_str_c(unpacked[LOT_SIZE])
+        cdef Price price_increment = Price.from_str_c(unpacked[PRICE_INCREMENT])
+        cdef Quantity size_increment = Quantity.from_str_c(unpacked[SIZE_INCREMENT])
+        cdef Quantity multiplier = Quantity.from_str_c(unpacked[MULTIPLIER])
 
         # Parse limits
+        cdef str lot_size_str = unpacked[LOT_SIZE]
         cdef str max_quantity_str = unpacked.get(MAX_QUANTITY)
         cdef str min_quantity_str = unpacked.get(MIN_QUANTITY)
         cdef str max_notional_str = unpacked.get(MAX_NOTIONAL)
         cdef str min_notional_str = unpacked.get(MIN_NOTIONAL)
         cdef str max_price_str = unpacked.get(MAX_PRICE)
         cdef str min_price_str = unpacked.get(MIN_PRICE)
+        cdef Quantity lot_size = Quantity.from_str_c(lot_size_str) if lot_size_str is not None else None
         cdef Quantity max_quantity = Quantity.from_str_c(max_quantity_str) if max_quantity_str is not None else None
         cdef Quantity min_quantity = Quantity.from_str_c(min_quantity_str) if min_quantity_str is not None else None
         cdef Money max_notional = Money.from_str_c(max_notional_str.replace(',', '')) if max_notional_str is not None else None
@@ -260,13 +289,13 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 instrument_id=instrument_id,
                 asset_class=asset_class,
                 asset_type=asset_type,
-                base_currency=base_currency,
                 quote_currency=quote_currency,
-                settlement_currency=settlement_currency,
+                pnl_currency=pnl_currency,
                 is_inverse=is_inverse,
                 price_precision=price_precision,
                 size_precision=size_precision,
-                tick_size=tick_size,
+                price_increment=price_increment,
+                size_increment=size_increment,
                 multiplier=multiplier,
                 lot_size=lot_size,
                 max_quantity=max_quantity,
@@ -279,6 +308,77 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 margin_maint=margin_maint,
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
+                timestamp_origin_ns=timestamp_origin_ns,
+                timestamp_ns=timestamp_ns,
+            )
+        elif instrument_type == CurrencySpot.__name__:
+            return CurrencySpot(
+                instrument_id=instrument_id,
+                base_currency=Currency.from_str_c(unpacked[BASE_CURRENCY]),
+                quote_currency=quote_currency,
+                price_precision=price_precision,
+                size_precision=size_precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                lot_size=lot_size,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=max_notional,
+                min_notional=min_notional,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=margin_init,
+                margin_maint=margin_maint,
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
+                timestamp_origin_ns=timestamp_origin_ns,
+                timestamp_ns=timestamp_ns,
+            )
+        elif instrument_type == CryptoSwap.__name__:
+            return CryptoSwap(
+                instrument_id=instrument_id,
+                base_currency=Currency.from_str_c(unpacked[BASE_CURRENCY]),
+                quote_currency=quote_currency,
+                settlement_currency=Currency.from_str_c(unpacked[SETTLEMENT_CURRENCY]),
+                is_inverse=is_inverse,
+                price_precision=price_precision,
+                size_precision=size_precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=max_notional,
+                min_notional=min_notional,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=margin_init,
+                margin_maint=margin_maint,
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
+                timestamp_origin_ns=timestamp_origin_ns,
+                timestamp_ns=timestamp_ns,
+            )
+        elif instrument_type == BettingInstrument.__name__:
+            betting_info = unpacked["BettingInfo"]
+            return BettingInstrument(
+                venue_name="BETFAIR",  # TODO(bm): Hardcoded for now
+                betting_type="ODDS",
+                event_country_code=betting_info.get("event_country_code"),
+                event_id=betting_info.get("event_id"),
+                competition_id=betting_info.get("competition_id"),
+                competition_name=betting_info.get("competition_name"),
+                event_name=betting_info.get("event_name"),
+                event_open_date=betting_info.get("event_open_date"),
+                event_type_id=betting_info.get("event_type_id"),
+                event_type_name=betting_info.get("event_type_name"),
+                market_id=betting_info.get("market_id"),
+                market_name=betting_info.get("market_name"),
+                market_start_time=betting_info.get("market_start_time"),
+                market_type=betting_info.get("market_type"),
+                currency=betting_info.get("currency"),
+                selection_id=betting_info.get("selection_id"),
+                selection_name=betting_info.get("selection_name"),
+                selection_handicap=betting_info.get("selection_handicap"),
                 timestamp_origin_ns=timestamp_origin_ns,
                 timestamp_ns=timestamp_ns,
             )

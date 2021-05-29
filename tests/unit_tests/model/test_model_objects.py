@@ -637,13 +637,22 @@ class TestPrice:
         assert str(price) == "100"
         assert price.precision == 0
 
-    def test_from_str_returns_expected_value(self):
+    @pytest.mark.parametrize(
+        "value, string, precision",
+        [
+            ["100.11", "100.11", 2],
+            ["1E7", "10000000", 0],
+            ["1E-7", "1E-7", 7],
+            ["1e-2", "0.01", 2],
+        ],
+    )
+    def test_from_str_returns_expected_value(self, value, string, precision):
         # Arrange, Act
-        price = Price.from_str("100.11")
+        price = Price.from_str(value)
 
         # Assert
-        assert str(price) == "100.11"
-        assert price.precision == 2
+        assert str(price) == string
+        assert price.precision == precision
 
     def test_str_repr(self):
         # Arrange, Act
