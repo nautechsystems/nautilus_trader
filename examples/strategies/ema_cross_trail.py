@@ -25,7 +25,7 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -114,7 +114,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
             self.stop()
             return
 
-        self.tick_size = self.instrument.tick_size
+        self.tick_size = self.instrument.price_increment
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)

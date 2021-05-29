@@ -33,7 +33,9 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -114,7 +116,7 @@ cdef class DataCache(DataCacheFacade):
         """
         self._instruments[instrument.id] = instrument
 
-        if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
+        if isinstance(instrument, (CurrencySpot, CryptoSwap)):
             self._xrate_symbols[instrument.id] = (f"{instrument.base_currency}/"
                                                   f"{instrument.quote_currency}")
 
@@ -755,10 +757,3 @@ cdef class DataCache(DataCacheFacade):
             ask_quotes[base_quote] = ticks[0].ask.as_decimal()
 
         return bid_quotes, ask_quotes
-
-    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
-        return instrument.asset_class == AssetClass.CRYPTO \
-            and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
-
-    cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
-        return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT

@@ -16,7 +16,7 @@
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Future
+from nautilus_trader.model.instruments.future cimport Future
 
 
 cdef class IBInstrumentProvider(InstrumentProvider):

@@ -21,6 +21,8 @@ from parameterized import parameterized
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import LiquiditySide
@@ -969,25 +971,25 @@ class PositionTests(unittest.TestCase):
             instrument=XBTUSD_BITMEX,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
-            last_px=Price(10000.00, precision=2),
+            last_px=Price.from_str("10000.00"),
         )
 
         position = Position(instrument=XBTUSD_BITMEX, fill=fill)
 
         # Act
         pnl = position.calculate_pnl(
-            Price(10000.00, precision=2),
-            Price(11000.00, precision=2),
+            Price.from_str("10000.00"),
+            Price.from_str("11000.00"),
             Quantity.from_int(100000),
         )
 
         # Assert
-        self.assertEqual(Money(-10000.00, USD), pnl)
+        self.assertEqual(Money(-0.90909091, BTC), pnl)
         self.assertEqual(
-            Money(-10000.00, USD), position.unrealized_pnl(Price.from_str("11000.00"))
+            Money(-0.90909091, BTC), position.unrealized_pnl(Price.from_str("11000.00"))
         )
-        self.assertEqual(Money(0.00, USD), position.realized_pnl)
-        self.assertEqual(Money(0.00, USD), position.commission)
+        self.assertEqual(Money(-0.0075, BTC), position.realized_pnl)
+        self.assertEqual(Money(0.0075, BTC), position.commission)
         self.assertEqual(
             Money(100000.00, USD), position.notional_value(Price.from_str("11000.00"))
         )
@@ -1010,10 +1012,9 @@ class PositionTests(unittest.TestCase):
 
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
 
-        # Act
-        # Assert
+        # Act, Assert
         self.assertEqual(
-            Money(1582.66, USD), position.unrealized_pnl(Price.from_str("370.00"))
+            Money(4.27745208, ETH), position.unrealized_pnl(Price.from_str("370.00"))
         )
         self.assertEqual(
             Money(100000.00, USD), position.notional_value(Price.from_str("370.00"))

@@ -40,7 +40,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
@@ -504,10 +504,10 @@ cdef class Portfolio(PortfolioFacade):
 
             if xrate == 0:
                 self._log.error(f"Cannot calculate market value (insufficient data for "
-                                f"{instrument.quote_currency}/{account.default_currency}).")
+                                f"{instrument.pnl_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
-            market_value = market_values.get(instrument.settlement_currency, Decimal(0))
+            market_value = market_values.get(instrument.quote_currency, Decimal(0))
             market_value += Account.market_value(
                 instrument,
                 position.quantity,
@@ -517,7 +517,7 @@ cdef class Portfolio(PortfolioFacade):
             if account.default_currency is not None:
                 market_values[account.default_currency] = market_value
             else:
-                market_values[instrument.settlement_currency] = market_value
+                market_values[instrument.quote_currency] = market_value
 
         return {k: Money(v, k) for k, v in market_values.items()}
 
@@ -601,7 +601,7 @@ cdef class Portfolio(PortfolioFacade):
 
             if xrate == 0:
                 self._log.error(f"Cannot calculate market value (insufficient data for "
-                                f"{instrument.settlement_currency}/{account.default_currency}).")
+                                f"{instrument.pnl_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
             market_value += Account.market_value(
@@ -613,7 +613,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.default_currency is not None:
             return Money(market_value, account.default_currency)
         else:
-            return Money(market_value, instrument.settlement_currency)
+            return Money(market_value, instrument.quote_currency)
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
@@ -762,12 +762,12 @@ cdef class Portfolio(PortfolioFacade):
 
                 if xrate == 0:
                     self._log.error(f"Cannot calculate initial margin (insufficient data for "
-                                    f"{instrument.settlement_currency}/{currency}).")
+                                    f"{instrument.pnl_currency}/{currency}).")
                     continue  # Cannot calculate
 
                 margin *= xrate
             else:
-                currency = instrument.settlement_currency
+                currency = instrument.quote_currency
 
             # Update total margin
             total_margin = margins.get(currency, Decimal(0))
@@ -828,12 +828,12 @@ cdef class Portfolio(PortfolioFacade):
 
                 if xrate == 0:
                     self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
-                                    f"{instrument.settlement_currency}/{currency}).")
+                                    f"{instrument.pnl_currency}/{currency}).")
                     continue  # Cannot calculate
 
                 margin *= xrate
             else:
-                currency = instrument.settlement_currency
+                currency = instrument.quote_currency
 
             # Update total margin
             total_margin = margins.get(currency, Decimal(0))
@@ -868,7 +868,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.default_currency is not None:
             currency = account.default_currency
         else:
-            currency = instrument.settlement_currency
+            currency = instrument.quote_currency
 
         cdef list positions_open = self._exec_cache.positions_open(
             venue=None,  # Faster query filtering
@@ -878,7 +878,7 @@ cdef class Portfolio(PortfolioFacade):
             if account.default_currency is not None:
                 return Money(0, account.default_currency)
             else:
-                return Money(0, instrument.settlement_currency)
+                return Money(0, instrument.pnl_currency)
 
         total_pnl: Decimal = Decimal(0)
 
@@ -904,7 +904,7 @@ cdef class Portfolio(PortfolioFacade):
 
                 if xrate == 0:
                     self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
-                                    f"{instrument.settlement_currency}/{currency}).")
+                                    f"{instrument.pnl_currency}/{currency}).")
                     return None  # Cannot calculate
 
                 pnl *= xrate
@@ -917,7 +917,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.default_currency is not None:
             return self._data_cache.get_xrate(
                 venue=instrument.id.venue,
-                from_currency=instrument.settlement_currency,
+                from_currency=instrument.pnl_currency,
                 to_currency=account.default_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )

@@ -29,8 +29,6 @@ from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
 from nautilus_trader.backtest.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.c_enums.asset_class import AssetClass
-from nautilus_trader.model.c_enums.asset_type import AssetType
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
@@ -41,7 +39,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
+from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -251,33 +250,27 @@ class TestInstrumentProvider:
     """
 
     @staticmethod
-    def btcusdt_binance() -> Instrument:
+    def btcusdt_binance() -> CurrencySpot:
         """
         Return the Binance BTC/USDT instrument for backtesting.
 
         Returns
         -------
-        Instrument
+        CurrencySpot
 
         """
-        instrument_id = InstrumentId(
-            symbol=Symbol("BTC/USDT"),
-            venue=Venue("BINANCE"),
-        )
-
-        return Instrument(
-            instrument_id=instrument_id,
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SPOT,
+        return CurrencySpot(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTC/USDT"),
+                venue=Venue("BINANCE"),
+            ),
             base_currency=BTC,
             quote_currency=USDT,
-            settlement_currency=USDT,
-            is_inverse=False,
             price_precision=2,
             size_precision=6,
-            tick_size=Decimal("0.01"),
-            multiplier=Decimal("1"),
-            lot_size=Quantity(1, precision=0),
+            price_increment=Price(1e-02, precision=2),
+            size_increment=Quantity(1e-06, precision=6),
+            lot_size=None,
             max_quantity=Quantity(9000, precision=6),
             min_quantity=Quantity(1e-06, precision=6),
             max_notional=None,
@@ -293,33 +286,27 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusdt_binance() -> Instrument:
+    def ethusdt_binance() -> CurrencySpot:
         """
         Return the Binance ETH/USDT instrument for backtesting.
 
         Returns
         -------
-        Instrument
+        CurrencySpot
 
         """
-        instrument_id = InstrumentId(
-            symbol=Symbol("ETH/USDT"),
-            venue=Venue("BINANCE"),
-        )
-
-        return Instrument(
-            instrument_id=instrument_id,
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SPOT,
+        return CurrencySpot(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ETH/USDT"),
+                venue=Venue("BINANCE"),
+            ),
             base_currency=ETH,
             quote_currency=USDT,
-            settlement_currency=USDT,
-            is_inverse=False,
             price_precision=2,
             size_precision=5,
-            tick_size=Decimal("0.01"),
-            multiplier=Decimal("1"),
-            lot_size=Quantity(1, precision=0),
+            price_increment=Price(1e-02, precision=2),
+            size_increment=Quantity(1e-05, precision=5),
+            lot_size=None,
             max_quantity=Quantity(9000, precision=5),
             min_quantity=Quantity(1e-05, precision=5),
             max_notional=None,
@@ -335,33 +322,28 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def xbtusd_bitmex() -> Instrument:
+    def xbtusd_bitmex() -> CryptoSwap:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
 
         Returns
         -------
-        Instrument
+        CryptoSwap
 
         """
-        instrument_id = InstrumentId(
-            symbol=Symbol("XBT/USD"),
-            venue=Venue("BITMEX"),
-        )
-
-        return Instrument(
-            instrument_id=instrument_id,
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
+        return CryptoSwap(
+            instrument_id=InstrumentId(
+                symbol=Symbol("XBT/USD"),
+                venue=Venue("BITMEX"),
+            ),
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
             is_inverse=True,
             price_precision=1,
             size_precision=0,
-            tick_size=Decimal("0.5"),
-            multiplier=Decimal("1"),
-            lot_size=Quantity(1, precision=0),
+            price_increment=Price.from_str("0.5"),
+            size_increment=Quantity.from_int(1),
             max_quantity=None,
             min_quantity=None,
             max_notional=Money(10_000_000.00, USD),
@@ -377,33 +359,28 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def ethusd_bitmex() -> Instrument:
+    def ethusd_bitmex() -> CryptoSwap:
         """
-        Return the BitMEX ETH/USD perpetual contract for backtesting.
+        Return the BitMEX ETH/USD perpetual swap contract for backtesting.
 
         Returns
         -------
-        Instrument
+        CryptoSwap
 
         """
-        instrument_id = InstrumentId(
-            symbol=Symbol("ETH/USD"),
-            venue=Venue("BITMEX"),
-        )
-
-        return Instrument(
-            instrument_id=instrument_id,
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
+        return CryptoSwap(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ETH/USD"),
+                venue=Venue("BITMEX"),
+            ),
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
             is_inverse=True,
             price_precision=2,
             size_precision=0,
-            tick_size=Decimal("0.05"),
-            multiplier=Decimal("1"),
-            lot_size=Quantity.from_int(1),
+            price_increment=Price.from_str("0.05"),
+            size_increment=Quantity.from_int(1),
             max_quantity=Quantity.from_int(10000000),
             min_quantity=Quantity.from_int(1),
             max_notional=None,
@@ -419,7 +396,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue = None) -> Instrument:
+    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencySpot:
         """
         Return a default FX currency pair instrument from the given instrument_id.
 
@@ -432,7 +409,7 @@ class TestInstrumentProvider:
 
         Returns
         -------
-        Instrument
+        CurrencySpot
 
         Raises
         ------
@@ -459,18 +436,14 @@ class TestInstrumentProvider:
         else:
             price_precision = 5
 
-        return Instrument(
+        return CurrencySpot(
             instrument_id=instrument_id,
-            asset_class=AssetClass.FX,
-            asset_type=AssetType.SPOT,
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
-            settlement_currency=Currency.from_str(quote_currency),
-            is_inverse=False,
             price_precision=price_precision,
             size_precision=0,
-            tick_size=Decimal(f"{1 / 10 ** price_precision:.{price_precision}f}"),
-            multiplier=Decimal("1"),
+            price_increment=Price(1 / 10 ** price_precision, price_precision),
+            size_increment=Quantity.from_int(1),
             lot_size=Quantity.from_str("1000"),
             max_quantity=Quantity.from_str("1e7"),
             min_quantity=Quantity.from_str("1000"),
