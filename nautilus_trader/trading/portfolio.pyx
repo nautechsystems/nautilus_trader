@@ -133,6 +133,8 @@ cdef class Portfolio(PortfolioFacade):
         self._unrealized_pnls = {}   # type: dict[InstrumentId, Money]
         self._net_positions = {}     # type: dict[InstrumentId, Decimal]
 
+        self.initialized = False
+
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void register_data_cache(self, DataCacheFacade cache) except *:
@@ -348,7 +350,10 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._exec_cache.account_for_venue(venue)
         # TODO(cs): Assumption that account.id.issues = venue
         if account is None:
-            self._log.error(f"Cannot get account (no account registered for {venue}).")
+            self._log.error(
+                f"Cannot get account: "
+                f"no account registered for {venue}."
+            )
 
         return account
 
@@ -374,8 +379,8 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._exec_cache.account_for_venue(venue)
         if account is None:
             self._log.error(
-                f"Cannot calculate order margin "
-                f"(no account registered for {venue}).",
+                f"Cannot calculate order margin: "
+                f"no account registered for {venue}."
             )
             return None
 
@@ -401,8 +406,8 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._exec_cache.account_for_venue(venue)
         if account is None:
             self._log.error(
-                f"Cannot calculate position margin "
-                f"(no account registered for {venue}).",
+                f"Cannot calculate position margin: "
+                f"no account registered for {venue}."
             )
             return None
 
@@ -470,8 +475,10 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Account account = self._exec_cache.account_for_venue(venue)
         if account is None:
-            self._log.error(f"Cannot calculate market value "
-                            f"(no account registered for {venue}).")
+            self._log.error(
+                f"Cannot calculate market value: "
+                f"no account registered for {venue}."
+            )
             return None  # Cannot calculate
 
         cdef list positions_open = self._exec_cache.positions_open(venue)
@@ -486,14 +493,18 @@ cdef class Portfolio(PortfolioFacade):
         for position in positions_open:
             instrument = self._exec_cache.instrument(position.instrument_id)
             if instrument is None:
-                self._log.error(f"Cannot calculate market value "
-                                f"(no instrument for {position.instrument_id}).")
+                self._log.error(
+                    f"Cannot calculate market value: "
+                    f"no instrument for {position.instrument_id}."
+                )
                 return None  # Cannot calculate
 
             last = self._get_last_price(position)
             if last is None:
-                self._log.error(f"Cannot calculate market value "
-                                f"(no prices for {position.instrument_id}).")
+                self._log.error(
+                    f"Cannot calculate market value: "
+                    f"no prices for {position.instrument_id}."
+                )
                 continue  # Cannot calculate
 
             xrate = self._calculate_xrate(
@@ -503,8 +514,10 @@ cdef class Portfolio(PortfolioFacade):
             )
 
             if xrate == 0:
-                self._log.error(f"Cannot calculate market value (insufficient data for "
-                                f"{instrument.cost_currency}/{account.default_currency}).")
+                self._log.error(
+                    f"Cannot calculate market value: "
+                    f"insufficient data for {instrument.cost_currency}/{account.default_currency}."
+                )
                 return None  # Cannot calculate
 
             market_value = market_values.get(instrument.quote_currency, Decimal(0))
@@ -565,14 +578,18 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Account account = self._exec_cache.account_for_venue(instrument_id.venue)
         if account is None:
-            self._log.error(f"Cannot calculate market value "
-                            f"(no account registered for {instrument_id.venue}).")
+            self._log.error(
+                f"Cannot calculate market value: "
+                f"no account registered for {instrument_id.venue}."
+            )
             return None  # Cannot calculate
 
         cdef instrument = self._exec_cache.instrument(instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot calculate market value "
-                            f"(no instrument for {instrument_id}).")
+            self._log.error(
+                f"Cannot calculate market value: "
+                f"no instrument for {instrument_id}."
+            )
             return None  # Cannot calculate
 
         cdef list positions_open = self._exec_cache.positions_open(instrument_id.venue)
@@ -589,8 +606,10 @@ cdef class Portfolio(PortfolioFacade):
 
             last = self._get_last_price(position)
             if last is None:
-                self._log.error(f"Cannot calculate market value "
-                                f"(no prices for {position.instrument_id}).")
+                self._log.error(
+                    f"Cannot calculate market value: "
+                    f"no prices for {position.instrument_id}."
+                )
                 continue  # Cannot calculate
 
             xrate = self._calculate_xrate(
@@ -600,8 +619,10 @@ cdef class Portfolio(PortfolioFacade):
             )
 
             if xrate == 0:
-                self._log.error(f"Cannot calculate market value (insufficient data for "
-                                f"{instrument.cost_currency}/{account.default_currency}).")
+                self._log.error(
+                    f"Cannot calculate market value: "
+                    f"insufficient data for {instrument.cost_currency}/{account.default_currency}."
+                )
                 return None  # Cannot calculate
 
             market_value += Account.market_value(
@@ -729,8 +750,10 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Account account = self._exec_cache.account_for_venue(venue)
         if account is None:
-            self._log.error(f"Cannot update initial margin "
-                            f"(no account registered for {venue}).")
+            self._log.error(
+                f"Cannot update initial margin: "
+                f"no account registered for {venue}."
+            )
             return  # Cannot calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
@@ -741,8 +764,10 @@ cdef class Portfolio(PortfolioFacade):
         for order in passive_orders_working:
             instrument = self._exec_cache.instrument(order.instrument_id)
             if instrument is None:
-                self._log.error(f"Cannot calculate initial margin "
-                                f"(no instrument for {order.instrument_id}).")
+                self._log.error(
+                    f"Cannot calculate initial margin: "
+                    f"no instrument for {order.instrument_id}."
+                )
                 continue  # Cannot calculate
 
             # Calculate margin
@@ -761,8 +786,10 @@ cdef class Portfolio(PortfolioFacade):
                 )
 
                 if xrate == 0:
-                    self._log.error(f"Cannot calculate initial margin (insufficient data for "
-                                    f"{instrument.cost_currency}/{currency}).")
+                    self._log.error(
+                        f"Cannot calculate initial margin: "
+                        f"insufficient data for {instrument.cost_currency}/{currency}."
+                    )
                     continue  # Cannot calculate
 
                 margin *= xrate
@@ -787,8 +814,10 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Account account = self._exec_cache.account_for_venue(venue)
         if account is None:
-            self._log.error(f"Cannot update position maintenance margin "
-                            f"(no account registered for {venue}).")
+            self._log.error(
+                f"Cannot update position maintenance margin: "
+                f"no account registered for {venue}."
+            )
             return  # Cannot calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
@@ -800,14 +829,18 @@ cdef class Portfolio(PortfolioFacade):
         for position in positions_open:
             instrument = self._exec_cache.instrument(position.instrument_id)
             if instrument is None:
-                self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(no instrument for {position.instrument_id}).")
+                self._log.error(
+                    f"Cannot calculate position maintenance margin: "
+                    f"no instrument for {position.instrument_id}."
+                )
                 continue  # Cannot calculate
 
             last = self._get_last_price(position)
             if last is None:
-                self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(no prices for {position.instrument_id}).")
+                self._log.error(
+                    f"Cannot calculate position maintenance margin: "
+                    f"no prices for {position.instrument_id}."
+                )
                 continue  # Cannot calculate
 
             # Calculate margin
@@ -827,8 +860,10 @@ cdef class Portfolio(PortfolioFacade):
                 )
 
                 if xrate == 0:
-                    self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
-                                    f"{instrument.cost_currency}/{currency}).")
+                    self._log.error(
+                        f"Cannot calculate unrealized PnL: "
+                        f"insufficient data for {instrument.cost_currency}/{currency})."
+                    )
                     continue  # Cannot calculate
 
                 margin *= xrate
@@ -851,16 +886,16 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._exec_cache.account_for_venue(instrument_id.venue)
         if account is None:
             self._log.error(
-                f"Cannot calculate unrealized PnL "
-                f"(no account registered for {instrument_id.venue}).",
+                f"Cannot calculate unrealized PnL: "
+                f"no account registered for {instrument_id.venue}."
             )
             return None  # Cannot calculate
 
         cdef Instrument instrument = self._exec_cache.instrument(instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot calculate unrealized PnL "
-                f"(no instrument for {instrument_id}).",
+                f"Cannot calculate unrealized PnL: "
+                f"no instrument for {instrument_id}."
             )
             return None  # Cannot calculate
 
@@ -890,10 +925,12 @@ cdef class Portfolio(PortfolioFacade):
 
             last = self._get_last_price(position)
             if last is None:
-                self._log.error(f"Cannot calculate unrealized PnL (no prices for {instrument_id}).")
+                self._log.error(
+                    f"Cannot calculate unrealized PnL: no prices for {instrument_id}."
+                )
                 return None  # Cannot calculate
 
-            pnl = position.unrealized_pnl(last)
+            pnl: Money = position.unrealized_pnl(last)
 
             if account.default_currency is not None:
                 xrate = self._calculate_xrate(
@@ -903,8 +940,10 @@ cdef class Portfolio(PortfolioFacade):
                 )
 
                 if xrate == 0:
-                    self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
-                                    f"{instrument.cost_currency}/{currency}).")
+                    self._log.error(
+                        f"Cannot calculate unrealized PnL: "
+                        f"insufficient data for {instrument.cost_currency}/{currency}."
+                    )
                     return None  # Cannot calculate
 
                 pnl *= xrate

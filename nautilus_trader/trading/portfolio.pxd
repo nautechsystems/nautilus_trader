@@ -35,6 +35,9 @@ cdef class PortfolioFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
+    cdef bint initialized
+    """If the portfolio is initialized.\n\n:returns: `bool`"""
+
     cpdef Account account(self, Venue venue)
 
     cpdef dict initial_margins(self, Venue venue)

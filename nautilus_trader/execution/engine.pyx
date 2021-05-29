@@ -306,12 +306,12 @@ cdef class ExecutionEngine(Component):
             if self._default_client is None:
                 self._default_client = client
                 self._log.info(
-                    f"Registered {client} BROKERAGE_MULTI_VENUE as default client.",
+                    f"Registered {client} BROKERAGE_MULTI_VENUE as default client."
                 )
         else:
             self._routing_map[client.venue] = client
             self._log.info(
-                f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}.",
+                f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}."
             )
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
@@ -361,7 +361,7 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(
             f"Registered {client} {VenueTypeParser.to_str(client.venue_type)} "
-            f"for routing to {venue}.",
+            f"for routing to {venue}."
         )
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
@@ -579,7 +579,8 @@ cdef class ExecutionEngine(Component):
         if client is None:
             self._log.error(
                 f"Cannot execute command: "
-                f"No execution client configured for {command.instrument_id}, {command}.")
+                f"No execution client configured for {command.instrument_id}, {command}."
+            )
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
@@ -641,22 +642,28 @@ cdef class ExecutionEngine(Component):
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self.cache.order(event.client_order_id)
         if order is None:
-            self._log.warning(f"{repr(event.client_order_id)} was not found in cache "
-                              f"for {repr(event.venue_order_id)} to apply {event}.")
+            self._log.warning(
+                f"{repr(event.client_order_id)} was not found in cache "
+                f"for {repr(event.venue_order_id)} to apply {event}."
+            )
 
             # Search cache for ClientOrderId matching the VenueOrderId
             client_order_id = self.cache.client_order_id(event.venue_order_id)
             if client_order_id is None:
-                self._log.error(f"Cannot apply event to any order: "
-                                f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
-                                f"not found in cache.")
+                self._log.error(
+                    f"Cannot apply event to any order: "
+                    f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
+                    f"not found in cache."
+                )
                 return  # Cannot process event further
 
             # Search cache for Order matching the found ClientOrderId
             order = self.cache.order(client_order_id)
             if order is None:
-                self._log.error(f"Cannot apply event to any order: "
-                                f"order for {repr(client_order_id)} not found in cache.")
+                self._log.error(
+                    f"Cannot apply event to any order: "
+                    f"order for {repr(client_order_id)} not found in cache."
+                )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
@@ -710,9 +717,11 @@ cdef class ExecutionEngine(Component):
             # Check if strategy identifier assigned for position
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
-            self._log.error(f"Cannot find StrategyId for "
-                            f"{repr(fill.client_order_id)} and "
-                            f"{repr(fill.position_id)} not found for {fill}.")
+            self._log.error(
+                f"Cannot find StrategyId for "
+                f"{repr(fill.client_order_id)} and "
+                f"{repr(fill.position_id)} not found for {fill}."
+            )
 
     cdef inline void _confirm_position_id(self, OrderFilled fill) except *:
         if fill.position_id.not_null():
@@ -758,7 +767,8 @@ cdef class ExecutionEngine(Component):
         if instrument is None:
             self._log.error(
                 f"Cannot open position: "
-                f"no instrument found for {fill.instrument_id.value}, {fill}.")
+                f"no instrument found for {fill.instrument_id.value}, {fill}."
+            )
             return
 
         cdef Position position = Position(instrument, fill)
@@ -883,14 +893,18 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
-            self._log.error(f"Cannot send event to strategy: "
-                            f"{repr(strategy_id)} not found for {event}.")
+            self._log.error(
+                f"Cannot send event to strategy: "
+                f"{repr(strategy_id)} not found for {event}."
+            )
             return  # Cannot send to strategy
 
         cdef TradingStrategy strategy = self._strategies.get(strategy_id)
         if strategy is None:
-            self._log.error(f"Cannot send event to strategy: "
-                            f"{repr(strategy_id)} not registered for {event}.")
+            self._log.error(
+                f"Cannot send event to strategy: "
+                f"{repr(strategy_id)} not registered for {event}."
+            )
             return  # Cannot send to strategy
 
         strategy.handle_event(event)
