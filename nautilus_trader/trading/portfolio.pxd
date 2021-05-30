@@ -35,7 +35,7 @@ cdef class PortfolioFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
-    cdef bint initialized
+    cdef readonly bint initialized
     """If the portfolio is initialized.\n\n:returns: `bool`"""
 
     cpdef Account account(self, Venue venue)
@@ -64,6 +64,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef dict _unrealized_pnls
     cdef dict _net_positions
+    cdef set _pending_calcs
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -84,8 +85,8 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef object _net_position(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
-    cdef void _update_initial_margin(self, Venue venue, list orders_working) except *
-    cdef void _update_maint_margin(self, Venue venue, list positions_open) except *
+    cdef bint _update_initial_margin(self, Venue venue, list orders_working) except *
+    cdef bint _update_maint_margin(self, Venue venue, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
     cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side)
     cdef Price _get_last_price(self, Position position)

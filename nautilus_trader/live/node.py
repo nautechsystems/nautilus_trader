@@ -30,6 +30,7 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
@@ -393,7 +394,13 @@ class TradingNode:
             while self._is_running:
                 time.sleep(0.1)
                 if self._clock.utc_now() >= timeout:
-                    self._log.warning("Timed out (5s) waiting for node to stop.")
+                    self._log.warning(
+                        "Timed out (5s) waiting for node to stop."
+                        f"\nStatus"
+                        f"\n------"
+                        f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
+                        f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
+                    )
                     break
 
             self._log.info("state=DISPOSING...")
@@ -506,26 +513,38 @@ class TradingNode:
     async def _await_engines_connected(self) -> bool:
         self._log.info(
             f"Waiting for engines to initialize "
-            f"({self._connection_timeout}s timeout)..."
+            f"({self._connection_timeout}s timeout)...",
+            color=LogColor.BLUE,
         )
 
-        # The data engine clients will be set as connected when all
+        # - The data engine clients will be set connected when all
         # instruments are received and updated with the data engine.
-        # The execution engine clients will be set as connected when all
+        # - The execution engine clients will be set connected when all
         # accounts are updated and the current order and position status is
-        # reconciled. Thus any delay here will be due to blocking network IO.
+        # reconciled.
+        # - The portfolio will be set initialized when all margin and unrealized
+        # PnL calculations are completed (may be waiting on first quote).
+        # Thus any delay here will be due to blocking network IO.
         seconds = self._connection_timeout
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
             if self._clock.utc_now() >= timeout:
                 self._log.error(
-                    f"Timed out ({seconds}s) waiting for engines to connect."
+                    f"Timed out ({seconds}s) waiting for engines to connect "
+                    f"and portfolio to initialize."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
+                    f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}"
+                    f"\nPortfolio.initialized == {self.portfolio.initialized}"
                 )
                 return False
             if not self._data_engine.check_connected():
                 continue
             if not self._exec_engine.check_connected():
+                continue
+            if not self.portfolio.initialized:
                 continue
             break
 
@@ -538,7 +557,8 @@ class TradingNode:
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
             self._log.info(
-                f"Awaiting residual state ({self._check_residuals_delay}s delay)..."
+                f"Awaiting residual state ({self._check_residuals_delay}s delay)...",
+                color=LogColor.BLUE,
             )
             await asyncio.sleep(self._check_residuals_delay)
             self.trader.check_residuals()
@@ -568,7 +588,8 @@ class TradingNode:
     async def _await_engines_disconnected(self) -> None:
         self._log.info(
             f"Waiting for engines to disconnect "
-            f"({self._disconnection_timeout}s timeout)..."
+            f"({self._disconnection_timeout}s timeout)...",
+            color=LogColor.BLUE,
         )
 
         seconds = self._disconnection_timeout
@@ -578,6 +599,10 @@ class TradingNode:
             if self._clock.utc_now() >= timeout:
                 self._log.error(
                     f"Timed out ({seconds}s) waiting for engines to disconnect."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
+                    f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
                 )
                 break
             if not self._data_engine.check_disconnected():
