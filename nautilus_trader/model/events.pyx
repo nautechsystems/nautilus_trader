@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -54,11 +55,11 @@ cdef class AccountState(Event):
     def __init__(
         self,
         AccountId account_id not None,
+        bint reported,
         list balances not None,
-        list balances_free not None,
-        list balances_locked not None,
         dict info not None,
         UUID event_id not None,
+        int64_t updated_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -68,16 +69,16 @@ cdef class AccountState(Event):
         ----------
         account_id : AccountId
             The account identifier.
-        balances : list[Money]
-            The current account balances.
-        balances_free : list[Money]
-            The account balances free for trading.
-        balances_locked : list[Money]
-            The account balances locked (assigned as margin collateral).
+        reported : bool
+            If the state is reported from the exchange (otherwise system calculated).
+        balances : list[AccountBalance]
+            The account balances
         info : dict [str, object]
             The additional implementation specific account information.
         event_id : UUID
             The event identifier.
+        updated_ns : int64
+            The Unix timestamp (nanos) of the account update.
         timestamp_ns : int64
             The Unix timestamp (nanos) of the event initialization.
 
@@ -85,16 +86,16 @@ cdef class AccountState(Event):
         super().__init__(event_id, timestamp_ns)
 
         self.account_id = account_id
+        self.is_reported = reported
         self.balances = balances
-        self.balances_free = balances_free
-        self.balances_locked = balances_locked
         self.info = info
+        self.updated_ns = updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"free=[{', '.join([b.to_str() for b in self.balances_free])}], "
-                f"locked=[{', '.join([b.to_str() for b in self.balances_locked])}], "
+                f"is_reported={self.is_reported}, "
+                f"balances=[{', '.join([str(b) for b in self.balances])}], "
                 f"event_id={self.id})")
 
 
@@ -102,7 +103,7 @@ cdef class OrderEvent(Event):
     """
     The abstract base class for all order events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -1128,7 +1129,7 @@ cdef class PositionEvent(Event):
     """
     The abstract base class for all position events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -1292,14 +1293,13 @@ cdef class PositionClosed(PositionEvent):
         )
 
     def __repr__(self) -> str:
-        cdef str duration = str(self.position.open_duration_ns).replace("0 days ", "", 1)
         return (f"{type(self).__name__}("
                 f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"duration={duration}, "
+                f"duration={pd.Timedelta(self.position.open_duration_ns, unit='ns')}, "
                 f"avg_px_open={self.position.avg_px_open}, "
                 f"avg_px_close={self.position.avg_px_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
@@ -1312,7 +1312,7 @@ cdef class StatusEvent(Event):
     """
     The abstract base class for all status events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
     def __init__(
         self,

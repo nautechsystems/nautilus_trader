@@ -29,6 +29,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
@@ -154,11 +155,11 @@ class PortfolioTests(unittest.TestCase):
         # Fixture Setup
         clock = TestClock()
         logger = Logger(clock)
-        trader_id = TraderId("TESTER", "000")
+        trader_id = TraderId("TESTER-000")
 
         self.order_factory = OrderFactory(
             trader_id=trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -207,11 +208,18 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         account_state = AccountState(
             account_id=AccountId("BINANCE", "1513111"),
-            balances=[Money("10.00000000", BTC)],
-            balances_free=[Money("0.00000000", BTC)],
-            balances_locked=[Money("0.00000000", BTC)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                )
+            ],
             info={},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
         self.exec_engine.process(account_state)
@@ -435,7 +443,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=BTCUSDT_BINANCE,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("10500.00"),
     #     )
     #
@@ -499,7 +507,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=BTCUSDT_BINANCE,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("15000.00"),
     #     )
     #
@@ -555,6 +563,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         account_id=AccountId("BITMEX", "01234"),
+    #         reported=True,
     #         balances=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_free=[Money("0.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
@@ -600,7 +609,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=ETHUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("376.05"),
     #     )
     #
@@ -632,6 +641,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     account_state = AccountState(
     #         account_id=AccountId("BITMEX", "01234"),
+    #         reported=True,
     #         balances=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_free=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
@@ -656,7 +666,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=ETHUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("376.05"),
     #     )
     #
@@ -677,6 +687,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         account_id=AccountId("BITMEX", "01234"),
+    #         reported=True,
     #         balances=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_free=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
@@ -701,7 +712,7 @@ class PortfolioTests(unittest.TestCase):
     #         order=order,
     #         instrument=ETHUSD_BITMEX,
     #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
+    #         strategy_id=StrategyId("S-001"),
     #         last_px=Price.from_str("376.05"),
     #     )
     #
@@ -732,6 +743,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
@@ -848,6 +860,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     account_state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
@@ -941,6 +954,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     account_state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
@@ -1006,6 +1020,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],

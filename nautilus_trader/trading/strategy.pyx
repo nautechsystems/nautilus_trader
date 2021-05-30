@@ -65,13 +65,12 @@ from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderUpdateRejected
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBookData
@@ -99,7 +98,7 @@ cdef class TradingStrategy(Component):
     """
     The abstract base class for all trading strategies.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, str order_id_tag not None):
@@ -120,7 +119,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        cdef StrategyId strategy_id = StrategyId(type(self).__name__, order_id_tag)
+        cdef StrategyId strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
         cdef Clock clock = LiveClock()
         super().__init__(
             clock=clock,
@@ -158,10 +157,7 @@ cdef class TradingStrategy(Component):
     def __ne__(self, TradingStrategy other) -> bool:
         return self.id.value != other.id.value
 
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value})"
-
-    cdef inline void _check_trader_registered(self) except *:
+    cdef void _check_trader_registered(self) except *:
         if self.trader_id is None:
             # This guards the case where some components are called which
             # have not yet been assigned, resulting in a SIGSEGV at runtime.
@@ -1947,17 +1943,17 @@ cdef class TradingStrategy(Component):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _send_data_cmd(self, DataCommand command) except *:
+    cdef void _send_data_cmd(self, DataCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._data_engine.execute(command)
 
-    cdef inline void _send_data_req(self, DataRequest request) except *:
+    cdef void _send_data_req(self, DataRequest request) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{REQ}{SENT} {request}.")
         self._data_engine.send(request)
 
-    cdef inline void _send_exec_cmd(self, TradingCommand command) except *:
+    cdef void _send_exec_cmd(self, TradingCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._risk_engine.execute(command)

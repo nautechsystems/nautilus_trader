@@ -20,7 +20,7 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -31,8 +31,6 @@ cdef class Account:
     cdef list _events
     cdef dict _starting_balances
     cdef dict _balances
-    cdef dict _balances_free
-    cdef dict _balances_locked
     cdef dict _initial_margins
     cdef dict _maint_margins
     cdef PortfolioFacade _portfolio
@@ -98,7 +96,5 @@ cdef class Account:
 
     cdef inline void _update_balances(
         self,
-        list balances,
-        list balances_free,
-        list balances_locked,
+        list account_balances,
     ) except *

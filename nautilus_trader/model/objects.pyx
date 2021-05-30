@@ -52,7 +52,7 @@ cdef class BaseDecimal:
 
     Represents a decimal number with a specified precision.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, value, uint8_t precision):
@@ -199,13 +199,13 @@ cdef class BaseDecimal:
         return f"{type(self).__name__}('{self}')"
 
     @staticmethod
-    cdef inline object _extract_value(object obj):
+    cdef object _extract_value(object obj):
         if isinstance(obj, BaseDecimal):
             return obj.as_decimal()
         return obj
 
     @staticmethod
-    cdef inline bint _compare(a, b, int op) except *:
+    cdef bint _compare(a, b, int op) except *:
         if isinstance(a, BaseDecimal):
             a = <BaseDecimal>a.as_decimal()
         if isinstance(b, BaseDecimal):
@@ -367,7 +367,7 @@ cdef class Quantity(BaseDecimal):
         str
 
         """
-        return f"{self.as_decimal():,}"
+        return f"{self.as_decimal():,}".replace(",", "_")
 
 
 cdef class Price(BaseDecimal):
@@ -553,4 +553,56 @@ cdef class Money(BaseDecimal):
         str
 
         """
-        return f"{self._value:,} {self.currency}"
+        # TODO(cs): Refactor - replace with faster formatting
+        return f"{self._value:,} {self.currency}".replace(",", "_")
+
+
+cdef class AccountBalance:
+    """
+    Represents an account balance in a particular currency.
+    """
+
+    def __init__(
+        self,
+        Currency currency not None,
+        Money total not None,
+        Money locked not None,
+        Money free not None,
+    ):
+        """
+        Initialize a new instance of the `AccountBalance` class.
+
+        Parameters
+        ----------
+        total : Money
+            The total account balance.
+        locked : Money
+            The account balance locked (assigned to pending orders).
+        free : Money
+            The account balance free for trading.
+
+        Raises
+        ------
+        ValueError
+            If any money.currency does not equal currency.
+        ValueError
+            If total - locked != free.
+
+        """
+        Condition.equal(currency, total.currency, "currency", "total.currency")
+        Condition.equal(currency, locked.currency, "currency", "locked.currency")
+        Condition.equal(currency, free.currency, "currency", "free.currency")
+        Condition.true(total - locked == free.as_decimal(), "total - locked != free")
+
+        self.currency = currency
+        self.total = total
+        self.locked = locked
+        self.free = free
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"total={self.total.to_str()}, "
+            f"locked={self.locked.to_str()}, "
+            f"free={self.free.to_str()})"
+        )

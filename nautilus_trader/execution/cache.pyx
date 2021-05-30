@@ -226,166 +226,225 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         for account_id in self._accounts:
             # TODO(cs): Assumption that venue == issuer
             if Venue(account_id.issuer) not in self._index_venue_account:
-                self._log.error(f"{failure} in _cached_accounts: "
-                                f"{repr(account_id)} not found in self._index_venue_account")
+                self._log.error(
+                    f"{failure} in _cached_accounts: "
+                    f"{repr(account_id)} not found in self._index_venue_account"
+                )
                 error_count += 1
 
         for client_order_id, order in self._orders.items():
             if client_order_id not in self._index_order_strategy:
-                self._log.error(f"{failure} in _cached_orders: "
-                                f"{repr(client_order_id)} not found in self._index_order_strategy")
+                self._log.error(
+                    f"{failure} in _cached_orders: "
+                    f"{repr(client_order_id)} not found in self._index_order_strategy"
+                )
                 error_count += 1
             if client_order_id not in self._index_orders:
-                self._log.error(f"{failure} in _cached_orders: "
-                                f"{repr(client_order_id)} not found in self._index_orders")
+                self._log.error(
+                    f"{failure} in _cached_orders: "
+                    f"{repr(client_order_id)} not found in self._index_orders"
+                )
                 error_count += 1
             if order.is_working_c() and client_order_id not in self._index_orders_working:
-                self._log.error(f"{failure} in _cached_orders: "
-                                f"{repr(client_order_id)} not found in self._index_orders_working")
+                self._log.error(
+                    f"{failure} in _cached_orders: "
+                    f"{repr(client_order_id)} not found in self._index_orders_working"
+                )
                 error_count += 1
             if order.is_completed_c() and client_order_id not in self._index_orders_completed:
-                self._log.error(f"{failure} in _cached_orders "
-                                f"{repr(client_order_id)} not found in self._index_orders_completed")
+                self._log.error(
+                    f"{failure} in _cached_orders "
+                    f"{repr(client_order_id)} not found in self._index_orders_completed"
+                )
                 error_count += 1
 
         for position_id, position in self._positions.items():
             if position_id not in self._index_position_strategy:
-                self._log.error(f"{failure} in _cached_positions: "
-                                f"{repr(position_id)} not found in self._index_position_strategy")
+                self._log.error(
+                    f"{failure} in _cached_positions: "
+                    f"{repr(position_id)} not found in self._index_position_strategy"
+                )
                 error_count += 1
             if position_id not in self._index_position_orders:
-                self._log.error(f"{failure} in _cached_positions: "
-                                f"{repr(position_id)} not found in self._index_position_orders")
+                self._log.error(
+                    f"{failure} in _cached_positions: "
+                    f"{repr(position_id)} not found in self._index_position_orders"
+                )
                 error_count += 1
             if position_id not in self._index_positions:
-                self._log.error(f"{failure} in _cached_positions: "
-                                f"{repr(position_id)} not found in self._index_positions")
+                self._log.error(
+                    f"{failure} in _cached_positions: "
+                    f"{repr(position_id)} not found in self._index_positions"
+                )
                 error_count += 1
             if position.is_open_c() and position_id not in self._index_positions_open:
-                self._log.error(f"{failure} in _cached_positions: "
-                                f"{repr(position_id)} not found in self._index_positions_open")
+                self._log.error(
+                    f"{failure} in _cached_positions: "
+                    f"{repr(position_id)} not found in self._index_positions_open"
+                )
                 error_count += 1
             if position.is_closed_c() and position_id not in self._index_positions_closed:
-                self._log.error(f"{failure} in _cached_positions: "
-                                f"{repr(position_id)} not found in self._index_positions_closed")
+                self._log.error(
+                    f"{failure} in _cached_positions: "
+                    f"{repr(position_id)} not found in self._index_positions_closed"
+                )
                 error_count += 1
 
         # Check indexes
         # -------------
         for account_id in self._index_venue_account.values():
             if account_id not in self._accounts:
-                self._log.error(f"{failure} in _index_venue_account: "
-                                f"{repr(account_id)} not found in self._cached_accounts")
+                self._log.error(
+                    f"{failure} in _index_venue_account: "
+                    f"{repr(account_id)} not found in self._cached_accounts"
+                )
                 error_count += 1
 
         for client_order_id in self._index_order_ids.values():
             if client_order_id not in self._orders:
-                self._log.error(f"{failure} in _index_venue_order_ids: "
-                                f"{repr(client_order_id)} not found in self._cached_orders")
+                self._log.error(
+                    f"{failure} in _index_venue_order_ids: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
                 error_count += 1
 
         for client_order_id in self._index_order_position:
             if client_order_id not in self._orders:
-                self._log.error(f"{failure} in _index_order_position: "
-                                f"{repr(client_order_id)} not found in self._cached_orders")
+                self._log.error(
+                    f"{failure} in _index_order_position: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
                 error_count += 1
 
         for client_order_id in self._index_order_strategy:
             if client_order_id not in self._orders:
-                self._log.error(f"{failure} in _index_order_strategy: "
-                                f"{repr(client_order_id)} not found in self._cached_orders")
+                self._log.error(
+                    f"{failure} in _index_order_strategy: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
                 error_count += 1
 
         for position_id in self._index_position_strategy:
             if position_id not in self._positions:
-                self._log.error(f"{failure} in _index_position_strategy: "
-                                f"{repr(position_id)} not found in self._cached_positions")
+                self._log.error(
+                    f"{failure} in _index_position_strategy: "
+                    f"{repr(position_id)} not found in self._cached_positions"
+                )
                 error_count += 1
 
         for position_id in self._index_position_orders:
             if position_id not in self._positions:
-                self._log.error(f"{failure} in _index_position_orders: "
-                                f"{repr(position_id)} not found in self._cached_positions")
+                self._log.error(
+                    f"{failure} in _index_position_orders: "
+                    f"{repr(position_id)} not found in self._cached_positions"
+                )
                 error_count += 1
 
         for instrument_id, client_order_ids in self._index_instrument_orders.items():
             for client_order_id in client_order_ids:
                 if client_order_id not in self._orders:
-                    self._log.error(f"{failure} in _index_instrument_orders: "
-                                    f"{repr(instrument_id)} not found in self._cached_orders")
+                    self._log.error(
+                        f"{failure} in _index_instrument_orders: "
+                        f"{repr(instrument_id)} not found in self._cached_orders"
+                    )
                     error_count += 1
 
         for instrument_id in self._index_instrument_positions:
             if instrument_id not in self._index_instrument_orders:
-                self._log.error(f"{failure} in _index_instrument_positions: "
-                                f"{repr(instrument_id)} not found in self._index_instrument_orders")
+                self._log.error(
+                    f"{failure} in _index_instrument_positions: "
+                    f"{repr(instrument_id)} not found in self._index_instrument_orders"
+                )
                 error_count += 1
 
         for client_order_ids in self._index_strategy_orders.values():
             for client_order_id in client_order_ids:
                 if client_order_id not in self._orders:
-                    self._log.error(f"{failure} in _index_strategy_orders: "
-                                    f"{repr(client_order_id)} not found in self._cached_orders")
+                    self._log.error(
+                        f"{failure} in _index_strategy_orders: "
+                        f"{repr(client_order_id)} not found in self._cached_orders"
+                    )
                     error_count += 1
 
         for position_ids in self._index_strategy_positions.values():
             for position_id in position_ids:
                 if position_id not in self._positions:
-                    self._log.error(f"{failure} in _index_strategy_positions: "
-                                    f"{repr(position_id)} not found in self._caches_positions")
+                    self._log.error(
+                        f"{failure} in _index_strategy_positions: "
+                        f"{repr(position_id)} not found in self._caches_positions"
+                    )
                     error_count += 1
 
         for client_order_id in self._index_orders:
             if client_order_id not in self._orders:
-                self._log.error(f"{failure} in _index_orders: "
-                                f"{repr(client_order_id)} not found in self._cached_orders")
+                self._log.error(
+                    f"{failure} in _index_orders: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
                 error_count += 1
 
         for client_order_id in self._index_orders_working:
             if client_order_id not in self._orders:
-                self._log.error(f"{failure} in _index_orders_working: "
-                                f"{repr(client_order_id)} not found in self._cached_orders")
+                self._log.error(
+                    f"{failure} in _index_orders_working: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
                 error_count += 1
 
         for client_order_id in self._index_orders_completed:
             if client_order_id not in self._orders:
-                self._log.error(f"{failure} in _index_orders_completed: "
-                                f"{repr(client_order_id)} not found in self._cached_orders")
+                self._log.error(
+                    f"{failure} in _index_orders_completed: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
                 error_count += 1
 
         for position_id in self._index_positions:
             if position_id not in self._positions:
-                self._log.error(f"{failure} in _index_positions: "
-                                f"{repr(position_id)} not found in self._cached_positions")
+                self._log.error(
+                    f"{failure} in _index_positions: "
+                    f"{repr(position_id)} not found in self._cached_positions"
+                )
                 error_count += 1
 
         for position_id in self._index_positions_open:
             if position_id not in self._positions:
-                self._log.error(f"{failure} in _index_positions_open: "
-                                f"{repr(position_id)} not found in self._cached_positions")
+                self._log.error(
+                    f"{failure} in _index_positions_open: "
+                    f"{repr(position_id)} not found in self._cached_positions"
+                )
                 error_count += 1
 
         for position_id in self._index_positions_closed:
             if position_id not in self._positions:
-                self._log.error(f"{failure} in _index_positions_closed: "
-                                f"{repr(position_id)} not found in self._cached_positions")
+                self._log.error(
+                    f"{failure} in _index_positions_closed: "
+                    f"{repr(position_id)} not found in self._cached_positions"
+                )
                 error_count += 1
 
         for strategy_id in self._index_strategies:
             if strategy_id not in self._index_strategy_orders:
-                self._log.error(f"{failure} in _index_strategies: "
-                                f"{repr(strategy_id)} not found in self._index_strategy_orders")
+                self._log.error(
+                    f"{failure} in _index_strategies: "
+                    f"{repr(strategy_id)} not found in self._index_strategy_orders"
+                )
                 error_count += 1
 
         # Finally
         cdef int64_t total_us = round(unix_timestamp_us() - timestamp_us)
         if error_count == 0:
-            self._log.info(f"Integrity check passed in {total_us}μs.", color=LogColor.GREEN)
+            self._log.info(
+                f"Integrity check passed in {total_us}μs.",
+                color=LogColor.GREEN
+            )
             return True
         else:
-            self._log.error(f"Integrity check failed with "
-                            f"{error_count} error{'' if error_count == 1 else 's'} "
-                            f"in {total_us}μs.")
+            self._log.error(
+                f"Integrity check failed with "
+                f"{error_count} error{'' if error_count == 1 else 's'} "
+                f"in {total_us}μs."
+            )
             return False
 
     cpdef bint check_residuals(self) except *:
@@ -1160,7 +1219,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cdef inline set _build_ord_query_filter_set(
+    cdef set _build_ord_query_filter_set(
         self,
         Venue venue,
         InstrumentId instrument_id,
@@ -1184,7 +1243,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cdef inline set _build_pos_query_filter_set(
+    cdef set _build_pos_query_filter_set(
         self,
         Venue venue,
         InstrumentId instrument_id,

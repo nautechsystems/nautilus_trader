@@ -15,7 +15,7 @@
 
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.model.instrument cimport BettingInstrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 
 cdef class BetfairInstrumentProvider(InstrumentProvider):

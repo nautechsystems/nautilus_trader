@@ -18,7 +18,7 @@ from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -51,6 +51,4 @@ cdef class DataCache(DataCacheFacade):
     cpdef void add_trade_ticks(self, list ticks) except *
     cpdef void add_bars(self, list bars) except *
 
-    cdef inline tuple _build_quote_table(self, Venue venue)
-    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *
-    cdef inline bint _is_fx_spot(self, Instrument instrument) except *
+    cdef tuple _build_quote_table(self, Venue venue)

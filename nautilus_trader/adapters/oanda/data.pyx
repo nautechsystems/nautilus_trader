@@ -44,7 +44,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -662,7 +662,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         except Exception as ex:
             self._log.exception(ex)
 
-    cdef inline QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values):
+    cdef QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values):
         return QuoteTick(
             instrument_id,
             Price(values["bids"][0]["price"]),
@@ -670,9 +670,10 @@ cdef class OandaDataClient(LiveMarketDataClient):
             Quantity.from_int(1),
             Quantity.from_int(1),
             dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
+            self._clock.timestamp_ns(),
         )
 
-    cdef inline Bar _parse_bar(
+    cdef Bar _parse_bar(
         self,
         BarType bar_type,
         Instrument instrument,
@@ -695,6 +696,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
             Price(prices["c"], instrument.price_precision),
             Quantity(values["volume"], instrument.size_precision),
             dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
+            self._clock.timestamp_ns(),
         )
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------

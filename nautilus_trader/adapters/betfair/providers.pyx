@@ -26,12 +26,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.time cimport unix_timestamp_ns
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
-from nautilus_trader.model.instrument import BettingInstrument
 
 
 logger = logging.getLogger(__name__)
@@ -255,7 +255,8 @@ def make_instruments(market_definition, currency):
             selection_handicap=str(runner.get("hc", runner.get("handicap")) or "0.0"),
             currency=currency,
             # TODO - Add the provider, use clock
-            timestamp_ns=unix_timestamp_ns()
+            timestamp_origin_ns=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
+            timestamp_ns=unix_timestamp_ns(),
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
         instruments.append(instrument)

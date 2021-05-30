@@ -39,7 +39,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
@@ -82,7 +82,7 @@ cdef class TradingStrategy(Component):
     cdef readonly OrderFactory order_factory
     """The trading strategies order factory.\n\n:returns: `OrderFactory`"""
 
-    cdef inline void _check_trader_registered(self) except *
+    cdef void _check_trader_registered(self) except *
 
     cpdef bint indicators_initialized(self) except *
 
@@ -208,6 +208,6 @@ cdef class TradingStrategy(Component):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _send_data_cmd(self, DataCommand command) except *
-    cdef inline void _send_data_req(self, DataRequest request) except *
-    cdef inline void _send_exec_cmd(self, TradingCommand command) except *
+    cdef void _send_data_cmd(self, DataCommand command) except *
+    cdef void _send_data_req(self, DataRequest request) except *
+    cdef void _send_exec_cmd(self, TradingCommand command) except *

@@ -33,6 +33,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
@@ -62,18 +63,18 @@ class TestLiveExecutionEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=self.clock,
         )
 
         self.random_order_factory = OrderFactory(
-            trader_id=TraderId("RANDOM", "042"),
-            strategy_id=StrategyId("S", "042"),
+            trader_id=TraderId("RANDOM-042"),
+            strategy_id=StrategyId("S-042"),
             clock=self.clock,
         )
 
@@ -114,6 +115,7 @@ class TestLiveExecutionEngine:
 
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
+            venue_type=VenueType.ECN,
             account_id=self.account_id,
             engine=self.exec_engine,
             instrument_provider=self.instrument_provider,
@@ -163,7 +165,7 @@ class TestLiveExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -208,7 +210,7 @@ class TestLiveExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -286,7 +288,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -328,7 +330,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -363,7 +365,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -371,7 +373,7 @@ class TestLiveExecutionEngine:
             self.exec_engine.register_strategy(strategy)
 
             # Act
-            await self.exec_engine.reconcile_state()
+            await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -386,7 +388,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -426,7 +428,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -441,7 +443,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -481,7 +483,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -496,7 +498,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -536,7 +538,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -551,7 +553,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -616,7 +618,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -631,7 +633,7 @@ class TestLiveExecutionEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -696,7 +698,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert

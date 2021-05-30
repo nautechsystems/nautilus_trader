@@ -67,7 +67,7 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
@@ -446,7 +446,7 @@ cdef class DataEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, DataCommand command) except *:
+    cdef void _execute_command(self, DataCommand command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
@@ -464,7 +464,7 @@ cdef class DataEngine(Component):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *:
+    cdef void _handle_subscribe(self, DataClient client, Subscribe command) except *:
         if command.data_type.type == Instrument:
             self._handle_subscribe_instrument(
                 client,
@@ -510,7 +510,7 @@ cdef class DataEngine(Component):
                 command.handler,
             )
 
-    cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
+    cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
         if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
@@ -549,7 +549,7 @@ cdef class DataEngine(Component):
                 command.handler,
             )
 
-    cdef inline void _handle_subscribe_instrument(
+    cdef void _handle_subscribe_instrument(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -571,7 +571,7 @@ cdef class DataEngine(Component):
         else:
             self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <Instrument> data.")
 
-    cdef inline void _handle_subscribe_order_book(
+    cdef void _handle_subscribe_order_book(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -641,7 +641,7 @@ cdef class DataEngine(Component):
             kwargs=metadata.get(KWARGS),
         )
 
-    cdef inline void _handle_subscribe_order_book_deltas(
+    cdef void _handle_subscribe_order_book_deltas(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -688,7 +688,7 @@ cdef class DataEngine(Component):
             kwargs=metadata.get(KWARGS),
         )
 
-    cdef inline void _handle_subscribe_quote_ticks(
+    cdef void _handle_subscribe_quote_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -711,7 +711,7 @@ cdef class DataEngine(Component):
         else:
             self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <QuoteTick> data.")
 
-    cdef inline void _handle_subscribe_trade_ticks(
+    cdef void _handle_subscribe_trade_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -734,7 +734,7 @@ cdef class DataEngine(Component):
         else:
             self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <TradeTick> data.")
 
-    cdef inline void _handle_subscribe_bars(
+    cdef void _handle_subscribe_bars(
         self,
         MarketDataClient client,
         BarType bar_type,
@@ -763,7 +763,7 @@ cdef class DataEngine(Component):
         else:
             self._log.warning(f"Handler {handler} already subscribed to {bar_type} <Bar> data.")
 
-    cdef inline void _handle_subscribe_data(
+    cdef void _handle_subscribe_data(
         self,
         DataClient client,
         DataType data_type,
@@ -791,7 +791,7 @@ cdef class DataEngine(Component):
         else:
             self._log.warning(f"Handler {handler} already subscribed to {data_type} data.")
 
-    cdef inline void _handle_unsubscribe_instrument(
+    cdef void _handle_unsubscribe_instrument(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -818,7 +818,7 @@ cdef class DataEngine(Component):
             client.unsubscribe_instrument(instrument_id)
             self._log.info(f"Unsubscribed from {instrument_id} <Instrument> data.")
 
-    cdef inline void _handle_unsubscribe_order_book(
+    cdef void _handle_unsubscribe_order_book(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -872,7 +872,7 @@ cdef class DataEngine(Component):
             client.unsubscribe_order_book(instrument_id)
             self._log.info(f"Unsubscribed from {instrument_id} <OrderBook> data.")
 
-    cdef inline void _handle_unsubscribe_quote_ticks(
+    cdef void _handle_unsubscribe_quote_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -899,7 +899,7 @@ cdef class DataEngine(Component):
             client.unsubscribe_quote_ticks(instrument_id)
             self._log.info(f"Unsubscribed from {instrument_id} <QuoteTick> data.")
 
-    cdef inline void _handle_unsubscribe_trade_ticks(
+    cdef void _handle_unsubscribe_trade_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -926,7 +926,7 @@ cdef class DataEngine(Component):
             client.unsubscribe_trade_ticks(instrument_id)
             self._log.info(f"Unsubscribed from {instrument_id} <TradeTick> data.")
 
-    cdef inline void _handle_unsubscribe_bars(
+    cdef void _handle_unsubscribe_bars(
         self,
         MarketDataClient client,
         BarType bar_type,
@@ -956,7 +956,7 @@ cdef class DataEngine(Component):
                 client.unsubscribe_bars(bar_type)
             self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
-    cdef inline void _handle_unsubscribe_data(
+    cdef void _handle_unsubscribe_data(
         self,
         DataClient client,
         DataType data_type,
@@ -985,7 +985,7 @@ cdef class DataEngine(Component):
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _handle_request(self, DataRequest request) except *:
+    cdef void _handle_request(self, DataRequest request) except *:
         self._log.debug(f"{RECV}{REQ} {request}.")
         self.request_count += 1
 
@@ -1044,7 +1044,7 @@ cdef class DataEngine(Component):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef inline void _handle_data(self, Data data) except *:
+    cdef void _handle_data(self, Data data) except *:
         self.data_count += 1
 
         if isinstance(data, QuoteTick):
@@ -1064,14 +1064,14 @@ cdef class DataEngine(Component):
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
-    cdef inline void _handle_instrument(self, Instrument instrument) except *:
+    cdef void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
 
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.id, [])
         for handler in instrument_handlers:
             handler(instrument)
 
-    cdef inline void _handle_quote_tick(self, QuoteTick tick) except *:
+    cdef void _handle_quote_tick(self, QuoteTick tick) except *:
         self.cache.add_quote_tick(tick)
 
         # Send to portfolio as a priority
@@ -1082,7 +1082,7 @@ cdef class DataEngine(Component):
         for handler in tick_handlers:
             handler(tick)
 
-    cdef inline void _handle_trade_tick(self, TradeTick tick) except *:
+    cdef void _handle_trade_tick(self, TradeTick tick) except *:
         self.cache.add_trade_tick(tick)
 
         # Send to all registered tick handlers for that instrument_id
@@ -1090,7 +1090,7 @@ cdef class DataEngine(Component):
         for handler in tick_handlers:
             handler(tick)
 
-    cdef inline void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
+    cdef void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
         cdef InstrumentId instrument_id = deltas.instrument_id
         cdef OrderBook order_book = self.cache.order_book(instrument_id)
         if order_book is None:
@@ -1110,7 +1110,7 @@ cdef class DataEngine(Component):
         for orderbook_delta_handler in order_book_delta_handlers:
             orderbook_delta_handler(deltas)
 
-    cdef inline void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
+    cdef void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
         cdef InstrumentId instrument_id = snapshot.instrument_id
         cdef OrderBook order_book = self.cache.order_book(instrument_id)
         if order_book is None:
@@ -1130,7 +1130,7 @@ cdef class DataEngine(Component):
         for orderbook_delta_handler in order_book_delta_handlers:
             orderbook_delta_handler(snapshot)
 
-    cdef inline void _handle_bar(self, Bar bar) except *:
+    cdef void _handle_bar(self, Bar bar) except *:
         self.cache.add_bar(bar)
 
         # Send to all registered bar handlers for that bar type
@@ -1138,7 +1138,7 @@ cdef class DataEngine(Component):
         for handler in bar_handlers:
             handler(bar)
 
-    cdef inline void _handle_custom_data(self, GenericData data) except *:
+    cdef void _handle_custom_data(self, GenericData data) except *:
         # Send to all registered data handlers for that data type
         cdef list handlers = self._data_handlers.get(data.data_type, [])
         for handler in handlers:
@@ -1146,7 +1146,7 @@ cdef class DataEngine(Component):
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
-    cdef inline void _handle_response(self, DataResponse response) except *:
+    cdef void _handle_response(self, DataResponse response) except *:
         self._log.debug(f"{RECV}{RES} {response}.")
         self.response_count += 1
 
@@ -1170,7 +1170,7 @@ cdef class DataEngine(Component):
 
             callback(response.data)
 
-    cdef inline void _handle_instruments(self, list instruments, UUID correlation_id) except *:
+    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
@@ -1185,7 +1185,7 @@ cdef class DataEngine(Component):
 
         callback(instruments)
 
-    cdef inline void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *:
+    cdef void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *:
         self.cache.add_quote_ticks(ticks)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
@@ -1195,7 +1195,7 @@ cdef class DataEngine(Component):
 
         callback(ticks)
 
-    cdef inline void _handle_trade_ticks(self, list ticks, UUID correlation_id) except *:
+    cdef void _handle_trade_ticks(self, list ticks, UUID correlation_id) except *:
         self.cache.add_trade_ticks(ticks)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
@@ -1205,7 +1205,7 @@ cdef class DataEngine(Component):
 
         callback(ticks)
 
-    cdef inline void _handle_bars(self, list bars, Bar partial, UUID correlation_id) except *:
+    cdef void _handle_bars(self, list bars, Bar partial, UUID correlation_id) except *:
         self.cache.add_bars(bars)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
@@ -1252,7 +1252,7 @@ cdef class DataEngine(Component):
             for handler in handlers:
                 handler(order_book)
 
-    cdef inline void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
+    cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         if bar_type.spec.is_time_aggregated():
             # Create aggregator
             aggregator = TimeBarAggregator(
@@ -1283,9 +1283,11 @@ cdef class DataEngine(Component):
                 logger=self._log.get_logger(),
             )
         else:
-            raise RuntimeError(f"Cannot start aggregator, "
-                               f"BarAggregation.{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
-                               f"not currently supported in this version")
+            raise RuntimeError(
+                f"Cannot start aggregator, "
+                f"BarAggregation.{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
+                f"not currently supported in this version"
+            )
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator
@@ -1297,7 +1299,7 @@ cdef class DataEngine(Component):
         else:
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id, aggregator.handle_quote_tick)
 
-    cdef inline void _hydrate_aggregator(
+    cdef void _hydrate_aggregator(
         self,
         MarketDataClient client,
         TimeBarAggregator aggregator,
@@ -1332,7 +1334,7 @@ cdef class DataEngine(Component):
         # Send request directly to handler as we're already inside engine
         self._handle_request(request)
 
-    cdef inline void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
+    cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators.get(bar_type)
         if aggregator is None:
             self._log.warning(f"No bar aggregator to stop for {bar_type}")
@@ -1350,7 +1352,7 @@ cdef class DataEngine(Component):
         # Remove from aggregators
         del self._bar_aggregators[bar_type]
 
-    cdef inline void _bulk_build_tick_bars(
+    cdef void _bulk_build_tick_bars(
         self,
         BarType bar_type,
         datetime from_datetime,

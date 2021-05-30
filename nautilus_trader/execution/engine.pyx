@@ -33,6 +33,7 @@ just need to override the `execute` and `process` methods.
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -49,6 +50,8 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -66,7 +69,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
@@ -114,11 +117,12 @@ cdef class ExecutionEngine(Component):
         if config:
             self._log.info(f"Config: {config}.")
 
-        self._routing_map = {}  # type: dict[Venue, ExecutionClient]
-        self._clients = {}      # type: dict[ClientId, ExecutionClient]
-        self._strategies = {}   # type: dict[StrategyId, TradingStrategy]
+        self._clients = {}           # type: dict[ClientId, ExecutionClient]
+        self._strategies = {}        # type: dict[StrategyId, TradingStrategy]
+        self._routing_map = {}       # type: dict[Venue, ExecutionClient]
+        self._default_client = None  # type: Optional[ExecutionClient]
         self._pos_id_generator = PositionIdGenerator(
-            id_tag_trader=database.trader_id.tag,
+            trader_id=database.trader_id,
             clock=clock,
         )
         self._portfolio = portfolio
@@ -142,6 +146,18 @@ cdef class ExecutionEngine(Component):
 
         """
         return sorted(list(self._clients.keys()))
+
+    @property
+    def default_client(self):
+        """
+        The default execution client registered with the engine.
+
+        Returns
+        -------
+        Optional[ClientId]
+
+        """
+        return self._default_client.id if self._default_client is not None else None
 
     @property
     def registered_strategies(self):
@@ -267,6 +283,9 @@ cdef class ExecutionEngine(Component):
         """
         Register the given execution client with the execution engine.
 
+        If the client.venue_type == BROKERAGE_MULTI_VENUE and a default client
+        has not been previously registered then will be registered as such.
+
         Parameters
         ----------
         client : ExecutionClient
@@ -282,9 +301,68 @@ cdef class ExecutionEngine(Component):
         Condition.not_in(client.id, self._clients, "client.id", "self._clients")
 
         self._clients[client.id] = client
-        # TODO(cs): Assumption that venue == client_id
-        self._routing_map[Venue(client.id.value)] = client
-        self._log.info(f"Registered {client}.")
+
+        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+            if self._default_client is None:
+                self._default_client = client
+                self._log.info(
+                    f"Registered {client} BROKERAGE_MULTI_VENUE as default client."
+                )
+        else:
+            self._routing_map[client.venue] = client
+            self._log.info(
+                f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}."
+            )
+
+    cpdef void register_default_client(self, ExecutionClient client) except *:
+        """
+        Register the given client as the default client (when a specific venue
+        routing cannot be found).
+
+        Any existing default client will be overwritten.
+
+        Parameters
+        ----------
+        client : ExecutionClient
+            The client to register.
+
+        """
+        Condition.not_none(client, "client")
+
+        self._default_client = client
+
+        self._log.info(
+            f"Registered {client} "
+            f"{VenueTypeParser.to_str(client.venue_type)}  as default client.",
+        )
+
+    cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
+        """
+        Register the given client to route orders to the given venue.
+
+        Any existing client in the routing map for the given venue will be
+        overwritten.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue to route orders to.
+        client : ExecutionClient
+            The client for the venue routing.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.not_none(venue, "venue")
+
+        if client.id not in self._clients:
+            self._clients[client.id] = client
+
+        self._routing_map[venue] = client
+
+        self._log.info(
+            f"Registered {client} {VenueTypeParser.to_str(client.venue_type)} "
+            f"for routing to {venue}."
+        )
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
@@ -327,9 +405,14 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(client, "client")
         Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
-        # TODO(cs): Assumption that venue == client_id
-        del self._routing_map[Venue(client.id.value)]
         del self._clients[client.id]
+
+        if client.venue_type == VenueType.BROKERAGE_MULTI_VENUE:
+            if self._default_client == client:
+                self._default_client = None
+        else:
+            del self._routing_map[client.venue]
+
         self._log.info(f"Deregistered {client}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
@@ -460,7 +543,7 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _set_position_id_counts(self) except *:
+    cdef void _set_position_id_counts(self) except *:
         # For the internal position identifier generator
         cdef list positions = self.cache.positions()
 
@@ -485,15 +568,19 @@ cdef class ExecutionEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, TradingCommand command) except *:
+    cdef void _execute_command(self, TradingCommand command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef ExecutionClient client = self._routing_map.get(command.instrument_id.venue)
+        cdef ExecutionClient client = self._routing_map.get(
+            command.instrument_id.venue,
+            self._default_client,
+        )
         if client is None:
             self._log.error(
                 f"Cannot execute command: "
-                f"No execution client configured for {command.instrument_id}, {command}.")
+                f"No execution client configured for {command.instrument_id}, {command}."
+            )
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
@@ -507,21 +594,21 @@ cdef class ExecutionEngine(Component):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
+    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         client.submit_order(command)
 
-    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
+    cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         client.submit_bracket_order(command)
 
-    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
+    cdef void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
         client.update_order(command)
 
-    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
+    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         client.cancel_order(command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef inline void _handle_event(self, Event event) except *:
+    cdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 
@@ -534,7 +621,7 @@ cdef class ExecutionEngine(Component):
         else:
             self._log.error(f"Cannot handle event: unrecognized {event}.")
 
-    cdef inline void _handle_account_event(self, AccountState event) except *:
+    cdef void _handle_account_event(self, AccountState event) except *:
         cdef Account account = self.cache.account(event.account_id)
         if account is None:
             # Generate account
@@ -545,32 +632,38 @@ cdef class ExecutionEngine(Component):
             account.apply(event=event)
             self.cache.update_account(account)
 
-    cdef inline void _handle_position_event(self, PositionEvent event) except *:
+    cdef void _handle_position_event(self, PositionEvent event) except *:
         self._portfolio.update_position(event)
         self._risk_engine.process(event)
         self._send_to_strategy(event, event.position.strategy_id)
 
-    cdef inline void _handle_order_event(self, OrderEvent event) except *:
+    cdef void _handle_order_event(self, OrderEvent event) except *:
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self.cache.order(event.client_order_id)
         if order is None:
-            self._log.warning(f"{repr(event.client_order_id)} was not found in cache "
-                              f"for {repr(event.venue_order_id)} to apply {event}.")
+            self._log.warning(
+                f"{repr(event.client_order_id)} was not found in cache "
+                f"for {repr(event.venue_order_id)} to apply {event}."
+            )
 
             # Search cache for ClientOrderId matching the VenueOrderId
             client_order_id = self.cache.client_order_id(event.venue_order_id)
             if client_order_id is None:
-                self._log.error(f"Cannot apply event to any order: "
-                                f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
-                                f"not found in cache.")
+                self._log.error(
+                    f"Cannot apply event to any order: "
+                    f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
+                    f"not found in cache."
+                )
                 return  # Cannot process event further
 
             # Search cache for Order matching the found ClientOrderId
             order = self.cache.order(client_order_id)
             if order is None:
-                self._log.error(f"Cannot apply event to any order: "
-                                f"order for {repr(client_order_id)} not found in cache.")
+                self._log.error(
+                    f"Cannot apply event to any order: "
+                    f"order for {repr(client_order_id)} not found in cache."
+                )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
@@ -608,7 +701,7 @@ cdef class ExecutionEngine(Component):
         self._risk_engine.process(event)
         self._send_to_strategy(event, self.cache.strategy_id_for_order(client_order_id))
 
-    cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *:
+    cdef void _confirm_strategy_id(self, OrderFilled fill) except *:
         if fill.strategy_id.not_null():
             # Already assigned to fill
             return
@@ -624,11 +717,13 @@ cdef class ExecutionEngine(Component):
             # Check if strategy identifier assigned for position
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
-            self._log.error(f"Cannot find StrategyId for "
-                            f"{repr(fill.client_order_id)} and "
-                            f"{repr(fill.position_id)} not found for {fill}.")
+            self._log.error(
+                f"Cannot find StrategyId for "
+                f"{repr(fill.client_order_id)} and "
+                f"{repr(fill.position_id)} not found for {fill}."
+            )
 
-    cdef inline void _confirm_position_id(self, OrderFilled fill) except *:
+    cdef void _confirm_position_id(self, OrderFilled fill) except *:
         if fill.position_id.not_null():
             # Already assigned to fill
             return
@@ -656,23 +751,24 @@ cdef class ExecutionEngine(Component):
         # Assign existing positions identifier to fill
         fill.position_id = positions_open[0].id
 
-    cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
+    cdef void _handle_order_command_rejected(self, OrderEvent event) except *:
         self._risk_engine.process(event)
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.client_order_id))
 
-    cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_order_fill(self, OrderFilled fill) except *:
         cdef Position position = self.cache.position(fill.position_id)
         if position is None:  # No position open
             self._open_position(fill)
         else:
             self._update_position(position, fill)
 
-    cdef inline void _open_position(self, OrderFilled fill) except *:
+    cdef void _open_position(self, OrderFilled fill) except *:
         cdef Instrument instrument = self.cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot open position: "
-                f"no instrument found for {fill.instrument_id.value}, {fill}.")
+                f"no instrument found for {fill.instrument_id.value}, {fill}."
+            )
             return
 
         cdef Position position = Position(instrument, fill)
@@ -682,7 +778,7 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(self._pos_opened_event(position, fill))
 
-    cdef inline void _update_position(self, Position position, OrderFilled fill) except *:
+    cdef void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
         if position.is_opposite_side(fill.order_side) and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
@@ -707,7 +803,7 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(position_event)
 
-    cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
+    cdef void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity.from_str_c(str(fill.last_qty - position.quantity))
@@ -771,7 +867,7 @@ cdef class ExecutionEngine(Component):
         # Open flipped position
         self._handle_order_fill(fill_split2)
 
-    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
+    cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
         return PositionOpened(
             position,
             fill,
@@ -779,7 +875,7 @@ cdef class ExecutionEngine(Component):
             fill.timestamp_ns,
         )
 
-    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
+    cdef PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
         return PositionChanged(
             position,
             fill,
@@ -787,7 +883,7 @@ cdef class ExecutionEngine(Component):
             fill.timestamp_ns,
         )
 
-    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
+    cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
         return PositionClosed(
             position,
             fill,
@@ -795,16 +891,20 @@ cdef class ExecutionEngine(Component):
             fill.timestamp_ns,
         )
 
-    cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
+    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
-            self._log.error(f"Cannot send event to strategy: "
-                            f"{repr(strategy_id)} not found for {event}.")
+            self._log.error(
+                f"Cannot send event to strategy: "
+                f"{repr(strategy_id)} not found for {event}."
+            )
             return  # Cannot send to strategy
 
         cdef TradingStrategy strategy = self._strategies.get(strategy_id)
         if strategy is None:
-            self._log.error(f"Cannot send event to strategy: "
-                            f"{repr(strategy_id)} not registered for {event}.")
+            self._log.error(
+                f"Cannot send event to strategy: "
+                f"{repr(strategy_id)} not registered for {event}."
+            )
             return  # Cannot send to strategy
 
         strategy.handle_event(event)

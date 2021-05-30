@@ -104,10 +104,10 @@ cdef class Order:
     cdef bint is_completed_c(self) except *
 
     @staticmethod
-    cdef inline OrderSide opposite_side_c(OrderSide side) except *
+    cdef OrderSide opposite_side_c(OrderSide side) except *
 
     @staticmethod
-    cdef inline OrderSide flatten_side_c(PositionSide side) except *
+    cdef OrderSide flatten_side_c(PositionSide side) except *
 
     cpdef void apply(self, OrderEvent event) except *
 

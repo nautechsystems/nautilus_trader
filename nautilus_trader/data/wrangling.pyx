@@ -26,7 +26,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -261,6 +261,7 @@ cdef class QuoteTickDataWrangler:
             ask=Price(values[1], self.instrument.price_precision),
             bid_size=Quantity(values[2], self.instrument.size_precision),
             ask_size=Quantity(values[3], self.instrument.size_precision),
+            timestamp_origin_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
             timestamp_ns=secs_to_nanos(timestamp),
         )
 
@@ -343,6 +344,7 @@ cdef class TradeTickDataWrangler:
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
             match_id=TradeMatchId(values[3]),
+            timestamp_origin_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
             timestamp_ns=secs_to_nanos(timestamp),
         )
 
@@ -450,5 +452,6 @@ cdef class BarDataWrangler:
             low_price=Price(values[2], self._price_precision),
             close_price=Price(values[3], self._price_precision),
             volume=Quantity(values[4], self._size_precision),
+            timestamp_origin_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
             timestamp_ns=secs_to_nanos(timestamp),
         )

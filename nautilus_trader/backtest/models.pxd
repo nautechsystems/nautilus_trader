@@ -26,4 +26,4 @@ cdef class FillModel:
     cpdef bint is_stop_filled(self) except *
     cpdef bint is_slipped(self) except *
 
-    cdef inline bint _event_success(self, double probability) except *
+    cdef bint _event_success(self, double probability) except *

@@ -18,6 +18,7 @@ import asyncio
 from betfairlightweight import APIClient
 import orjson
 
+from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -30,15 +31,12 @@ from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport BettingInstrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
-
-from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
-from nautilus_trader.model.identifiers cimport ClientId
-
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
 
@@ -218,6 +216,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
                 data=GenericData(
                     data_type=data_type,
                     data=InstrumentSearch(instruments=instruments),
+                    timestamp_origin_ns=self._clock.timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
                     timestamp_ns=self._clock.timestamp_ns(),
                 ),
                 correlation_id=correlation_id
@@ -255,7 +254,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         cdef BettingInstrument instrument = self._instrument_provider.find(instrument_id)  # type: BettingInstrument
 
         if instrument.market_id in self._subscribed_market_ids:
-            self._log.warning(f"Already subscribed to market_id: {instrument.market_id} [Instrument: {instrument_id.symbol}] <OrderBook> data.")
+            self._log.warning(
+                f"Already subscribed to market_id: {instrument.market_id} "
+                f"[Instrument: {instrument_id.symbol}] <OrderBook> data.",
+            )
             return
 
         # If this is the first subscription request we're receiving, schedule a
@@ -314,7 +316,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_betfair_error(self, ex, str method_name) except *:
+    cdef void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
 # -- Debugging ---------------------------------------------------------------------------------------

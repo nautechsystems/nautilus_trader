@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.bar cimport Bar
@@ -23,7 +24,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.tick cimport QuoteTick
@@ -181,8 +182,11 @@ cdef class EMACross(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.data.bar_count(self.bar_type)}]...",
+                color=LogColor.BLUE,
+            )
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC

@@ -28,13 +28,9 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.functions cimport format_bytes
-
-from nautilus_trader.core.functions import get_size_of  # Not cimport
-
-from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
@@ -357,7 +353,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 idx for idx, data in enumerate(reversed(self._stream)) if stop_ns <= data.timestamp_ns
             )
 
-            total_size += get_size_of(self._stream)
             # Prepare initial data
             self._iterate_stream()
 
@@ -379,14 +374,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 [dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index],
                 dtype=np.int64,
             )
-
-            # Calculate cumulative data size
-            total_size += get_size_of(self._quote_instruments)
-            total_size += get_size_of(self._quote_bids)
-            total_size += get_size_of(self._quote_asks)
-            total_size += get_size_of(self._quote_bid_sizes)
-            total_size += get_size_of(self._quote_ask_sizes)
-            total_size += get_size_of(self._quote_timestamps)
 
             # Set indexing
             self._quote_index = 0
@@ -410,14 +397,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 dtype=np.int64,
             )
 
-            # Calculate cumulative data size
-            total_size += get_size_of(self._trade_instruments)
-            total_size += get_size_of(self._trade_prices)
-            total_size += get_size_of(self._trade_sizes)
-            total_size += get_size_of(self._trade_match_ids)
-            total_size += get_size_of(self._trade_sides)
-            total_size += get_size_of(self._trade_timestamps)
-
             # Set indexing
             self._trade_index = 0
             self._trade_index_last = len(trade_ticks_slice) - 1
@@ -426,8 +405,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._iterate_trade_ticks()
 
         self.has_data = True
-
-        self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
     cpdef void reset(self) except *:
         """
@@ -517,7 +494,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         return next_data
 
-    cdef inline void _iterate_stream(self) except *:
+    cdef void _iterate_stream(self) except *:
         if self._stream_index <= self._stream_index_last:
             self._next_data = self._stream[self._stream_index]
             self._stream_index += 1
@@ -526,7 +503,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if self._next_quote_tick is None and self._next_trade_tick is None:
                 self.has_data = False
 
-    cdef inline void _iterate_quote_ticks(self) except *:
+    cdef void _iterate_quote_ticks(self) except *:
         if self._quote_index <= self._quote_index_last:
             self._next_quote_tick = self._generate_quote_tick(self._quote_index)
             self._quote_index += 1
@@ -535,7 +512,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if self._next_data is None and self._next_trade_tick is None:
                 self.has_data = False
 
-    cdef inline void _iterate_trade_ticks(self) except *:
+    cdef void _iterate_trade_ticks(self) except *:
         if self._trade_index <= self._trade_index_last:
             self._next_trade_tick = self._generate_trade_tick(self._trade_index)
             self._trade_index += 1
@@ -544,23 +521,25 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if self._next_data is None and self._next_quote_tick is None:
                 self.has_data = False
 
-    cdef inline QuoteTick _generate_quote_tick(self, int index):
+    cdef QuoteTick _generate_quote_tick(self, int index):
         return QuoteTick(
             instrument_id=self._instrument_index[self._quote_instruments[index]],
             bid=Price.from_str_c(self._quote_bids[index]),
             ask=Price.from_str_c(self._quote_asks[index]),
             bid_size=Quantity.from_str_c(self._quote_bid_sizes[index]),
             ask_size=Quantity.from_str_c(self._quote_ask_sizes[index]),
+            timestamp_origin_ns=self._quote_timestamps[index],
             timestamp_ns=self._quote_timestamps[index],
         )
 
-    cdef inline TradeTick _generate_trade_tick(self, int index):
+    cdef TradeTick _generate_trade_tick(self, int index):
         return TradeTick(
             instrument_id=self._instrument_index[self._trade_instruments[index]],
             price=Price.from_str_c(self._trade_prices[index]),
             size=Quantity.from_str_c(self._trade_sizes[index]),
             aggressor_side=AggressorSideParser.from_str(self._trade_sides[index]),
             match_id=TradeMatchId(self._trade_match_ids[index]),
+            timestamp_origin_ns=self._trade_timestamps[index],  # TODO(cs): Hardcoded identical for now
             timestamp_ns=self._trade_timestamps[index],
         )
 

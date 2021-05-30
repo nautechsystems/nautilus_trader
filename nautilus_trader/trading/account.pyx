@@ -21,7 +21,8 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -59,19 +60,13 @@ cdef class Account:
         maint_margins = event.info.get("maint_margins", {})
 
         self._events = [event]
-        self._starting_balances = {b.currency: b for b in event.balances}
-        self._balances = {}                      # type: dict[Currency, Money]
-        self._balances_free = {}                 # type: dict[Currency, Money]
-        self._balances_locked = {}               # type: dict[Currency, Money]
+        self._starting_balances = {b.currency: b.total for b in event.balances}
+        self._balances = {}                      # type: dict[Currency, AccountBalance]
         self._initial_margins = initial_margins  # type: dict[Currency, Money]
         self._maint_margins = maint_margins      # type: dict[Currency, Money]
         self._portfolio = None  # Initialized when registered with portfolio
 
-        self._update_balances(
-            event.balances,
-            event.balances_free,
-            event.balances_locked,
-        )
+        self._update_balances(event.balances)
 
     def __eq__(self, Account other) -> bool:
         return self.id.value == other.id.value
@@ -168,11 +163,7 @@ cdef class Account:
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
-        self._update_balances(
-            event.balances,
-            event.balances_free,
-            event.balances_locked,
-        )
+        self._update_balances(event.balances)
 
     cpdef void update_initial_margin(self, Money margin) except *:
         """
@@ -243,7 +234,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._balances.copy()
+        return {c: b.total for c, b in self._balances.items()}
 
     cpdef dict balances_free(self):
         """
@@ -254,7 +245,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._balances_free.copy()
+        return {c: b.free for c, b in self._balances.items()}
 
     cpdef dict balances_locked(self):
         """
@@ -265,11 +256,11 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._balances_locked.copy()
+        return {c: b.locked for c, b in self._balances.items()}
 
     cpdef Money balance(self, Currency currency=None):
         """
-        Return the current account balance.
+        Return the current account balance total.
 
         For multi-currency accounts, specify the currency for the query.
 
@@ -298,7 +289,10 @@ cdef class Account:
             currency = self.default_currency
         Condition.not_none(currency, "currency")
 
-        return self._balances.get(currency)
+        cdef AccountBalance balance = self._balances.get(currency)
+        if balance is None:
+            return None
+        return balance.total
 
     cpdef Money balance_free(self, Currency currency=None):
         """
@@ -331,7 +325,10 @@ cdef class Account:
             currency = self.default_currency
         Condition.not_none(currency, "currency")
 
-        return self._balances_free.get(currency)
+        cdef AccountBalance balance = self._balances.get(currency)
+        if balance is None:
+            return None
+        return balance.free
 
     cpdef Money balance_locked(self, Currency currency=None):
         """
@@ -364,7 +361,10 @@ cdef class Account:
             currency = self.default_currency
         Condition.not_none(currency, "currency")
 
-        return self._balances_locked.get(currency)
+        cdef AccountBalance balance = self._balances.get(currency)
+        if balance is None:
+            return None
+        return balance.locked
 
     cpdef Money unrealized_pnl(self, Currency currency=None):
         """
@@ -446,7 +446,7 @@ cdef class Account:
         if unrealized_pnl is None:
             return None
 
-        return Money(balance + unrealized_pnl, currency)
+        return Money(balance.free + unrealized_pnl, currency)
 
     @staticmethod
     def market_value(
@@ -469,7 +469,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In the quote currency.
 
         """
         Condition.not_none(quantity, "quantity")
@@ -479,8 +479,8 @@ cdef class Account:
         if instrument.is_inverse:
             close_price = 1 / close_price
 
-        market_value: Decimal = (quantity * close_price * instrument.multiplier)
-        return Money(market_value, instrument.settlement_currency)
+        market_value: Decimal = (quantity * instrument.multiplier * close_price)
+        return Money(market_value, instrument.cost_currency)
 
     @staticmethod
     def notional_value(Instrument instrument, Quantity quantity, close_price: Decimal):
@@ -507,10 +507,10 @@ cdef class Account:
         Condition.not_none(close_price, "close_price")
 
         if instrument.is_inverse:
-            close_price = 1 / close_price
+            return Money(quantity * instrument.multiplier, instrument.quote_currency)
 
-        notional_value: Decimal = quantity * close_price * instrument.multiplier
-        return Money(notional_value, instrument.settlement_currency)
+        notional_value: Decimal = quantity * instrument.multiplier * close_price
+        return Money(notional_value, instrument.quote_currency)
 
     @staticmethod
     def calculate_initial_margin(
@@ -533,7 +533,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In the instruments PnL currency.
 
         """
         Condition.not_none(quantity, "quantity")
@@ -542,13 +542,13 @@ cdef class Account:
         # TODO: Temporarily no margin
         leverage = 1
         if leverage == 1:
-            return Money(0, instrument.settlement_currency)
+            return Money(0, instrument.cost_currency)
 
         notional = Account.notional_value(quantity, price)
         margin = notional / leverage * instrument.margin_init
         margin += notional * instrument.taker_fee * 2
 
-        return Money(margin, instrument.settlement_currency)
+        return Money(margin, instrument.cost_currency)
 
     @staticmethod
     def calculate_maint_margin(
@@ -574,7 +574,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In quote currency.
 
         """
         # side checked in _get_close_price
@@ -584,13 +584,13 @@ cdef class Account:
         # TODO: Temporarily no margin
         leverage = 1
         if leverage == 1:
-            return Money(0, instrument.settlement_currency)  # No margin necessary
+            return Money(0, instrument.cost_currency)  # No margin necessary
 
         cdef Money notional = Account.notional_value(instrument, quantity, last)
         margin = (notional / leverage) * instrument.margin_maint
         margin += notional * instrument.taker_fee
 
-        return Money(margin, instrument.settlement_currency)
+        return Money(margin, instrument.cost_currency)
 
     @staticmethod
     def calculate_commission(
@@ -617,7 +617,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In quote currency.
 
         Raises
         ------
@@ -636,10 +636,14 @@ cdef class Account:
         elif liquidity_side == LiquiditySide.TAKER:
             commission: Decimal = notional * instrument.taker_fee
         else:
-            raise RuntimeError(f"invalid LiquiditySide, "
-                               f"was {LiquiditySideParser.to_str(liquidity_side)}")
+            raise RuntimeError(
+                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
+            )
 
-        return Money(commission, instrument.settlement_currency)
+        if instrument.is_inverse:
+            commission *= 1 / last_px
+
+        return Money(commission, instrument.cost_currency)
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 
@@ -775,21 +779,13 @@ cdef class Account:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _update_balances(
+    cdef void _update_balances(
         self,
         list balances,
-        list balances_free,
-        list balances_locked,
     ) except *:
         # Update the balances. Note that there is no guarantee that every
-        # account currency is included in the event, which is my we don't just
+        # account currency is included in the event, which is why we don't just
         # assign a dict.
-        cdef Money balance
+        cdef AccountBalance balance
         for balance in balances:
             self._balances[balance.currency] = balance
-
-        for balance in balances_free:
-            self._balances_free[balance.currency] = balance
-
-        for balance in balances_locked:
-            self._balances_locked[balance.currency] = balance

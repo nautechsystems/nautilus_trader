@@ -43,6 +43,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -56,7 +57,8 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -105,6 +107,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef str exchange_name = client.name.upper()
         super().__init__(
             ClientId(exchange_name),
+            VenueType.EXCHANGE,
             account_id,
             engine,
             instrument_provider,
@@ -115,7 +118,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             }
         )
 
-        self.venue = Venue(exchange_name)
         self._client = client
         self.is_connected = False
 
@@ -148,7 +150,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._cached_filled[order.venue_order_id] = order.filled_qty.as_decimal()
 
         if self._client.check_required_credentials():
-            self._log.info("API authenticated.", color=LogColor.GREEN)
+            self._log.info("API key authenticated.", color=LogColor.GREEN)
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
@@ -216,14 +218,14 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 symbol=order.instrument_id.symbol.value,
             )
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self._update_balances.__name__)
+            self._log_ccxt_error(ex, self.generate_order_status_report.__name__)
             return None
 
         if response is None:
             self._log.error(f"No order found for {order.venue_order_id.value}.")
             return None
 
-        filled_qty = Decimal(f"{response['filled']:.{instrument.price_precision}f}")
+        filled_qty = instrument.make_qty(response.get('filled', 0))
 
         # Determine state
         status = response["status"]
@@ -242,7 +244,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             order_state=state,
-            filled_qty=Quantity(filled_qty),
+            filled_qty=filled_qty,
             timestamp_ns=millis_to_nanos(millis=response["timestamp"]),
         )
 
@@ -274,7 +276,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         Condition.not_none(venue_order_id, "venue_order_id")
         Condition.not_none(symbol, "symbol")
 
-        self._log.info(f"Generating list[ExecutionReport] for {repr(venue_order_id)}...")
+        self._log.info(f"Generating List[ExecutionReport] for {repr(venue_order_id)}...")
 
         cdef list reports = []  # Output
         cdef list response
@@ -284,29 +286,32 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 since=dt_to_unix_millis(since),
             )
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self.generate_trades.__name__)
+            self._log_ccxt_error(ex, self.generate_exec_reports.__name__)
             return reports
 
         if response is None:
             return reports
 
         cdef list fills = [fill for fill in response if fill["order"] == venue_order_id.value]
-        self._log.info(str(fills), color=LogColor.GREEN)  # TODO: Development
 
         if not fills:
             return reports
 
         cdef ClientOrderId client_order_id = self._engine.cache.client_order_id(venue_order_id)
         if client_order_id is None:
-            self._log.error(f"Cannot generate trades list: "
-                            f"no ClientOrderId found for {repr(venue_order_id)}.")
+            self._log.error(
+                f"Cannot generate trades list: "
+                f"no ClientOrderId found for {repr(venue_order_id)}."
+            )
             return reports
 
         cdef InstrumentId instrument_id = InstrumentId(symbol, self.venue)
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot reconcile state for {repr(client_order_id)}, "
-                            f"instrument for {instrument_id} not found.")
+            self._log.error(
+                f"Cannot reconcile state for {repr(client_order_id)}, "
+                f"instrument for {instrument_id} not found."
+            )
             return  # Cannot generate state report
 
         cdef dict fill
@@ -426,7 +431,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
+    cdef void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
     async def _run_after_delay(self, double delay, coro):
@@ -463,7 +468,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log_ccxt_error(ex, self._update_balances.__name__)
             return
 
-        self._on_account_state(response)
+        self._on_account_state(response, initial=True)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
@@ -568,64 +573,76 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event) except *:
+    cdef void _on_account_state(self, dict event, bint initial=False) except *:
+        del event["info"]
+        del event["free"]
+        del event["used"]
+        del event["total"]
+
         cdef list balances = []
-        cdef list balances_free = []
-        cdef list balances_locked = []
-
-        cdef dict event_free = event["free"]
-        cdef dict event_used = event["used"]
-        cdef dict event_total = event["total"]
-
-        if event_free == self._account_last_free \
-                and event_used == self._account_last_used \
-                and event_total == self._account_last_used:
-            return  # No updates
-
-        self._account_last_free = event_free
-        self._account_last_used = event_used
-        self._account_last_total = event_total
 
         cdef str code
-        cdef Currency currency
+        for code, amounts in event.items():
+            if not isinstance(amounts, dict):
+                continue
+            currency = self._instrument_provider.currency(code)
+            if currency is None:
+                self._log.error(f"Cannot update total balance for {code} "
+                                f"(no currency loaded).")
 
-        # Update total balances
-        for code, amount in event_total.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances.append(Money(amount, currency))
+            used_value = amounts["used"]
+            if used_value is None:
+                locked = Money(0, currency)
+            else:
+                locked = Money(used_value, currency)
 
-        # Update free balances
-        for code, amount in event_free.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances_free.append(Money(amount, currency))
+            free_value = amounts["free"]
+            if free_value is None:
+                free = Money(0, currency)
+            else:
+                free = Money(free_value, currency)
 
-        # Update locked balances
-        for code, amount in event_used.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances_locked.append(Money(amount, currency))
+            total = Money(free + locked, currency)
+
+            if (
+                initial
+                and total.as_decimal() == 0
+                and locked.as_decimal() == 0
+                and free.as_decimal() == 0
+            ):
+                # Skip initial account state with all zero balances
+                continue
+
+            balances.append(
+                AccountBalance(
+                    currency=currency,
+                    total=total,
+                    locked=locked,
+                    free=free,
+                ),
+            )
+
+        timestamp = event.get("timestamp")
+        if timestamp is None:
+            update_ns = self._clock.timestamp_ns()
+        else:
+            update_ns = millis_to_nanos(timestamp)
 
         # Generate event
         self.generate_account_state(
-            balances,
-            balances_free,
-            balances_locked,
+            balances=balances,
+            updated_ns=update_ns,
         )
 
-    cdef inline void _on_order_status(self, dict event) except *:
-        cdef ClientOrderId client_order_id = ClientOrderId(event["clientOrderId"])
+    cdef void _on_order_status(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["id"])
+
+        # Attempt to parse ClientOrderId
+        client_order_id_str = event.get("clientOrderId")
+        if client_order_id_str is None:
+            self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
+            return
+        cdef ClientOrderId client_order_id = ClientOrderId(client_order_id_str)
 
         if venue_order_id not in self._cached_orders:
             order = self._engine.cache.order(client_order_id)
@@ -645,7 +662,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         elif status == "expired":
             self.generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
 
-    cdef inline void _on_exec_report(self, dict event) except *:
+    cdef void _on_exec_report(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["order"])
         cdef Order order = self._cached_orders.get(venue_order_id)
 
@@ -682,7 +699,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             execution_ns=(millis_to_nanos(millis=event["timestamp"])),
         )
 
-    cdef inline Money _parse_commission(self, dict event):
+    cdef Money _parse_commission(self, dict event):
         cdef dict commission = event.get("fee", {})
         cdef str commission_currency = commission.get("currency")
         if commission_currency is None:
@@ -697,12 +714,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         return Money(commission.get("cost", 0), currency)
 
-    cdef inline void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
+    cdef void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
         self._cached_orders[venue_order_id] = order
         self._cached_filled[venue_order_id] = order.filled_qty
         self._log.debug(f"Cached {repr(venue_order_id)} {order}.")
 
-    cdef inline void _decache_order(self, VenueOrderId venue_order_id) except *:
+    cdef void _decache_order(self, VenueOrderId venue_order_id) except *:
         self._cached_orders.pop(venue_order_id, None)
         self._cached_filled.pop(venue_order_id, None)
         self._log.debug(f"De-cached {repr(venue_order_id)}.")

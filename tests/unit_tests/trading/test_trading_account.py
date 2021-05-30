@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -53,10 +54,10 @@ class AccountTests(unittest.TestCase):
         # Fixture Setup
         clock = TestClock()
         logger = Logger(clock)
-        trader_id = TraderId("TESTER", "000")
+        trader_id = TraderId("TESTER-000")
         self.order_factory = OrderFactory(
             trader_id=trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -131,7 +132,7 @@ class AccountTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money("8.70049419", BTC), value)
+        self.assertEqual(Money("100000.00", USD), value)
 
     def test_calculate_commission_for_maker_crypto(self):
         # Arrange
@@ -197,11 +198,18 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money(1_000_000, USD)],
-            [Money(1_000_000, USD)],
-            [Money(0, USD)],
-            info={"default_currency": "USD"},  # Set the default currency
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            info={"default_currency": "USD"},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -224,11 +232,18 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money(1_000_000, USD)],
-            [Money(1_000_000, USD)],
-            [Money(0, USD)],
-            info={"default_currency": "USD"},  # Set the default currency
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            info={"default_currency": "USD"},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -261,11 +276,24 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -315,11 +343,24 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event1 = AccountState(
             AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -332,11 +373,24 @@ class AccountTests(unittest.TestCase):
 
         event2 = AccountState(
             AccountId("SIM", "001"),
-            [Money("9.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("8.50000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.50000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("9.00000000", BTC),
+                    Money("0.50000000", BTC),
+                    Money("8.50000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -358,11 +412,24 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -386,11 +453,24 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -416,11 +496,18 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            balances=[Money(1_000_000, USD)],
-            balances_free=[Money(1_000_000, USD)],
-            balances_locked=[Money(0, USD)],
-            info={"default_currency": "USD"},  # No default currency set
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                ),
+            ],
+            info={"default_currency": "USD"},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -442,11 +529,24 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -466,11 +566,18 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("100000.00", USD)],
-            [Money("0.00", USD)],
-            [Money("0.00", USD)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money("100000.00", USD),
+                    Money("0.00", USD),
+                    Money("100000.00", USD),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -490,11 +597,18 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("100000.00", USD)],
-            [Money("0.00", USD)],
-            [Money("0.00", USD)],
-            info={"default_currency": "USD"},  # No default currency set
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money("100000.00", USD),
+                    Money("0.00", USD),
+                    Money("100000.00", USD),
+                ),
+            ],
+            info={"default_currency": "USD"},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -514,11 +628,24 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -538,11 +665,18 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("100000.00", USD)],
-            [Money("0.00", USD)],
-            [Money("0.00", USD)],
-            info={"default_currency": "USD"},  # No default currency set
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money("100000.00", USD),
+                    Money("0.00", USD),
+                    Money("100000.00", USD),
+                ),
+            ],
+            info={"default_currency": "USD"},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -568,11 +702,24 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money("10.00000000", BTC),
+                    Money("0.00000000", BTC),
+                    Money("10.00000000", BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money("20.00000000", ETH),
+                    Money("0.00000000", ETH),
+                    Money("20.00000000", ETH),
+                ),
+            ],
             info={},  # No default currency set
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 

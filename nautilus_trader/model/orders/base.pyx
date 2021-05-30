@@ -104,7 +104,7 @@ cdef class Order:
     """
     The abstract base class for all orders.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, OrderInitialized init not None):
@@ -409,7 +409,7 @@ cdef class Order:
             raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
-    cdef inline OrderSide flatten_side_c(PositionSide side) except *:
+    cdef OrderSide flatten_side_c(PositionSide side) except *:
         if side == PositionSide.LONG:
             return OrderSide.SELL
         elif side == PositionSide.SHORT:
@@ -591,7 +591,7 @@ cdef class PassiveOrder(Order):
     """
     The abstract base class for all passive orders.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
     def __init__(
         self,

@@ -54,6 +54,7 @@ class BidAskMinMaxTests(unittest.TestCase):
                 Quantity.from_int(1),
                 Quantity.from_int(1),
                 0,
+                0,
             )
         )
         # 5 min later (still in the window)
@@ -64,6 +65,7 @@ class BidAskMinMaxTests(unittest.TestCase):
                 Price.from_str("2.1"),
                 Quantity.from_int(1),
                 Quantity.from_int(1),
+                3e11,
                 3e11,
             )
         )
@@ -85,6 +87,7 @@ class BidAskMinMaxTests(unittest.TestCase):
                 Price.from_str("2.1"),
                 Quantity.from_int(1),
                 Quantity.from_int(1),
+                0,
                 0,
             )
         )

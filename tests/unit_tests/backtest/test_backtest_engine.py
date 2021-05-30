@@ -26,6 +26,7 @@ from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -53,14 +54,33 @@ class TestBacktestEngineData:
         data_type = DataType(str, metadata={"news_wire": "hacks"})
 
         generic_data1 = [
-            GenericData(data_type, data="AAPL hacked", timestamp_ns=0),
-            GenericData(data_type, data="AMZN hacked", timestamp_ns=1000),
-            GenericData(data_type, data="NFLX hacked", timestamp_ns=3000),
-            GenericData(data_type, data="MSFT hacked", timestamp_ns=2000),
+            GenericData(
+                data_type, data="AAPL hacked", timestamp_origin_ns=0, timestamp_ns=0
+            ),
+            GenericData(
+                data_type,
+                data="AMZN hacked",
+                timestamp_origin_ns=1000,
+                timestamp_ns=1000,
+            ),
+            GenericData(
+                data_type,
+                data="NFLX hacked",
+                timestamp_origin_ns=3000,
+                timestamp_ns=3000,
+            ),
+            GenericData(
+                data_type,
+                data="MSFT hacked",
+                timestamp_origin_ns=2000,
+                timestamp_ns=2000,
+            ),
         ]
 
         generic_data2 = [
-            GenericData(data_type, data="FB hacked", timestamp_ns=1500),
+            GenericData(
+                data_type, data="FB hacked", timestamp_origin_ns=1500, timestamp_ns=1500
+            ),
         ]
 
         # Act
@@ -95,6 +115,7 @@ class TestBacktestEngineData:
             level=OrderBookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -103,6 +124,7 @@ class TestBacktestEngineData:
             level=OrderBookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
+            timestamp_origin_ns=1_000_000_000,
             timestamp_ns=1_000_000_000,
         )
 
@@ -131,6 +153,7 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("40"),
                     side=OrderSide.SELL,
                 ),
+                timestamp_origin_ns=0,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
@@ -142,6 +165,7 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("30"),
                     side=OrderSide.SELL,
                 ),
+                timestamp_origin_ns=0,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
@@ -153,6 +177,7 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("20"),
                     side=OrderSide.SELL,
                 ),
+                timestamp_origin_ns=0,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
@@ -164,6 +189,7 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("20"),
                     side=OrderSide.BUY,
                 ),
+                timestamp_origin_ns=0,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
@@ -175,6 +201,7 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("30"),
                     side=OrderSide.BUY,
                 ),
+                timestamp_origin_ns=0,
                 timestamp_ns=0,
             ),
             OrderBookDelta(
@@ -186,6 +213,7 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("40"),
                     side=OrderSide.BUY,
                 ),
+                timestamp_origin_ns=0,
                 timestamp_ns=0,
             ),
         ]
@@ -194,6 +222,7 @@ class TestBacktestEngineData:
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             deltas=deltas,
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -201,6 +230,7 @@ class TestBacktestEngineData:
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             deltas=deltas,
+            timestamp_origin_ns=1000,
             timestamp_ns=1000,
         )
 
@@ -345,8 +375,9 @@ class TestBacktestEngine:
             TestDataProvider.usdjpy_1min_ask()[:2000],
         )
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),

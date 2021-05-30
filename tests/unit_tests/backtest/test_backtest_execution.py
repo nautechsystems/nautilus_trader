@@ -32,6 +32,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -56,7 +57,7 @@ class TestBacktestExecClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BINANCE", "000")
 
         self.portfolio = Portfolio(
@@ -80,6 +81,7 @@ class TestBacktestExecClientTests:
 
         self.exchange = SimulatedExchange(
             venue=Venue("BINANCE"),
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
@@ -101,7 +103,7 @@ class TestBacktestExecClientTests:
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "000"),
+            strategy_id=StrategyId("SCALPER-001"),
             clock=self.clock,
         )
 

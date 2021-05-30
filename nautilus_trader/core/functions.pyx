@@ -29,7 +29,7 @@ from nautilus_trader.core.correctness cimport Condition
 
 
 # Determine correct C lround function
-cdef round_func_type _get_round_func():
+cdef round_func_type _get_round_func() except *:
     if sizeof(long) == 8:
         return <round_func_type>lround_func
     elif sizeof(long long) == 8:
@@ -42,10 +42,11 @@ lround = _get_round_func()
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline uint8_t precision_from_str(str value):
+cpdef inline uint8_t precision_from_str(str value) except *:
     """
-    Return the decimal precision inferred from the number of digits after
-    the '.' decimal place.
+    Return the decimal precision inferred from the given string.
+
+    Can accept scientific notation strings including an 'e' character.
 
     Parameters
     ----------
@@ -63,12 +64,19 @@ cdef inline uint8_t precision_from_str(str value):
 
     Notes
     -----
-    If no decimal place then precision will be inferred as zero.
+    If not scientific notation and no decimal point '.', then precision will be
+    inferred as zero.
 
     """
     Condition.valid_string(value, "value")
 
-    return len(value.partition('.')[2])  # If does not contain "." then partition[2] will be ""
+    value = value.lower()
+    if value.find("e-") > -1:
+        # Scientific notation string
+        return int(value.partition('e-')[2])
+    else:
+        # If does not contain "." then partition[2] will be ""
+        return len(value.partition('.')[2])
 
 
 @cython.boundscheck(False)

@@ -55,6 +55,7 @@ from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Money
@@ -109,6 +110,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         super().__init__(
             ClientId(BETFAIR_VENUE.value),
+            VenueType.EXCHANGE,
             account_id,
             engine,
             instrument_provider,
@@ -172,11 +174,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         ]
         result = await asyncio.gather(*aws)
         account_details, account_funds = result
+        timestamp_ns = self._clock.timestamp_ns()
         account_state = betfair_account_to_account_state(
             account_detail=account_details,
             account_funds=account_funds,
             event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            updated_ns=timestamp_ns,
+            timestamp_ns=timestamp_ns,
         )
         self._handle_event(account_state)
 

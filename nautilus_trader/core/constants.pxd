@@ -21,6 +21,7 @@ cdef str ID
 cdef str ORDER
 cdef str INFO
 cdef str OPTIONS
+cdef str TIMESTAMP_ORIGIN
 cdef str TIMESTAMP
 cdef str VENUE
 cdef str INSTRUMENT_ID
@@ -30,6 +31,7 @@ cdef str ACCOUNT_ID
 cdef str CLIENT_ORDER_ID
 cdef str VENUE_ORDER_ID
 cdef str INIT_ID
+cdef str IS_REPORTED
 cdef str LABEL
 cdef str SUBMITTED_TIMESTAMP
 cdef str ACCEPTED_TIMESTAMP
@@ -63,7 +65,7 @@ cdef str CURRENCY
 cdef str TIME_IN_FORCE
 cdef str LIQUIDITY_SIDE
 cdef str ACCOUNT_NUMBER
-cdef str BALANCE
+cdef str BALANCES
 cdef str MARGIN_BALANCE
 cdef str MARGIN_AVAILABLE
 cdef str BAR
@@ -73,24 +75,22 @@ cdef str LEVEL
 cdef str DEPTH
 cdef str KWARGS
 
-cdef str BALANCES
-cdef str BALANCES_FREE
-cdef str BALANCES_LOCKED
-
 cdef str INSTRUMENT
 cdef str ASSET_CLASS
 cdef str ASSET_TYPE
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
+cdef str COST_CURRENCY
 cdef str SETTLEMENT_CURRENCY
 cdef str IS_INVERSE
 cdef str BROKER_SYMBOL
 cdef str ASSET_TYPE
 cdef str PRICE_PRECISION
+cdef str PRICE_INCREMENT
 cdef str SIZE_PRECISION
-cdef str TICK_SIZE
-cdef str LOT_SIZE
+cdef str SIZE_INCREMENT
 cdef str MULTIPLIER
+cdef str LOT_SIZE
 cdef str MIN_QUANTITY
 cdef str MAX_QUANTITY
 cdef str MIN_NOTIONAL
