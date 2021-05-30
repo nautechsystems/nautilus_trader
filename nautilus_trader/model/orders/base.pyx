@@ -409,7 +409,7 @@ cdef class Order:
             raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
-    cdef inline OrderSide flatten_side_c(PositionSide side) except *:
+    cdef OrderSide flatten_side_c(PositionSide side) except *:
         if side == PositionSide.LONG:
             return OrderSide.SELL
         elif side == PositionSide.SHORT:

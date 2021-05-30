@@ -81,7 +81,7 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _set_position_id_counts(self) except *
+    cdef void _set_position_id_counts(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -92,26 +92,26 @@ cdef class ExecutionEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, TradingCommand command) except *
-    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
-    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
-    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
-    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
+    cdef void _execute_command(self, TradingCommand command) except *
+    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
+    cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
+    cdef void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
+    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef inline void _handle_event(self, Event event) except *
-    cdef inline void _handle_account_event(self, AccountState event) except *
-    cdef inline void _handle_position_event(self, PositionEvent event) except *
-    cdef inline void _handle_order_event(self, OrderEvent event) except *
-    cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *
-    cdef inline void _confirm_position_id(self, OrderFilled fill) except *
-    cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *
-    cdef inline void _handle_order_fill(self, OrderFilled fill) except *
-    cdef inline void _open_position(self, OrderFilled fill) except *
-    cdef inline void _update_position(self, Position position, OrderFilled fill) except *
-    cdef inline void _flip_position(self, Position position, OrderFilled fill) except *
-    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
-    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
-    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
-    cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+    cdef void _handle_event(self, Event event) except *
+    cdef void _handle_account_event(self, AccountState event) except *
+    cdef void _handle_position_event(self, PositionEvent event) except *
+    cdef void _handle_order_event(self, OrderEvent event) except *
+    cdef void _confirm_strategy_id(self, OrderFilled fill) except *
+    cdef void _confirm_position_id(self, OrderFilled fill) except *
+    cdef void _handle_order_command_rejected(self, OrderEvent event) except *
+    cdef void _handle_order_fill(self, OrderFilled fill) except *
+    cdef void _open_position(self, OrderFilled fill) except *
+    cdef void _update_position(self, Position position, OrderFilled fill) except *
+    cdef void _flip_position(self, Position position, OrderFilled fill) except *
+    cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
+    cdef PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
+    cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
+    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *

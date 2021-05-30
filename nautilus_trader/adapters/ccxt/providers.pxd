@@ -26,6 +26,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
     cdef void _load_instruments(self) except *
     cdef void _load_currencies(self) except *
-    cdef inline int _get_currency_precision(self, double value, int mode) except *
-    cdef inline CurrencyType _parse_currency_type(self, str code)
+    cdef int _get_currency_precision(self, double value, int mode) except *
+    cdef CurrencyType _parse_currency_type(self, str code)
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values)

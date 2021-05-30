@@ -97,5 +97,5 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef void _cache_venue_account_id(self, AccountId account_id) except *
     cdef void _build_indexes_from_orders(self) except *
     cdef void _build_indexes_from_positions(self) except *
-    cdef inline set _build_ord_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
-    cdef inline set _build_pos_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef set _build_ord_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef set _build_pos_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)

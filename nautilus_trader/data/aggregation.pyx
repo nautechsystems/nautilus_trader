@@ -292,11 +292,11 @@ cdef class BarAggregator:
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef inline void _build_now_and_send(self) except *:
+    cdef void _build_now_and_send(self) except *:
         cdef Bar bar = self._builder.build_now()
         self._handler(bar)
 
-    cdef inline void _build_and_send(self, int64_t timestamp_ns) except *:
+    cdef void _build_and_send(self, int64_t timestamp_ns) except *:
         cdef Bar bar = self._builder.build(timestamp_ns)
         self._handler(bar)
 

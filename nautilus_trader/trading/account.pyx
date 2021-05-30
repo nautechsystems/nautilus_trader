@@ -779,7 +779,7 @@ cdef class Account:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _update_balances(
+    cdef void _update_balances(
         self,
         list balances,
     ) except *:

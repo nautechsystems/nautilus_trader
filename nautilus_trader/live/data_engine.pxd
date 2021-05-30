@@ -33,4 +33,4 @@ cdef class LiveDataEngine(DataEngine):
 
     cpdef void kill(self) except *
 
-    cdef inline void _enqueue_sentinels(self)
+    cdef void _enqueue_sentinels(self)

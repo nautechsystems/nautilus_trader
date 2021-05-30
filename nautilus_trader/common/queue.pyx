@@ -184,25 +184,25 @@ cdef class Queue:
     def _sleep0(self):
         yield  # Skip one event loop run cycle
 
-    cdef inline int _qsize(self) except *:
+    cdef int _qsize(self) except *:
         return self.count
 
-    cdef inline bint _empty(self) except *:
+    cdef bint _empty(self) except *:
         return self.count == 0
 
-    cdef inline bint _full(self) except *:
+    cdef bint _full(self) except *:
         if self.maxsize <= 0:
             return False
         else:
             return self.count >= self.maxsize
 
-    cdef inline void _put_nowait(self, item) except *:
+    cdef void _put_nowait(self, item) except *:
         if self._full():
             raise asyncio.QueueFull()
         self._queue.append(item)
         self.count += 1
 
-    cdef inline object _get_nowait(self):
+    cdef object _get_nowait(self):
         if self.empty():
             raise asyncio.QueueEmpty()
         item = self._queue.popleft()

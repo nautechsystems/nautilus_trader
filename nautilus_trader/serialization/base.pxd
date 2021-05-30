@@ -22,8 +22,8 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class Serializer:
     cdef object _re_camel_to_snake
 
-    cdef inline str convert_camel_to_snake(self, str value)
-    cdef inline str convert_snake_to_camel(self, str value)
+    cdef str convert_camel_to_snake(self, str value)
+    cdef str convert_snake_to_camel(self, str value)
 
     cpdef str py_convert_camel_to_snake(self, str value)
     cpdef str py_convert_snake_to_camel(self, str value)

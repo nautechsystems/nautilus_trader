@@ -106,7 +106,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
 
         self._instruments[instrument_id] = future
 
-    cdef inline int _tick_size_to_precision(self, double tick_size) except *:
+    cdef int _tick_size_to_precision(self, double tick_size) except *:
         cdef tick_size_str = f"{tick_size:f}"
         return len(tick_size_str.partition('.')[2].rstrip('0'))
 

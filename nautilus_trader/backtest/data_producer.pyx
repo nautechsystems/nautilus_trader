@@ -494,7 +494,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         return next_data
 
-    cdef inline void _iterate_stream(self) except *:
+    cdef void _iterate_stream(self) except *:
         if self._stream_index <= self._stream_index_last:
             self._next_data = self._stream[self._stream_index]
             self._stream_index += 1
@@ -503,7 +503,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if self._next_quote_tick is None and self._next_trade_tick is None:
                 self.has_data = False
 
-    cdef inline void _iterate_quote_ticks(self) except *:
+    cdef void _iterate_quote_ticks(self) except *:
         if self._quote_index <= self._quote_index_last:
             self._next_quote_tick = self._generate_quote_tick(self._quote_index)
             self._quote_index += 1
@@ -512,7 +512,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if self._next_data is None and self._next_trade_tick is None:
                 self.has_data = False
 
-    cdef inline void _iterate_trade_ticks(self) except *:
+    cdef void _iterate_trade_ticks(self) except *:
         if self._trade_index <= self._trade_index_last:
             self._next_trade_tick = self._generate_trade_tick(self._trade_index)
             self._trade_index += 1
@@ -521,7 +521,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if self._next_data is None and self._next_quote_tick is None:
                 self.has_data = False
 
-    cdef inline QuoteTick _generate_quote_tick(self, int index):
+    cdef QuoteTick _generate_quote_tick(self, int index):
         return QuoteTick(
             instrument_id=self._instrument_index[self._quote_instruments[index]],
             bid=Price.from_str_c(self._quote_bids[index]),
@@ -532,7 +532,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             timestamp_ns=self._quote_timestamps[index],
         )
 
-    cdef inline TradeTick _generate_trade_tick(self, int index):
+    cdef TradeTick _generate_trade_tick(self, int index):
         return TradeTick(
             instrument_id=self._instrument_index[self._trade_instruments[index]],
             price=Price.from_str_c(self._trade_prices[index]),

@@ -25,10 +25,10 @@ cdef class BaseDecimal:
     """The decimal precision.\n\n:returns: `uint8`"""
 
     @staticmethod
-    cdef inline object _extract_value(object obj)
+    cdef object _extract_value(object obj)
 
     @staticmethod
-    cdef inline bint _compare(a, b, int op) except *
+    cdef bint _compare(a, b, int op) except *
 
     cpdef object as_decimal(self)
     cpdef double as_double(self) except *

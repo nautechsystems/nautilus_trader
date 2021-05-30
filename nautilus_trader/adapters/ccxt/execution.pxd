@@ -33,16 +33,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *
+    cdef void _log_ccxt_error(self, ex, str method_name) except *
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event, bint initial=*) except *
-    cdef inline void _on_order_status(self, dict event) except *
-    cdef inline void _on_exec_report(self, dict event) except *
-    cdef inline Money _parse_commission(self, dict event)
-    cdef inline void _cache_order(self, VenueOrderId venue_order_id, Order order) except *
-    cdef inline void _decache_order(self, VenueOrderId venue_order_id) except *
+    cdef void _on_account_state(self, dict event, bint initial=*) except *
+    cdef void _on_order_status(self, dict event) except *
+    cdef void _on_exec_report(self, dict event) except *
+    cdef Money _parse_commission(self, dict event)
+    cdef void _cache_order(self, VenueOrderId venue_order_id, Order order) except *
+    cdef void _decache_order(self, VenueOrderId venue_order_id) except *
 
 
 cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):

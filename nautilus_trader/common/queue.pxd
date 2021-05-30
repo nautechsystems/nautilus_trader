@@ -30,8 +30,8 @@ cdef class Queue:
     cpdef object peek(self)
     cpdef list to_list(self)
 
-    cdef inline int _qsize(self) except *
-    cdef inline bint _empty(self) except *
-    cdef inline bint _full(self) except *
-    cdef inline void _put_nowait(self, item) except *
-    cdef inline object _get_nowait(self)
+    cdef int _qsize(self) except *
+    cdef bint _empty(self) except *
+    cdef bint _full(self) except *
+    cdef void _put_nowait(self, item) except *
+    cdef object _get_nowait(self)

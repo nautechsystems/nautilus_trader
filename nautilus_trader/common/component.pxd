@@ -60,7 +60,7 @@ cdef class Component:
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline void _trigger_fsm(
+    cdef void _trigger_fsm(
         self,
         ComponentTrigger trigger1,
         ComponentTrigger trigger2,

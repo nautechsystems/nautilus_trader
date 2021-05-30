@@ -112,13 +112,13 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
             self._currencies[code] = currency
 
-    cdef inline int _get_currency_precision(self, double value, int mode) except *:
+    cdef int _get_currency_precision(self, double value, int mode) except *:
         if mode == 2:  # DECIMAL_PLACE
             return int(value)
         elif mode == 4:  # TICK_SIZE
             return precision_from_str(str(value))
 
-    cdef inline CurrencyType _parse_currency_type(self, str code):
+    cdef CurrencyType _parse_currency_type(self, str code):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):

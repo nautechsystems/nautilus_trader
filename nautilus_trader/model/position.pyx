@@ -312,7 +312,7 @@ cdef class Position:
         return self.is_short_c()
 
     @staticmethod
-    cdef inline PositionSide side_from_order_side_c(OrderSide side) except *:
+    cdef PositionSide side_from_order_side_c(OrderSide side) except *:
         if side == OrderSide.BUY:
             return PositionSide.LONG
         elif side == OrderSide.SELL:
@@ -521,7 +521,7 @@ cdef class Position:
         """
         return list(self._commissions.values())
 
-    cdef inline void _handle_buy_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_buy_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
         if fill.commission.currency == self.cost_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
@@ -544,7 +544,7 @@ cdef class Position:
         self._buy_qty = self._buy_qty + fill.last_qty
         self.relative_qty = self.relative_qty + fill.last_qty
 
-    cdef inline void _handle_sell_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
         if fill.commission.currency == self.cost_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
@@ -567,20 +567,20 @@ cdef class Position:
         self._sell_qty = self._sell_qty + fill.last_qty
         self.relative_qty = self.relative_qty - fill.last_qty
 
-    cdef inline object _calculate_avg_px_open_px(self, OrderFilled fill):
+    cdef object _calculate_avg_px_open_px(self, OrderFilled fill):
         if not self.avg_px_open:
             return fill.last_px
 
         return self._calculate_avg_px(self.quantity, self.avg_px_open, fill)
 
-    cdef inline object _calculate_avg_px_close_px(self, OrderFilled fill):
+    cdef object _calculate_avg_px_close_px(self, OrderFilled fill):
         if not self.avg_px_close:
             return fill.last_px
 
         close_qty: Decimal = self._sell_qty if self.side == PositionSide.LONG else self._buy_qty
         return self._calculate_avg_px(close_qty, self.avg_px_close, fill)
 
-    cdef inline object _calculate_avg_px(
+    cdef object _calculate_avg_px(
         self,
         qty: Decimal,
         avg_px: Decimal,
@@ -591,7 +591,7 @@ cdef class Position:
         cum_qty: Decimal = qty + fill.last_qty
         return (start_cost + event_cost) / cum_qty
 
-    cdef inline object _calculate_points(self, avg_px_open: Decimal, avg_px_close: Decimal):
+    cdef object _calculate_points(self, avg_px_open: Decimal, avg_px_close: Decimal):
         if self.side == PositionSide.LONG:
             return avg_px_close - avg_px_open
         elif self.side == PositionSide.SHORT:
@@ -599,7 +599,7 @@ cdef class Position:
         else:
             return Decimal()  # FLAT
 
-    cdef inline object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal):
+    cdef object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal):
         if self.side == PositionSide.LONG:
             return (1 / avg_px_open) - (1 / avg_px_close)
         elif self.side == PositionSide.SHORT:
@@ -607,10 +607,10 @@ cdef class Position:
         else:
             return Decimal()  # FLAT
 
-    cdef inline object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal):
+    cdef object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal):
         return self._calculate_points(avg_px_open, avg_px_close) / avg_px_open
 
-    cdef inline object _calculate_pnl(
+    cdef object _calculate_pnl(
         self,
         avg_px_open: Decimal,
         avg_px_close: Decimal,

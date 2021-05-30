@@ -62,15 +62,15 @@ cdef class BacktestEngine:
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
 
-    cdef inline void _advance_time(self, int64_t now_ns) except *
-    cdef inline void _process_modules(self, int64_t now_ns) except *
-    cdef inline void _log_header(
+    cdef void _advance_time(self, int64_t now_ns) except *
+    cdef void _process_modules(self, int64_t now_ns) except *
+    cdef void _log_header(
         self,
         datetime run_started,
         datetime start,
         datetime stop,
     ) except *
-    cdef inline void _log_footer(
+    cdef void _log_footer(
         self,
         datetime run_started,
         datetime run_finished,

@@ -26,5 +26,5 @@ cdef class IBInstrumentProvider(InstrumentProvider):
     cdef int _client_id
 
     cpdef void connect(self)
-    cdef inline int _tick_size_to_precision(self, double tick_size) except *
+    cdef int _tick_size_to_precision(self, double tick_size) except *
     cdef Future _parse_futures_contract(self, InstrumentId instrument_id, AssetClass asset_class, list details_list)

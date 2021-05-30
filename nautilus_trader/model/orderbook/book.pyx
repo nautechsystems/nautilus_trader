@@ -324,7 +324,7 @@ cdef class OrderBook:
         self.clear_bids()
         self.clear_asks()
 
-    cdef inline void _apply_delta(self, OrderBookDelta delta) except *:
+    cdef void _apply_delta(self, OrderBookDelta delta) except *:
         if delta.type == OrderBookDeltaType.ADD:
             self.add(order=delta.order)
         elif delta.type == OrderBookDeltaType.UPDATE:
@@ -334,25 +334,25 @@ cdef class OrderBook:
 
         self.last_update_timestamp_ns = delta.timestamp_ns
 
-    cdef inline void _add(self, Order order) except *:
+    cdef void _add(self, Order order) except *:
         if order.side == OrderSide.BUY:
             self.bids.add(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.add(order=order)
 
-    cdef inline void _update(self, Order order) except *:
+    cdef void _update(self, Order order) except *:
         if order.side == OrderSide.BUY:
             self.bids.update(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.update(order=order)
 
-    cdef inline void _delete(self, Order order) except *:
+    cdef void _delete(self, Order order) except *:
         if order.side == OrderSide.BUY:
             self.bids.delete(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.delete(order=order)
 
-    cdef inline void _check_integrity(self) except *:
+    cdef void _check_integrity(self) except *:
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level is None or top_ask_level is None:
@@ -822,13 +822,13 @@ cdef class L2OrderBook(OrderBook):
         for level in self.bids.levels + self.asks.levels:
             assert len(level.orders) == 1, f"Number of orders on {level} > 1"
 
-    cdef inline void _process_order(self, Order order):
+    cdef void _process_order(self, Order order):
         # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the base class.
         order.id = f"{order.price:.{self.price_precision}f}"
 
-    cdef inline void _remove_if_exists(self, Order order) except *:
+    cdef void _remove_if_exists(self, Order order) except *:
         # For a L2OrderBook, an order update means a whole level update. If this
         # level exists, remove it so we can insert the new level.
         if order.side == OrderSide.BUY and order.price in self.bids.prices():
@@ -927,11 +927,11 @@ cdef class L1OrderBook(OrderBook):
         elif isinstance(tick, TradeTick):
             self._update_trade_tick(tick)
 
-    cdef inline void _update_quote_tick(self, QuoteTick tick):
+    cdef void _update_quote_tick(self, QuoteTick tick):
         self._update_bid(tick.bid, tick.bid_size)
         self._update_ask(tick.ask, tick.ask_size)
 
-    cdef inline void _update_trade_tick(self, TradeTick tick):
+    cdef void _update_trade_tick(self, TradeTick tick):
         if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
             if self._top_ask and self._top_bid.price >= self._top_ask.price:
@@ -943,7 +943,7 @@ cdef class L1OrderBook(OrderBook):
                 self._top_bid.price == self._top_ask.price
                 self._top_bid_level.price == self._top_ask.price
 
-    cdef inline void _update_bid(self, double price, double size):
+    cdef void _update_bid(self, double price, double size):
         if self._top_bid is None:
             bid = self._process_order(Order(price, size, OrderSide.BUY))
             self._add(bid)
@@ -954,7 +954,7 @@ cdef class L1OrderBook(OrderBook):
             self._top_bid.update_price(price)
             self._top_bid.update_volume(size)
 
-    cdef inline void _update_ask(self, double price, double size):
+    cdef void _update_ask(self, double price, double size):
         if self._top_ask is None:
             ask = self._process_order(Order(price, size, OrderSide.SELL))
             self._add(ask)
@@ -995,7 +995,7 @@ cdef class L1OrderBook(OrderBook):
         assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
         assert len(self.asks.levels) <= 1, "Number of ask levels > 1"
 
-    cdef inline Order _process_order(self, Order order):
+    cdef Order _process_order(self, Order order):
         # Because a L1OrderBook only has one level per side, we replace the
         # order.id with the name of the side, which will let us easily process
         # the order.

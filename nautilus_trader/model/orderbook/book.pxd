@@ -54,11 +54,11 @@ cdef class OrderBook:
     cpdef void clear_asks(self) except *
     cpdef void clear(self) except *
     cpdef void check_integrity(self) except *
-    cdef inline void _apply_delta(self, OrderBookDelta delta) except *
-    cdef inline void _add(self, Order order) except *
-    cdef inline void _update(self, Order order) except *
-    cdef inline void _delete(self, Order order) except *
-    cdef inline void _check_integrity(self) except *
+    cdef void _apply_delta(self, OrderBookDelta delta) except *
+    cdef void _add(self, Order order) except *
+    cdef void _update(self, Order order) except *
+    cdef void _delete(self, Order order) except *
+    cdef void _check_integrity(self) except *
 
     cpdef Level best_bid_level(self)
     cpdef Level best_ask_level(self)
@@ -88,8 +88,8 @@ cdef class L3OrderBook(OrderBook):
 
 
 cdef class L2OrderBook(OrderBook):
-    cdef inline void _process_order(self, Order order)
-    cdef inline void _remove_if_exists(self, Order order) except *
+    cdef void _process_order(self, Order order)
+    cdef void _remove_if_exists(self, Order order) except *
 
 
 cdef class L1OrderBook(OrderBook):
@@ -99,11 +99,11 @@ cdef class L1OrderBook(OrderBook):
     cdef Level _top_ask_level
 
     cpdef void update_top(self, Tick tick) except *
-    cdef inline void _update_quote_tick(self, QuoteTick tick)
-    cdef inline void _update_trade_tick(self, TradeTick tick)
-    cdef inline void _update_bid(self, double price, double size)
-    cdef inline void _update_ask(self, double price, double size)
-    cdef inline Order _process_order(self, Order order)
+    cdef void _update_quote_tick(self, QuoteTick tick)
+    cdef void _update_trade_tick(self, TradeTick tick)
+    cdef void _update_bid(self, double price, double size)
+    cdef void _update_ask(self, double price, double size)
+    cdef Order _process_order(self, Order order)
 
 
 cdef class OrderBookData(Data):

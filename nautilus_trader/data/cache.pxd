@@ -51,4 +51,4 @@ cdef class DataCache(DataCacheFacade):
     cpdef void add_trade_ticks(self, list ticks) except *
     cpdef void add_bars(self, list bars) except *
 
-    cdef inline tuple _build_quote_table(self, Venue venue)
+    cdef tuple _build_quote_table(self, Venue venue)
