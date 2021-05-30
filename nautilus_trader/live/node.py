@@ -107,8 +107,10 @@ class TradingNode:
         config_strategy = config.get("strategy", {})
 
         # System config
-        self._connection_timeout = config_system.get("connection_timeout", 5.0)
-        self._disconnection_timeout = config_system.get("disconnection_timeout", 5.0)
+        self._timeout_connection = config_system.get("timeout_connection", 5.0)
+        self._timeout_reconciliation = config_system.get("timeout_reconciliation", 10.0)
+        self._timeout_portfolio = config_system.get("timeout_portfolio", 10.0)
+        self._timeout_disconnection = config_system.get("timeout_disconnection", 5.0)
         self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
         self._load_strategy_state = config_strategy.get("load_state", True)
         self._save_strategy_state = config_strategy.get("save_state", True)
@@ -483,19 +485,62 @@ class TradingNode:
             self._log.info("state=STARTING...")
             self._is_running = True
 
+            # Start system
             self._logger.start()
             self._data_engine.start()
             self._exec_engine.start()
             self._risk_engine.start()
 
-            result: bool = await self._await_engines_connected()
-            if not result:
+            # Await engine connection and initialization
+            self._log.info(
+                f"Waiting for engines to connect and initialize "
+                f"({self._timeout_connection}s timeout)...",
+                color=LogColor.BLUE,
+            )
+            if not await self._await_engines_connected():
+                self._log.warning(
+                    f"Timed out ({self._timeout_connection}s) waiting for engines to connect and initialize."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
+                    f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}"
+                )
                 return
+            self._log.info("Engines connected.", color=LogColor.GREEN)
 
-            result: bool = await self._exec_engine.reconcile_state()
-            if not result:
+            # Await execution state reconciliation
+            self._log.info(
+                f"Waiting for execution state to reconcile "
+                f"({self._timeout_reconciliation}s timeout)...",
+                color=LogColor.BLUE,
+            )
+            if not await self._exec_engine.reconcile_state(
+                timeout_secs=self._timeout_reconciliation,
+            ):
+                self._log.warning(
+                    f"Timed out ({self._timeout_reconciliation}s) waiting for "
+                    f"execution state to reconcile."
+                )
                 return
+            self._log.info("State reconciled.", color=LogColor.GREEN)
 
+            # Await portfolio initialization
+            self._log.info(
+                "Waiting for portfolio to initialize "
+                f"({self._timeout_portfolio}s timeout)...",
+                color=LogColor.BLUE,
+            )
+            if not await self._await_portfolio_initialized():
+                self._log.warning(
+                    f"Timed out ({self._timeout_portfolio}s) waiting for portfolio to initialize."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nPortfolio.initialized == {self.portfolio.initialized}"
+                )
+                return
+            self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+
+            # Start trader and strategies
             self.trader.start()
 
             if self._loop.is_running():
@@ -511,44 +556,41 @@ class TradingNode:
             self._log.error(str(ex))
 
     async def _await_engines_connected(self) -> bool:
-        self._log.info(
-            f"Waiting for engines to initialize "
-            f"({self._connection_timeout}s timeout)...",
-            color=LogColor.BLUE,
-        )
-
         # - The data engine clients will be set connected when all
         # instruments are received and updated with the data engine.
         # - The execution engine clients will be set connected when all
         # accounts are updated and the current order and position status is
         # reconciled.
-        # - The portfolio will be set initialized when all margin and unrealized
-        # PnL calculations are completed (may be waiting on first quote).
         # Thus any delay here will be due to blocking network IO.
-        seconds = self._connection_timeout
+        seconds = self._timeout_connection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
             if self._clock.utc_now() >= timeout:
-                self._log.error(
-                    f"Timed out ({seconds}s) waiting for engines to connect "
-                    f"and portfolio to initialize."
-                    f"\nStatus"
-                    f"\n------"
-                    f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
-                    f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}"
-                    f"\nPortfolio.initialized == {self.portfolio.initialized}"
-                )
                 return False
             if not self._data_engine.check_connected():
                 continue
             if not self._exec_engine.check_connected():
                 continue
+            break
+
+        return True  # Engines connected
+
+    async def _await_portfolio_initialized(self) -> bool:
+        # - The portfolio will be set initialized when all margin and unrealized
+        # PnL calculations are completed (may be waiting on first quote).
+        # Thus any delay here will be due to blocking network IO.
+        seconds = self._timeout_portfolio
+        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0)
+            if self._clock.utc_now() >= timeout:
+                return False
             if not self.portfolio.initialized:
                 continue
             break
 
-        return True  # Engines connected
+        return True  # Portfolio initialized
 
     async def _stop(self) -> None:
         self._is_stopping = True
@@ -573,7 +615,19 @@ class TradingNode:
         if self._risk_engine.state == ComponentState.RUNNING:
             self._risk_engine.stop()
 
-        await self._await_engines_disconnected()
+        self._log.info(
+            f"Waiting for engines to disconnect "
+            f"({self._timeout_disconnection}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._await_engines_disconnected():
+            self._log.error(
+                f"Timed out ({self._timeout_disconnection}s) waiting for engines to disconnect."
+                f"\nStatus"
+                f"\n------"
+                f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
+                f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
+            )
 
         # Clean up remaining timers
         timer_names = self._clock.timer_names()
@@ -585,31 +639,20 @@ class TradingNode:
         self._log.info("state=STOPPED.")
         self._is_running = False
 
-    async def _await_engines_disconnected(self) -> None:
-        self._log.info(
-            f"Waiting for engines to disconnect "
-            f"({self._disconnection_timeout}s timeout)...",
-            color=LogColor.BLUE,
-        )
-
-        seconds = self._disconnection_timeout
+    async def _await_engines_disconnected(self) -> bool:
+        seconds = self._timeout_disconnection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
             if self._clock.utc_now() >= timeout:
-                self._log.error(
-                    f"Timed out ({seconds}s) waiting for engines to disconnect."
-                    f"\nStatus"
-                    f"\n------"
-                    f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
-                    f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
-                )
-                break
+                return False
             if not self._data_engine.check_disconnected():
                 continue
             if not self._exec_engine.check_disconnected():
                 continue
             break
+
+        return True  # Engines disconnected
 
     def _cancel_all_tasks(self) -> None:
         to_cancel = asyncio.tasks.all_tasks(self._loop)

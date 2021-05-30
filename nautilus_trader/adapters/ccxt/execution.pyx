@@ -150,7 +150,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._cached_filled[order.venue_order_id] = order.filled_qty.as_decimal()
 
         if self._client.check_required_credentials():
-            self._log.info("API authenticated.", color=LogColor.GREEN)
+            self._log.info("API key authenticated.", color=LogColor.GREEN)
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
@@ -225,7 +225,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.error(f"No order found for {order.venue_order_id.value}.")
             return None
 
-        filled_qty = Decimal(f"{response['filled']:.{instrument.price_precision}f}")
+        filled_qty = instrument.make_qty(response.get('filled', 0))
 
         # Determine state
         status = response["status"]
@@ -244,7 +244,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             order_state=state,
-            filled_qty=Quantity(filled_qty),
+            filled_qty=filled_qty,
             timestamp_ns=millis_to_nanos(millis=response["timestamp"]),
         )
 
@@ -276,7 +276,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         Condition.not_none(venue_order_id, "venue_order_id")
         Condition.not_none(symbol, "symbol")
 
-        self._log.info(f"Generating list[ExecutionReport] for {repr(venue_order_id)}...")
+        self._log.info(f"Generating List[ExecutionReport] for {repr(venue_order_id)}...")
 
         cdef list reports = []  # Output
         cdef list response
@@ -293,22 +293,25 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return reports
 
         cdef list fills = [fill for fill in response if fill["order"] == venue_order_id.value]
-        self._log.info(str(fills), color=LogColor.GREEN)  # TODO: Development
 
         if not fills:
             return reports
 
         cdef ClientOrderId client_order_id = self._engine.cache.client_order_id(venue_order_id)
         if client_order_id is None:
-            self._log.error(f"Cannot generate trades list: "
-                            f"no ClientOrderId found for {repr(venue_order_id)}.")
+            self._log.error(
+                f"Cannot generate trades list: "
+                f"no ClientOrderId found for {repr(venue_order_id)}."
+            )
             return reports
 
         cdef InstrumentId instrument_id = InstrumentId(symbol, self.venue)
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot reconcile state for {repr(client_order_id)}, "
-                            f"instrument for {instrument_id} not found.")
+            self._log.error(
+                f"Cannot reconcile state for {repr(client_order_id)}, "
+                f"instrument for {instrument_id} not found."
+            )
             return  # Cannot generate state report
 
         cdef dict fill
