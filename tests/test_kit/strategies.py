@@ -16,6 +16,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
@@ -205,7 +206,8 @@ class EMACross(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]..."
+                f"[{self.data.bar_count(self.bar_type)}]...",
+                color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 

@@ -20,14 +20,15 @@ result of inlining the function.
 - `Instrument` serialization.
 
 ## Enhancements
-- Add `instruments` subpackage with expanded class definitions.
-- Add `timestamp_origin_ns` timestamp when originally occurred to data.
+- `Portfolio` pending calculations if data not immediately available.
+- Added `instruments` subpackage with expanded class definitions.
+- Added `timestamp_origin_ns` timestamp when originally occurred.
 - Simplified `TraderId` and `StrategyId` identifiers.
-- Improve `ExecutionEngine` order routing.
-- Improve `ExecutionEngine` client registration.
-- Add order routing configuration.
-- Add `VenueType` enum and parser.
-- Improve param typing for identifier generators.
+- Improved `ExecutionEngine` order routing.
+- Improved `ExecutionEngine` client registration.
+- Added order routing configuration.
+- Added `VenueType` enum and parser.
+- Improved param typing for identifier generators.
 
 ## Fixes
 None
@@ -46,11 +47,11 @@ This release focuses on simplifications and enhancements of existing machinery.
 - `TradingCommand` serialization.
 
 ## Enhancements
-- Add `Instrument` methods to `ExecutionCache`.
-- Add `Venue` filter to cache queries.
-- Move order validations into `RiskEngine`.
-- Refactor `RiskEngine`.
-- Remove routing type information from identifiers.
+- Added `Instrument` methods to `ExecutionCache`.
+- Added `Venue` filter to cache queries.
+- Moved order validations into `RiskEngine`.
+- Refactored `RiskEngine`.
+- Removed routing type information from identifiers.
 
 ## Fixes
 None
