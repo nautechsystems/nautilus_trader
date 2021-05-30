@@ -70,6 +70,7 @@ class TestEvents:
         )
         event = AccountState(
             account_id=AccountId("SIM", "000"),
+            reported=True,
             balances=[balance],
             info={},
             event_id=uuid,
@@ -81,11 +82,11 @@ class TestEvents:
         # Act
         # Assert
         assert (
-            f"AccountState(account_id=SIM-000, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            f"AccountState(account_id=SIM-000, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == str(event)
         )
         assert (
-            f"AccountState(account_id=SIM-000, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            f"AccountState(account_id=SIM-000, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == repr(event)
         )
 
@@ -308,12 +309,12 @@ class TestEvents:
         # Act
         assert (
             f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
-            f"venue_order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
+            f"venue_order_id=123456, qty=500_000, price=1.95000, event_id={uuid})"
             == str(event)
         )
         assert (
             f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
-            f"venue_order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
+            f"venue_order_id=123456, qty=500_000, price=1.95000, event_id={uuid})"
             == repr(event)
         )
 

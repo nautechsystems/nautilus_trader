@@ -188,6 +188,7 @@ def betfair_account_to_account_state(
     free = balance - locked
     return AccountState(
         account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
+        reported=True,
         balances=[
             AccountBalance(
                 currency=currency,

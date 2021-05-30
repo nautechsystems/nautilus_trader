@@ -736,6 +736,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
+            package[IS_REPORTED] = event.is_reported
             package[BALANCES] = [[b.currency.code, str(b.total), str(b.locked), str(b.free)] for b in event.balances]
             package[UPDATED_TIMESTAMP] = event.updated_ns
             package[INFO] = event.info
@@ -885,6 +886,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if event_type == AccountState.__name__:
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                unpacked[IS_REPORTED],
                 [AccountBalance(
                     currency=Currency.from_str_c(b[0]),
                     total=Money(b[1], Currency.from_str_c(b[0])),

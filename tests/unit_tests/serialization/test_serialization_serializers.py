@@ -447,6 +447,7 @@ class TestMsgPackEventSerializer:
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "000"),
+            reported=True,
             balances=[
                 AccountBalance(
                     USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD)

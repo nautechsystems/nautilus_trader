@@ -308,6 +308,7 @@ class TestStubs:
 
         return AccountState(
             account_id,
+            True,  # reported
             [
                 AccountBalance(
                     USD,

@@ -57,6 +57,7 @@ class ReportProviderTests(unittest.TestCase):
         # Arrange
         state = AccountState(
             account_id=AccountId("BITMEX", "1513111"),
+            reported=True,
             balances=[
                 AccountBalance(
                     currency=BTC,

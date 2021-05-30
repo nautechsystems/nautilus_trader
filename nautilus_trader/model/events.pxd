@@ -43,6 +43,8 @@ cdef class AccountState(Event):
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly list balances
     """The account balances.\n\n:returns: `list[AccountBalance]`"""
+    cdef readonly bint is_reported
+    """If the state is reported from the exchange (otherwise system calculated).\n\n:returns: `bool`"""
     cdef readonly dict info
     """The additional implementation specific account information.\n\n:returns: `dict[str, object]`"""
     cdef readonly int64_t updated_ns

@@ -101,6 +101,7 @@ def test_account_statement(betfair_client, uuid, clock):
     )
     expected = AccountState(
         AccountId(issuer="BETFAIR", number="Testy-McTest"),
+        True,  # reported
         [AccountBalance(AUD, Money(1000.0, AUD), Money(0.00, AUD), Money(1000.0, AUD))],
         {"funds": funds, "detail": detail},
         uuid,
