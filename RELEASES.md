@@ -31,7 +31,8 @@ result of inlining the function.
 - Improved param typing for identifier generators.
 
 ## Fixes
-None
+- CCXT `TICK_SIZE` precision mode - size precisions (BitMEX, FTX).
+- State reconciliation (various bugs).
 
 ---
 
