@@ -23,12 +23,14 @@ result of inlining the function.
 - `Portfolio` pending calculations if data not immediately available.
 - Added `instruments` subpackage with expanded class definitions.
 - Added `timestamp_origin_ns` timestamp when originally occurred.
+- Added `AccountState.is_reported` flagging if reported by exchange or calculated.
 - Simplified `TraderId` and `StrategyId` identifiers.
 - Improved `ExecutionEngine` order routing.
 - Improved `ExecutionEngine` client registration.
 - Added order routing configuration.
 - Added `VenueType` enum and parser.
 - Improved param typing for identifier generators.
+- Improved log formatting of `Money` and `Quantity` thousands commas.
 
 ## Fixes
 - CCXT `TICK_SIZE` precision mode - size precisions (BitMEX, FTX).
