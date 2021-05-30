@@ -367,7 +367,7 @@ cdef class Quantity(BaseDecimal):
         str
 
         """
-        return f"{self.as_decimal():,}"
+        return f"{self.as_decimal():,}".replace(",", "_")
 
 
 cdef class Price(BaseDecimal):

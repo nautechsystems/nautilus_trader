@@ -31,6 +31,7 @@ cdef str ACCOUNT_ID
 cdef str CLIENT_ORDER_ID
 cdef str VENUE_ORDER_ID
 cdef str INIT_ID
+cdef str IS_REPORTED
 cdef str LABEL
 cdef str SUBMITTED_TIMESTAMP
 cdef str ACCEPTED_TIMESTAMP

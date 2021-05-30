@@ -140,7 +140,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
         self.assertEqual(
-            "Position(LONG 100,000 AUD/USD.SIM, id=P-123456)", repr(position)
+            "Position(LONG 100_000 AUD/USD.SIM, id=P-123456)", repr(position)
         )
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
@@ -190,7 +190,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
         self.assertEqual(
-            "Position(SHORT 100,000 AUD/USD.SIM, id=P-123456)", repr(position)
+            "Position(SHORT 100_000 AUD/USD.SIM, id=P-123456)", repr(position)
         )
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
@@ -234,7 +234,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
         self.assertEqual(
-            "Position(LONG 50,000 AUD/USD.SIM, id=P-123456)", repr(position)
+            "Position(LONG 50_000 AUD/USD.SIM, id=P-123456)", repr(position)
         )
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
@@ -290,7 +290,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual([Money(4.00, USD)], position.commissions())
         self.assertEqual(Money(4.00, USD), position.commission)
         self.assertEqual(
-            "Position(SHORT 100,000 AUD/USD.SIM, id=P-123456)", repr(position)
+            "Position(SHORT 100_000 AUD/USD.SIM, id=P-123456)", repr(position)
         )
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(

@@ -114,8 +114,7 @@ cdef class ExecutionClient:
         self._config = config
 
         self.id = client_id
-        if venue_type != VenueType.BROKERAGE_MULTI_VENUE:
-            self.venue = Venue(client_id.value)
+        self.venue = Venue(client_id.value) if venue_type != VenueType.BROKERAGE_MULTI_VENUE else None
         self.venue_type = venue_type
         self.account_id = account_id
         self.is_connected = False
@@ -198,6 +197,7 @@ cdef class ExecutionClient:
         # Generate event
         cdef AccountState account_state = AccountState(
             account_id=self.account_id,
+            reported=True,
             balances=balances,
             info=info,
             event_id=self._uuid_factory.generate(),
