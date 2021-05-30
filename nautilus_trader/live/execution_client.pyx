@@ -229,7 +229,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         Condition.not_none(active_orders, "active_orders")
 
-        self._log.info(f"Generating ExecutionMassStatus for {self.id}...", LogColor.BLUE)
+        self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
 
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,
