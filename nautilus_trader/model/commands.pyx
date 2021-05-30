@@ -31,7 +31,7 @@ cdef class TradingCommand(Command):
     """
     The abstract base class for all trading related commands.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(

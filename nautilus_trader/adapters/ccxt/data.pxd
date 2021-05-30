@@ -36,31 +36,33 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cdef object _update_instruments_task
 
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *
-    cdef inline int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *
-    cdef inline void _on_quote_tick(
+    cdef void _log_ccxt_error(self, ex, str method_name) except *
+    cdef int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *
+    cdef void _on_quote_tick(
         self,
         InstrumentId instrument_id,
         double best_bid,
         double best_ask,
         double best_bid_size,
         double best_ask_size,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *
-    cdef inline void _on_trade_tick(
+    cdef void _on_trade_tick(
         self,
         InstrumentId instrument_id,
         double price,
         double amount,
         str aggressor_side,
         str trade_match_id,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *
-    cdef inline void _on_bar(
+    cdef void _on_bar(
         self,
         BarType bar_type,
         double open_price,
@@ -68,18 +70,19 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
         int price_precision,
         int size_precision,
     ) except *
-    cdef inline TradeTick _parse_trade_tick(
+    cdef TradeTick _parse_trade_tick(
         self,
         InstrumentId instrument_id,
         dict trade,
         int price_precision,
         int size_precision,
     )
-    cdef inline Bar _parse_bar(
+    cdef Bar _parse_bar(
         self,
         BarType bar_type,
         list values,

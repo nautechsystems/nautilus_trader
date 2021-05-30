@@ -28,6 +28,7 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -59,7 +60,7 @@ class TestRedisExecutionDatabase:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(self.trader_id, self.clock, self.logger)
@@ -610,8 +611,9 @@ class TestExecutionCacheWithRedisDatabaseTests:
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             modules=[],

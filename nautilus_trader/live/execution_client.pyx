@@ -31,11 +31,12 @@ from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -84,12 +85,13 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
     The abstract base class for all live execution clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         ClientId client_id not None,
+        VenueType venue_type,
         AccountId account_id not None,
         LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
@@ -104,6 +106,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account identifier for the client.
         engine : LiveDataEngine
@@ -120,6 +124,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         super().__init__(
             client_id,
+            venue_type,
             account_id,
             engine,
             clock,
@@ -224,7 +229,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         Condition.not_none(active_orders, "active_orders")
 
-        self._log.info(f"Generating ExecutionMassStatus for {self.id}...", LogColor.BLUE)
+        self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
 
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,

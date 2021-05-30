@@ -43,7 +43,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instrument import BettingInstrument
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
@@ -167,6 +167,7 @@ class BetfairTestStubs(TestStubs):
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            timestamp_origin_ns=BetfairTestStubs.clock().timestamp_ns(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
 
@@ -459,7 +460,7 @@ class BetfairTestStubs(TestStubs):
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             BetfairTestStubs.clock(),
             BetfairTestStubs.logger(),
         )

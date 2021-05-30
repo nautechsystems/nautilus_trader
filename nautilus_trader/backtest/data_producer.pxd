@@ -74,11 +74,11 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cpdef void clear(self) except *
     cpdef Data next(self)
 
-    cdef inline void _iterate_stream(self) except *
-    cdef inline void _iterate_quote_ticks(self) except *
-    cdef inline void _iterate_trade_ticks(self) except *
-    cdef inline QuoteTick _generate_quote_tick(self, int index)
-    cdef inline TradeTick _generate_trade_tick(self, int index)
+    cdef void _iterate_stream(self) except *
+    cdef void _iterate_quote_ticks(self) except *
+    cdef void _iterate_trade_ticks(self) except *
+    cdef QuoteTick _generate_quote_tick(self, int index)
+    cdef TradeTick _generate_trade_tick(self, int index)
 
 
 cdef class CachedProducer(DataProducerFacade):

@@ -40,7 +40,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
@@ -550,7 +550,7 @@ class DataEngineTests(unittest.TestCase):
 
     def test_process_unrecognized_data_type_logs_and_does_nothing(self):
         # Arrange
-        data = Data(0)
+        data = Data(0, 0)
 
         # Act
         self.data_engine.process(data)  # Invalid
@@ -937,6 +937,7 @@ class DataEngineTests(unittest.TestCase):
             level=OrderBookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -980,6 +981,7 @@ class DataEngineTests(unittest.TestCase):
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             deltas=[],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -1044,6 +1046,7 @@ class DataEngineTests(unittest.TestCase):
             level=OrderBookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
@@ -1138,6 +1141,7 @@ class DataEngineTests(unittest.TestCase):
             Quantity.from_int(1),
             Quantity.from_int(1),
             0,
+            0,
         )
 
         # Act
@@ -1185,6 +1189,7 @@ class DataEngineTests(unittest.TestCase):
             Price.from_str("100.003"),
             Quantity.from_int(1),
             Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -1277,6 +1282,7 @@ class DataEngineTests(unittest.TestCase):
             AggressorSide.BUY,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         # Act
@@ -1323,6 +1329,7 @@ class DataEngineTests(unittest.TestCase):
             Quantity.from_int(100),
             AggressorSide.BUY,
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -1416,6 +1423,7 @@ class DataEngineTests(unittest.TestCase):
             Price.from_str("1052.00000"),
             Quantity.from_int(100),
             0,
+            0,
         )
 
         # Act
@@ -1460,6 +1468,7 @@ class DataEngineTests(unittest.TestCase):
             Price.from_str("1050.00000"),
             Price.from_str("1052.00000"),
             Quantity.from_int(100),
+            0,
             0,
         )
 

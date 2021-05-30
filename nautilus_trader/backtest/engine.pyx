@@ -51,6 +51,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport AccountId
@@ -58,7 +59,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
@@ -115,7 +116,7 @@ cdef class BacktestEngine:
 
         """
         if trader_id is None:
-            trader_id = TraderId("BACKTESTER", "000")
+            trader_id = TraderId("BACKTESTER-000")
         Condition.valid_string(exec_db_type, "exec_db_type")
 
         # Options
@@ -544,11 +545,13 @@ cdef class BacktestEngine:
         self._log.info(
             f"Added {len(data)} {instrument_id} "
             f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
-            f"Bar data elements.")
+            f"Bar data elements."
+        )
 
-    def add_exchange(
+    def add_venue(
         self,
         Venue venue,
+        VenueType venue_type,
         OMSType oms_type,
         list starting_balances,
         bint is_frozen_account=False,
@@ -562,13 +565,15 @@ cdef class BacktestEngine:
         Parameters
         ----------
         venue : Venue
-            The venue for the exchange.
+            The exchange venue identifier.
+        venue_type : VenueType
+            The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType
             The order management system type for the exchange. If HEDGING and
             no position_id for an order then will generate a new position_id.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
-        is_frozen_account : bool, optional
+        is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
@@ -597,6 +602,7 @@ cdef class BacktestEngine:
         # Create exchange
         exchange = SimulatedExchange(
             venue=venue,
+            venue_type=venue_type,
             oms_type=oms_type,
             is_frozen_account=is_frozen_account,
             starting_balances=starting_balances,
@@ -816,7 +822,7 @@ cdef class BacktestEngine:
 
         self._log_footer(run_started, self._clock.utc_now(), start, stop)
 
-    cdef inline void _advance_time(self, int64_t now_ns) except *:
+    cdef void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
@@ -827,12 +833,12 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    cdef inline void _process_modules(self, int64_t now_ns) except *:
+    cdef void _process_modules(self, int64_t now_ns) except *:
         cdef SimulatedExchange exchange
         for exchange in self._exchanges.values():
             exchange.process_modules(now_ns)
 
-    cdef inline void _log_header(
+    cdef void _log_header(
         self,
         datetime run_started,
         datetime start,
@@ -857,7 +863,7 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    cdef inline void _log_footer(
+    cdef void _log_footer(
         self,
         datetime run_started,
         datetime run_finished,
@@ -887,7 +893,7 @@ cdef class BacktestEngine:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 account_balances_starting = ', '.join([b.to_str() for b in exchange.starting_balances])
-                account_balances_ending = ', '.join([b.to_str() for b in exchange.account_balances.values()])
+                account_balances_ending = ', '.join([b.total.to_str() for b in exchange.account_balances.values()])
                 account_commissions = ', '.join([b.to_str() for b in exchange.total_commissions.values()])
                 unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()])
                 account_starting_length = len(account_balances_starting)

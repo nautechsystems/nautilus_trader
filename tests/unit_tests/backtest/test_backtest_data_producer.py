@@ -60,15 +60,33 @@ class TestBacktestDataProducer:
             level=OrderBookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
+            timestamp_origin_ns=0,
             timestamp_ns=0,
         )
 
         data_type = DataType(str, metadata={"news_wire": "hacks"})
         generic_data1 = [
-            GenericData(data_type, data="AAPL hacked", timestamp_ns=0),
-            GenericData(data_type, data="AMZN hacked", timestamp_ns=500_000),
-            GenericData(data_type, data="NFLX hacked", timestamp_ns=1_000_000),
-            GenericData(data_type, data="MSFT hacked", timestamp_ns=2_000_000),
+            GenericData(
+                data_type, data="AAPL hacked", timestamp_origin_ns=0, timestamp_ns=0
+            ),
+            GenericData(
+                data_type,
+                data="AMZN hacked",
+                timestamp_origin_ns=500_000,
+                timestamp_ns=500_000,
+            ),
+            GenericData(
+                data_type,
+                data="NFLX hacked",
+                timestamp_origin_ns=1_000_000,
+                timestamp_ns=1_000_000,
+            ),
+            GenericData(
+                data_type,
+                data="MSFT hacked",
+                timestamp_origin_ns=2_000_000,
+                timestamp_ns=2_000_000,
+            ),
         ]
 
         snapshot2 = OrderBookSnapshot(
@@ -76,6 +94,7 @@ class TestBacktestDataProducer:
             level=OrderBookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
+            timestamp_origin_ns=1_000_000,
             timestamp_ns=1_000_000,
         )
 

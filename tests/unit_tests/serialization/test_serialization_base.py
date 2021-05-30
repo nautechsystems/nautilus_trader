@@ -53,8 +53,8 @@ class TestSerializationBase:
     def test_order_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 

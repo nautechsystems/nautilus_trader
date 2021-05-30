@@ -71,7 +71,12 @@ class DataTypeTests(unittest.TestCase):
         # Arrange
         # Act
         data_type = DataType(str, {"type": "NEWS_WIRE"})
-        data = GenericData(data_type, "Some News Headline", 1_000_000_000)
+        data = GenericData(
+            data_type,
+            "Some News Headline",
+            1_000_000_000,
+            1_000_000_000,
+        )
 
         # Assert
         self.assertEqual(data_type, data.data_type)

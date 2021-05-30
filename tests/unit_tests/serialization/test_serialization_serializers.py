@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -140,8 +141,8 @@ class TestMsgPackOrderSerializer:
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -185,7 +186,7 @@ class TestMsgPackOrderSerializer:
         # Arrange
         order = LimitOrder(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),
@@ -209,7 +210,7 @@ class TestMsgPackOrderSerializer:
         # Arrange
         order = StopMarketOrder(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),
@@ -233,7 +234,7 @@ class TestMsgPackOrderSerializer:
         # Arrange
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),
@@ -258,7 +259,7 @@ class TestMsgPackOrderSerializer:
         # Arrange
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),
@@ -289,7 +290,7 @@ class TestMsgPackCommandSerializer:
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -303,7 +304,7 @@ class TestMsgPackCommandSerializer:
 
         command = SubmitOrder(
             self.trader_id,
-            StrategyId("SCALPER", "01"),
+            StrategyId("SCALPER-001"),
             PositionId("P-123456"),
             order,
             uuid4(),
@@ -340,7 +341,7 @@ class TestMsgPackCommandSerializer:
 
         command = SubmitBracketOrder(
             self.trader_id,
-            StrategyId("SCALPER", "01"),
+            StrategyId("SCALPER-001"),
             bracket_order,
             uuid4(),
             0,
@@ -375,7 +376,7 @@ class TestMsgPackCommandSerializer:
 
         command = SubmitBracketOrder(
             self.trader_id,
-            StrategyId("SCALPER", "01"),
+            StrategyId("SCALPER-001"),
             bracket_order,
             uuid4(),
             0,
@@ -395,7 +396,7 @@ class TestMsgPackCommandSerializer:
         # Arrange
         command = UpdateOrder(
             self.trader_id,
-            StrategyId("SCALPER", "01"),
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("001"),
@@ -418,7 +419,7 @@ class TestMsgPackCommandSerializer:
         # Arrange
         command = CancelOrder(
             self.trader_id,
-            StrategyId("SCALPER", "01"),
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("001"),
@@ -446,17 +447,22 @@ class TestMsgPackEventSerializer:
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "000"),
-            balances=[Money(1525000, USD)],
-            balances_free=[Money(1425000, USD)],
-            balances_locked=[Money(0, USD)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD)
+                )
+            ],
             info={"default_currency": "USD"},
             event_id=uuid4(),
-            timestamp_ns=0,
+            updated_ns=0,
+            timestamp_ns=1_000_000_000,
         )
 
         # Act
         serialized = self.serializer.serialize(event)
         deserialized = self.serializer.deserialize(serialized)
+        print(deserialized)
 
         # Assert
         assert deserialized == event
@@ -465,7 +471,7 @@ class TestMsgPackEventSerializer:
         # Arrange
         event = OrderInitialized(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.MARKET,
@@ -495,7 +501,7 @@ class TestMsgPackEventSerializer:
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.LIMIT,
@@ -524,7 +530,7 @@ class TestMsgPackEventSerializer:
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.STOP_MARKET,
@@ -556,7 +562,7 @@ class TestMsgPackEventSerializer:
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
@@ -818,7 +824,7 @@ class TestMsgPackEventSerializer:
             VenueOrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(50000, precision=0),
@@ -846,7 +852,7 @@ class TestMsgPackEventSerializer:
             VenueOrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.SELL,
             Quantity(100000, precision=0),

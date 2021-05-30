@@ -30,6 +30,7 @@ from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
@@ -65,12 +66,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -108,6 +109,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
             client_id=ClientId(self.venue.value),
+            venue_type=VenueType.ECN,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -117,13 +119,56 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
 
-    def test_registered_venues_returns_expected(self):
+    def test_registered_clients_returns_expected(self):
         # Arrange
         # Act
         result = self.exec_engine.registered_clients
 
         # Assert
-        self.assertEqual([ClientId("SIM")], result)
+        assert result == [ClientId("SIM")]
+        assert self.exec_engine.default_client is None
+
+    def test_register_brokerage_multi_venue_exec_client(self):
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("IB"),
+            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
+            account_id=AccountId("IB", "U1258001"),
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        self.exec_engine.register_client(exec_client)
+
+        # Assert
+        assert self.exec_engine.default_client == exec_client.id
+        assert self.exec_engine.registered_clients == [
+            exec_client.id,
+            self.exec_client.id,
+        ]
+
+    def test_register_venue_routing(self):
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("IB"),
+            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
+            account_id=AccountId("IB", "U1258001"),
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        self.exec_engine.register_venue_routing(exec_client, Venue("NYMEX"))
+
+        # Assert
+        assert self.exec_engine.default_client is None
+        assert self.exec_engine.registered_clients == [
+            exec_client.id,
+            self.exec_client.id,
+        ]
 
     def test_deregister_client_removes_client(self):
         # Arrange
@@ -152,7 +197,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -169,7 +214,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -234,7 +279,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_setting_of_position_id_counts(self):
         # Arrange
-        strategy_id = StrategyId("S", "001")
+        strategy_id = StrategyId("S-001")
         order = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.BUY,
@@ -269,7 +314,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         random = TradingCommand(
             self.trader_id,
-            StrategyId("SCALPER", "001"),
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -292,7 +337,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -329,7 +374,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -364,7 +409,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -398,7 +443,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -427,7 +472,7 @@ class ExecutionEngineTests(unittest.TestCase):
             TestStubs.event_order_filled(
                 order,
                 AUDUSD_SIM,
-                strategy_id=StrategyId("RANDOM", "001"),
+                strategy_id=StrategyId("RANDOM-001"),
             )
         )
 
@@ -442,7 +487,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -506,7 +551,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -601,7 +646,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -698,7 +743,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -733,7 +778,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -769,7 +814,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -804,7 +849,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -830,7 +875,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -880,7 +925,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -934,7 +979,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -983,7 +1028,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1030,7 +1075,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1079,7 +1124,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1141,7 +1186,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1203,7 +1248,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1259,7 +1304,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1331,7 +1376,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1392,7 +1437,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1465,7 +1510,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1550,14 +1595,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
         strategy2.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1660,14 +1705,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
         strategy2.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1788,7 +1833,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1868,7 +1913,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -1948,7 +1993,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )

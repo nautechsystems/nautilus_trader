@@ -637,13 +637,22 @@ class TestPrice:
         assert str(price) == "100"
         assert price.precision == 0
 
-    def test_from_str_returns_expected_value(self):
+    @pytest.mark.parametrize(
+        "value, string, precision",
+        [
+            ["100.11", "100.11", 2],
+            ["1E7", "10000000", 0],
+            ["1E-7", "1E-7", 7],
+            ["1e-2", "0.01", 2],
+        ],
+    )
+    def test_from_str_returns_expected_value(self, value, string, precision):
         # Arrange, Act
-        price = Price.from_str("100.11")
+        price = Price.from_str(value)
 
         # Assert
-        assert str(price) == "100.11"
-        assert price.precision == 2
+        assert str(price) == string
+        assert price.precision == precision
 
     def test_str_repr(self):
         # Arrange, Act
@@ -694,15 +703,15 @@ class TestQuantity:
         [
             ["0", "0"],
             ["10.05", "10.05"],
-            ["1000", "1,000"],
-            ["1112", "1,112"],
-            ["120100", "120,100"],
-            ["200000", "200,000"],
-            ["1000000", "1,000,000"],
-            ["2500000", "2,500,000"],
-            ["1111111", "1,111,111"],
-            ["2523000", "2,523,000"],
-            ["100000000", "100,000,000"],
+            ["1000", "1_000"],
+            ["1112", "1_112"],
+            ["120100", "120_100"],
+            ["200000", "200_000"],
+            ["1000000", "1_000_000"],
+            ["2500000", "2_500_000"],
+            ["1111111", "1_111_111"],
+            ["2523000", "2_523_000"],
+            ["100000000", "100_000_000"],
         ],
     )
     def test_str_and_to_str(self, value, expected):
@@ -832,8 +841,8 @@ class TestMoney:
         result2 = Money(5005.556666, USD)
 
         # Assert
-        assert "1,000.33 USD" == result1.to_str()
-        assert "5,005.56 USD" == result2.to_str()
+        assert "1_000.33 USD" == result1.to_str()
+        assert "5_005.56 USD" == result2.to_str()
 
     def test_hash(self):
         # Arrange
@@ -855,7 +864,7 @@ class TestMoney:
         assert "0.00" == str(money0)
         assert "1.00" == str(money1)
         assert "1000000.00" == str(money2)
-        assert "1,000,000.00 USD" == money2.to_str()
+        assert "1_000_000.00 USD" == money2.to_str()
 
     def test_repr(self):
         # Arrange

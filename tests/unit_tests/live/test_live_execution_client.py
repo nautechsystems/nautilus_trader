@@ -29,6 +29,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -61,12 +62,12 @@ class TestLiveExecutionClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=self.clock,
         )
 
@@ -103,6 +104,7 @@ class TestLiveExecutionClient:
 
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
+            venue_type=VenueType.ECN,
             account_id=self.account_id,
             engine=self.exec_engine,
             instrument_provider=InstrumentProvider(),
@@ -150,7 +152,7 @@ class TestLiveExecutionClient:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -206,7 +208,7 @@ class TestLiveExecutionClient:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -264,7 +266,7 @@ class TestLiveExecutionClient:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )

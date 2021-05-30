@@ -22,23 +22,30 @@ cdef class Data:
     """
     The abstract base class for all data.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t timestamp_ns):
+    def __init__(self, int64_t timestamp_origin_ns, int64_t timestamp_ns):
         """
         Initialize a new instance of the `Data` class.
 
         Parameters
         ----------
+        timestamp_origin_ns : int64
+            The Unix timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the data.
+            The Unix timestamp (nanos) when received by the Nautilus system.
 
         """
+        # Design-time assert correct ordering of timestamps
+        assert timestamp_ns >= timestamp_origin_ns
+        self.timestamp_origin_ns = timestamp_origin_ns
         self.timestamp_ns = timestamp_ns
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(timestamp_ns={self.timestamp_ns})"
+        return (f"{type(self).__name__}("
+                f"timestamp_origin_ns={self.timestamp_origin_ns}, "
+                f"timestamp_ns{self.timestamp_ns})")
 
 
 cdef class DataType:
@@ -101,6 +108,7 @@ cdef class GenericData(Data):
         self,
         DataType data_type not None,
         data not None,
+        int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -122,7 +130,7 @@ cdef class GenericData(Data):
 
         """
         Condition.type(data, data_type.type, "data")
-        super().__init__(timestamp_ns)
+        super().__init__(timestamp_origin_ns, timestamp_ns)
 
         self.data_type = data_type
         self.data = data

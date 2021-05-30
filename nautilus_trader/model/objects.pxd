@@ -25,10 +25,10 @@ cdef class BaseDecimal:
     """The decimal precision.\n\n:returns: `uint8`"""
 
     @staticmethod
-    cdef inline object _extract_value(object obj)
+    cdef object _extract_value(object obj)
 
     @staticmethod
-    cdef inline bint _compare(a, b, int op) except *
+    cdef bint _compare(a, b, int op) except *
 
     cpdef object as_decimal(self)
     cpdef double as_double(self) except *
@@ -63,3 +63,14 @@ cdef class Money(BaseDecimal):
     cdef Money from_str_c(str value)
 
     cpdef str to_str(self)
+
+
+cdef class AccountBalance:
+    cdef readonly Currency currency
+    """The currency of the account .\n\n:returns: `Currency`"""
+    cdef readonly Money total
+    """The total account balance.\n\n:returns: `Money`"""
+    cdef readonly Money locked
+    """The account balance locked (assigned to pending orders).\n\n:returns: `Money`"""
+    cdef readonly Money free
+    """The account balance free for trading.\n\n:returns: `Money`"""

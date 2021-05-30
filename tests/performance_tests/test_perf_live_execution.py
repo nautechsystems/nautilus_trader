@@ -30,6 +30,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
@@ -53,7 +54,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.logger = Logger(self.clock, bypass_logging=True)
 
         self.account_id = AccountId(BINANCE.value, "001")
@@ -90,6 +91,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
+            venue_type=VenueType.EXCHANGE,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -105,7 +107,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )

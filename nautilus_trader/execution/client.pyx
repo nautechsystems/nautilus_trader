@@ -20,6 +20,8 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -58,12 +60,13 @@ cdef class ExecutionClient:
     """
     The abstract base class for all execution clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         ClientId client_id not None,
+        VenueType venue_type,
         AccountId account_id not None,
         ExecutionEngine engine not None,
         Clock clock not None,
@@ -77,6 +80,8 @@ cdef class ExecutionClient:
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The venue type for the client (determines venue -> client_id mapping).
         account_id : AccountId
             The account identifier for the client.
         engine : ExecutionEngine
@@ -109,6 +114,8 @@ cdef class ExecutionClient:
         self._config = config
 
         self.id = client_id
+        self.venue = Venue(client_id.value) if venue_type != VenueType.BROKERAGE_MULTI_VENUE else None
+        self.venue_type = venue_type
         self.account_id = account_id
         self.is_connected = False
 
@@ -168,8 +175,7 @@ cdef class ExecutionClient:
     cpdef void generate_account_state(
         self,
         list balances,
-        list balances_free,
-        list balances_locked,
+        int64_t updated_ns,
         dict info=None,
     ) except *:
         """
@@ -177,12 +183,10 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        balances : list[Money]
-            The current account balances.
-        balances_free : list[Money]
-            The account balances free for trading.
-        balances_locked : list[Money]
-            The account balances locked (assigned as margin collateral).
+        balances : list[AccountBalance]
+            The account balances.
+        updated_ns : int64
+            The Unix timestamp (nanos) of the account update.
         info : dict [str, object]
             The additional implementation specific account information.
 
@@ -193,11 +197,11 @@ cdef class ExecutionClient:
         # Generate event
         cdef AccountState account_state = AccountState(
             account_id=self.account_id,
+            reported=True,
             balances=balances,
-            balances_free=balances_free,
-            balances_locked=balances_locked,
             info=info,
             event_id=self._uuid_factory.generate(),
+            updated_ns=updated_ns,
             timestamp_ns=self._clock.timestamp_ns(),
         )
 

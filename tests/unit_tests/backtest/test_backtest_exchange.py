@@ -42,6 +42,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
@@ -94,7 +95,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         )
 
         self.analyzer = PerformanceAnalyzer()
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("SIM", "001")
 
         exec_db = InMemoryExecutionDatabase(
@@ -118,6 +119,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=SIM,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
@@ -236,6 +238,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("89.999"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -741,7 +744,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Arrange
         command = CancelOrder(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
@@ -759,7 +762,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Arrange
         command = UpdateOrder(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=USDJPY_SIM.id,
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
@@ -1207,6 +1210,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
         )
 
         # Act
@@ -1243,6 +1247,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(200000),
             Quantity.from_int(200000),
             0,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1251,6 +1256,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("96.711"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1261,7 +1267,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price.from_str("96.711"), order.avg_px)
-        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(999998.00, USD), self.exchange.account_balances[USD].total
+        )
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
         # Arrange: Prepare market
@@ -1290,6 +1298,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("96.712"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1327,6 +1336,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             1_000_000_000,
+            1_000_000_000,
         )
 
         self.exchange.process_tick(tick2)
@@ -1362,6 +1372,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         # Act
@@ -1371,6 +1382,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("90.001"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1408,6 +1420,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(200000),
             Quantity.from_int(200000),
             0,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1416,6 +1429,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("90.001"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1426,7 +1440,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price.from_str("90.001"), order.avg_px)
-        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(999998.00, USD), self.exchange.account_balances[USD].total
+        )
 
     def test_process_quote_tick_fills_sell_stop_order(self):
         # Arrange: Prepare market
@@ -1455,6 +1471,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1463,7 +1480,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price.from_str("90.000"), order.avg_px)
-        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(999998.00, USD), self.exchange.account_balances[USD].total
+        )
 
     def test_process_quote_tick_fills_sell_limit_order(self):
         # Arrange: Prepare market
@@ -1492,6 +1511,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1500,7 +1520,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price.from_str("90.101"), order.avg_px)
-        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(999998.00, USD), self.exchange.account_balances[USD].total
+        )
 
     def test_process_quote_tick_fills_buy_limit_entry_with_bracket(self):
         # Arrange: Prepare market
@@ -1535,6 +1557,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1545,7 +1568,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, bracket.take_profit.state)
         self.assertEqual(2, len(self.exchange.get_working_orders()))
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
-        self.assertEqual(Money(999998.00, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(999998.00, USD), self.exchange.account_balances[USD].total
+        )
 
     def test_process_quote_tick_fills_sell_limit_entry_with_bracket(self):
         # Arrange: Prepare market
@@ -1580,6 +1605,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1601,6 +1627,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AggressorSide.SELL,
             TradeMatchId("123456789"),
             0,
+            0,
         )
 
         tick2 = TradeTick(
@@ -1609,6 +1636,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             AggressorSide.BUY,
             TradeMatchId("123456790"),
+            0,
             0,
         )
 
@@ -1639,6 +1667,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             AggressorSide.BUY,  # Lowers bid price
             TradeMatchId("123456789"),
+            0,
             0,
         )
 
@@ -1685,6 +1714,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         tick3 = QuoteTick(
@@ -1693,6 +1723,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("91.203"),
             Quantity.from_int(100000),
             Quantity.from_int(100000),
+            0,
             0,
         )
 
@@ -1759,6 +1790,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             0,
+            0,
         )
 
         self.exchange.process_tick(quote)
@@ -1790,12 +1822,13 @@ class SimulatedExchangeTests(unittest.TestCase):
         result = self.exchange.account_balances[USD]
 
         # Assert
-        self.assertEqual(Money("1001000.00", USD), result)
+        self.assertEqual(Money("1001000.00", USD), result.total)
 
     def test_adjust_account_when_account_frozen_does_not_change_balance(self):
         # Arrange
         exchange = SimulatedExchange(
             venue=SIM,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=True,  # <-- Freezing account
             starting_balances=[Money(1_000_000, USD)],
@@ -1814,7 +1847,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         result = exchange.account_balances[USD]
 
         # Assert
-        self.assertEqual(Money("1000000.00", USD), result)
+        self.assertEqual(Money("1000000.00", USD), result.total)
 
     def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
         # Arrange: Prepare market
@@ -1824,6 +1857,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("90.003"),
             Quantity.from_int(1_000_000),
             Quantity.from_int(1_000_000),
+            0,
             0,
         )
 
@@ -1845,6 +1879,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("100.004"),
             Quantity.from_int(1_000_000),
             Quantity.from_int(1_000_000),
+            0,
             0,
         )
 
@@ -1869,7 +1904,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Quantity.from_int(50000), position_open.quantity)
         self.assertEqual(Money(999619.98, JPY), position_closed.realized_pnl)
         self.assertEqual([Money(380.02, JPY)], position_closed.commissions())
-        self.assertEqual(Money(1014994.55, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(1014994.55, USD), self.exchange.account_balances[USD].total
+        )
 
 
 class BitmexExchangeTests(unittest.TestCase):
@@ -1899,7 +1936,7 @@ class BitmexExchangeTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BITMEX", "001")
 
         exec_db = InMemoryExecutionDatabase(
@@ -1923,7 +1960,8 @@ class BitmexExchangeTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
-            oms_type=OMSType.HEDGING,
+            venue_type=VenueType.EXCHANGE,
+            oms_type=OMSType.NETTING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
             exec_cache=self.exec_engine.cache,
@@ -1977,6 +2015,7 @@ class BitmexExchangeTests(unittest.TestCase):
             Quantity.from_int(1500000),
             Quantity.from_int(1500000),
             0,
+            0,
         )
 
         self.data_engine.process(quote1)
@@ -2005,6 +2044,7 @@ class BitmexExchangeTests(unittest.TestCase):
             Price.from_str("11491.5"),
             Quantity.from_int(1500000),
             Quantity.from_int(1500000),
+            0,
             0,
         )
 
@@ -2052,7 +2092,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         )
 
         self.analyzer = PerformanceAnalyzer()
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("SIM", "001")
 
         exec_db = InMemoryExecutionDatabase(
@@ -2076,6 +2116,7 @@ class OrderBookExchangeTests(unittest.TestCase):
 
         self.exchange = SimulatedExchange(
             venue=SIM,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
@@ -2152,7 +2193,9 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Decimal("2000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.33333333333333333333333333"), order.avg_px)
-        self.assertEqual(Money(999999.86, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(999999.86, USD), self.exchange.account_balances[USD].total
+        )
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
@@ -2178,7 +2221,9 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
         self.assertEqual(Quantity.from_str("6000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.93333333333333333333333333"), order.avg_px)
-        self.assertEqual(Money(999999.61, USD), self.exchange.account_balances[USD])
+        self.assertEqual(
+            Money(999999.61, USD), self.exchange.account_balances[USD].total
+        )
 
     def test_passive_post_only_insert(self):
         # Arrange: Prepare market
@@ -2267,6 +2312,7 @@ class OrderBookExchangeTests(unittest.TestCase):
             Quantity.from_int(1000),
             OrderSide.SELL,
             TradeMatchId("123456789"),
+            0,
             0,
         )
         self.exchange.process_tick(tick1)

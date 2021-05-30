@@ -36,6 +36,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
@@ -85,10 +86,11 @@ if __name__ == "__main__":
     )
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    # Add an exchange (multiple exchanges possible)
+    # Add a trading venue (multiple venues possible)
     # Add starting balances for single-currency or multi-currency accounts
-    engine.add_exchange(
+    engine.add_venue(
         venue=SIM,
+        venue_type=VenueType.ECN,
         oms_type=OMSType.NETTING,
         starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,

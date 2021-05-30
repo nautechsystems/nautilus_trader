@@ -18,7 +18,7 @@ from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.data cimport Data
 
 
-cdef enum SubscriptionStatus:
+cpdef enum SubscriptionStatus:
     UNSUBSCRIBED = 0
     PENDING_STARTUP = 1
     RUNNING = 2
@@ -35,5 +35,5 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef void handle_data(self, Data data) except *
 
-    cdef inline void _log_betfair_error(self, ex, str method_name) except *
+    cdef void _log_betfair_error(self, ex, str method_name) except *
     cpdef void _on_market_update(self, bytes raw) except *

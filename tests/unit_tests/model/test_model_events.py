@@ -48,6 +48,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -61,24 +62,31 @@ class TestEvents:
     def test_account_state_str_repr(self):
         # Arrange
         uuid = uuid4()
+        balance = AccountBalance(
+            currency=USD,
+            total=Money(1525000, USD),
+            locked=Money(0, USD),
+            free=Money(1525000, USD),
+        )
         event = AccountState(
             account_id=AccountId("SIM", "000"),
-            balances=[Money(1525000, USD)],
-            balances_free=[Money(1525000, USD)],
-            balances_locked=[Money(0, USD)],
+            reported=True,
+            balances=[balance],
             info={},
             event_id=uuid,
+            updated_ns=0,
             timestamp_ns=0,
         )
 
+        print(event)
         # Act
         # Assert
         assert (
-            f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})"
+            f"AccountState(account_id=SIM-000, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == str(event)
         )
         assert (
-            f"AccountState(account_id=SIM-000, free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})"
+            f"AccountState(account_id=SIM-000, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == repr(event)
         )
 
@@ -87,7 +95,7 @@ class TestEvents:
         uuid = uuid4()
         event = OrderInitialized(
             client_order_id=ClientOrderId("O-2020872378423"),
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
@@ -301,12 +309,12 @@ class TestEvents:
         # Act
         assert (
             f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
-            f"venue_order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
+            f"venue_order_id=123456, qty=500_000, price=1.95000, event_id={uuid})"
             == str(event)
         )
         assert (
             f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
-            f"venue_order_id=123456, qty=500,000, price=1.95000, event_id={uuid})"
+            f"venue_order_id=123456, qty=500_000, price=1.95000, event_id={uuid})"
             == repr(event)
         )
 
@@ -341,7 +349,7 @@ class TestEvents:
             venue_order_id=VenueOrderId("123456"),
             execution_id=ExecutionId("1"),
             position_id=PositionId("2"),
-            strategy_id=StrategyId("SCALPER", "001"),
+            strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             order_side=OrderSide.BUY,
             last_qty=Quantity.from_str("0.561000"),

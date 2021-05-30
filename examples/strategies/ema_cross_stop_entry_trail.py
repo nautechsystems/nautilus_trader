@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -25,7 +26,7 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -114,7 +115,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             self.stop()
             return
 
-        self.tick_size = self.instrument.tick_size
+        self.tick_size = self.instrument.price_increment
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
@@ -192,7 +193,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]..."
+                f"[{self.data.bar_count(self.bar_type)}]...",
+                color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 

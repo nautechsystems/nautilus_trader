@@ -62,7 +62,8 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instrument import BettingInstrument
+from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -79,7 +80,7 @@ uuid_factory = UUIDFactory()
 
 
 def make_custom_order_ref(client_order_id, strategy_id):
-    return client_order_id.value.rsplit("-" + strategy_id.tag.value, maxsplit=1)[0]
+    return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
 def determine_order_price(order: Order):
@@ -177,25 +178,33 @@ def betfair_account_to_account_state(
     account_detail,
     account_funds,
     event_id,
+    updated_ns,
     timestamp_ns,
     account_id="001",
 ) -> AccountState:
     currency = Currency.from_str(account_detail["currencyCode"])
     balance = float(account_funds["availableToBetBalance"])
-    balance_locked = -float(account_funds["exposure"])
-    balance_free = balance - balance_locked
+    locked = -float(account_funds["exposure"])
+    free = balance - locked
     return AccountState(
-        AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
-        [Money(value=balance, currency=currency)],
-        [Money(value=balance_free, currency=currency)],
-        [Money(value=balance_locked, currency=currency)],
-        {"funds": account_funds, "detail": account_detail},
-        event_id,
-        timestamp_ns,
+        account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
+        reported=True,
+        balances=[
+            AccountBalance(
+                currency=currency,
+                total=Money(balance, currency),
+                locked=Money(locked, currency),
+                free=Money(free, currency),
+            ),
+        ],
+        info={"funds": account_funds, "detail": account_detail},
+        event_id=event_id,
+        updated_ns=updated_ns,
+        timestamp_ns=timestamp_ns,
     )
 
 
-def _handle_market_snapshot(selection, instrument, timestamp_ns):
+def _handle_market_snapshot(selection, instrument, timestamp_origin_ns, timestamp_ns):
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
     bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
@@ -208,7 +217,7 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
     assert len(ask_keys) <= 1
 
     # OrderBook Snapshot
-    # TODO Clean this crap up
+    # TODO(bm): Clean this up
     if bid_keys[0] == "atb":
         bids = selection.get("atb", [])
     else:
@@ -222,20 +231,29 @@ def _handle_market_snapshot(selection, instrument, timestamp_ns):
         instrument_id=instrument.id,
         bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
         asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
+        timestamp_origin_ns=timestamp_origin_ns,
         timestamp_ns=timestamp_ns,
     )
     updates.append(snapshot)
     if "trd" in selection:
         updates.extend(
             _handle_market_trades(
-                runner=selection, instrument=instrument, timestamp_ns=timestamp_ns
+                runner=selection,
+                instrument=instrument,
+                timestamp_origin_ns=timestamp_origin_ns,
+                timestamp_ns=timestamp_ns,
             )
         )
 
     return updates
 
 
-def _handle_market_trades(runner, instrument, timestamp_ns):
+def _handle_market_trades(
+    runner,
+    instrument,
+    timestamp_origin_ns,
+    timestamp_ns,
+):
     trade_ticks = []
     for price, volume in runner.get("trd", []):
         if volume == 0:
@@ -249,17 +267,18 @@ def _handle_market_trades(runner, instrument, timestamp_ns):
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
             match_id=TradeMatchId(trade_id),
+            timestamp_origin_ns=timestamp_origin_ns,
             timestamp_ns=timestamp_ns,
         )
         trade_ticks.append(tick)
     return trade_ticks
 
 
-def _handle_book_updates(runner, instrument, timestamp_ns):
+def _handle_book_updates(runner, instrument, timestamp_origin_ns, timestamp_ns):
     deltas = []
     for side in B_SIDE_KINDS:
         for upd in runner.get(side, []):
-            # TODO - Fix this crap
+            # TODO(bm): - Clean this up
             if len(upd) == 3:
                 _, price, volume = upd
             else:
@@ -278,6 +297,7 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
                         volume=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
+                    timestamp_origin_ns=timestamp_origin_ns,
                     timestamp_ns=timestamp_ns,
                 )
             )
@@ -286,6 +306,7 @@ def _handle_book_updates(runner, instrument, timestamp_ns):
             level=OrderBookLevel.L2,
             instrument_id=instrument.id,
             deltas=deltas,
+            timestamp_origin_ns=timestamp_origin_ns,
             timestamp_ns=timestamp_ns,
         )
         return [ob_update]
@@ -382,7 +403,10 @@ def build_market_snapshot_messages(
     instrument_provider, raw
 ) -> List[Union[OrderBookSnapshot, InstrumentStatusEvent]]:
     updates = []
-    timestamp_ns = millis_to_nanos(raw["pt"])
+    timestamp_origin_ns = millis_to_nanos(raw["pt"])
+    timestamp_ns = millis_to_nanos(
+        raw["pt"]
+    )  # TODO(bm): Could call clock.timestamp_ns()
     for market in raw.get("mc", []):
         # Instrument Status
         updates.extend(
@@ -412,6 +436,7 @@ def build_market_snapshot_messages(
                         _handle_market_snapshot(
                             selection=selection,
                             instrument=instrument,
+                            timestamp_origin_ns=timestamp_origin_ns,
                             timestamp_ns=timestamp_ns,
                         )
                     )
@@ -430,20 +455,24 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
             instrument_id=instrument_id,
             deltas=deltas,
             level=level,
-            timestamp_ns=timestamp_ns,
+            timestamp_origin_ns=timestamp_ns,
+            timestamp_ns=timestamp_ns,  # TODO(bm): Could call clock.timestamp_ns()
         )
         for instrument_id, deltas in per_instrument_deltas.items()
     ]
 
 
-def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
+def build_market_update_messages(
     instrument_provider, raw
 ) -> List[
     Union[OrderBookDelta, TradeTick, InstrumentStatusEvent, InstrumentClosePrice]
 ]:
     updates = []
     book_updates = []
-    timestamp_ns = millis_to_nanos(raw["pt"])
+    timestamp_origin_ns = millis_to_nanos(raw["pt"])
+    timestamp_ns = millis_to_nanos(
+        raw["pt"]
+    )  # TODO(bm): Could call self._clock.timestamp_ns()
     for market in raw.get("mc", []):
         updates.extend(
             _handle_market_runners_status(
@@ -464,13 +493,19 @@ def build_market_update_messages(  # noqa TODO: cyclomatic complexity 14
             # Delay appending book updates until we can merge at the end
             book_updates.extend(
                 _handle_book_updates(
-                    runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                    runner=runner,
+                    instrument=instrument,
+                    timestamp_origin_ns=timestamp_origin_ns,
+                    timestamp_ns=timestamp_ns,
                 )
             )
             if "trd" in runner:
                 updates.extend(
                     _handle_market_trades(
-                        runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                        runner=runner,
+                        instrument=instrument,
+                        timestamp_origin_ns=timestamp_origin_ns,
+                        timestamp_ns=timestamp_ns,
                     )
                 )
     if book_updates:

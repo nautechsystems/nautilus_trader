@@ -124,7 +124,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-    async def reconcile_state(self) -> bool:
+    async def reconcile_state(self, double timeout_secs) -> bool:
         """
         Reconcile the execution engines state with all execution clients.
 
@@ -136,19 +136,28 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         the missing events will be generated. If there is not enough information
         to reconcile a state then errors will be logged.
 
+        Parameters
+        ----------
+        timeout_secs : double
+            The seconds to allow for reconciliation before timing out.
+
         Returns
         -------
         bool
             True if states reconcile within timeout, else False.
 
+        Raises
+        ------
+        ValueError
+            If timeout_secs is not positive (> 0).
+
         """
-        # TODO: Refactor pass on this, plus above docs
+        Condition.positive(timeout_secs, "timeout_secs")
         cdef dict active_orders = {
             order.client_order_id: order for order in self.cache.orders() if not order.is_completed_c()
         }  # type: dict[ClientOrderId, Order]
 
         if not active_orders:
-            self._log.info(f"State reconciled.", color=LogColor.GREEN)
             return True  # Execution states reconciled
 
         cdef int count = len(active_orders)
@@ -164,19 +173,19 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Build order state map
         cdef Order order
+        cdef LiveExecutionClient client
         for order in active_orders.values():
-            # TODO(cs): Assumption that venue == client_id
-            client_id = ClientId(order.instrument_id.venue.value)
-            if client_id in client_orders:
-                client_orders[client_id].append(order)
-            else:
-                self._log.error(f"Cannot reconcile state. No registered"
-                                f"execution client for {client_id.value} for active {order}.")
+            client = self._routing_map.get(order.instrument_id.venue)
+            if client is None:
+                self._log.error(
+                    f"Cannot reconcile state: "
+                    f"No registered client for {order.instrument_id.venue} for active {order}."
+                )
                 continue
+            client_orders[client.id].append(order)
 
         cdef dict client_mass_status = {}  # type: dict[ClientId, ExecutionMassStatus]
 
-        cdef LiveExecutionClient client
         # Generate state report for each client
         for name, client in self._clients.items():
             client_mass_status[name] = await client.generate_mass_status(client_orders[name])
@@ -191,20 +200,19 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
 
         # Wait for state resolution until timeout...
-        cdef int seconds = 10  # Hard coded for now
-        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
+        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)
         cdef OrderStatusReport report
         while True:
             if self._clock.utc_now() >= timeout:
-                self._log.error(f"Timed out ({seconds}s) waiting for "
-                                f"execution states to reconcile.")
                 return False
 
             resolved = True
             for order in active_orders.values():
-                # TODO(cs): Assumption that venue == client_id
-                client_id = ClientId(order.instrument_id.venue.value)
-                report = client_mass_status[client_id].order_reports().get(order.venue_order_id)
+                client = self._routing_map.get(order.instrument_id.venue)
+                mass_status = client_mass_status.get(client.id)
+                if mass_status is None:
+                    return False  # Will never reconcile
+                report = mass_status.order_reports().get(order.venue_order_id)
                 if report is None:
                     return False  # Will never reconcile
                 if order.state_c() != report.order_state:
@@ -214,9 +222,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                         resolved = False  # Incorrect filled quantity on this loop
             if resolved:
                 break
-            await asyncio.sleep(0.001)  # One millisecond sleep
+            await asyncio.sleep(0)  # Sleep for one event loop cycle
 
-        self._log.info(f"State reconciled.", color=LogColor.GREEN)
         return True  # Execution states reconciled
 
     cpdef void kill(self) except *:
@@ -320,6 +327,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
 
-    cdef inline void _enqueue_sentinel(self):
+    cdef void _enqueue_sentinel(self):
         self._queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on message queue.")

@@ -41,8 +41,8 @@ class AnalyzerTests(unittest.TestCase):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -132,7 +132,7 @@ class AnalyzerTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00000"),
         )
 
@@ -140,7 +140,7 @@ class AnalyzerTests(unittest.TestCase):
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00010"),
         )
 
@@ -148,7 +148,7 @@ class AnalyzerTests(unittest.TestCase):
             order3,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00000"),
         )
 
@@ -156,7 +156,7 @@ class AnalyzerTests(unittest.TestCase):
             order4,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00020"),
         )
 

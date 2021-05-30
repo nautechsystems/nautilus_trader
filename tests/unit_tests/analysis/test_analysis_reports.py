@@ -27,6 +27,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -47,8 +48,8 @@ class ReportProviderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -56,11 +57,18 @@ class ReportProviderTests(unittest.TestCase):
         # Arrange
         state = AccountState(
             account_id=AccountId("BITMEX", "1513111"),
-            balances=[Money("10.00000000", BTC)],
-            balances_free=[Money("10.00000000", BTC)],
-            balances_locked=[Money("0.00000000", BTC)],
+            reported=True,
+            balances=[
+                AccountBalance(
+                    currency=BTC,
+                    total=Money("10.00000000", BTC),
+                    free=Money("10.00000000", BTC),
+                    locked=Money("0.00000000", BTC),
+                )
+            ],
             info={},
             event_id=uuid4(),
+            updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -182,7 +190,7 @@ class ReportProviderTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S", "1"),
+            strategy_id=StrategyId("S-1"),
             last_px=Price.from_str("0.80011"),
         )
 
@@ -224,7 +232,7 @@ class ReportProviderTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00010"),
         )
 
@@ -232,7 +240,7 @@ class ReportProviderTests(unittest.TestCase):
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123457"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00010"),
         )
 

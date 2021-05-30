@@ -26,6 +26,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -59,6 +60,8 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue id
     """The exchange identifier.\n\n:returns: `Venue`"""
+    cdef readonly VenueType venue_type
+    """The venues type.\n\n:returns: `VenueType`"""
     cdef readonly OMSType oms_type
     """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly OrderBookLevel exchange_order_book_level
@@ -75,11 +78,7 @@ cdef class SimulatedExchange:
     cdef readonly Currency default_currency
     """The account default currency.\n\n:returns: `Currency` or None"""
     cdef readonly dict account_balances
-    """The current account balances.\n\n:returns: `dict[Currency, Money]`"""
-    cdef readonly dict account_balances_free
-    """The current account balances free.\n\n:returns: `dict[Currency, Money]`"""
-    cdef readonly dict account_balances_locked
-    """The current account balances locked.\n\n:returns: `dict[Currency, Money]`"""
+    """The current account balances.\n\n:returns: `dict[Currency, AccountBalance]`"""
     cdef readonly dict total_commissions
     """The total commissions generated with the exchange.\n\n:returns: `dict[Currency, Money]`"""
 
@@ -131,63 +130,63 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline dict _build_current_bid_rates(self)
-    cdef inline dict _build_current_ask_rates(self)
-    cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id)
-    cdef inline VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
-    cdef inline ExecutionId _generate_execution_id(self)
+    cdef dict _build_current_bid_rates(self)
+    cdef dict _build_current_ask_rates(self)
+    cdef PositionId _generate_position_id(self, InstrumentId instrument_id)
+    cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
+    cdef ExecutionId _generate_execution_id(self)
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef inline void _reject_order(self, Order order, str reason) except *
-    cdef inline void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *
-    cdef inline void _cancel_order(self, PassiveOrder order) except *
-    cdef inline void _expire_order(self, PassiveOrder order) except *
+    cdef void _reject_order(self, Order order, str reason) except *
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef void _cancel_order(self, PassiveOrder order) except *
+    cdef void _expire_order(self, PassiveOrder order) except *
 
-    cdef inline void _generate_account_state(self) except *
-    cdef inline void _generate_order_submitted(self, Order order) except *
-    cdef inline void _generate_order_rejected(self, Order order, str reason) except *
-    cdef inline void _generate_order_accepted(self, Order order) except *
-    cdef inline void _generate_order_pending_replace(self, Order order) except *
-    cdef inline void _generate_order_pending_cancel(self, Order order) except *
-    cdef inline void _generate_order_update_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
-    cdef inline void _generate_order_cancel_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
-    cdef inline void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
-    cdef inline void _generate_order_canceled(self, PassiveOrder order) except *
-    cdef inline void _generate_order_triggered(self, StopLimitOrder order) except *
-    cdef inline void _generate_order_expired(self, PassiveOrder order) except *
+    cdef void _generate_account_state(self) except *
+    cdef void _generate_order_submitted(self, Order order) except *
+    cdef void _generate_order_rejected(self, Order order, str reason) except *
+    cdef void _generate_order_accepted(self, Order order) except *
+    cdef void _generate_order_pending_replace(self, Order order) except *
+    cdef void _generate_order_pending_cancel(self, Order order) except *
+    cdef void _generate_order_update_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
+    cdef void _generate_order_cancel_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
+    cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef void _generate_order_canceled(self, PassiveOrder order) except *
+    cdef void _generate_order_triggered(self, StopLimitOrder order) except *
+    cdef void _generate_order_expired(self, PassiveOrder order) except *
 
-    cdef inline void _process_order(self, Order order) except *
-    cdef inline void _process_market_order(self, MarketOrder order) except *
-    cdef inline void _process_limit_order(self, LimitOrder order) except *
-    cdef inline void _process_stop_market_order(self, StopMarketOrder order) except *
-    cdef inline void _process_stop_limit_order(self, StopLimitOrder order) except *
-    cdef inline void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
-    cdef inline void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
-    cdef inline void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price) except *
+    cdef void _process_order(self, Order order) except *
+    cdef void _process_market_order(self, MarketOrder order) except *
+    cdef void _process_limit_order(self, LimitOrder order) except *
+    cdef void _process_stop_market_order(self, StopMarketOrder order) except *
+    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
+    cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
+    cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
+    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
-    cdef inline void _add_order(self, PassiveOrder order) except *
-    cdef inline void _delete_order(self, Order order) except *
-    cdef inline void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
-    cdef inline void _match_order(self, PassiveOrder order) except *
-    cdef inline void _match_limit_order(self, LimitOrder order) except *
-    cdef inline void _match_stop_market_order(self, StopMarketOrder order) except *
-    cdef inline void _match_stop_limit_order(self, StopLimitOrder order) except *
-    cdef inline bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef inline bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef inline bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef inline bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
-    cdef inline list _determine_limit_price_and_volume(self, PassiveOrder order)
-    cdef inline list _determine_market_price_and_volume(self, Order order)
+    cdef void _add_order(self, PassiveOrder order) except *
+    cdef void _delete_order(self, Order order) except *
+    cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
+    cdef void _match_order(self, PassiveOrder order) except *
+    cdef void _match_limit_order(self, LimitOrder order) except *
+    cdef void _match_stop_market_order(self, StopMarketOrder order) except *
+    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *
+    cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *
+    cdef list _determine_limit_price_and_volume(self, PassiveOrder order)
+    cdef list _determine_market_price_and_volume(self, Order order)
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
-    cdef inline void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
-    cdef inline void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
-    cdef inline void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
-    cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *
-    cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
-    cdef inline void _cancel_oco_order(self, PassiveOrder order) except *
+    cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
+    cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
+    cdef void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
+    cdef void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
+    cdef void _check_oco_order(self, ClientOrderId client_order_id) except *
+    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
+    cdef void _cancel_oco_order(self, PassiveOrder order) except *

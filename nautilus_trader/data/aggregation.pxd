@@ -66,8 +66,8 @@ cdef class BarAggregator:
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *
-    cdef inline void _build_now_and_send(self) except *
-    cdef inline void _build_and_send(self, int64_t timestamp_ns) except *
+    cdef void _build_now_and_send(self) except *
+    cdef void _build_and_send(self, int64_t timestamp_ns) except *
 
 
 cdef class TickBarAggregator(BarAggregator):

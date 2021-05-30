@@ -60,8 +60,8 @@ class OrderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -112,7 +112,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.zero(),
@@ -128,7 +128,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100),
@@ -144,7 +144,7 @@ class OrderTests(unittest.TestCase):
             TypeError,
             StopMarketOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -162,7 +162,7 @@ class OrderTests(unittest.TestCase):
             TypeError,
             StopLimitOrder,
             ClientOrderId("O-123456"),
-            StrategyId("S", "001"),
+            StrategyId("S-001"),
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
@@ -292,12 +292,12 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
+            "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
             "client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
-            "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
+            "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
             "client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
@@ -321,12 +321,12 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertEqual(
-            "LimitOrder(BUY 100,000 AUD/USD.SIM LIMIT @ 1.00000 GTC, "
+            "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, "
             "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
-            "LimitOrder(BUY 100,000 AUD/USD.SIM LIMIT @ 1.00000 GTC, "
+            "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, "
             "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
@@ -372,12 +372,12 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertEqual(
-            "StopMarketOrder(BUY 100,000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, "
+            "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, "
             "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
-            "StopMarketOrder(BUY 100,000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, "
+            "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, "
             "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
@@ -402,12 +402,12 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertEqual(
-            "StopLimitOrder(BUY 100,000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, "
+            "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, "
             "trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             str(order),
         )
         self.assertEqual(
-            "StopLimitOrder(BUY 100,000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, "
+            "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, "
             "trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
@@ -506,14 +506,14 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
-            "EntryMarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, "
+            "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
             "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1), "
             "SL=0.99990, TP=1.00010)",
             str(bracket_order),
         )  # noqa
         self.assertEqual(
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
-            "EntryMarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, "
+            "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
             "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1), "
             "SL=0.99990, TP=1.00010)",
             repr(bracket_order),
@@ -605,12 +605,12 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
         self.assertEqual(
-            "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
+            "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
             "client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)",
             str(order),
         )
         self.assertEqual(
-            "MarketOrder(BUY 100,000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
+            "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, "
             "client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)",
             repr(order),
         )
@@ -781,7 +781,7 @@ class OrderTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -812,7 +812,7 @@ class OrderTests(unittest.TestCase):
             order,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
         )
 
@@ -846,7 +846,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(20000),
         )
@@ -856,7 +856,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
             last_qty=Quantity.from_int(40000),
         )
@@ -890,7 +890,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("1"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
             last_qty=Quantity.from_int(20000),
         )
@@ -900,7 +900,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("2"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00002"),
             last_qty=Quantity.from_int(40000),
         )
@@ -910,7 +910,7 @@ class OrderTests(unittest.TestCase):
             instrument=AUDUSD_SIM,
             execution_id=ExecutionId("3"),
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00003"),
             last_qty=Quantity.from_int(40000),
         )
