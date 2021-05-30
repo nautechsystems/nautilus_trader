@@ -82,10 +82,10 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline object _net_position(self, InstrumentId instrument_id)
-    cdef inline void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
-    cdef inline void _update_initial_margin(self, Venue venue, list orders_working) except *
-    cdef inline void _update_maint_margin(self, Venue venue, list positions_open) except *
+    cdef object _net_position(self, InstrumentId instrument_id)
+    cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
+    cdef void _update_initial_margin(self, Venue venue, list orders_working) except *
+    cdef void _update_maint_margin(self, Venue venue, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
     cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side)
-    cdef inline Price _get_last_price(self, Position position)
+    cdef Price _get_last_price(self, Position position)

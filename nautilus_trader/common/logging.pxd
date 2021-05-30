@@ -69,10 +69,10 @@ cdef class Logger:
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cdef void log_c(self, dict record) except *
-    cdef inline dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
+    cdef dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
 
-    cdef inline void _log(self, dict record) except *
-    cdef inline str _format_record(self, LogLevel level, LogColor color, dict record)
+    cdef void _log(self, dict record) except *
+    cdef str _format_record(self, LogLevel level, LogColor color, dict record)
 
 
 cdef class LoggerAdapter:

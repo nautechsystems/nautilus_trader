@@ -78,7 +78,7 @@ cdef class CSVBarDataLoader:
         )
 
 
-cdef inline datetime _ts_parser(str time_in_secs):
+cdef datetime _ts_parser(str time_in_secs):
     return datetime.utcfromtimestamp(int(time_in_secs) / 1_000_000.0)
 
 

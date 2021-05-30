@@ -543,7 +543,7 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _set_position_id_counts(self) except *:
+    cdef void _set_position_id_counts(self) except *:
         # For the internal position identifier generator
         cdef list positions = self.cache.positions()
 
@@ -568,7 +568,7 @@ cdef class ExecutionEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, TradingCommand command) except *:
+    cdef void _execute_command(self, TradingCommand command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
@@ -594,21 +594,21 @@ cdef class ExecutionEngine(Component):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
+    cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         client.submit_order(command)
 
-    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
+    cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         client.submit_bracket_order(command)
 
-    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
+    cdef void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
         client.update_order(command)
 
-    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
+    cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         client.cancel_order(command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef inline void _handle_event(self, Event event) except *:
+    cdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 
@@ -621,7 +621,7 @@ cdef class ExecutionEngine(Component):
         else:
             self._log.error(f"Cannot handle event: unrecognized {event}.")
 
-    cdef inline void _handle_account_event(self, AccountState event) except *:
+    cdef void _handle_account_event(self, AccountState event) except *:
         cdef Account account = self.cache.account(event.account_id)
         if account is None:
             # Generate account
@@ -632,12 +632,12 @@ cdef class ExecutionEngine(Component):
             account.apply(event=event)
             self.cache.update_account(account)
 
-    cdef inline void _handle_position_event(self, PositionEvent event) except *:
+    cdef void _handle_position_event(self, PositionEvent event) except *:
         self._portfolio.update_position(event)
         self._risk_engine.process(event)
         self._send_to_strategy(event, event.position.strategy_id)
 
-    cdef inline void _handle_order_event(self, OrderEvent event) except *:
+    cdef void _handle_order_event(self, OrderEvent event) except *:
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self.cache.order(event.client_order_id)
@@ -701,7 +701,7 @@ cdef class ExecutionEngine(Component):
         self._risk_engine.process(event)
         self._send_to_strategy(event, self.cache.strategy_id_for_order(client_order_id))
 
-    cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *:
+    cdef void _confirm_strategy_id(self, OrderFilled fill) except *:
         if fill.strategy_id.not_null():
             # Already assigned to fill
             return
@@ -723,7 +723,7 @@ cdef class ExecutionEngine(Component):
                 f"{repr(fill.position_id)} not found for {fill}."
             )
 
-    cdef inline void _confirm_position_id(self, OrderFilled fill) except *:
+    cdef void _confirm_position_id(self, OrderFilled fill) except *:
         if fill.position_id.not_null():
             # Already assigned to fill
             return
@@ -751,18 +751,18 @@ cdef class ExecutionEngine(Component):
         # Assign existing positions identifier to fill
         fill.position_id = positions_open[0].id
 
-    cdef inline void _handle_order_command_rejected(self, OrderEvent event) except *:
+    cdef void _handle_order_command_rejected(self, OrderEvent event) except *:
         self._risk_engine.process(event)
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.client_order_id))
 
-    cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
+    cdef void _handle_order_fill(self, OrderFilled fill) except *:
         cdef Position position = self.cache.position(fill.position_id)
         if position is None:  # No position open
             self._open_position(fill)
         else:
             self._update_position(position, fill)
 
-    cdef inline void _open_position(self, OrderFilled fill) except *:
+    cdef void _open_position(self, OrderFilled fill) except *:
         cdef Instrument instrument = self.cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -778,7 +778,7 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(self._pos_opened_event(position, fill))
 
-    cdef inline void _update_position(self, Position position, OrderFilled fill) except *:
+    cdef void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
         if position.is_opposite_side(fill.order_side) and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
@@ -803,7 +803,7 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(position_event)
 
-    cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
+    cdef void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity.from_str_c(str(fill.last_qty - position.quantity))
@@ -867,7 +867,7 @@ cdef class ExecutionEngine(Component):
         # Open flipped position
         self._handle_order_fill(fill_split2)
 
-    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
+    cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
         return PositionOpened(
             position,
             fill,
@@ -875,7 +875,7 @@ cdef class ExecutionEngine(Component):
             fill.timestamp_ns,
         )
 
-    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
+    cdef PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
         return PositionChanged(
             position,
             fill,
@@ -883,7 +883,7 @@ cdef class ExecutionEngine(Component):
             fill.timestamp_ns,
         )
 
-    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
+    cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
         return PositionClosed(
             position,
             fill,
@@ -891,7 +891,7 @@ cdef class ExecutionEngine(Component):
             fill.timestamp_ns,
         )
 
-    cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
+    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
             self._log.error(
                 f"Cannot send event to strategy: "

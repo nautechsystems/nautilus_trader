@@ -662,7 +662,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         except Exception as ex:
             self._log.exception(ex)
 
-    cdef inline QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values):
+    cdef QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values):
         return QuoteTick(
             instrument_id,
             Price(values["bids"][0]["price"]),
@@ -673,7 +673,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
             self._clock.timestamp_ns(),
         )
 
-    cdef inline Bar _parse_bar(
+    cdef Bar _parse_bar(
         self,
         BarType bar_type,
         Instrument instrument,

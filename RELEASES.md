@@ -1,5 +1,16 @@
 # NautilusTrader 1.121.0 Beta - Release Notes
 
+In this release there has been a major change to the use of inlines for method
+signatures. From the Cython docs:
+_"Note that class-level cdef functions are handled via a virtual function table
+so the compiler won’t be able to inline them in almost all cases."_.
+https://cython.readthedocs.io/en/latest/src/userguide/pyrex_differences.html?highlight=inline.
+
+It has been found that adding `inline` to method signatures makes no difference
+to the performance of the system - and so they have been removed to reduce 
+'noise' and simplify the codebase. Please note that the use of `inline` for 
+module level functions will be passed to the C compiler with the expected 
+result of inlining the function.
 
 ## Breaking Changes
 - `BacktestEngine.add_venue` added `venue_type` to method params.

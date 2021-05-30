@@ -142,7 +142,7 @@ cdef class WindowedMinMaxPrices:
         self._min_prices.clear()
         self._max_prices.clear()
 
-    cdef inline void _expire_stale_prices_by_cutoff(
+    cdef void _expire_stale_prices_by_cutoff(
         self,
         ts_prices,
         datetime cutoff
@@ -151,7 +151,7 @@ cdef class WindowedMinMaxPrices:
         while ts_prices and ts_prices[0][0] < cutoff:
             ts_prices.popleft()
 
-    cdef inline void _add_min_price(self, datetime ts, Price price) except *:
+    cdef void _add_min_price(self, datetime ts, Price price) except *:
         """Handle appending to the min deque"""
         # Pop front elements that are less than or equal (since we want the max ask)
         while self._min_prices and self._min_prices[-1][1] <= price:
@@ -163,7 +163,7 @@ cdef class WindowedMinMaxPrices:
 
         self._min_prices.append((ts, price))
 
-    cdef inline void _add_max_price(self, datetime ts, Price price) except *:
+    cdef void _add_max_price(self, datetime ts, Price price) except *:
         """Handle appending to the max deque"""
         # Pop front elements that are less than or equal (since we want the max bid)
         while self._max_prices and self._max_prices[-1][1] <= price:

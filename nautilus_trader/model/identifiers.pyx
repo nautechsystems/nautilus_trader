@@ -71,10 +71,10 @@ cdef class Identifier:
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
 
-    cdef inline bint is_null(self) except *:
+    cdef bint is_null(self) except *:
         return self.value == _NULL_ID
 
-    cdef inline bint not_null(self) except *:
+    cdef bint not_null(self) except *:
         return self.value != _NULL_ID
 
 
@@ -279,7 +279,7 @@ cdef class StrategyId(Identifier):
         return self.value.partition("-")[2]
 
     @staticmethod
-    cdef inline StrategyId null_c():
+    cdef StrategyId null_c():
         return _NULL_STRATEGY_ID
 
     @staticmethod

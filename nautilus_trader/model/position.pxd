@@ -108,7 +108,7 @@ cdef class Position:
     cdef bint is_closed_c(self) except *
 
     @staticmethod
-    cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
+    cdef PositionSide side_from_order_side_c(OrderSide side) except *
     cpdef bint is_opposite_side(self, OrderSide side) except *
 
     cpdef void apply(self, OrderFilled fill) except *
@@ -119,12 +119,12 @@ cdef class Position:
     cpdef Money total_pnl(self, Price last)
     cpdef list commissions(self)
 
-    cdef inline void _handle_buy_order_fill(self, OrderFilled fill) except *
-    cdef inline void _handle_sell_order_fill(self, OrderFilled fill) except *
-    cdef inline object _calculate_avg_px(self, avg_px: Decimal, qty: Decimal, OrderFilled fill)
-    cdef inline object _calculate_avg_px_open_px(self, OrderFilled fill)
-    cdef inline object _calculate_avg_px_close_px(self, OrderFilled fill)
-    cdef inline object _calculate_points(self, avg_px_open: Decimal, avg_px_close: Decimal)
-    cdef inline object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal)
-    cdef inline object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal)
-    cdef inline object _calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)
+    cdef void _handle_buy_order_fill(self, OrderFilled fill) except *
+    cdef void _handle_sell_order_fill(self, OrderFilled fill) except *
+    cdef object _calculate_avg_px(self, avg_px: Decimal, qty: Decimal, OrderFilled fill)
+    cdef object _calculate_avg_px_open_px(self, OrderFilled fill)
+    cdef object _calculate_avg_px_close_px(self, OrderFilled fill)
+    cdef object _calculate_points(self, avg_px_open: Decimal, avg_px_close: Decimal)
+    cdef object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal)
+    cdef object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal)
+    cdef object _calculate_pnl(self, avg_px_open: Decimal, avg_px_close: Decimal, quantity: Decimal)

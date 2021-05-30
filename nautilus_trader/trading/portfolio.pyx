@@ -731,10 +731,10 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline object _net_position(self, InstrumentId instrument_id):
+    cdef object _net_position(self, InstrumentId instrument_id):
         return self._net_positions.get(instrument_id, Decimal(0))
 
-    cdef inline void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *:
+    cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *:
         net_position = Decimal()
         for position in positions_open:
             net_position += position.relative_qty
@@ -742,7 +742,7 @@ cdef class Portfolio(PortfolioFacade):
         self._net_positions[instrument_id] = net_position
         self._log.info(f"{instrument_id} net_position={net_position}")
 
-    cdef inline void _update_initial_margin(self, Venue venue, list orders_working) except *:
+    cdef void _update_initial_margin(self, Venue venue, list orders_working) except *:
         # Filter only passive orders
         cdef list passive_orders_working = [o for o in orders_working if o.is_passive]
         if not passive_orders_working:
@@ -808,7 +808,7 @@ cdef class Portfolio(PortfolioFacade):
 
             self._log.info(f"{venue} initial_margin={total_margin_money}")
 
-    cdef inline void _update_maint_margin(self, Venue venue, list positions_open) except *:
+    cdef void _update_maint_margin(self, Venue venue, list positions_open) except *:
         if not positions_open:
             return  # Nothing to calculate
 
@@ -963,7 +963,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return Decimal(1)  # No conversion needed
 
-    cdef inline Price _get_last_price(self, Position position):
+    cdef Price _get_last_price(self, Position position):
         cdef QuoteTick quote_tick = self._data_cache.quote_tick(position.instrument_id)
         if quote_tick is not None:
             if position.side == PositionSide.LONG:

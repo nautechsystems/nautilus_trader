@@ -51,8 +51,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
         UUID correlation_id,
     ) except *
     cpdef void _stream_prices(self, InstrumentId instrument_id, event: threading.Event) except *
-    cdef inline QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values)
-    cdef inline Bar _parse_bar(self, BarType bar_type, Instrument instrument, dict values, PriceType price_type)
+    cdef QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values)
+    cdef Bar _parse_bar(self, BarType bar_type, Instrument instrument, dict values, PriceType price_type)
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

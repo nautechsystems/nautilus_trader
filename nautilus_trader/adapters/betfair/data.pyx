@@ -316,7 +316,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_betfair_error(self, ex, str method_name) except *:
+    cdef void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
 # -- Debugging ---------------------------------------------------------------------------------------

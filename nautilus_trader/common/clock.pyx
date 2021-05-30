@@ -372,13 +372,13 @@ cdef class Clock:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef inline void _add_timer(self, Timer timer, handler: callable) except *:
+    cdef void _add_timer(self, Timer timer, handler: callable) except *:
         self._timers[timer.name] = timer
         self._handlers[timer.name] = handler
         self._update_stack()
         self._update_timing()
 
-    cdef inline void _remove_timer(self, Timer timer) except *:
+    cdef void _remove_timer(self, Timer timer) except *:
         self._timers.pop(timer.name, None)
         self._handlers.pop(timer.name, None)
         self._update_stack()
@@ -397,7 +397,7 @@ cdef class Clock:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef inline void _update_timing(self) except *:
+    cdef void _update_timing(self) except *:
         if self.timer_count == 0:
             self.next_event_time_ns = 0
             return
@@ -670,7 +670,7 @@ cdef class LiveClock(Clock):
             timer.repeat(now_ns=self.timestamp_ns())
             self._update_timing()
 
-    cdef inline void _handle_time_event(self, TimeEvent event) except *:
+    cdef void _handle_time_event(self, TimeEvent event) except *:
         handler = self._handlers.get(event.name)
         if handler is not None:
             handler(event)

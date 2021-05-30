@@ -168,14 +168,14 @@ cdef class RiskEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, Command command) except *:
+    cdef void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
         if isinstance(command, TradingCommand):
             self._handle_trading_command(command)
 
-    cdef inline void _handle_trading_command(self, TradingCommand command) except *:
+    cdef void _handle_trading_command(self, TradingCommand command) except *:
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
@@ -187,7 +187,7 @@ cdef class RiskEngine(Component):
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
-    cdef inline void _handle_submit_order(self, SubmitOrder command) except *:
+    cdef void _handle_submit_order(self, SubmitOrder command) except *:
         # Check duplicate identifier
         if self.cache.order_exists(command.order.client_order_id):
             # Avoids duplicate identifiers in cache / database
@@ -243,7 +243,7 @@ cdef class RiskEngine(Component):
 
         self._exec_engine.execute(command)
 
-    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         cdef Order entry = command.bracket_order.entry
         cdef StopMarketOrder stop_loss = command.bracket_order.stop_loss
         cdef LimitOrder take_profit = command.bracket_order.take_profit
@@ -307,7 +307,7 @@ cdef class RiskEngine(Component):
 
         self._exec_engine.execute(command)
 
-    cdef inline void _handle_update_order(self, UpdateOrder command) except *:
+    cdef void _handle_update_order(self, UpdateOrder command) except *:
         # Validate command
         if self.cache.is_order_completed(command.client_order_id):
             self._log.warning(f"Cannot update order: "
@@ -317,7 +317,7 @@ cdef class RiskEngine(Component):
         # TODO(cs): Validate price, quantity
         self._exec_engine.execute(command)
 
-    cdef inline void _handle_cancel_order(self, CancelOrder command) except *:
+    cdef void _handle_cancel_order(self, CancelOrder command) except *:
         # Validate command
         if self.cache.is_order_completed(command.client_order_id):
             self._log.warning(f"Cannot cancel order: "
@@ -328,13 +328,13 @@ cdef class RiskEngine(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef inline void _handle_event(self, Event event) except *:
+    cdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 
 # -- VALIDATION ------------------------------------------------------------------------------------
 
-    cdef inline void _check_duplicate_ids(self, BracketOrder bracket_order):
+    cdef void _check_duplicate_ids(self, BracketOrder bracket_order):
         cdef ClientOrderId entry_id = bracket_order.entry.client_order_id
         cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.client_order_id
         cdef ClientOrderId take_profit_id = None
@@ -377,7 +377,7 @@ cdef class RiskEngine(Component):
         # Finally log error
         self._log.error(f"Cannot submit BracketOrder: {', '.join(error_msgs)}")
 
-    cdef inline list _check_order_values(
+    cdef list _check_order_values(
         self, Instrument instrument,
         Order order,
         list msgs,
@@ -434,17 +434,17 @@ cdef class RiskEngine(Component):
 
 # -- RISK MANAGEMENT -------------------------------------------------------------------------------
 
-    cdef inline list _check_order_risk(self, Instrument instrument, Order order):
+    cdef list _check_order_risk(self, Instrument instrument, Order order):
         # TODO(cs): Pre-trade risk checks
         return []
 
-    cdef inline list _check_bracket_order_risk(self, Instrument instrument, BracketOrder bracket_order):
+    cdef list _check_bracket_order_risk(self, Instrument instrument, BracketOrder bracket_order):
         # TODO(cs): Pre-trade risk checks
         return []
 
 # -- EVENT GENERATION ------------------------------------------------------------------------------
 
-    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *:
+    cdef void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
             client_order_id=client_order_id,
@@ -455,12 +455,12 @@ cdef class RiskEngine(Component):
 
         self._exec_engine.process(invalid)
 
-    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *:
+    cdef void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *:
         self._invalidate_order(bracket_order.entry.client_order_id, reason)
         self._invalidate_order(bracket_order.stop_loss.client_order_id, reason)
         self._invalidate_order(bracket_order.take_profit.client_order_id, reason)
 
-    cdef inline void _deny_order(self, ClientOrderId client_order_id, str reason) except *:
+    cdef void _deny_order(self, ClientOrderId client_order_id, str reason) except *:
         # Generate event
         cdef OrderDenied denied = OrderDenied(
             client_order_id=client_order_id,

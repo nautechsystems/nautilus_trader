@@ -565,43 +565,43 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline dict _build_current_bid_rates(self):
+    cdef dict _build_current_bid_rates(self):
         return {
             instrument_id.symbol.value: Decimal(f"{book.best_bid_price():.{book.price_precision}f}")
             for instrument_id, book in self._books.items() if book.best_bid_price()
         }
 
-    cdef inline dict _build_current_ask_rates(self):
+    cdef dict _build_current_ask_rates(self):
         return {
             instrument_id.symbol.value: Decimal(f"{book.best_ask_price():.{book.price_precision}f}")
             for instrument_id, book in self._books.items() if book.best_ask_price()
         }
 
-    cdef inline PositionId _generate_position_id(self, InstrumentId instrument_id):
+    cdef PositionId _generate_position_id(self, InstrumentId instrument_id):
         cdef int pos_count = self._symbol_pos_count.get(instrument_id, 0)
         pos_count += 1
         self._symbol_pos_count[instrument_id] = pos_count
         return PositionId(f"{self._instrument_indexer[instrument_id]}-{pos_count:03d}")
 
-    cdef inline VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id):
+    cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id):
         cdef int ord_count = self._symbol_ord_count.get(instrument_id, 0)
         ord_count += 1
         self._symbol_ord_count[instrument_id] = ord_count
         return VenueOrderId(f"{self._instrument_indexer[instrument_id]}-{ord_count:03d}")
 
-    cdef inline ExecutionId _generate_execution_id(self):
+    cdef ExecutionId _generate_execution_id(self):
         self._executions_count += 1
         return ExecutionId(f"{self._executions_count}")
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef inline void _reject_order(self, Order order, str reason) except *:
+    cdef void _reject_order(self, Order order, str reason) except *:
         # Generate event
         self._generate_order_rejected(order, reason)
         self._check_oco_order(order.client_order_id)
         self._clean_up_child_orders(order.client_order_id)
 
-    cdef inline void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *:
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *:
         # Generate event
         self._generate_order_pending_replace(order)
 
@@ -614,7 +614,7 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError(f"Invalid order type")
 
-    cdef inline void _cancel_order(self, PassiveOrder order) except *:
+    cdef void _cancel_order(self, PassiveOrder order) except *:
         cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
         if instrument_orders:
             # Assumption that order exists in instrument_orders
@@ -625,7 +625,7 @@ cdef class SimulatedExchange:
         self._generate_order_canceled(order)
         self._check_oco_order(order.client_order_id)
 
-    cdef inline void _expire_order(self, PassiveOrder order) except *:
+    cdef void _expire_order(self, PassiveOrder order) except *:
         self._generate_order_expired(order)
 
         cdef ClientOrderId first_child_order_id
@@ -641,7 +641,7 @@ cdef class SimulatedExchange:
             self._check_oco_order(order.client_order_id)
         self._clean_up_child_orders(order.client_order_id)
 
-    cdef inline void _generate_account_state(self) except *:
+    cdef void _generate_account_state(self) except *:
         cdef dict info
         if self.default_currency is None:
             info = {}
@@ -654,14 +654,14 @@ cdef class SimulatedExchange:
             info=info,
         )
 
-    cdef inline void _generate_order_submitted(self, Order order) except *:
+    cdef void _generate_order_submitted(self, Order order) except *:
         # Generate event
         self.exec_client.generate_order_submitted(
             client_order_id=order.client_order_id,
             submitted_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_rejected(self, Order order, str reason) except *:
+    cdef void _generate_order_rejected(self, Order order, str reason) except *:
         # Generate event
         self.exec_client.generate_order_rejected(
             client_order_id=order.client_order_id,
@@ -669,7 +669,7 @@ cdef class SimulatedExchange:
             rejected_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_accepted(self, Order order) except *:
+    cdef void _generate_order_accepted(self, Order order) except *:
         # Generate event
         self.exec_client.generate_order_accepted(
             client_order_id=order.client_order_id,
@@ -677,7 +677,7 @@ cdef class SimulatedExchange:
             accepted_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_pending_replace(self, Order order) except *:
+    cdef void _generate_order_pending_replace(self, Order order) except *:
         # Generate event
         self.exec_client.generate_order_pending_replace(
             client_order_id=order.client_order_id,
@@ -685,7 +685,7 @@ cdef class SimulatedExchange:
             pending_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_pending_cancel(self, Order order) except *:
+    cdef void _generate_order_pending_cancel(self, Order order) except *:
         # Generate event
         self.exec_client.generate_order_pending_cancel(
             client_order_id=order.client_order_id,
@@ -693,7 +693,7 @@ cdef class SimulatedExchange:
             pending_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_update_rejected(
+    cdef void _generate_order_update_rejected(
         self,
         ClientOrderId client_order_id,
         str response,
@@ -707,7 +707,7 @@ cdef class SimulatedExchange:
             rejected_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_cancel_rejected(
+    cdef void _generate_order_cancel_rejected(
         self,
         ClientOrderId client_order_id,
         str response,
@@ -721,7 +721,7 @@ cdef class SimulatedExchange:
             rejected_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_updated(
+    cdef void _generate_order_updated(
         self,
         PassiveOrder order,
         Quantity qty,
@@ -736,7 +736,7 @@ cdef class SimulatedExchange:
             updated_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_canceled(self, PassiveOrder order) except *:
+    cdef void _generate_order_canceled(self, PassiveOrder order) except *:
         # Generate event
         self.exec_client.generate_order_canceled(
             client_order_id=order.client_order_id,
@@ -744,7 +744,7 @@ cdef class SimulatedExchange:
             canceled_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_triggered(self, StopLimitOrder order) except *:
+    cdef void _generate_order_triggered(self, StopLimitOrder order) except *:
         # Generate event
         self.exec_client.generate_order_triggered(
             client_order_id=order.client_order_id,
@@ -752,7 +752,7 @@ cdef class SimulatedExchange:
             triggered_ns=self._clock.timestamp_ns(),
         )
 
-    cdef inline void _generate_order_expired(self, PassiveOrder order) except *:
+    cdef void _generate_order_expired(self, PassiveOrder order) except *:
         # Generate event
         self.exec_client.generate_order_expired(
             client_order_id=order.client_order_id,
@@ -760,7 +760,7 @@ cdef class SimulatedExchange:
             expired_ns=order.expire_time_ns,
         )
 
-    cdef inline void _process_order(self, Order order) except *:
+    cdef void _process_order(self, Order order) except *:
         Condition.not_in(order.client_order_id, self._working_orders, "order.client_order_id", "working_orders")
 
         if order.type == OrderType.MARKET:
@@ -774,7 +774,7 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError(f"Invalid order type")
 
-    cdef inline void _process_market_order(self, MarketOrder order) except *:
+    cdef void _process_market_order(self, MarketOrder order) except *:
         # Check market exists
         if order.side == OrderSide.BUY and not self.best_ask_price(order.instrument_id):
             self._reject_order(order, f"no market for {order.instrument_id}")
@@ -786,7 +786,7 @@ cdef class SimulatedExchange:
         # Immediately fill marketable order
         self._aggressively_fill_order(order, LiquiditySide.TAKER)
 
-    cdef inline void _process_limit_order(self, LimitOrder order) except *:
+    cdef void _process_limit_order(self, LimitOrder order) except *:
         if order.is_post_only:
             if self._is_limit_marketable(order.instrument_id, order.side, order.price):
                 self._reject_order(
@@ -806,7 +806,7 @@ cdef class SimulatedExchange:
         if not order.is_post_only and self._is_limit_matched(order.instrument_id, order.side, order.price):
             self._passively_fill_order(order, LiquiditySide.TAKER)  # Fills as liquidity taker
 
-    cdef inline void _process_stop_market_order(self, StopMarketOrder order) except *:
+    cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.price):
             self._reject_order(
                 order,
@@ -821,7 +821,7 @@ cdef class SimulatedExchange:
         self._add_order(order)
         self._generate_order_accepted(order)
 
-    cdef inline void _process_stop_limit_order(self, StopLimitOrder order) except *:
+    cdef void _process_stop_limit_order(self, StopLimitOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger):
             self._reject_order(
                 order,
@@ -836,7 +836,7 @@ cdef class SimulatedExchange:
         self._add_order(order)
         self._generate_order_accepted(order)
 
-    cdef inline void _update_limit_order(
+    cdef void _update_limit_order(
         self,
         LimitOrder order,
         Quantity qty,
@@ -860,7 +860,7 @@ cdef class SimulatedExchange:
 
         self._generate_order_updated(order, qty, price)
 
-    cdef inline void _update_stop_market_order(
+    cdef void _update_stop_market_order(
         self,
         StopMarketOrder order,
         Quantity qty,
@@ -879,7 +879,7 @@ cdef class SimulatedExchange:
 
         self._generate_order_updated(order, qty, price)
 
-    cdef inline void _update_stop_limit_order(
+    cdef void _update_stop_limit_order(
         self,
         StopLimitOrder order,
         Quantity qty,
@@ -919,7 +919,7 @@ cdef class SimulatedExchange:
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
-    cdef inline void _add_order(self, PassiveOrder order) except *:
+    cdef void _add_order(self, PassiveOrder order) except *:
         self._working_orders[order.client_order_id] = order
         cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
         if instrument_orders is None:
@@ -927,13 +927,13 @@ cdef class SimulatedExchange:
             self._instrument_orders[order.instrument_id] = instrument_orders
         instrument_orders[order.client_order_id] = order
 
-    cdef inline void _delete_order(self, Order order) except *:
+    cdef void _delete_order(self, Order order) except *:
         self._working_orders.pop(order.client_order_id, None)
         cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
         if instrument_orders:
             instrument_orders.pop(order.client_order_id, None)
 
-    cdef inline void _iterate_matching_engine(
+    cdef void _iterate_matching_engine(
         self, InstrumentId instrument_id,
         int64_t timestamp_ns,
     ) except *:
@@ -954,7 +954,7 @@ cdef class SimulatedExchange:
                 self._delete_order(order)
                 self._expire_order(order)
 
-    cdef inline void _match_order(self, PassiveOrder order) except *:
+    cdef void _match_order(self, PassiveOrder order) except *:
         if order.type == OrderType.LIMIT:
             self._match_limit_order(order)
         elif order.type == OrderType.STOP_MARKET:
@@ -964,15 +964,15 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError("invalid order type")
 
-    cdef inline void _match_limit_order(self, LimitOrder order) except *:
+    cdef void _match_limit_order(self, LimitOrder order) except *:
         if self._is_limit_matched(order.instrument_id, order.side, order.price):
             self._passively_fill_order(order, LiquiditySide.MAKER)
 
-    cdef inline void _match_stop_market_order(self, StopMarketOrder order) except *:
+    cdef void _match_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_triggered(order.instrument_id, order.side, order.price):
             self._aggressively_fill_order(order, LiquiditySide.TAKER)  # Triggered stop places market order
 
-    cdef inline void _match_stop_limit_order(self, StopLimitOrder order) except *:
+    cdef void _match_stop_limit_order(self, StopLimitOrder order) except *:
         if order.is_triggered:
             if self._is_limit_matched(order.instrument_id, order.side, order.price):
                 self._passively_fill_order(order, LiquiditySide.MAKER)
@@ -996,7 +996,7 @@ cdef class SimulatedExchange:
             else:
                 self._passively_fill_order(order, LiquiditySide.TAKER)  # Fills as TAKER
 
-    cdef inline bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price order_price) except *:
+    cdef bint _is_limit_marketable(self, InstrumentId instrument_id, OrderSide side, Price order_price) except *:
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
@@ -1008,7 +1008,7 @@ cdef class SimulatedExchange:
                 return False
             return order_price <= bid  # Match with LIMIT buys
 
-    cdef inline bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+    cdef bint _is_limit_matched(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
@@ -1020,7 +1020,7 @@ cdef class SimulatedExchange:
                 return False  # No market
             return price < bid or (bid == price and self.fill_model.is_limit_filled())
 
-    cdef inline bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+    cdef bint _is_stop_marketable(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
@@ -1032,7 +1032,7 @@ cdef class SimulatedExchange:
                 return False  # No market
             return bid <= price  # Match with LIMIT buys
 
-    cdef inline bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
+    cdef bint _is_stop_triggered(self, InstrumentId instrument_id, OrderSide side, Price price) except *:
         if side == OrderSide.BUY:
             ask = self.best_ask_price(instrument_id)
             if ask is None:
@@ -1044,7 +1044,7 @@ cdef class SimulatedExchange:
                 return False  # No market
             return bid < price or (bid == price and self.fill_model.is_stop_filled())
 
-    cdef inline list _determine_limit_price_and_volume(self, PassiveOrder order):
+    cdef list _determine_limit_price_and_volume(self, PassiveOrder order):
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, volume=order.quantity, side=order.side)
 
@@ -1053,7 +1053,7 @@ cdef class SimulatedExchange:
         else:  # => OrderSide.SELL
             return book.bids.simulate_order_fills(order=submit_order, depth_type=DepthType.VOLUME)
 
-    cdef inline list _determine_market_price_and_volume(self, Order order):
+    cdef list _determine_market_price_and_volume(self, Order order):
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef Price price = Price.from_int_c(INT_MAX if order.side == OrderSide.BUY else INT_MIN)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=price, volume=order.quantity, side=order.side)
@@ -1065,7 +1065,7 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
+    cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
         cdef list fills = self._determine_limit_price_and_volume(order)
         if not fills:
             return
@@ -1079,7 +1079,7 @@ cdef class SimulatedExchange:
                 liquidity_side=liquidity_side,
             )
 
-    cdef inline void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
+    cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
         cdef list fills = self._determine_market_price_and_volume(order)
         if not fills:
             return
@@ -1116,7 +1116,7 @@ cdef class SimulatedExchange:
                 liquidity_side=liquidity_side,
             )
 
-    cdef inline void _fill_order(
+    cdef void _fill_order(
         self,
         Order order,
         Price last_px,
@@ -1235,7 +1235,7 @@ cdef class SimulatedExchange:
         # Finally adjust account
         self.adjust_account(pnl)
 
-    cdef inline void _check_oco_order(self, ClientOrderId client_order_id) except *:
+    cdef void _check_oco_order(self, ClientOrderId client_order_id) except *:
         # Check held OCO orders and remove any paired with the given client_order_id
         cdef ClientOrderId oco_client_order_id = self._oco_orders.pop(client_order_id, None)
         if oco_client_order_id is None:
@@ -1260,12 +1260,12 @@ cdef class SimulatedExchange:
         self._log.debug(f"Cancelling {oco_order.client_order_id} OCO order from {oco_client_order_id}.")
         self._cancel_oco_order(oco_order)
 
-    cdef inline void _clean_up_child_orders(self, ClientOrderId client_order_id) except *:
+    cdef void _clean_up_child_orders(self, ClientOrderId client_order_id) except *:
         # Clean up any residual child orders from the completed order associated
         # with the given identifier.
         self._child_orders.pop(client_order_id, None)
 
-    cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *:
+    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *:
         # order is the OCO order to reject
         # other_oco is the linked ClientOrderId
         if order.is_completed_c():
@@ -1275,7 +1275,7 @@ cdef class SimulatedExchange:
         # Generate event
         self._generate_order_rejected(order, f"OCO order rejected from {other_oco}")
 
-    cdef inline void _cancel_oco_order(self, PassiveOrder order) except *:
+    cdef void _cancel_oco_order(self, PassiveOrder order) except *:
         # order is the OCO order to cancel
         if order.is_completed_c():
             self._log.debug(f"Cannot cancel order: state was already {order.state_string_c()}.")

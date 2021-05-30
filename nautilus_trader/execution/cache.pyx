@@ -1160,7 +1160,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
-    cdef inline set _build_ord_query_filter_set(
+    cdef set _build_ord_query_filter_set(
         self,
         Venue venue,
         InstrumentId instrument_id,
@@ -1184,7 +1184,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return query
 
-    cdef inline set _build_pos_query_filter_set(
+    cdef set _build_pos_query_filter_set(
         self,
         Venue venue,
         InstrumentId instrument_id,

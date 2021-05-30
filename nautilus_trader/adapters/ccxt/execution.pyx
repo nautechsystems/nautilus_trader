@@ -428,7 +428,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
+    cdef void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
     async def _run_after_delay(self, double delay, coro):
@@ -570,7 +570,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event, bint initial=False) except *:
+    cdef void _on_account_state(self, dict event, bint initial=False) except *:
         del event["info"]
         del event["free"]
         del event["used"]
@@ -631,7 +631,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             updated_ns=update_ns,
         )
 
-    cdef inline void _on_order_status(self, dict event) except *:
+    cdef void _on_order_status(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["id"])
 
         # Attempt to parse ClientOrderId
@@ -659,7 +659,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         elif status == "expired":
             self.generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
 
-    cdef inline void _on_exec_report(self, dict event) except *:
+    cdef void _on_exec_report(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["order"])
         cdef Order order = self._cached_orders.get(venue_order_id)
 
@@ -696,7 +696,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             execution_ns=(millis_to_nanos(millis=event["timestamp"])),
         )
 
-    cdef inline Money _parse_commission(self, dict event):
+    cdef Money _parse_commission(self, dict event):
         cdef dict commission = event.get("fee", {})
         cdef str commission_currency = commission.get("currency")
         if commission_currency is None:
@@ -711,12 +711,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         return Money(commission.get("cost", 0), currency)
 
-    cdef inline void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
+    cdef void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
         self._cached_orders[venue_order_id] = order
         self._cached_filled[venue_order_id] = order.filled_qty
         self._log.debug(f"Cached {repr(venue_order_id)} {order}.")
 
-    cdef inline void _decache_order(self, VenueOrderId venue_order_id) except *:
+    cdef void _decache_order(self, VenueOrderId venue_order_id) except *:
         self._cached_orders.pop(venue_order_id, None)
         self._cached_filled.pop(venue_order_id, None)
         self._log.debug(f"De-cached {repr(venue_order_id)}.")

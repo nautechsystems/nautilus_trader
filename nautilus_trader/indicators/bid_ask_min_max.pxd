@@ -43,6 +43,6 @@ cdef class WindowedMinMaxPrices:
     cpdef void add_price(self, datetime ts, Price price) except *
     cpdef void reset(self) except *
 
-    cdef inline void _expire_stale_prices_by_cutoff(self, ts_prices, datetime cutoff) except *
-    cdef inline void _add_min_price(self, datetime ts, Price price) except *
-    cdef inline void _add_max_price(self, datetime ts, Price price) except *
+    cdef void _expire_stale_prices_by_cutoff(self, ts_prices, datetime cutoff) except *
+    cdef void _add_min_price(self, datetime ts, Price price) except *
+    cdef void _add_max_price(self, datetime ts, Price price) except *

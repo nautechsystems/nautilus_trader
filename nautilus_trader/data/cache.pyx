@@ -738,7 +738,7 @@ cdef class DataCache(DataCacheFacade):
             ask_quotes=quotes[1],  # Ask
         )
 
-    cdef inline tuple _build_quote_table(self, Venue venue):
+    cdef tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}
         cdef dict ask_quotes = {}
 

@@ -59,29 +59,29 @@ cdef class RiskEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, Command command) except *
-    cdef inline void _handle_trading_command(self, TradingCommand command) except *
-    cdef inline void _handle_submit_order(self, SubmitOrder command) except *
-    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cdef inline void _handle_update_order(self, UpdateOrder command) except *
-    cdef inline void _handle_cancel_order(self, CancelOrder command) except *
+    cdef void _execute_command(self, Command command) except *
+    cdef void _handle_trading_command(self, TradingCommand command) except *
+    cdef void _handle_submit_order(self, SubmitOrder command) except *
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cdef void _handle_update_order(self, UpdateOrder command) except *
+    cdef void _handle_cancel_order(self, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef inline void _handle_event(self, Event event) except *
+    cdef void _handle_event(self, Event event) except *
 
 # -- PRE-TRADE VALIDATION --------------------------------------------------------------------------
 
-    cdef inline void _check_duplicate_ids(self, BracketOrder bracket_order)
-    cdef inline list _check_order_values(self, Instrument instrument, Order order, list msgs)
+    cdef void _check_duplicate_ids(self, BracketOrder bracket_order)
+    cdef list _check_order_values(self, Instrument instrument, Order order, list msgs)
 
 # -- PRE-TRADE RISK --------------------------------------------------------------------------------
 
-    cdef inline list _check_order_risk(self, Instrument instrument, Order order)
-    cdef inline list _check_bracket_order_risk(self, Instrument instrument, BracketOrder bracket_order)
+    cdef list _check_order_risk(self, Instrument instrument, Order order)
+    cdef list _check_bracket_order_risk(self, Instrument instrument, BracketOrder bracket_order)
 
 # -- EVENT GENERATION ------------------------------------------------------------------------------
 
-    cdef inline void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
-    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *
-    cdef inline void _deny_order(self, ClientOrderId client_order_id, str reason) except *
+    cdef void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
+    cdef void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *
+    cdef void _deny_order(self, ClientOrderId client_order_id, str reason) except *
