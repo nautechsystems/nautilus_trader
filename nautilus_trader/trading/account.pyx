@@ -21,7 +21,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -469,7 +469,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In the quote currency.
 
         """
         Condition.not_none(quantity, "quantity")
@@ -479,8 +479,8 @@ cdef class Account:
         if instrument.is_inverse:
             close_price = 1 / close_price
 
-        market_value: Decimal = (quantity * close_price * instrument.multiplier)
-        return Money(market_value, instrument.settlement_currency)
+        market_value: Decimal = (quantity * instrument.multiplier * close_price)
+        return Money(market_value, instrument.cost_currency)
 
     @staticmethod
     def notional_value(Instrument instrument, Quantity quantity, close_price: Decimal):
@@ -507,10 +507,10 @@ cdef class Account:
         Condition.not_none(close_price, "close_price")
 
         if instrument.is_inverse:
-            close_price = 1 / close_price
+            return Money(quantity * instrument.multiplier, instrument.quote_currency)
 
-        notional_value: Decimal = quantity * close_price * instrument.multiplier
-        return Money(notional_value, instrument.settlement_currency)
+        notional_value: Decimal = quantity * instrument.multiplier * close_price
+        return Money(notional_value, instrument.quote_currency)
 
     @staticmethod
     def calculate_initial_margin(
@@ -533,7 +533,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In the instruments PnL currency.
 
         """
         Condition.not_none(quantity, "quantity")
@@ -542,13 +542,13 @@ cdef class Account:
         # TODO: Temporarily no margin
         leverage = 1
         if leverage == 1:
-            return Money(0, instrument.settlement_currency)
+            return Money(0, instrument.cost_currency)
 
         notional = Account.notional_value(quantity, price)
         margin = notional / leverage * instrument.margin_init
         margin += notional * instrument.taker_fee * 2
 
-        return Money(margin, instrument.settlement_currency)
+        return Money(margin, instrument.cost_currency)
 
     @staticmethod
     def calculate_maint_margin(
@@ -574,7 +574,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In quote currency.
 
         """
         # side checked in _get_close_price
@@ -584,13 +584,13 @@ cdef class Account:
         # TODO: Temporarily no margin
         leverage = 1
         if leverage == 1:
-            return Money(0, instrument.settlement_currency)  # No margin necessary
+            return Money(0, instrument.cost_currency)  # No margin necessary
 
         cdef Money notional = Account.notional_value(instrument, quantity, last)
         margin = (notional / leverage) * instrument.margin_maint
         margin += notional * instrument.taker_fee
 
-        return Money(margin, instrument.settlement_currency)
+        return Money(margin, instrument.cost_currency)
 
     @staticmethod
     def calculate_commission(
@@ -617,7 +617,7 @@ cdef class Account:
         Returns
         -------
         Money
-            In the settlement currency.
+            In quote currency.
 
         Raises
         ------
@@ -636,10 +636,14 @@ cdef class Account:
         elif liquidity_side == LiquiditySide.TAKER:
             commission: Decimal = notional * instrument.taker_fee
         else:
-            raise RuntimeError(f"invalid LiquiditySide, "
-                               f"was {LiquiditySideParser.to_str(liquidity_side)}")
+            raise RuntimeError(
+                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
+            )
 
-        return Money(commission, instrument.settlement_currency)
+        if instrument.is_inverse:
+            commission *= 1 / last_px
+
+        return Money(commission, instrument.cost_currency)
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 
@@ -775,7 +779,7 @@ cdef class Account:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _update_balances(
+    cdef void _update_balances(
         self,
         list balances,
     ) except *:

@@ -46,9 +46,11 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "connection_timeout": 5.0,  # Timeout for successful connections for all engine clients
-        "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
-        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
+        "timeout_connection": 10.0,  # Timeout for all engines client to connect and initialize
+        "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
+        "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
+        "timeout_disconnection": 5.0,  # Timeout for all engine clients to disconnect
+        "check_residuals_delay": 5.0,  # Delay to await residual events after stopping engines
     },
     "logging": {
         "level_stdout": "INF",

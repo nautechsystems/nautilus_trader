@@ -305,7 +305,7 @@ cdef class LiveDataEngine(DataEngine):
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
 
-    cdef inline void _enqueue_sentinels(self):
+    cdef void _enqueue_sentinels(self):
         self._data_queue.put_nowait(self._sentinel)
         self._message_queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on data queue.")

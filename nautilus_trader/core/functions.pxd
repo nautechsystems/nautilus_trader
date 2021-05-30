@@ -25,7 +25,7 @@ ctypedef int64_t (* round_func_type)(double x) nogil  # noqa E211 whitespace bef
 cdef round_func_type lround
 
 
-cdef uint8_t precision_from_str(str value) except *
+cpdef uint8_t precision_from_str(str value) except *
 cpdef int bisect_double_left(list a, double x, int lo=*, hi=*) except *
 cpdef int bisect_double_right(list a, double x, int lo=*, hi=*) except *
 cpdef double fast_mean(np.ndarray values) except *

@@ -16,6 +16,7 @@
 from decimal import Decimal
 from typing import Union
 
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.bar import Bar
@@ -26,7 +27,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -181,7 +182,8 @@ class VolatilityMarketMaker(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]..."
+                f"[{self.data.bar_count(self.bar_type)}]...",
+                color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 

@@ -1,22 +1,40 @@
 # NautilusTrader 1.121.0 Beta - Release Notes
 
+In this release there has been a major change to the use of inlines for method
+signatures. From the Cython docs:
+_"Note that class-level cdef functions are handled via a virtual function table
+so the compiler won’t be able to inline them in almost all cases."_.
+https://cython.readthedocs.io/en/latest/src/userguide/pyrex_differences.html?highlight=inline.
+
+It has been found that adding `inline` to method signatures makes no difference
+to the performance of the system - and so they have been removed to reduce 
+'noise' and simplify the codebase. Please note that the use of `inline` for 
+module level functions will be passed to the C compiler with the expected 
+result of inlining the function.
 
 ## Breaking Changes
 - `BacktestEngine.add_venue` added `venue_type` to method params.
 - `ExecutionClient` added `venue_type` to constructor params.
-- Simplified `TraderId` constructor.
-- Simplified `StrategyId` constructor.
+- `TraderId` instantiation.
+- `StrategyId` instantiation.
+- `Instrument` serialization.
 
 ## Enhancements
-- Add `timestamp_origin_ns` timestamp when originally occurred to data.
-- Improve `ExecutionEngine` order routing.
-- Improve `ExecutionEngine` client registration.
-- Add order routing configuration.
-- Add `VenueType` enum and parser.
-- Improve param typing for identifier generators.
+- `Portfolio` pending calculations if data not immediately available.
+- Added `instruments` subpackage with expanded class definitions.
+- Added `timestamp_origin_ns` timestamp when originally occurred.
+- Added `AccountState.is_reported` flagging if reported by exchange or calculated.
+- Simplified `TraderId` and `StrategyId` identifiers.
+- Improved `ExecutionEngine` order routing.
+- Improved `ExecutionEngine` client registration.
+- Added order routing configuration.
+- Added `VenueType` enum and parser.
+- Improved param typing for identifier generators.
+- Improved log formatting of `Money` and `Quantity` thousands commas.
 
 ## Fixes
-None
+- CCXT `TICK_SIZE` precision mode - size precisions (BitMEX, FTX).
+- State reconciliation (various bugs).
 
 ---
 
@@ -32,11 +50,11 @@ This release focuses on simplifications and enhancements of existing machinery.
 - `TradingCommand` serialization.
 
 ## Enhancements
-- Add `Instrument` methods to `ExecutionCache`.
-- Add `Venue` filter to cache queries.
-- Move order validations into `RiskEngine`.
-- Refactor `RiskEngine`.
-- Remove routing type information from identifiers.
+- Added `Instrument` methods to `ExecutionCache`.
+- Added `Venue` filter to cache queries.
+- Moved order validations into `RiskEngine`.
+- Refactored `RiskEngine`.
+- Removed routing type information from identifiers.
 
 ## Fixes
 None

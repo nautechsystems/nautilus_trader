@@ -373,7 +373,7 @@ class TestLiveExecutionEngine:
             self.exec_engine.register_strategy(strategy)
 
             # Act
-            await self.exec_engine.reconcile_state()
+            await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -428,7 +428,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -483,7 +483,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -538,7 +538,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -618,7 +618,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -698,7 +698,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state()
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert

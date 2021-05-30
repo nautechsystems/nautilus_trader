@@ -18,8 +18,8 @@ cdef class Identifier:
     cdef readonly str value
     """The identifier value.\n\n:returns: `str`"""
 
-    cdef inline bint is_null(self) except *
-    cdef inline bint not_null(self) except *
+    cdef bint is_null(self) except *
+    cdef bint not_null(self) except *
 
 
 cdef class Symbol(Identifier):

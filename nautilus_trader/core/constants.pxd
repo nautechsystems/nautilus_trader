@@ -31,6 +31,7 @@ cdef str ACCOUNT_ID
 cdef str CLIENT_ORDER_ID
 cdef str VENUE_ORDER_ID
 cdef str INIT_ID
+cdef str IS_REPORTED
 cdef str LABEL
 cdef str SUBMITTED_TIMESTAMP
 cdef str ACCEPTED_TIMESTAMP
@@ -79,15 +80,17 @@ cdef str ASSET_CLASS
 cdef str ASSET_TYPE
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
+cdef str COST_CURRENCY
 cdef str SETTLEMENT_CURRENCY
 cdef str IS_INVERSE
 cdef str BROKER_SYMBOL
 cdef str ASSET_TYPE
 cdef str PRICE_PRECISION
+cdef str PRICE_INCREMENT
 cdef str SIZE_PRECISION
-cdef str TICK_SIZE
-cdef str LOT_SIZE
+cdef str SIZE_INCREMENT
 cdef str MULTIPLIER
+cdef str LOT_SIZE
 cdef str MIN_QUANTITY
 cdef str MAX_QUANTITY
 cdef str MIN_NOTIONAL

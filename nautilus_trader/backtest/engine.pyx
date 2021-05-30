@@ -59,7 +59,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
@@ -545,7 +545,8 @@ cdef class BacktestEngine:
         self._log.info(
             f"Added {len(data)} {instrument_id} "
             f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
-            f"Bar data elements.")
+            f"Bar data elements."
+        )
 
     def add_venue(
         self,
@@ -821,7 +822,7 @@ cdef class BacktestEngine:
 
         self._log_footer(run_started, self._clock.utc_now(), start, stop)
 
-    cdef inline void _advance_time(self, int64_t now_ns) except *:
+    cdef void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
@@ -832,12 +833,12 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    cdef inline void _process_modules(self, int64_t now_ns) except *:
+    cdef void _process_modules(self, int64_t now_ns) except *:
         cdef SimulatedExchange exchange
         for exchange in self._exchanges.values():
             exchange.process_modules(now_ns)
 
-    cdef inline void _log_header(
+    cdef void _log_header(
         self,
         datetime run_started,
         datetime start,
@@ -862,7 +863,7 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    cdef inline void _log_footer(
+    cdef void _log_footer(
         self,
         datetime run_started,
         datetime run_finished,

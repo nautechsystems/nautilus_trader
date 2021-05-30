@@ -208,6 +208,7 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         account_state = AccountState(
             account_id=AccountId("BINANCE", "1513111"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -562,6 +563,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         account_id=AccountId("BITMEX", "01234"),
+    #         reported=True,
     #         balances=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_free=[Money("0.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
@@ -639,6 +641,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     account_state = AccountState(
     #         account_id=AccountId("BITMEX", "01234"),
+    #         reported=True,
     #         balances=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_free=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
@@ -684,6 +687,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         account_id=AccountId("BITMEX", "01234"),
+    #         reported=True,
     #         balances=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_free=[Money("10.00000000", BTC), Money("10.00000000", ETH)],
     #         balances_locked=[Money("0.00000000", BTC), Money("0.00000000", ETH)],
@@ -739,6 +743,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
@@ -855,6 +860,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     account_state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
@@ -948,6 +954,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     account_state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
@@ -1013,6 +1020,7 @@ class PortfolioTests(unittest.TestCase):
     #     # Arrange
     #     state = AccountState(
     #         AccountId("SIM", "01234"),
+    #         reported=True,
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],

@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -25,10 +25,10 @@ cdef class Serializer:
 
     This class should not be used directly, but through a concrete subclass.
     """
-    cdef inline str convert_camel_to_snake(self, str value):
+    cdef str convert_camel_to_snake(self, str value):
         return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
 
-    cdef inline str convert_snake_to_camel(self, str value):
+    cdef str convert_snake_to_camel(self, str value):
         return ''.join(x.title() for x in value.split('_'))
 
     cpdef str py_convert_camel_to_snake(self, str value):

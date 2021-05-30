@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -32,40 +30,36 @@ cdef class Instrument(Data):
     """The asset class of the instrument.\n\n:returns: `AssetClass`"""
     cdef readonly AssetType asset_type
     """The asset type of the instrument.\n\n:returns: `AssetType`"""
-    cdef readonly Currency base_currency
-    """The base currency of the instrument.\n\n:returns: `Currency` or `None`"""
     cdef readonly Currency quote_currency
-    """The quote currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly Currency settlement_currency
-    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
+    """The quote currency for the instrument.\n\n:returns: `Currency`"""
+    cdef readonly Currency cost_currency
+    """The currency used for PnL calculations for the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `Currency`"""
-    cdef readonly bint is_quanto
-    """If settlement currency different to base and quote.\n\n:returns: `Currency`"""
     cdef readonly int price_precision
     """The price precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int size_precision
     """The size precision of the instrument.\n\n:returns: `int`"""
-    cdef readonly int cost_precision
-    """The cost precision of the instrument.\n\n:returns: `int`"""
-    cdef readonly object tick_size
-    """The tick size of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly object multiplier
-    """The multiplier of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Price price_increment
+    """The minimum price increment or tick size for the instrument.\n\n:returns: `Price`"""
+    cdef readonly Quantity size_increment
+    """The minimum size increment for the instrument.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity multiplier
+    """The contract multiplier for the instrument (determines tick value).\n\n:returns: `Quantity`"""
     cdef readonly Quantity lot_size
-    """The lot size of the instrument.\n\n:returns: `Quantity`"""
+    """The rounded lot unit size (standard/board) for the instrument.\n\n:returns: `Quantity` or None"""
     cdef readonly Quantity max_quantity
-    """The maximum order quantity for the instrument.\n\n:returns: `Quantity`"""
+    """The maximum order quantity for the instrument.\n\n:returns: `Quantity` or None"""
     cdef readonly Quantity min_quantity
-    """The minimum order quantity for the instrument.\n\n:returns: `Quantity`"""
+    """The minimum order quantity for the instrument.\n\n:returns: `Quantity` or None"""
     cdef readonly Money max_notional
-    """The maximum notional order value for the instrument.\n\n:returns: `Money`"""
+    """The maximum notional order value for the instrument.\n\n:returns: `Money` or None"""
     cdef readonly Money min_notional
-    """The minimum notional order value for the instrument.\n\n:returns: `Money`"""
+    """The minimum notional order value for the instrument.\n\n:returns: `Money` or None"""
     cdef readonly Price max_price
-    """The maximum printable price for the instrument.\n\n:returns: `Price`"""
+    """The maximum printable price for the instrument.\n\n:returns: `Price` or None"""
     cdef readonly Price min_price
-    """The minimum printable price for the instrument.\n\n:returns: `Price`"""
+    """The minimum printable price for the instrument.\n\n:returns: `Price` or None"""
     cdef readonly object margin_init
     """The initial margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object margin_maint
@@ -74,47 +68,8 @@ cdef class Instrument(Data):
     """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
     """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly dict info
+    """The raw info for the instrument.\n\n:returns: `dict[str, object]`"""
 
     cpdef Price make_price(self, value)
     cpdef Quantity make_qty(self, value)
-
-    cdef bint _is_quanto(
-        self,
-        Currency base_currency,
-        Currency quote_currency,
-        Currency settlement_currency,
-    ) except *
-
-
-cdef class Future(Instrument):
-
-    cdef readonly int contract_id
-    cdef readonly str last_trade_date_or_contract_month
-    cdef readonly str local_symbol
-    cdef readonly str trading_class
-    cdef readonly str market_name
-    cdef readonly str long_name
-    cdef readonly str contract_month
-    cdef readonly str time_zone_id
-    cdef readonly str trading_hours
-    cdef readonly str liquid_hours
-    cdef readonly str last_trade_time
-
-
-cdef class BettingInstrument(Instrument):
-    cdef readonly str event_type_id
-    cdef readonly str event_type_name
-    cdef readonly str competition_id
-    cdef readonly str competition_name
-    cdef readonly str event_id
-    cdef readonly str event_name
-    cdef readonly str event_country_code
-    cdef readonly datetime event_open_date
-    cdef readonly str betting_type
-    cdef readonly str market_id
-    cdef readonly str market_name
-    cdef readonly datetime market_start_time
-    cdef readonly str market_type
-    cdef readonly str selection_id
-    cdef readonly str selection_name
-    cdef readonly str selection_handicap

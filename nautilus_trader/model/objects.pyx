@@ -199,13 +199,13 @@ cdef class BaseDecimal:
         return f"{type(self).__name__}('{self}')"
 
     @staticmethod
-    cdef inline object _extract_value(object obj):
+    cdef object _extract_value(object obj):
         if isinstance(obj, BaseDecimal):
             return obj.as_decimal()
         return obj
 
     @staticmethod
-    cdef inline bint _compare(a, b, int op) except *:
+    cdef bint _compare(a, b, int op) except *:
         if isinstance(a, BaseDecimal):
             a = <BaseDecimal>a.as_decimal()
         if isinstance(b, BaseDecimal):
@@ -367,7 +367,7 @@ cdef class Quantity(BaseDecimal):
         str
 
         """
-        return f"{self.as_decimal():,}"
+        return f"{self.as_decimal():,}".replace(",", "_")
 
 
 cdef class Price(BaseDecimal):

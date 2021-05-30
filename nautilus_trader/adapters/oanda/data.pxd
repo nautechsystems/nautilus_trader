@@ -25,7 +25,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 
 
@@ -51,8 +51,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
         UUID correlation_id,
     ) except *
     cpdef void _stream_prices(self, InstrumentId instrument_id, event: threading.Event) except *
-    cdef inline QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values)
-    cdef inline Bar _parse_bar(self, BarType bar_type, Instrument instrument, dict values, PriceType price_type)
+    cdef QuoteTick _parse_quote_tick(self, InstrumentId instrument_id, dict values)
+    cdef Bar _parse_bar(self, BarType bar_type, Instrument instrument, dict values, PriceType price_type)
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

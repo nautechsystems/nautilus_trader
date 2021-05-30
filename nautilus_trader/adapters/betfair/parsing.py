@@ -62,7 +62,7 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instrument import BettingInstrument
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -188,6 +188,7 @@ def betfair_account_to_account_state(
     free = balance - locked
     return AccountState(
         account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
+        reported=True,
         balances=[
             AccountBalance(
                 currency=currency,

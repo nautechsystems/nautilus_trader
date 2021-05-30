@@ -29,7 +29,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
@@ -175,13 +175,13 @@ cdef class FXRolloverInterestModule(SimulationModule):
             if self._exchange.default_currency is not None:
                 currency = self._exchange.default_currency
                 xrate = self._exchange.get_xrate(
-                    from_currency=instrument.settlement_currency,
+                    from_currency=instrument.cost_currency,
                     to_currency=currency,
                     price_type=PriceType.MID,
                 )
                 rollover *= xrate
             else:
-                currency = instrument.settlement_currency
+                currency = instrument.cost_currency
 
             rollover_total = self._rollover_totals.get(currency, Decimal())
             rollover_total = Money(rollover_total + rollover, currency)

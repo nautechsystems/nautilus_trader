@@ -43,7 +43,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
@@ -646,10 +646,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
+    cdef void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-    cdef inline int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *:
+    cdef int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *:
         return millis_to_nanos(millis)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
@@ -782,7 +782,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         except Exception as ex:
             self._log.exception(ex)
 
-    cdef inline void _on_quote_tick(
+    cdef void _on_quote_tick(
         self,
         InstrumentId instrument_id,
         double best_bid,
@@ -849,7 +849,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         except Exception as ex:
             self._log.exception(ex)
 
-    cdef inline void _on_trade_tick(
+    cdef void _on_trade_tick(
         self,
         InstrumentId instrument_id,
         double price,
@@ -940,7 +940,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         except Exception as ex:
             self._log.exception(ex)
 
-    cdef inline void _on_bar(
+    cdef void _on_bar(
         self,
         BarType bar_type,
         double open_price,
@@ -1154,7 +1154,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             correlation_id,
         )
 
-    cdef inline TradeTick _parse_trade_tick(
+    cdef TradeTick _parse_trade_tick(
         self,
         InstrumentId instrument_id,
         dict trade,
@@ -1171,7 +1171,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             self._clock.timestamp_ns(),
         )
 
-    cdef inline Bar _parse_bar(
+    cdef Bar _parse_bar(
         self,
         BarType bar_type,
         list values,

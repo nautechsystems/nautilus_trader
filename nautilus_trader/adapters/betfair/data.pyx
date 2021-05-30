@@ -33,7 +33,7 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport BettingInstrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
@@ -316,7 +316,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_betfair_error(self, ex, str method_name) except *:
+    cdef void _log_betfair_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
 # -- Debugging ---------------------------------------------------------------------------------------

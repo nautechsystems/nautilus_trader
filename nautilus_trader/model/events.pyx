@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -54,6 +55,7 @@ cdef class AccountState(Event):
     def __init__(
         self,
         AccountId account_id not None,
+        bint reported,
         list balances not None,
         dict info not None,
         UUID event_id not None,
@@ -67,6 +69,8 @@ cdef class AccountState(Event):
         ----------
         account_id : AccountId
             The account identifier.
+        reported : bool
+            If the state is reported from the exchange (otherwise system calculated).
         balances : list[AccountBalance]
             The account balances
         info : dict [str, object]
@@ -82,6 +86,7 @@ cdef class AccountState(Event):
         super().__init__(event_id, timestamp_ns)
 
         self.account_id = account_id
+        self.is_reported = reported
         self.balances = balances
         self.info = info
         self.updated_ns = updated_ns
@@ -89,6 +94,7 @@ cdef class AccountState(Event):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
+                f"is_reported={self.is_reported}, "
                 f"balances=[{', '.join([str(b) for b in self.balances])}], "
                 f"event_id={self.id})")
 
@@ -1287,14 +1293,13 @@ cdef class PositionClosed(PositionEvent):
         )
 
     def __repr__(self) -> str:
-        cdef str duration = str(self.position.open_duration_ns).replace("0 days ", "", 1)
         return (f"{type(self).__name__}("
                 f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"duration={duration}, "
+                f"duration={pd.Timedelta(self.position.open_duration_ns, unit='ns')}, "
                 f"avg_px_open={self.position.avg_px_open}, "
                 f"avg_px_close={self.position.avg_px_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "

@@ -15,7 +15,7 @@
 
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class OandaInstrumentProvider(InstrumentProvider):

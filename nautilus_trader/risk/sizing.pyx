@@ -16,7 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -77,7 +77,7 @@ cdef class PositionSizer:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss):
-        return abs(entry - stop_loss) / self.instrument.tick_size
+        return abs(entry - stop_loss) / self.instrument.price_increment
 
     cdef object _calculate_riskable_money(
             self,
@@ -192,7 +192,7 @@ cdef class FixedRiskSizer(PositionSizer):
             return self.instrument.make_qty(0)
 
         # Calculate position size
-        position_size: Decimal = ((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size
+        position_size: Decimal = ((risk_money / exchange_rate) / risk_points) / self.instrument.price_increment
 
         # Limit size on hard limit
         if hard_limit is not None:

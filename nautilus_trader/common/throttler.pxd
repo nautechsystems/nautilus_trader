@@ -41,4 +41,4 @@ cdef class Throttler:
     cpdef void send(self, item) except *
     cpdef void _process_queue(self) except *
     cpdef void _refresh_vouchers(self, TimeEvent event) except *
-    cdef inline void _run_timer(self) except *
+    cdef void _run_timer(self) except *

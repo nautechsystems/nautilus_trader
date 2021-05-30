@@ -132,7 +132,7 @@ class AccountTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money("8.70049419", BTC), value)
+        self.assertEqual(Money("100000.00", USD), value)
 
     def test_calculate_commission_for_maker_crypto(self):
         # Arrange
@@ -198,6 +198,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     USD,
@@ -231,6 +232,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     USD,
@@ -274,6 +276,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -340,6 +343,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event1 = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -369,6 +373,7 @@ class AccountTests(unittest.TestCase):
 
         event2 = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -407,6 +412,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -447,6 +453,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -489,6 +496,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     USD,
@@ -521,6 +529,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -557,6 +566,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     USD,
@@ -587,6 +597,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     USD,
@@ -617,6 +628,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,
@@ -653,6 +665,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     USD,
@@ -689,6 +702,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
+            reported=True,
             balances=[
                 AccountBalance(
                     BTC,

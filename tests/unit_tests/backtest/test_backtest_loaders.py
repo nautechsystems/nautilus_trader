@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import platform
 
 import pytest
@@ -21,6 +20,7 @@ import pytest
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
@@ -36,7 +36,7 @@ class TestBacktestLoaders:
         # Assert
         assert instrument.id == InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert instrument.price_precision == 5
-        assert instrument.tick_size == Decimal("0.00001")
+        assert instrument.price_increment == Price.from_str("0.00001")
         assert instrument.base_currency.code == "AUD"
         assert instrument.quote_currency.code == "USD"
 
@@ -50,7 +50,7 @@ class TestBacktestLoaders:
         # Assert
         assert instrument.id == InstrumentId(Symbol("USD/JPY"), Venue("SIM"))
         assert instrument.price_precision == 3
-        assert instrument.tick_size == Decimal("0.001")
+        assert instrument.price_increment == Price.from_str("0.001")
         assert instrument.base_currency.code == "USD"
         assert instrument.quote_currency.code == "JPY"
 
