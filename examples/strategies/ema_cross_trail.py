@@ -323,14 +323,15 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
         """
         if isinstance(event, OrderFilled):
-            if event.client_order_id == self.trailing_stop.client_order_id:
-                last_bar = self.data.bar(self.bar_type)
-                if event.order_side == OrderSide.BUY:
-                    self.trailing_stop_sell(last_bar)
-                elif event.order_side == OrderSide.SELL:
-                    self.trailing_stop_buy(last_bar)
-            elif event.client_order_id == self.trailing_stop.client_order_id:
-                self.trailing_stop = None
+            if self.trailing_stop:
+                if event.client_order_id == self.trailing_stop.client_order_id:
+                    last_bar = self.data.bar(self.bar_type)
+                    if event.order_side == OrderSide.BUY:
+                        self.trailing_stop_sell(last_bar)
+                    elif event.order_side == OrderSide.SELL:
+                        self.trailing_stop_buy(last_bar)
+                elif event.client_order_id == self.trailing_stop.client_order_id:
+                    self.trailing_stop = None
 
     def on_stop(self):
         """
