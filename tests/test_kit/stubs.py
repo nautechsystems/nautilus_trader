@@ -19,10 +19,11 @@ from typing import List
 
 import pytz
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
@@ -500,9 +501,24 @@ class TestStubs:
         return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
 
     @staticmethod
+    def cache_db():
+        return BypassCacheDatabase(
+            trader_id=TestStubs.trader_id(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def cache():
+        return Cache(
+            database=TestStubs.cache_db(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
     def portfolio():
         return Portfolio(
             clock=TestStubs.clock(),
+            cache=TestStubs.cache(),
             logger=TestStubs.logger(),
         )
 
@@ -511,19 +527,18 @@ class TestStubs:
         return MockLiveDataEngine(
             loop=asyncio.get_event_loop(),
             portfolio=TestStubs.portfolio(),
+            cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
 
     @staticmethod
     def mock_live_exec_engine():
-        database = InMemoryExecutionDatabase(
-            trader_id=TestStubs.trader_id(), logger=TestStubs.logger()
-        )
+
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
-            database=database,
             portfolio=TestStubs.portfolio(),
+            cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
@@ -534,6 +549,7 @@ class TestStubs:
             loop=asyncio.get_event_loop(),
             exec_engine=TestStubs.mock_live_exec_engine(),
             portfolio=TestStubs.portfolio(),
+            cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )

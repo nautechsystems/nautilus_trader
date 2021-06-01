@@ -208,7 +208,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         else:
             taker_fee = Decimal(f"{taker_fee:.4f}")
 
-        cdef int64_t timestamp = unix_timestamp_ns()  # TODO(cs): info timestamp
+        cdef int64_t timestamp = unix_timestamp_ns()
 
         if is_spot or is_future:  # TODO(cs): Use CurrencySpot for futures for now
             return CurrencySpot(

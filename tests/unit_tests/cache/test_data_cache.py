@@ -18,9 +18,6 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.data.cache import DataCache
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
@@ -46,10 +43,10 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class DataCacheTests(unittest.TestCase):
+class CacheTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.cache = DataCache(logger=Logger(TestClock()))
+        self.cache = TestStubs.cache()
 
     def test_reset_an_empty_cache(self):
         # Arrange

@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
-from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -50,8 +50,8 @@ cdef class ExecutionEngine(Component):
 
     cdef readonly TraderId trader_id
     """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
-    cdef readonly ExecutionCache cache
-    """The engines execution cache.\n\n:returns: `ExecutionCache`"""
+    cdef readonly Cache cache
+    """The engines cache.\n\n:returns: `Cache`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count

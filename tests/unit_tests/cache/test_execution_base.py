@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.execution.base import ExecutionCacheFacade
+from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -32,7 +32,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class ExecutionCacheFacadeTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.facade = ExecutionCacheFacade()
+        self.facade = CacheFacade()
 
     def test_instrument_ids_when_no_instruments_returns_empty_list(self):
         self.assertRaises(NotImplementedError, self.facade.instrument_ids, SIM)

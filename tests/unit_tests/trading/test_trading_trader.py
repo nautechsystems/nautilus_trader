@@ -15,7 +15,6 @@
 
 import unittest
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -24,7 +23,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
@@ -54,29 +52,27 @@ class TraderTests(unittest.TestCase):
         trader_id = TraderId("TESTER-000")
         account_id = TestStubs.account_id()
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=clock,
             logger=logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=clock,
             logger=logger,
             config={"use_previous_close": False},
         )
+
         self.data_engine.process(USDJPY_SIM)
 
-        self.analyzer = PerformanceAnalyzer()
-
-        self.exec_db = InMemoryExecutionDatabase(
-            trader_id=trader_id,
-            logger=logger,
-        )
-
         self.exec_engine = ExecutionEngine(
-            database=self.exec_db,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=clock,
             logger=logger,
         )
@@ -87,7 +83,7 @@ class TraderTests(unittest.TestCase):
             oms_type=OMSType.HEDGING,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
-            exec_cache=self.exec_engine.cache,
+            cache=self.exec_engine.cache,
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
@@ -113,6 +109,7 @@ class TraderTests(unittest.TestCase):
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=clock,
             logger=logger,
         )
@@ -121,8 +118,6 @@ class TraderTests(unittest.TestCase):
         self.data_engine.register_client(self.data_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
-        self.portfolio.register_data_cache(self.data_engine.cache)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         strategies = [
             TradingStrategy("001"),

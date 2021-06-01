@@ -26,6 +26,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -93,14 +94,14 @@ cdef class BettingInstrument(Instrument):
             is_inverse=False,
             price_precision=5,
             size_precision=4,
-            price_increment=Price(1e-5, precision=5),  # TODO(bm): Is this correct?
-            size_increment=Quantity(1e-4, precision=4),  # TODO(bm): Is this correct?
+            price_increment=Price(1e-5, precision=5),
+            size_increment=Quantity(1e-4, precision=4),
             multiplier=Quantity.from_int_c(1),
             lot_size=Quantity.from_int_c(1),
             max_quantity=None,   # Can be None
             min_quantity=None,   # Can be None
             max_notional=None,   # Can be None
-            min_notional=None,   # Can be None
+            min_notional=Money(5, Currency.from_str_c(currency)),
             max_price=None,      # Can be None
             min_price=None,      # Can be None
             margin_init=Decimal(0),

@@ -22,11 +22,11 @@ from libc.stdint cimport int64_t
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -79,7 +79,7 @@ cdef class SimulatedExchange:
         list starting_balances not None,
         list instruments not None,
         list modules not None,
-        ExecutionCache exec_cache not None,
+        CacheFacade cache not None,
         FillModel fill_model not None,
         TestClock clock not None,
         Logger logger not None,
@@ -91,7 +91,7 @@ cdef class SimulatedExchange:
         Parameters
         ----------
         venue : Venue
-            The venue to simulate for the backtest.
+            The venue to simulate.
         venue_type : VenueType
             The venues type.
         oms_type : OMSType
@@ -100,14 +100,14 @@ cdef class SimulatedExchange:
             If the account for this exchange is frozen (balances will not change).
         starting_balances : list[Money]
             The starting balances for the exchange.
-        exec_cache : ExecutionCache
-            The execution cache for the backtest.
+        cache : CacheFacade
+            The read-only cache for the exchange.
         fill_model : FillModel
-            The fill model for the backtest.
+            The fill model for the exchange.
         clock : TestClock
-            The clock for the component.
+            The clock for the exchange.
         logger : Logger
-            The logger for the component.
+            The logger for the exchange.
 
         Raises
         ------
@@ -142,21 +142,12 @@ cdef class SimulatedExchange:
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
         self.exchange_order_book_level = exchange_order_book_level
 
-        self.exec_cache = exec_cache
+        self.cache = cache
         self.exec_client = None  # Initialized when execution client registered
 
         self.is_frozen_account = is_frozen_account
         self.starting_balances = starting_balances
         self.default_currency = None if len(starting_balances) > 1 else starting_balances[0].currency
-        self.account_balances = {
-            money.currency: AccountBalance(
-                currency=money.currency,
-                total=money,
-                locked=Money(0, money.currency),
-                free=money,
-            )
-            for money in starting_balances
-        }
         self.total_commissions = {}  # type: dict[Currency, Money]
 
         self.xrate_calculator = ExchangeRateCalculator()
@@ -182,7 +173,6 @@ cdef class SimulatedExchange:
             self._instrument_indexer[instrument.id] = index
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
-        self._net_position_ids = {}     # type: dict[InstrumentId, PositionId]
         self._books = {}                # type: dict[InstrumentId, OrderBook]
         self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
         self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
@@ -197,6 +187,44 @@ cdef class SimulatedExchange:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.id})"
+
+    cpdef list balances_total(self):
+        """
+        Return the total balances for the connected execution clients account
+        (if registered).
+
+        Returns
+        -------
+        list[Money] or None
+
+        """
+        if self.exec_client is None:
+            return None
+
+        cdef Account account = self.exec_client.get_account()
+        if account is None:
+            return []
+
+        return list(account.balances_total().values())
+
+    cpdef Money balance_total(self, Currency currency):
+        """
+        Return the total balance of the given currency for the connected
+        execution clients account (if registered).
+
+        Returns
+        -------
+        Money or None
+
+        """
+        if self.exec_client is None:
+            return None
+
+        cdef Account account = self.exec_client.get_account()
+        if account is None:
+            return None
+
+        return account.balance_total(currency)
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
@@ -245,39 +273,6 @@ cdef class SimulatedExchange:
         if best_ask_price is None:
             return None
         return Price(best_ask_price, order_book.price_precision)
-
-    cpdef object get_xrate(
-        self,
-        Currency from_currency,
-        Currency to_currency,
-        PriceType price_type,
-    ):
-        """
-        Return the exchange rate for the given parameters.
-
-        Parameters
-        ----------
-        from_currency : Currency
-            The currency to convert from.
-        to_currency : Currency
-            The currency to convert to.
-        price_type : PriceType
-            The price type to use for the calculation.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        Condition.not_none(from_currency, "from_currency")
-        Condition.not_none(to_currency, "to_currency")
-        return self.xrate_calculator.get_rate(
-            from_currency=from_currency,
-            to_currency=to_currency,
-            price_type=price_type,
-            bid_quotes=self._build_current_bid_rates(),
-            ask_quotes=self._build_current_ask_rates(),
-        )
 
     cpdef OrderBook get_book(self, InstrumentId instrument_id):
         """
@@ -346,7 +341,7 @@ cdef class SimulatedExchange:
         Condition.not_none(client, "client")
 
         self.exec_client = client
-        self._generate_account_state()
+        self._generate_fresh_account_state()
 
         self._log.info(f"Registered {client}.")
 
@@ -374,19 +369,41 @@ cdef class SimulatedExchange:
             The adjustment for the account.
 
         """
-        cdef AccountBalance balance
-
         Condition.not_none(adjustment, "adjustment")
 
         if self.is_frozen_account:
             return  # Nothing to adjust
 
-        balance = self.account_balances[adjustment.currency]
+        account = self.cache.account_for_venue(self.exec_client.venue)
+        if account is None:
+            self._log.error(
+                f"Cannot adjust account: no account found for {self.exec_client.venue}"
+            )
+            return
+
+        cdef AccountBalance balance = account.balances().get(adjustment.currency)
+        if balance is None:
+            self._log.error(
+                f"Cannot adjust account: no balance found for {adjustment.currency}"
+            )
+            return
+
         balance.total = Money(balance.total + adjustment, adjustment.currency)
         balance.free = Money(balance.free + adjustment, adjustment.currency)
 
+        cdef dict info
+        if self.default_currency is None:
+            info = {}
+        else:
+            info = {"default_currency": self.default_currency.code}
+
         # Generate and handle event
-        self._generate_account_state()
+        self.exec_client.generate_account_state(
+            balances=[balance],
+            reported=True,
+            updated_ns=self._clock.timestamp_ns(),
+            info=info,
+        )
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -474,20 +491,10 @@ cdef class SimulatedExchange:
         for module in self.modules:
             module.reset()
 
-        self.account_balances = {
-            money.currency: AccountBalance(
-                currency=money.currency,
-                total=money,
-                locked=Money(0, money.currency),
-                free=money,
-            )
-            for money in self.starting_balances
-        }
         self.total_commissions = {}
 
-        self._generate_account_state()
+        self._generate_fresh_account_state()
 
-        self._net_position_ids.clear()
         self._books.clear()
         self._instrument_orders.clear()
         self._working_orders.clear()
@@ -641,7 +648,17 @@ cdef class SimulatedExchange:
             self._check_oco_order(order.client_order_id)
         self._clean_up_child_orders(order.client_order_id)
 
-    cdef void _generate_account_state(self) except *:
+    cdef void _generate_fresh_account_state(self) except *:
+        cdef list balances = [
+            AccountBalance(
+                currency=money.currency,
+                total=money,
+                locked=Money(0, money.currency),
+                free=money,
+            )
+            for money in self.starting_balances
+        ]
+
         cdef dict info
         if self.default_currency is None:
             info = {}
@@ -649,7 +666,8 @@ cdef class SimulatedExchange:
             info = {"default_currency": self.default_currency.code}
         # Generate event
         self.exec_client.generate_account_state(
-            balances=list(self.account_balances.values()),
+            balances=balances,
+            reported=True,
             updated_ns=self._clock.timestamp_ns(),
             info=info,
         )
@@ -1127,26 +1145,27 @@ cdef class SimulatedExchange:
 
         # Determine position_id
         cdef PositionId position_id = order.position_id
-        if position_id.is_null():
-            if self.oms_type == OMSType.NETTING:
-                # Fetch any cached netted position_id
-                position_id = self._net_position_ids.get(order.instrument_id, PositionId.null_c())
-            elif self.oms_type == OMSType.HEDGING:
-                position_id = self.exec_cache.position_id(order.client_order_id)
-                if position_id is None:
-                    # Generate a position identifier
-                    position_id = self._generate_position_id(order.instrument_id)
+        if OMSType.HEDGING and position_id.is_null():
+            position_id = self.cache.position_id(order.client_order_id)
+            if position_id is None:
+                # Generate a position identifier
+                position_id = self._generate_position_id(order.instrument_id)
+        elif OMSType.NETTING:
+            # Check for open positions
+            positions_open = self.cache.positions_open(
+                venue=None,  # Faster query filtering
+                instrument_id=order.instrument_id,
+            )
+            if positions_open:
+                # Design-time invariant
+                assert len(positions_open) == 1
+                position_id = positions_open[0].id
 
         # Determine any position
-        cdef Position position = self.exec_cache.position(position_id) if position_id.not_null() else None
+        cdef Position position = None
+        if position_id.not_null():
+            position = self.cache.position(position_id)
         # *** position could be None here ***
-
-        # Check for closed NET position
-        if self.oms_type == OMSType.NETTING and position:
-            if position.is_open_c():
-                self._net_position_ids[order.instrument_id] = position_id
-            else:
-                position = None
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
@@ -1156,16 +1175,6 @@ cdef class SimulatedExchange:
             last_px=last_px,
             liquidity_side=liquidity_side,
         )
-
-        # Calculate potential PnL (do not reorder below `generate_order_filled`)
-        cdef Money pnl = None
-        if position and position.entry != order.side:
-            # Calculate PnL
-            pnl = position.calculate_pnl(
-                avg_px_open=position.avg_px_open,
-                avg_px_close=last_px,
-                quantity=order.quantity,
-            )
 
         # Generate event
         self.exec_client.generate_order_filled(
@@ -1202,16 +1211,14 @@ cdef class SimulatedExchange:
                         self._cancel_oco_order(order)
                 del self._position_oco_orders[position.id]
 
-        # Settle account
-        cdef Currency currency  # Settlement currency
+        # TODO(cs): Move the below into account or execution client
+        # Settle commission
+        cdef Currency currency = instrument.cost_currency
         if self.default_currency:  # Single-asset account
             currency = self.default_currency
-            if not pnl:
-                pnl = Money(0, currency)
-
             if commission.currency != currency:
-                # Calculate exchange rate to account currency
-                xrate: Decimal = self.get_xrate(
+                xrate: Decimal = self.cache.get_xrate(
+                    venue=order.instrument_id.venue,
                     from_currency=commission.currency,
                     to_currency=currency,
                     price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
@@ -1219,21 +1226,10 @@ cdef class SimulatedExchange:
 
                 # Convert to account currency
                 commission = Money(commission * xrate, currency)
-                pnl = Money(pnl * xrate, currency)
-
-            # Final PnL
-            pnl = Money(pnl - commission, self.default_currency)
-        else:
-            currency = instrument.cost_currency
-            if not pnl:
-                pnl = commission
 
         # Increment total commissions
         total_commissions: Decimal = self.total_commissions.get(currency, Decimal()) + commission
         self.total_commissions[currency] = Money(total_commissions, currency)
-
-        # Finally adjust account
-        self.adjust_account(pnl)
 
     cdef void _check_oco_order(self, ClientOrderId client_order_id) except *:
         # Check held OCO orders and remove any paired with the given client_order_id

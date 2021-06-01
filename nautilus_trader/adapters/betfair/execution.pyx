@@ -118,12 +118,15 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             logger,
             config={
                 "name": "BetfairExecClient",
+                "calculated_account_state": True,
             }
         )
 
         self.venue = BETFAIR_VENUE
         self._stream = BetfairOrderStreamClient(
-            client=self._client, logger=logger, message_handler=self.handle_order_stream_update,
+            client=self._client,
+            logger=logger,
+            message_handler=self.handle_order_stream_update,
         )
         self.is_connected = False
         self.venue_order_id_to_client_order_id = {}  # type: Dict[str, ClientOrderId]

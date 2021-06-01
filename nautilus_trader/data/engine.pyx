@@ -87,6 +87,7 @@ cdef class DataEngine(Component):
     def __init__(
         self,
         Portfolio portfolio not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -98,8 +99,10 @@ cdef class DataEngine(Component):
         ----------
         portfolio : int
             The portfolio to register.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
-            The clock for the component.
+            The clock for the engine.
         logger : Logger
             The logger for the component.
         config : dict[str, object], optional
@@ -134,7 +137,7 @@ cdef class DataEngine(Component):
 
         # Public components
         self.portfolio = portfolio
-        self.cache = DataCache(logger, config=config)
+        self.cache = cache
 
         # Counters
         self.command_count = 0

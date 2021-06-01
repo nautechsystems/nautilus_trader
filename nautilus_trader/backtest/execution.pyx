@@ -16,7 +16,6 @@
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
@@ -39,6 +38,7 @@ cdef class BacktestExecClient(ExecutionClient):
         ExecutionEngine engine not None,
         TestClock clock not None,
         Logger logger not None,
+        bint is_frozen_account=False,
     ):
         """
         Initialize a new instance of the `BacktestExecClient` class.
@@ -55,6 +55,8 @@ cdef class BacktestExecClient(ExecutionClient):
             The clock for the component.
         logger : Logger
             The logger for the component.
+        is_frozen_account : bool
+            If the backtest run account is frozen.
 
         """
         super().__init__(
@@ -64,6 +66,7 @@ cdef class BacktestExecClient(ExecutionClient):
             engine=engine,
             clock=clock,
             logger=logger,
+            config={"calculated_account_state": False if is_frozen_account else True},
         )
 
         self._exchange = exchange
@@ -175,17 +178,3 @@ cdef class BacktestExecClient(ExecutionClient):
             return
 
         self._exchange.handle_cancel_order(command)
-
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    cdef void handle_event(self, Event event) except *:
-        """
-        Handle the given event by sending it to the `ExecutionEngine`.
-
-        Parameters
-        ----------
-        event : Event
-            The event to handle.
-
-        """
-        self._handle_event(event)
