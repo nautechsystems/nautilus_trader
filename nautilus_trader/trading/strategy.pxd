@@ -15,17 +15,16 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.data.cache cimport DataCacheFacade
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
-from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
@@ -73,14 +72,12 @@ cdef class TradingStrategy(Component):
     """The trading strategies UUID factory.\n\n:returns: `UUIDFactory`"""
     cdef readonly LoggerAdapter log
     """The trading strategies logger adapter.\n\n:returns: `LoggerAdapter`"""
-    cdef readonly DataCacheFacade data
-    """The read-only cache of the `DataEngine` the strategy is registered with.\n\n:returns: `DataCacheFacade`"""
-    cdef readonly ExecutionCacheFacade execution
-    """The read-only cache of the `ExecutionEngine` the strategy is registered with.\n\n:returns: `ExecutionCacheFacade`"""
+    cdef readonly CacheFacade cache
+    """The read-only cache for the strategy.\n\n:returns: `CacheFacade`"""
     cdef readonly PortfolioFacade portfolio
-    """The read-only portfolio the trading strategy is registered with.\n\n:returns: `PortfolioFacade`"""
+    """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory
-    """The trading strategies order factory.\n\n:returns: `OrderFactory`"""
+    """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
 
     cdef void _check_trader_registered(self) except *
 

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -21,8 +20,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
@@ -44,6 +41,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import TestStubs
 
 
 BINANCE = Venue("BINANCE")
@@ -60,21 +58,17 @@ class TestBacktestExecClientTests:
         self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BINANCE", "000")
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.analyzer = PerformanceAnalyzer()
-
-        database = InMemoryExecutionDatabase(
-            trader_id=self.trader_id,
-            logger=self.logger,
-        )
-
         self.exec_engine = ExecutionEngine(
-            database=database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -87,7 +81,7 @@ class TestBacktestExecClientTests:
             starting_balances=[Money(1_000_000, USD)],
             instruments=[ETHUSDT_BINANCE],
             modules=[],
-            exec_cache=self.exec_engine.cache,
+            cache=self.exec_engine.cache,
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
@@ -106,10 +100,6 @@ class TestBacktestExecClientTests:
             strategy_id=StrategyId("SCALPER-001"),
             clock=self.clock,
         )
-
-        # Wire up components
-        self.portfolio.register_data_cache(DataCache(self.logger))
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange

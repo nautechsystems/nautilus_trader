@@ -109,7 +109,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
             self.stop()
@@ -193,7 +193,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]...",
+                f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -324,7 +324,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         if isinstance(event, OrderFilled):
             if event.client_order_id == self.trailing_stop.client_order_id:
-                last_bar = self.data.bar(self.bar_type)
+                last_bar = self.cache.bar(self.bar_type)
                 if event.order_side == OrderSide.BUY:
                     self.trailing_stop_sell(last_bar)
                 elif event.order_side == OrderSide.SELL:

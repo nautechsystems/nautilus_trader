@@ -17,13 +17,13 @@ from datetime import datetime
 import inspect
 from typing import List, Optional
 
+from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
-from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -593,15 +593,15 @@ class MockLiveExecutionClient(LiveExecutionClient):
         return self._trades_lists[venue_order_id]
 
 
-class MockExecutionDatabase(ExecutionDatabase):
+class MockCacheDatabase(CacheDatabase):
     """
-    Provides a mock execution database for testing.
+    Provides a mock cache database for testing.
 
     """
 
     def __init__(self, trader_id: TraderId, logger: Logger):
         """
-        Initialize a new instance of the `InMemoryExecutionDatabase` class.
+        Initialize a new instance of the `MockCacheDatabase` class.
 
         Parameters
         ----------
@@ -695,12 +695,18 @@ class MockLiveDataEngine(LiveDataEngine):
         self,
         loop,
         portfolio,
+        cache,
         clock,
         logger,
         config=None,
     ):
         super().__init__(
-            loop=loop, portfolio=portfolio, clock=clock, logger=logger, config=config
+            loop=loop,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self.commands = []
@@ -723,16 +729,16 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
     def __init__(
         self,
         loop,
-        database,
         portfolio,
+        cache,
         clock,
         logger,
         config=None,
     ):
         super().__init__(
             loop=loop,
-            database=database,
             portfolio=portfolio,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
@@ -756,6 +762,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
         loop,
         exec_engine,
         portfolio,
+        cache,
         clock,
         logger,
         config=None,
@@ -764,6 +771,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
             loop=loop,
             exec_engine=exec_engine,
             portfolio=portfolio,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,

@@ -135,10 +135,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
         self._instrument_provider = instrument_provider
 
-        self._account_last_free = {}
-        self._account_last_used = {}
-        self._account_last_total = {}
-
     cpdef void reset(self) except *:
         """
         Reset the client.

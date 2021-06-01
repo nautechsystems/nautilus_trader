@@ -17,6 +17,7 @@ import asyncio
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
@@ -39,6 +40,7 @@ cdef class LiveRiskEngine(RiskEngine):
         loop not None: AbstractEventLoop,
         ExecutionEngine exec_engine not None,
         Portfolio portfolio not None,
+        CacheFacade cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
@@ -52,6 +54,8 @@ cdef class LiveRiskEngine(RiskEngine):
             The event loop for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
+        cache : CacheFacade
+            The read-only cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -67,6 +71,7 @@ cdef class LiveRiskEngine(RiskEngine):
         super().__init__(
             exec_engine,
             portfolio,
+            cache,
             clock,
             logger,
             config,

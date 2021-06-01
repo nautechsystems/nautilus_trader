@@ -631,6 +631,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Generate event
         self.generate_account_state(
             balances=balances,
+            reported=True,
             updated_ns=update_ns,
         )
 

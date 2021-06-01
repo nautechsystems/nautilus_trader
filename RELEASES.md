@@ -1,3 +1,25 @@
+# NautilusTrader 1.122.0 Beta - Release Notes
+
+
+## Breaking Changes
+- `Account.balance()` renamed to `Account.balance_total()`.
+- `TradingStrategy.data` consolidated into `TradingStrategy.cache`.
+- `TradingStrategy.execution` consolidated into `TradingStrategy.cache`.
+- Moved `redis` subpackage into `infrastructure`.
+- Renamed `InMemoryExecutionDatabase` to `BypassCacheDatabase`.
+
+## Enhancements
+- `ExecutionClient` now has the option of calculating account state.
+- Unified data and execution caches into single `Cache`.
+- Improved configuration options and naming.
+- Simplified `Portfolio` component registration.
+- Simplified wiring of `Cache` into components.
+
+## Fixes
+- Fixed loss of precision for nanosecond timestamps in Redis.
+
+---
+
 # NautilusTrader 1.121.0 Beta - Release Notes
 
 In this release there has been a major change to the use of inlines for method
@@ -85,7 +107,7 @@ natural flow of command and event messages.
 ## Breaking Changes
 - Serializations involving `Money`.
 - Changed usage of `Price` and `Quantity`.
-- Renamed `BypassExecutionDatabase` to `InMemoryExecutionDatabase`.
+- Renamed `BypassExecutionDatabase` to `BypassCacheDatabase`.
 
 ## Enhancements
 - Rewired `RiskEngine` and `ExecutionEngine` sequence.

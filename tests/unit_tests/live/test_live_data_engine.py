@@ -51,7 +51,10 @@ class LiveDataEngineTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -63,6 +66,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -86,6 +90,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -112,6 +117,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -147,6 +153,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -174,6 +181,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},

@@ -13,17 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.execution.client cimport ExecutionClient
-
-
-cdef class LiveExecutionClientFactory:
-    pass
-
-
-cdef class LiveExecutionClient(ExecutionClient):
-    cdef object _loop
-
-    cdef InstrumentProvider _instrument_provider
-
-    cdef void _on_reset(self) except *
+"""
+The `cache` subpackage provides common caching infrastructure.
+"""

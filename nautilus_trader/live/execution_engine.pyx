@@ -18,6 +18,7 @@ import asyncio
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -25,7 +26,6 @@ from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport OrderStatusReport
@@ -48,8 +48,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        ExecutionDatabase database not None,
         Portfolio portfolio not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
@@ -61,10 +61,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        database : ExecutionDatabase
-            The execution database for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -78,8 +78,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if "qsize" not in config:
             config["qsize"] = 10000
         super().__init__(
-            database,
             portfolio,
+            cache,
             clock,
             logger,
             config,
