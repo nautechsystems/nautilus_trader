@@ -47,7 +47,6 @@ cdef class Cache(CacheFacade):
     cdef dict _trade_ticks
     cdef dict _order_books
     cdef dict _bars
-
     cdef dict _currencies
     cdef dict _instruments
     cdef dict _accounts
@@ -81,16 +80,6 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
 
-    cpdef void reset(self) except *
-
-    cpdef void add_order_book(self, OrderBook order_book) except *
-    cpdef void add_quote_tick(self, QuoteTick tick) except *
-    cpdef void add_trade_tick(self, TradeTick tick) except *
-    cpdef void add_bar(self, Bar bar) except *
-    cpdef void add_quote_ticks(self, list ticks) except *
-    cpdef void add_trade_ticks(self, list ticks) except *
-    cpdef void add_bars(self, list bars) except *
-
     cpdef void cache_currencies(self) except *
     cpdef void cache_instruments(self) except *
     cpdef void cache_accounts(self) except *
@@ -101,15 +90,30 @@ cdef class Cache(CacheFacade):
     cpdef bint check_residuals(self) except *
     cpdef void clear_cache(self) except *
     cpdef void clear_index(self) except *
+    cpdef void reset(self) except *
     cpdef void flush_db(self) except *
+
+    cdef tuple _build_quote_table(self, Venue venue)
+    cdef void _build_index_venue_account(self) except *
+    cdef void _cache_venue_account_id(self, AccountId account_id) except *
+    cdef void _build_indexes_from_orders(self) except *
+    cdef void _build_indexes_from_positions(self) except *
+    cdef set _build_ord_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cdef set _build_pos_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
     cpdef void load_strategy(self, TradingStrategy strategy) except *
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *
 
+    cpdef void add_order_book(self, OrderBook order_book) except *
+    cpdef void add_quote_tick(self, QuoteTick tick) except *
+    cpdef void add_trade_tick(self, TradeTick tick) except *
+    cpdef void add_bar(self, Bar bar) except *
+    cpdef void add_quote_ticks(self, list ticks) except *
+    cpdef void add_trade_ticks(self, list ticks) except *
+    cpdef void add_bars(self, list bars) except *
     cpdef void add_currency(self, Currency currency) except *
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_account(self, Account account) except *
@@ -121,11 +125,4 @@ cdef class Cache(CacheFacade):
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
-
-    cdef tuple _build_quote_table(self, Venue venue)
-    cdef void _build_index_venue_account(self) except *
-    cdef void _cache_venue_account_id(self, AccountId account_id) except *
-    cdef void _build_indexes_from_orders(self) except *
-    cdef void _build_indexes_from_positions(self) except *
-    cdef set _build_ord_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
-    cdef set _build_pos_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
+    cpdef void delete_strategy(self, TradingStrategy strategy) except *
