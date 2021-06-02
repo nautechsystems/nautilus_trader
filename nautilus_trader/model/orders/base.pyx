@@ -162,12 +162,12 @@ cdef class Order:
         return hash(self.client_order_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f", venue_order_id={self.venue_order_id.value})" if self.venue_order_id.not_null() else ")"
+        cdef str id_string = f", venue_order_id={self.venue_order_id.value}" if self.venue_order_id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
                 f"client_order_id={self.client_order_id.value}"
-                f"{id_string}")
+                f"{id_string})")
 
     cdef OrderState state_c(self) except *:
         return <OrderState>self._fsm.state
