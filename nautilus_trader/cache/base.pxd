@@ -37,7 +37,7 @@ from nautilus_trader.trading.account cimport Account
 
 cdef class CacheFacade:
 
-    # -- DATA QUERIES ----------------------------------------------------------
+# -- DATA QUERIES ----------------------------------------------------------------------------------  # noqa
 
     cpdef list quote_ticks(self, InstrumentId instrument_id)
     cpdef list trade_ticks(self, InstrumentId instrument_id)
@@ -63,20 +63,20 @@ cdef class CacheFacade:
         PriceType price_type=*,
     )
 
-    # -- INSTRUMENT QUERIES ----------------------------------------------------
+# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id)
     cpdef list instrument_ids(self, Venue venue=*)
     cpdef list instruments(self, Venue venue=*)
 
-    # -- ACCOUNT QUERIES -------------------------------------------------------
+# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id)
     cpdef Account account_for_venue(self, Venue venue)
     cpdef AccountId account_id(self, Venue venue)
     cpdef list accounts(self)
 
-    # -- IDENTIFIER QUERIES ----------------------------------------------------
+# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cpdef set client_order_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_working(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -86,7 +86,7 @@ cdef class CacheFacade:
     cpdef set position_closed_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set strategy_ids(self)
 
-    # -- ORDER QUERIES ---------------------------------------------------------
+# -- ORDER QUERIES ---------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId client_order_id)
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
@@ -101,7 +101,7 @@ cdef class CacheFacade:
     cpdef int orders_working_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_completed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
 
-    # -- POSITION QUERIES ------------------------------------------------------
+# -- POSITION QUERIES ------------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id)
     cpdef PositionId position_id(self, ClientOrderId client_order_id)
@@ -115,7 +115,7 @@ cdef class CacheFacade:
     cpdef int positions_open_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int positions_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
 
-    # -- STRATEGY QUERIES ------------------------------------------------------
+# -- STRATEGY QUERIES ------------------------------------------------------------------------------
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id)
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id)

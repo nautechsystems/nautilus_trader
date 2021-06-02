@@ -27,7 +27,7 @@ from nautilus_trader.model.tick cimport TradeTick
 
 cdef class CacheFacade:
     """
-    Provides a read-only facade for common `Cache`.
+    Provides a read-only facade for the common `Cache`.
     """
 
     # -- DATA QUERIES ----------------------------------------------------------
@@ -93,11 +93,11 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef object get_xrate(
-            self,
-            Venue venue,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type=PriceType.MID,
+        self,
+        Venue venue,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=PriceType.MID,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
