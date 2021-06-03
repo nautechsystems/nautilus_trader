@@ -661,8 +661,8 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
-        Return the net relative position for the given instrument identifier. If no positions
-        for instrument_id then will return `Decimal('0')`.
+        Return the total net position for the given instrument identifier.
+        If no positions for instrument_id then will return `Decimal('0')`.
 
         Parameters
         ----------
@@ -760,7 +760,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *:
         net_position = Decimal()
         for position in positions_open:
-            net_position += position.relative_qty
+            net_position += position.net_qty
 
         self._net_positions[instrument_id] = net_position
         self._log.info(f"{instrument_id} net_position={net_position}")
