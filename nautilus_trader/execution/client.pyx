@@ -848,9 +848,13 @@ cdef class ExecutionClient:
             return  # No adjustment
 
         cdef AccountBalance balance = self._last_balances.get(currency)
-        balance.total = Money(balance.total + pnl, currency)
-        balance.free = Money(balance.free + pnl, currency)
-        return [balance]
+        cdef AccountBalance new_balance = AccountBalance(
+            currency=currency,
+            total=Money(balance.total + pnl, currency),
+            locked=balance.locked,
+            free=Money(balance.free + pnl, currency),
+        )
+        return [new_balance]
 
     cdef list _calculate_balance_multi_currency(self, Currency currency, OrderFilled fill, Money pnl):
         cdef Money commission = fill.commission
@@ -879,7 +883,12 @@ cdef class ExecutionClient:
                 f"no cached balances for {currency}."
             )
             return
-        balance.total = Money(balance.total + pnl, currency)
-        balance.free = Money(balance.free + pnl, currency)
-        balances.append(balance)
-        return balances
+
+        cdef AccountBalance new_balance = AccountBalance(
+            currency=currency,
+            total=Money(balance.total + pnl, currency),
+            locked=balance.locked,
+            free=Money(balance.free + pnl, currency),
+        )
+        balances.append(new_balance)
+        return [new_balance]
