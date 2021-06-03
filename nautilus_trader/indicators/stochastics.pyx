@@ -33,7 +33,7 @@ cdef class Stochastics(Indicator):
 
     def __init__(self, int period_k, int period_d):
         """
-        Initialize a new instance of the `Stochastics` class.
+        Initialize a new instance of the ``Stochastics`` class.
 
         Parameters
         ----------

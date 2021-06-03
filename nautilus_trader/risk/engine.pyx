@@ -64,7 +64,7 @@ cdef class RiskEngine(Component):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `RiskEngine` class.
+        Initialize a new instance of the ``RiskEngine`` class.
 
         Parameters
         ----------

@@ -42,7 +42,7 @@ cdef class TimeEvent(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `TimeEvent` class.
+        Initialize a new instance of the ``TimeEvent`` class.
 
         Parameters
         ----------
@@ -135,7 +135,7 @@ cdef class Timer:
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `Timer` class.
+        Initialize a new instance of the ``Timer`` class.
 
         Parameters
         ----------
@@ -245,7 +245,7 @@ cdef class TestTimer(Timer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `TestTimer` class.
+        Initialize a new instance of the ``TestTimer`` class.
 
         Parameters
         ----------
@@ -344,7 +344,7 @@ cdef class LiveTimer(Timer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `LiveTimer` class.
+        Initialize a new instance of the ``LiveTimer`` class.
 
         Parameters
         ----------
@@ -416,7 +416,7 @@ cdef class ThreadTimer(LiveTimer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `LiveTimer` class.
+        Initialize a new instance of the ``LiveTimer`` class.
 
         Parameters
         ----------
@@ -476,7 +476,7 @@ cdef class LoopTimer(LiveTimer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `LoopTimer` class.
+        Initialize a new instance of the ``LoopTimer`` class.
 
         Parameters
         ----------

@@ -103,7 +103,7 @@ cdef class TradingStrategy(Component):
 
     def __init__(self, str order_id_tag not None):
         """
-        Initialize a new instance of the `TradingStrategy` class.
+        Initialize a new instance of the ``TradingStrategy`` class.
 
         Parameters
         ----------

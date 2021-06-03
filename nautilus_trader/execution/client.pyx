@@ -79,7 +79,7 @@ cdef class ExecutionClient:
         dict config=None,
     ):
         """
-        Initialize a new instance of the `ExecutionClient` class.
+        Initialize a new instance of the ``ExecutionClient`` class.
 
         Parameters
         ----------

@@ -76,7 +76,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         bint load_instruments=True,
     ):
         """
-        Initialize a new instance of the `BetfairDataClient` class.
+        Initialize a new instance of the ``BetfairDataClient`` class.
 
         Parameters
         ----------

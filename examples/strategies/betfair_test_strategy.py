@@ -54,7 +54,7 @@ class BetfairTestStrategy(TradingStrategy):
         market_width=Decimal(0.05),  # noqa (B008)
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the ``BetfairTestStrategy`` class.
 
         Parameters
         ----------

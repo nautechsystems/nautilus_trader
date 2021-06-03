@@ -30,7 +30,7 @@ class MyStrategy(TradingStrategy):
 
     def __init__(self, instrument_id: InstrumentId):
         """
-        Initialize a new instance of the `MyStrategy` class.
+        Initialize a new instance of the ``MyStrategy`` class.
 
         Parameters
         ----------

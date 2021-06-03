@@ -36,7 +36,7 @@ cdef class CacheDatabase:
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the `CacheDatabase` class.
+        Initialize a new instance of the ``CacheDatabase`` class.
 
         Parameters
         ----------
@@ -148,7 +148,7 @@ cdef class BypassCacheDatabase(CacheDatabase):
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the `BypassCacheDatabase` class.
+        Initialize a new instance of the ``BypassCacheDatabase`` class.
 
         Parameters
         ----------

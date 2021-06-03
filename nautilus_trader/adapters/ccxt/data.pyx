@@ -67,7 +67,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `CCXTDataClient` class.
+        Initialize a new instance of the ``CCXTDataClient`` class.
 
         Parameters
         ----------

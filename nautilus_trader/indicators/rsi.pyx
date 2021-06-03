@@ -32,7 +32,7 @@ cdef class RelativeStrengthIndex(Indicator):
         ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
     ):
         """
-        Initialize a new instance of the `RelativeStrengthIndex` class.
+        Initialize a new instance of the ``RelativeStrengthIndex`` class.
 
         Parameters
         ----------

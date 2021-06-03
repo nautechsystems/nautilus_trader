@@ -194,7 +194,7 @@ cdef class RolloverInterestCalculator:
 
     def __init__(self, data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `RolloverInterestCalculator` class.
+        Initialize a new instance of the ``RolloverInterestCalculator`` class.
 
         Parameters
         ----------

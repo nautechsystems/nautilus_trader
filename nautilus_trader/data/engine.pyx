@@ -93,7 +93,7 @@ cdef class DataEngine(Component):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `DataEngine` class.
+        Initialize a new instance of the ``DataEngine`` class.
 
         Parameters
         ----------

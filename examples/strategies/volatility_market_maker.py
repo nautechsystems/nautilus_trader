@@ -57,7 +57,7 @@ class VolatilityMarketMaker(TradingStrategy):
         order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `VolatilityMarketMaker` class.
+        Initialize a new instance of the ``VolatilityMarketMaker`` class.
 
         Parameters
         ----------

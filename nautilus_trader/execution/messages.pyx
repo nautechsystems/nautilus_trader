@@ -43,7 +43,7 @@ cdef class OrderStatusReport:
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `OrderStatusReport` class.
+        Initializes a new instance of the `OrderStatusReport`` class.
 
         Parameters
         ----------
@@ -86,7 +86,7 @@ cdef class PositionStatusReport:
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `PositionStatusReport` class.
+        Initializes a new instance of the `PositionStatusReport`` class.
 
         Parameters
         ----------
@@ -131,7 +131,7 @@ cdef class ExecutionReport:
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `ExecutionReport` class.
+        Initializes a new instance of the `ExecutionReport`` class.
 
         Parameters
         ----------
@@ -188,7 +188,7 @@ cdef class ExecutionMassStatus:
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `ExecutionMassStatus` class.
+        Initializes a new instance of the `ExecutionMassStatus`` class.
 
         Parameters
         ----------

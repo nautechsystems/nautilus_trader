@@ -65,7 +65,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `EMACrossWithTrailingStop` class.
+        Initialize a new instance of the ``EMACrossWithTrailingStop`` class.
 
         Parameters
         ----------

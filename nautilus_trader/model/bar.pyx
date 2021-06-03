@@ -37,7 +37,7 @@ cdef class BarSpecification:
         PriceType price_type,
     ):
         """
-        Initialize a new instance of the `BarSpecification` class.
+        Initialize a new instance of the ``BarSpecification`` class.
 
         Parameters
         ----------
@@ -198,7 +198,7 @@ cdef class BarType:
         internal_aggregation=True,
     ):
         """
-        Initialize a new instance of the `BarType` class.
+        Initialize a new instance of the ``BarType`` class.
 
         Parameters
         ----------
@@ -313,7 +313,7 @@ cdef class Bar(Data):
         bint check=False,
     ):
         """
-        Initialize a new instance of the `Bar` class.
+        Initialize a new instance of the ``Bar`` class.
 
         Parameters
         ----------

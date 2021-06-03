@@ -109,7 +109,7 @@ cdef class Order:
 
     def __init__(self, OrderInitialized init not None):
         """
-        Initialize a new instance of the `Order` class.
+        Initialize a new instance of the ``Order`` class.
 
         Parameters
         ----------
@@ -624,7 +624,7 @@ cdef class PassiveOrder(Order):
         dict options not None,
     ):
         """
-        Initialize a new instance of the `PassiveOrder` class.
+        Initialize a new instance of the ``PassiveOrder`` class.
 
         Parameters
         ----------

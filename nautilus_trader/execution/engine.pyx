@@ -93,7 +93,7 @@ cdef class ExecutionEngine(Component):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `ExecutionEngine` class.
+        Initialize a new instance of the ``ExecutionEngine`` class.
 
         Parameters
         ----------

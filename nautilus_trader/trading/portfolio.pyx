@@ -18,7 +18,7 @@ The `Portfolio` facilitate the management of trading operations.
 
 The intended use case is for a single `Portfolio` instance per running system,
 a fleet of trading strategies will organize around a portfolio with the help
-of the `Trader` class.
+of the `Trader`` class.
 
 The portfolio can satisfy queries for accounting information, margin balances,
 total risk exposures and total net positions.
@@ -118,7 +118,7 @@ cdef class Portfolio(PortfolioFacade):
         Logger logger=None,
     ):
         """
-        Initialize a new instance of the `Portfolio` class.
+        Initialize a new instance of the ``Portfolio`` class.
 
         Parameters
         ----------

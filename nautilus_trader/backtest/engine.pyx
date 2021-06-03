@@ -93,7 +93,7 @@ cdef class BacktestEngine:
         int level_stdout=LogLevel.INFO,
     ):
         """
-        Initialize a new instance of the `BacktestEngine` class.
+        Initialize a new instance of the ``BacktestEngine`` class.
 
         Parameters
         ----------

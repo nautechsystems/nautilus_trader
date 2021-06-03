@@ -40,7 +40,7 @@ cdef class BracketOrder:
         LimitOrder take_profit not None,
     ):
         """
-        Initialize a new instance of the `BracketOrder` class.
+        Initialize a new instance of the ``BracketOrder`` class.
 
         Parameters
         ----------

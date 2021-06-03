@@ -38,7 +38,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         PriceType price_type=PriceType.LAST,
     ):
         """
-        Initialize a new instance of the `MovingAverageConvergenceDivergence` class.
+        Initialize a new instance of the ``MovingAverageConvergenceDivergence`` class.
 
         Parameters
         ----------

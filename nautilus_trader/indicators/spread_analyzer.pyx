@@ -31,7 +31,7 @@ cdef class SpreadAnalyzer(Indicator):
 
     def __init__(self, InstrumentId instrument_id not None, int capacity):
         """
-        Initialize a new instance of the `SpreadAnalyzer` class.
+        Initialize a new instance of the ``SpreadAnalyzer`` class.
 
         Parameters
         ----------
