@@ -19,8 +19,6 @@ import unittest
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.execution.cache import ExecutionCache
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -53,7 +51,7 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 BTCUSD_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class ExecutionCacheTests(unittest.TestCase):
+class CacheTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
@@ -69,8 +67,7 @@ class ExecutionCacheTests(unittest.TestCase):
             logger,
         )
 
-        exec_db = InMemoryExecutionDatabase(trader_id=self.trader_id, logger=logger)
-        self.cache = ExecutionCache(database=exec_db, logger=logger)
+        self.cache = TestStubs.cache()
 
     def test_cache_currencies_with_no_currencies(self):
         # Arrange

@@ -74,7 +74,7 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(positions, "positions")
 
         self._account_balances_starting = account.starting_balances()
-        self._account_balances = account.balances()
+        self._account_balances = account.balances_total()
         self._realized_pnls = {}
         self._daily_returns = pd.Series(dtype=float64)
 

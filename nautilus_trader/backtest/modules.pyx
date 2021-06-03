@@ -136,7 +136,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             self._rollover_applied = True
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        cdef list open_positions = self._exchange.exec_cache.positions_open()
+        cdef list open_positions = self._exchange.cache.positions_open()
 
         cdef Position position
         cdef Instrument instrument
@@ -174,7 +174,8 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             if self._exchange.default_currency is not None:
                 currency = self._exchange.default_currency
-                xrate = self._exchange.get_xrate(
+                xrate = self._exchange.cache.get_xrate(
+                    venue=instrument.id.venue,
                     from_currency=instrument.cost_currency,
                     to_currency=currency,
                     price_type=PriceType.MID,

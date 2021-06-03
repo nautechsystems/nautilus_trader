@@ -13,11 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.data.base cimport DataCacheFacade
-from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -59,8 +58,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
-    cdef DataCacheFacade _data_cache
-    cdef ExecutionCacheFacade _exec_cache
+    cdef CacheFacade _cache
 
     cdef dict _unrealized_pnls
     cdef dict _net_positions
@@ -68,8 +66,6 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_data_cache(self, DataCacheFacade cache) except *
-    cpdef void register_exec_cache(self, ExecutionCacheFacade cache) except *
     cpdef void register_account(self, Account account) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------

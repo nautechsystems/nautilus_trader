@@ -26,7 +26,8 @@ import warnings
 import msgpack
 import redis
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
@@ -36,13 +37,12 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
+from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
@@ -100,7 +100,8 @@ class TradingNode:
         config_trader = config.get("trader", {})
         config_system = config.get("system", {})
         config_log = config.get("logging", {})
-        config_exec_db = config.get("exec_database", {})
+        config_cache_db = config.get("cache_database", {})
+        config_cache = config.get("cache", {})
         config_data = config.get("data_engine", {})
         config_risk = config.get("risk_engine", {})
         config_exec = config.get("exec_engine", {})
@@ -160,7 +161,33 @@ class TradingNode:
 
         # Build platform
         # ----------------------------------------------------------------------
+
+        if config_cache_db["type"] == "redis":
+            cache_db = RedisCacheDatabase(
+                trader_id=self.trader_id,
+                logger=self._logger,
+                instrument_serializer=MsgPackInstrumentSerializer(),
+                command_serializer=MsgPackCommandSerializer(),
+                event_serializer=MsgPackEventSerializer(),
+                config={
+                    "host": config_cache_db["host"],
+                    "port": config_cache_db["port"],
+                },
+            )
+        else:
+            cache_db = BypassCacheDatabase(
+                trader_id=self.trader_id,
+                logger=self._logger,
+            )
+
+        cache = Cache(
+            database=cache_db,
+            logger=self._logger,
+            config=config_cache,
+        )
+
         self.portfolio = Portfolio(
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
         )
@@ -168,35 +195,16 @@ class TradingNode:
         self._data_engine = LiveDataEngine(
             loop=self._loop,
             portfolio=self.portfolio,
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_data,
         )
 
-        self.analyzer = PerformanceAnalyzer()
-
-        if config_exec_db["type"] == "redis":
-            exec_db = RedisExecutionDatabase(
-                trader_id=self.trader_id,
-                logger=self._logger,
-                instrument_serializer=MsgPackInstrumentSerializer(),
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
-                config={
-                    "host": config_exec_db["host"],
-                    "port": config_exec_db["port"],
-                },
-            )
-        else:
-            exec_db = InMemoryExecutionDatabase(
-                trader_id=self.trader_id,
-                logger=self._logger,
-            )
-
         self._exec_engine = LiveExecutionEngine(
             loop=self._loop,
-            database=exec_db,
             portfolio=self.portfolio,
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_exec,
@@ -206,6 +214,7 @@ class TradingNode:
             loop=self._loop,
             exec_engine=self._exec_engine,
             portfolio=self.portfolio,
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_risk,
@@ -214,8 +223,6 @@ class TradingNode:
         # Wire up components
         self._exec_engine.register_risk_engine(self._risk_engine)
         self._exec_engine.load_cache()
-        self.portfolio.register_data_cache(self._data_engine.cache)
-        self.portfolio.register_exec_cache(self._exec_engine.cache)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -392,12 +399,14 @@ class TradingNode:
 
         """
         try:
-            timeout = self._clock.utc_now() + timedelta(seconds=5)
+            timeout = self._clock.utc_now() + timedelta(
+                seconds=self._timeout_disconnection
+            )
             while self._is_running:
                 time.sleep(0.1)
                 if self._clock.utc_now() >= timeout:
                     self._log.warning(
-                        "Timed out (5s) waiting for node to stop."
+                        f"Timed out ({self._timeout_disconnection}s) waiting for node to stop."
                         f"\nStatus"
                         f"\n------"
                         f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"

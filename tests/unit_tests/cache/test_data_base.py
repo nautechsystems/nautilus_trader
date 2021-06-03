@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.data.base import DataCacheFacade
+from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import PriceType
@@ -84,10 +84,10 @@ class DataTypeTests(unittest.TestCase):
         self.assertEqual(1_000_000_000, data.timestamp_ns)
 
 
-class DataCacheFacadeTests(unittest.TestCase):
+class CacheFacadeTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.facade = DataCacheFacade()
+        self.facade = CacheFacade()
 
     def test_instrument_ids_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.instrument_ids)

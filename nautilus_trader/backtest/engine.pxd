@@ -43,7 +43,7 @@ cdef class BacktestEngine:
     cdef Logger _logger
     cdef Logger _test_logger
     cdef bint _log_to_file
-    cdef bint _exec_db_flush
+    cdef bint _cache_db_flush
     cdef bint _use_data_cache
     cdef dict _exchanges
 

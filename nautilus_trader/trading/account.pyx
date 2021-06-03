@@ -227,7 +227,18 @@ cdef class Account:
 
     cpdef dict balances(self):
         """
-        Return the account balances.
+        Return the account balances totals.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._balances.copy()
+
+    cpdef dict balances_total(self):
+        """
+        Return the account balances totals.
 
         Returns
         -------
@@ -258,7 +269,7 @@ cdef class Account:
         """
         return {c: b.locked for c, b in self._balances.items()}
 
-    cpdef Money balance(self, Currency currency=None):
+    cpdef Money balance_total(self, Currency currency=None):
         """
         Return the current account balance total.
 

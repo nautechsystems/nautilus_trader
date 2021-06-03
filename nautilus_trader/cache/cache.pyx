@@ -13,20 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `ExecutionCache` provides an interface for querying on orders and positions.
-"""
+from collections import deque
+from decimal import Decimal
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_us
-from nautilus_trader.execution.base cimport ExecutionCacheFacade
-from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -35,45 +36,77 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionCache(ExecutionCacheFacade):
+cdef class Cache(CacheFacade):
     """
-    Provides a cache for the `ExecutionEngine`.
+    Provides a common object cache for market and execution related data.
     """
 
     def __init__(
         self,
-        ExecutionDatabase database not None,
+        CacheDatabase database not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
-        Initialize a new instance of the `ExecutionCache` class.
+        Initialize a new instance of the `Cache` class.
 
         Parameters
         ----------
-        database : ExecutionDatabase
-            The execution database adapter.
+        database : CacheDatabase
+            The database for the cache.
         logger : Logger
             The logger for the cache.
+        config : dict[str, object], optional
+            The cache configuration options.
+
+        Raises
+        ------
+        ValueError
+            If config and 'config[tick_capacity]' is not positive.
+        ValueError
+            If config and 'config[bar_capacity]' is not positive.
 
         """
-        super().__init__()
+        if config is None:
+            config = {}
 
-        self._log = LoggerAdapter(component="ExecCache", logger=logger)
+        self.trader_id = database.trader_id
+
         self._database = database
+        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
+        self._xrate_calculator = ExchangeRateCalculator()
 
-        # Cached objects
-        self._currencies = {}   # type: dict[str, Currency]
-        self._instruments = {}  # type: dict[InstrumentId, Instrument]
-        self._accounts = {}     # type: dict[AccountId, Account]
-        self._orders = {}       # type: dict[ClientOrderId, Order]
-        self._positions = {}    # type: dict[PositionId, Position]
+        # Cache deque capacities (per instrument_id)
+        self.tick_capacity = config.get("tick_capacity", 1000)
+        self.bar_capacity = config.get("bar_capacity", 1000)
+        Condition.positive_int(self.tick_capacity, "tick_capacity")
+        Condition.positive_int(self.bar_capacity, "bar_capacity")
 
-        # Cached indexes
+        # Caches
+        self._xrate_symbols = {}  # type: dict[InstrumentId, str]
+        self._quote_ticks = {}    # type: dict[InstrumentId, deque[QuoteTick]]
+        self._trade_ticks = {}    # type: dict[InstrumentId, deque[TradeTick]]
+        self._order_books = {}    # type: dict[InstrumentId, OrderBook]
+        self._bars = {}           # type: dict[BarType, deque[Bar]]
+        self._currencies = {}     # type: dict[str, Currency]
+        self._instruments = {}    # type: dict[InstrumentId, Instrument]
+        self._accounts = {}       # type: dict[AccountId, Account]
+        self._orders = {}         # type: dict[ClientOrderId, Order]
+        self._positions = {}      # type: dict[PositionId, Position]
+
+        # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
         self._index_venue_orders = {}          # type: dict[Venue, set[ClientOrderId]]
         self._index_venue_positions = {}       # type: dict[Venue, set[PositionId]]
@@ -474,19 +507,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return residuals
 
-    cpdef void reset(self) except *:
-        """
-        Reset the cache.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
-        self.clear_cache()
-        self.clear_index()
-
-        self._log.info(f"Reset.")
-
     cpdef void clear_cache(self) except *:
         """
         Clear the account, orders and positions caches.
@@ -530,6 +550,24 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_strategies.clear()
 
         self._log.debug(f"Cleared index.")
+
+    cpdef void reset(self) except *:
+        """
+        Reset the cache.
+
+        All stateful fields are reset to their initial value.
+        """
+        self._log.info("Resetting cache...")
+
+        self._xrate_symbols.clear()
+        self._instruments.clear()
+        self._quote_ticks.clear()
+        self._trade_ticks.clear()
+        self._bars.clear()
+        self.clear_cache()
+        self.clear_index()
+
+        self._log.debug(f"Reset cache.")
 
     cpdef void flush_db(self) except *:
         """
@@ -743,6 +781,196 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._positions.get(position_id)
 
+    cpdef void add_order_book(self, OrderBook order_book) except *:
+        """
+        Add the given order book to the cache.
+
+        Parameters
+        ----------
+        order_book : OrderBook
+            The order book to add.
+
+        """
+        Condition.not_none(order_book, "order_book")
+
+        self._order_books[order_book.instrument_id] = order_book
+
+    cpdef void add_quote_tick(self, QuoteTick tick) except *:
+        """
+        Add the given quote tick to the cache.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick to add.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        cdef InstrumentId instrument_id = tick.instrument_id
+        ticks = self._quote_ticks.get(instrument_id)
+
+        if not ticks:
+            # The instrument_id was not registered
+            ticks = deque(maxlen=self.tick_capacity)
+            self._quote_ticks[instrument_id] = ticks
+
+        ticks.appendleft(tick)
+
+    cpdef void add_trade_tick(self, TradeTick tick) except *:
+        """
+        Add the given trade tick to the cache.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick to add.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        cdef InstrumentId instrument_id = tick.instrument_id
+        ticks = self._trade_ticks.get(instrument_id)
+
+        if not ticks:
+            # The instrument_id was not registered
+            ticks = deque(maxlen=self.tick_capacity)
+            self._trade_ticks[instrument_id] = ticks
+
+        ticks.appendleft(tick)
+
+    cpdef void add_bar(self, Bar bar) except *:
+        """
+        Add the given bar to the cache.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar to add.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        bars = self._bars.get(bar.type)
+
+        if not bars:
+            # The bar type was not registered
+            bars = deque(maxlen=self.bar_capacity)
+            self._bars[bar.type] = bars
+
+        bars.appendleft(bar)
+
+    cpdef void add_quote_ticks(self, list ticks) except *:
+        """
+        Add the given quote ticks to the cache.
+
+        Parameters
+        ----------
+        ticks : list[QuoteTick]
+            The ticks to add.
+
+        """
+        Condition.not_none(ticks, "ticks")
+
+        cdef int length = len(ticks)
+        cdef InstrumentId instrument_id
+        if length > 0:
+            instrument_id = ticks[0].instrument_id
+            self._log.debug(f"Received <QuoteTick[{length}]> data for {instrument_id}.")
+        else:
+            self._log.debug("Received <QuoteTick[]> data with no ticks.")
+            return
+
+        cached_ticks = self._quote_ticks.get(instrument_id)
+
+        if not cached_ticks:
+            # The instrument_id was not registered
+            cached_ticks = deque(maxlen=self.tick_capacity)
+            self._quote_ticks[instrument_id] = cached_ticks
+        elif len(cached_ticks) > 0:
+            # Currently the simple solution for multiple consumers requesting
+            # ticks at system spool up is just to add only if the cache is empty.
+            self._log.debug("Cache already contains ticks.")
+            return
+
+        cdef QuoteTick tick
+        for tick in ticks:
+            cached_ticks.appendleft(tick)
+
+    cpdef void add_trade_ticks(self, list ticks) except *:
+        """
+        Add the given trade ticks to the cache.
+
+        Parameters
+        ----------
+        ticks : list[TradeTick]
+            The ticks to add.
+
+        """
+        Condition.not_none(ticks, "ticks")
+
+        cdef int length = len(ticks)
+        cdef InstrumentId instrument_id
+        if length > 0:
+            instrument_id = ticks[0].instrument_id
+            self._log.debug(f"Received <TradeTick[{length}]> data for {instrument_id}.")
+        else:
+            self._log.debug("Received <TradeTick[]> data with no ticks.")
+            return
+
+        cached_ticks = self._trade_ticks.get(instrument_id)
+
+        if not cached_ticks:
+            # The instrument_id was not registered
+            cached_ticks = deque(maxlen=self.tick_capacity)
+            self._trade_ticks[instrument_id] = cached_ticks
+        elif len(cached_ticks) > 0:
+            # Currently the simple solution for multiple consumers requesting
+            # ticks at system spool up is just to add only if the cache is empty.
+            self._log.debug("Cache already contains ticks.")
+            return
+
+        cdef TradeTick tick
+        for tick in ticks:
+            cached_ticks.appendleft(tick)
+
+    cpdef void add_bars(self, list bars) except *:
+        """
+        Add the given bars to the cache.
+
+        Parameters
+        ----------
+        bars : list[Bar]
+            The bars to add.
+
+        """
+        Condition.not_none(bars, "bars")
+
+        cdef int length = len(bars)
+        cdef BarType bar_type
+        if length > 0:
+            bar_type = bars[0].type
+            self._log.debug(f"Received <Bar[{length}]> data for {bar_type}.")
+        else:
+            self._log.debug("Received <Bar[]> data with no ticks.")
+            return
+
+        cached_bars = self._bars.get(bar_type)
+
+        if not cached_bars:
+            # The instrument_id was not registered
+            cached_bars = deque(maxlen=self.bar_capacity)
+            self._bars[bar_type] = cached_bars
+        elif len(cached_bars) > 0:
+            # Currently the simple solution for multiple consumers requesting
+            # bars at system spool up is just to add only if the cache is empty.
+            self._log.debug("Cache already contains bars.")
+            return
+
+        cdef Bar bar
+        for bar in bars:
+            cached_bars.appendleft(bar)
+
     cpdef void add_currency(self, Currency currency) except *:
         """
         Add the given currency to the execution cache.
@@ -765,7 +993,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
-        Add the given instrument to the execution cache.
+        Add the given instrument to the cache.
 
         Parameters
         ----------
@@ -773,9 +1001,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             The instrument to add.
 
         """
-        Condition.not_none(instrument, "instrument")
-
         self._instruments[instrument.id] = instrument
+
+        if isinstance(instrument, (CurrencySpot, CryptoSwap)):
+            self._xrate_symbols[instrument.id] = (f"{instrument.base_currency}/"
+                                                  f"{instrument.quote_currency}")
 
         self._log.debug(f"Added instrument {instrument.id.value}.")
 
@@ -1094,6 +1324,402 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         # Update database
         self._database.delete_strategy(strategy.id)
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
+
+# -- DATA QUERIES ----------------------------------------------------------------------------------
+
+    cpdef list quote_ticks(self, InstrumentId instrument_id):
+        """
+        Return the quote ticks for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the ticks to get.
+
+        Returns
+        -------
+        list[QuoteTick]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return list(self._quote_ticks.get(instrument_id, []))
+
+    cpdef list trade_ticks(self, InstrumentId instrument_id):
+        """
+        Return trade ticks for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the ticks to get.
+
+        Returns
+        -------
+        list[TradeTick]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return list(self._trade_ticks.get(instrument_id, []))
+
+    cpdef list bars(self, BarType bar_type):
+        """
+        Return bars for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for bars to get.
+
+        Returns
+        -------
+        list[Bar]
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        return list(self._bars.get(bar_type, []))
+
+    cpdef Price price(self, InstrumentId instrument_id, PriceType price_type):
+        """
+        Return the price for the given instrument identifier and price type.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the price.
+        price_type : PriceType
+            The price type for the query.
+
+        Returns
+        -------
+        Price or None
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        cdef TradeTick trade_tick
+        cdef QuoteTick quote_tick
+
+        if price_type == PriceType.LAST:
+            trade_tick = self.trade_tick(instrument_id)
+            return trade_tick.price if trade_tick is not None else None
+        else:
+            quote_tick = self.quote_tick(instrument_id)
+            return quote_tick.extract_price(price_type) if quote_tick is not None else None
+
+    cpdef OrderBook order_book(self, InstrumentId instrument_id):
+        """
+        Return the order book for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+
+        Returns
+        -------
+        OrderBook or None
+
+        """
+        return self._order_books.get(instrument_id)
+
+    cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
+        """
+        Return the quote tick for the given instrument identifier at the given index.
+
+        Last quote tick if no index specified.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the tick to get.
+        index : int, optional
+            The index for the tick to get.
+
+        Returns
+        -------
+        QuoteTick or None
+            If no ticks or no tick at index then returns None.
+
+        Notes
+        -----
+        Reverse indexed (most recent tick at index 0).
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        ticks = self._quote_ticks.get(instrument_id)
+        if not ticks:
+            return None
+
+        try:
+            return ticks[index]
+        except IndexError:
+            return None
+
+    cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=0):
+        """
+        Return the trade tick for the given instrument identifier at the given index
+
+        Last trade tick if no index specified.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the tick to get.
+        index : int, optional
+            The index for the tick to get.
+
+        Returns
+        -------
+        TradeTick or None
+            If no ticks or no tick at index then returns None.
+
+        Notes
+        -----
+        Reverse indexed (most recent tick at index 0).
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        ticks = self._trade_ticks.get(instrument_id)
+        if not ticks:
+            return None
+
+        try:
+            return ticks[index]
+        except IndexError:
+            return None
+
+    cpdef Bar bar(self, BarType bar_type, int index=0):
+        """
+        Return the bar for the given bar type at the given index.
+
+        Last bar if no index specified.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to get.
+        index : int, optional
+            The index for the bar to get.
+
+        Returns
+        -------
+        Bar or None
+            If no bars or no bar at index then returns None.
+
+        Notes
+        -----
+        Reverse indexed (most recent bar at index 0).
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        bars = self._bars.get(bar_type)
+        if not bars:
+            return None
+
+        try:
+            return bars[index]
+        except IndexError:
+            return None
+
+    cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
+        """
+        The count of quote ticks for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the ticks.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return len(self._quote_ticks.get(instrument_id, []))
+
+    cpdef int trade_tick_count(self, InstrumentId instrument_id) except *:
+        """
+        The count of trade ticks for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the ticks.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return len(self._trade_ticks.get(instrument_id, []))
+
+    cpdef int bar_count(self, BarType bar_type) except *:
+        """
+        The count of bars for the given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type to count.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        return len(self._bars.get(bar_type, []))
+
+    cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
+        """
+        Return a value indicating whether the data engine has an order book
+        snapshot for the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the order book snapshot.
+
+        Returns
+        -------
+        bool
+
+        """
+        return instrument_id in self._order_books
+
+    cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Return a value indicating whether the data engine has quote ticks for
+        the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the ticks.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self.quote_tick_count(instrument_id) > 0
+
+    cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
+        """
+        Return a value indicating whether the data engine has trade ticks for
+        the given instrument identifier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the ticks.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self.trade_tick_count(instrument_id) > 0
+
+    cpdef bint has_bars(self, BarType bar_type) except *:
+        """
+        Return a value indicating whether the data engine has bars for the given
+        bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the bars.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+
+        return self.bar_count(bar_type) > 0
+
+    cpdef object get_xrate(
+        self,
+        Venue venue,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=PriceType.MID,
+    ):
+        """
+        Return the calculated exchange rate.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the exchange rate.
+        from_currency : Currency
+            The currency to convert from.
+        to_currency : Currency
+            The currency to convert to.
+        price_type : PriceType
+            The price type for the exchange rate.
+
+        Returns
+        -------
+        Decimal
+
+        Raises
+        ------
+        ValueError
+            If price_type is LAST.
+
+        """
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
+
+        if from_currency == to_currency:
+            return Decimal(1)  # No conversion necessary
+
+        cdef tuple quotes = self._build_quote_table(venue)
+
+        return self._xrate_calculator.get_rate(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            price_type=price_type,
+            bid_quotes=quotes[0],  # Bid
+            ask_quotes=quotes[1],  # Ask
+        )
+
+    cdef tuple _build_quote_table(self, Venue venue):
+        cdef dict bid_quotes = {}
+        cdef dict ask_quotes = {}
+
+        cdef InstrumentId instrument_id
+        cdef str base_quote
+        for instrument_id, base_quote in self._xrate_symbols.items():
+            if instrument_id.venue != venue:
+                continue
+
+            ticks = self._quote_ticks.get(instrument_id)
+            if not ticks:
+                # No quotes for instrument_id
+                continue
+
+            bid_quotes[base_quote] = ticks[0].bid.as_decimal()
+            ask_quotes[base_quote] = ticks[0].ask.as_decimal()
+
+        return bid_quotes, ask_quotes
 
 # -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
 

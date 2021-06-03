@@ -27,16 +27,16 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionDatabase:
+cdef class CacheDatabase:
     """
-    The abstract base class for all execution databases.
+    The abstract base class for all cache databases.
 
     This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the `ExecutionDatabase` class.
+        Initialize a new instance of the `CacheDatabase` class.
 
         Parameters
         ----------
@@ -140,15 +140,15 @@ cdef class ExecutionDatabase:
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-cdef class InMemoryExecutionDatabase(ExecutionDatabase):
+cdef class BypassCacheDatabase(CacheDatabase):
     """
-    Provides a bypass execution database which does nothing.
+    Provides a bypass cache database which does nothing.
 
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the `InMemoryExecutionDatabase` class.
+        Initialize a new instance of the `BypassCacheDatabase` class.
 
         Parameters
         ----------
@@ -160,16 +160,14 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         """
         super().__init__(trader_id, logger)
 
-        self._instruments = {}
-
     cpdef void flush(self) except *:
-        self._instruments.clear()
+        pass
 
     cpdef dict load_currencies(self):
         return {}
 
     cpdef dict load_instruments(self):
-        return self._instruments.copy()
+        return {}
 
     cpdef dict load_accounts(self):
         return {}
@@ -184,7 +182,7 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         return None
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
-        return self._instruments.get(instrument_id)
+        return None
 
     cpdef Account load_account(self, AccountId account_id):
         return None
@@ -207,7 +205,8 @@ cdef class InMemoryExecutionDatabase(ExecutionDatabase):
         pass
 
     cpdef void add_instrument(self, Instrument instrument) except *:
-        self._instruments[instrument.id] = instrument
+        # NO-OP
+        pass
 
     cpdef void add_account(self, Account account) except *:
         # NO-OP

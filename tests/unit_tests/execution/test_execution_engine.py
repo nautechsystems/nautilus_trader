@@ -15,13 +15,12 @@
 
 import unittest
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
-from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
@@ -48,8 +47,8 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.mocks import MockCacheDatabase
 from tests.test_kit.mocks import MockExecutionClient
-from tests.test_kit.mocks import MockExecutionDatabase
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -75,19 +74,26 @@ class ExecutionEngineTests(unittest.TestCase):
             clock=TestClock(),
         )
 
+        # Keep cache database in fixture
+        self.cache_db = MockCacheDatabase(
+            trader_id=self.trader_id,
+            logger=self.logger,
+        )
+
+        self.cache = Cache(
+            database=self.cache_db,
+            logger=self.logger,
+        )
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.analyzer = PerformanceAnalyzer()
-
-        self.database = MockExecutionDatabase(
-            trader_id=self.trader_id, logger=self.logger
-        )
         self.exec_engine = ExecutionEngine(
-            database=self.database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -95,16 +101,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         # Prepare components
-        self.cache = self.exec_engine.cache
         self.cache.add_instrument(AUDUSD_SIM)
         self.exec_engine.process(TestStubs.event_account_state())
-        self.portfolio.register_data_cache(DataCache(self.logger))
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
@@ -299,9 +303,9 @@ class ExecutionEngineTests(unittest.TestCase):
         order.apply(fill1)
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
 
-        self.database.add_order(order)
-        self.database.update_order(order)
-        self.database.add_position(position)
+        self.cache_db.add_order(order)
+        self.cache_db.update_order(order)
+        self.cache_db.add_position(position)
 
         # Act
         self.portfolio.reset()

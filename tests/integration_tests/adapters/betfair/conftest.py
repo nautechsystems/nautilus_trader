@@ -20,6 +20,8 @@ from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
@@ -101,8 +103,25 @@ def live_logger(event_loop, clock):
 
 
 @pytest.fixture()
-def portfolio(clock, live_logger):
+def cache_db(trader_id, live_logger):
+    return BypassCacheDatabase(
+        trader_id=trader_id,
+        logger=live_logger,
+    )
+
+
+@pytest.fixture()
+def cache(live_logger, cache_db):
+    return Cache(
+        database=cache_db,
+        logger=live_logger,
+    )
+
+
+@pytest.fixture()
+def portfolio(cache, clock, live_logger):
     return Portfolio(
+        cache=cache,
         clock=clock,
         logger=live_logger,
     )

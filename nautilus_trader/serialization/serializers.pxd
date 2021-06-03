@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.cache cimport IdentifierCache
+from nautilus_trader.cache.identifier cimport IdentifierCache
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer

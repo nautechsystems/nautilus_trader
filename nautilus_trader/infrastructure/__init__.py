@@ -14,5 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `redis` subpackage groups all `Redis` implementations for the platform.
+The `infrastructure` subpackage provides technology specific implementations.
 """

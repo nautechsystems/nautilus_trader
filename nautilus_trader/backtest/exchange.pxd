@@ -17,10 +17,10 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -66,8 +66,8 @@ cdef class SimulatedExchange:
     """The exchange order management system type.\n\n:returns: `OMSType`"""
     cdef readonly OrderBookLevel exchange_order_book_level
     """The exchange default order book level.\n\n:returns: `OrderBookLevel`"""
-    cdef readonly ExecutionCache exec_cache
-    """The execution cache wired to the exchange.\n\n:returns: `ExecutionCache`"""
+    cdef readonly CacheFacade cache
+    """The read-only cache wired to the exchange.\n\n:returns: `CacheFacade`"""
     cdef readonly BacktestExecClient exec_client
     """The execution client wired to the exchange.\n\n:returns: `BacktestExecClient`"""
 
@@ -77,8 +77,6 @@ cdef class SimulatedExchange:
     """The account starting balances for each backtest run.\n\n:returns: `bool`"""
     cdef readonly Currency default_currency
     """The account default currency.\n\n:returns: `Currency` or None"""
-    cdef readonly dict account_balances
-    """The current account balances.\n\n:returns: `dict[Currency, AccountBalance]`"""
     cdef readonly dict total_commissions
     """The total commissions generated with the exchange.\n\n:returns: `dict[Currency, Money]`"""
 
@@ -91,7 +89,6 @@ cdef class SimulatedExchange:
     cdef readonly dict instruments
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
-    cdef dict _net_position_ids
     cdef dict _books
     cdef dict _instrument_orders
     cdef dict _working_orders
@@ -105,9 +102,10 @@ cdef class SimulatedExchange:
     cdef dict _symbol_ord_count
     cdef int _executions_count
 
+    cpdef list balances_total(self)
+    cpdef Money balance_total(self, Currency currency)
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
-    cpdef object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
     cpdef dict get_working_orders(self)
@@ -143,7 +141,7 @@ cdef class SimulatedExchange:
     cdef void _cancel_order(self, PassiveOrder order) except *
     cdef void _expire_order(self, PassiveOrder order) except *
 
-    cdef void _generate_account_state(self) except *
+    cdef void _generate_fresh_account_state(self) except *
     cdef void _generate_order_submitted(self, Order order) except *
     cdef void _generate_order_rejected(self, Order order, str reason) except *
     cdef void _generate_order_accepted(self, Order order) except *

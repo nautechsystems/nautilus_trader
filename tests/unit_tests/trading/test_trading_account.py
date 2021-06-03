@@ -16,12 +16,12 @@
 from decimal import Decimal
 import unittest
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
@@ -61,22 +61,28 @@ class AccountTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.portfolio = Portfolio(clock, logger)
-
-        exec_db = InMemoryExecutionDatabase(
+        cache_db = BypassCacheDatabase(
             trader_id=trader_id,
             logger=logger,
         )
-        self.exec_engine = ExecutionEngine(
-            database=exec_db,
-            portfolio=self.portfolio,
+
+        cache = Cache(
+            database=cache_db,
+            logger=logger,
+        )
+
+        self.portfolio = Portfolio(
+            cache=cache,
             clock=clock,
             logger=logger,
         )
 
-        # Wire up components
-        self.portfolio.register_data_cache(DataCache(logger))
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
+        self.exec_engine = ExecutionEngine(
+            portfolio=self.portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+        )
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange
@@ -259,10 +265,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(event, account.last_event)
         self.assertEqual([event], account.events)
         self.assertEqual(1, account.event_count)
-        self.assertEqual(Money(1_000_000, USD), account.balance())
+        self.assertEqual(Money(1_000_000, USD), account.balance_total())
         self.assertEqual(Money(1_000_000, USD), account.balance_free())
         self.assertEqual(Money(0, USD), account.balance_locked())
-        self.assertEqual({USD: Money(1_000_000, USD)}, account.balances())
+        self.assertEqual({USD: Money(1_000_000, USD)}, account.balances_total())
         self.assertEqual({USD: Money(1_000_000, USD)}, account.balances_free())
         self.assertEqual({USD: Money(0, USD)}, account.balances_locked())
         self.assertEqual(Money(0, USD), account.unrealized_pnl())
@@ -310,15 +316,15 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(event, account.last_event)
         self.assertEqual([event], account.events)
         self.assertEqual(1, account.event_count)
-        self.assertEqual(Money("10.00000000", BTC), account.balance(BTC))
-        self.assertEqual(Money("20.00000000", ETH), account.balance(ETH))
+        self.assertEqual(Money("10.00000000", BTC), account.balance_total(BTC))
+        self.assertEqual(Money("20.00000000", ETH), account.balance_total(ETH))
         self.assertEqual(Money("10.00000000", BTC), account.balance_free(BTC))
         self.assertEqual(Money("20.00000000", ETH), account.balance_free(ETH))
         self.assertEqual(Money("0.00000000", BTC), account.balance_locked(BTC))
         self.assertEqual(Money("0.00000000", ETH), account.balance_locked(ETH))
         self.assertEqual(
             {BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)},
-            account.balances(),
+            account.balances_total(),
         )
         self.assertEqual(
             {BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)},
@@ -401,10 +407,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(event2, account.last_event)
         self.assertEqual([event1, event2], account.events)
         self.assertEqual(2, account.event_count)
-        self.assertEqual(Money("9.00000000", BTC), account.balance(BTC))
+        self.assertEqual(Money("9.00000000", BTC), account.balance_total(BTC))
         self.assertEqual(Money("8.50000000", BTC), account.balance_free(BTC))
         self.assertEqual(Money("0.50000000", BTC), account.balance_locked(BTC))
-        self.assertEqual(Money("20.00000000", ETH), account.balance(ETH))
+        self.assertEqual(Money("20.00000000", ETH), account.balance_total(ETH))
         self.assertEqual(Money("20.00000000", ETH), account.balance_free(ETH))
         self.assertEqual(Money("0.00000000", ETH), account.balance_locked(ETH))
 

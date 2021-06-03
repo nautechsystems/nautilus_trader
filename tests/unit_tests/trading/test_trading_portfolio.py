@@ -16,12 +16,12 @@
 from decimal import Decimal
 import unittest
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.events import AccountState
@@ -163,18 +163,25 @@ class PortfolioTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.portfolio = Portfolio(clock, logger)
-
-        self.data_cache = DataCache(logger)
-
-        exec_db = InMemoryExecutionDatabase(
+        cache_db = BypassCacheDatabase(
             trader_id=trader_id,
             logger=logger,
         )
 
+        self.cache = Cache(
+            database=cache_db,
+            logger=logger,
+        )
+
+        self.portfolio = Portfolio(
+            cache=self.cache,
+            clock=clock,
+            logger=logger,
+        )
+
         self.exec_engine = ExecutionEngine(
-            database=exec_db,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=clock,
             logger=logger,
         )
@@ -182,21 +189,20 @@ class PortfolioTests(unittest.TestCase):
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=clock,
             logger=logger,
         )
 
         # Wire up components
-        self.portfolio.register_data_cache(DataCache(logger))
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
         self.exec_engine.register_risk_engine(self.risk_engine)
 
         # Prepare components
-        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
-        self.exec_engine.cache.add_instrument(GBPUSD_SIM)
-        self.exec_engine.cache.add_instrument(BTCUSDT_BINANCE)
-        self.exec_engine.cache.add_instrument(BTCUSD_BITMEX)
-        self.exec_engine.cache.add_instrument(ETHUSD_BITMEX)
+        self.cache.add_instrument(AUDUSD_SIM)
+        self.cache.add_instrument(GBPUSD_SIM)
+        self.cache.add_instrument(BTCUSDT_BINANCE)
+        self.cache.add_instrument(BTCUSD_BITMEX)
+        self.cache.add_instrument(ETHUSD_BITMEX)
 
     def test_account_when_no_account_returns_none(self):
         # Arrange
@@ -456,7 +462,7 @@ class PortfolioTests(unittest.TestCase):
     #         0,
     #     )
     #
-    #     self.data_cache.add_quote_tick(last)
+    #     self.cache.add_quote_tick(last)
     #     self.portfolio.update_tick(last)
     #
     #     position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
@@ -520,7 +526,7 @@ class PortfolioTests(unittest.TestCase):
     #         0,
     #     )
     #
-    #     self.data_cache.add_quote_tick(last)
+    #     self.cache.add_quote_tick(last)
     #     self.portfolio.update_tick(last)
     #
     #     position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
@@ -594,8 +600,8 @@ class PortfolioTests(unittest.TestCase):
     #         0,
     #     )
     #
-    #     self.data_cache.add_quote_tick(last_ethusd)
-    #     self.data_cache.add_quote_tick(last_btcusd)
+    #     self.cache.add_quote_tick(last_ethusd)
+    #     self.cache.add_quote_tick(last_btcusd)
     #     self.portfolio.update_tick(last_ethusd)
     #     self.portfolio.update_tick(last_btcusd)
     #
@@ -698,7 +704,7 @@ class PortfolioTests(unittest.TestCase):
     #
     #     account = Account(state)
     #     self.exec_engine.cache.add_account(account)
-    #     self.exec_cache.add_instrument(ETHUSD_BITMEX)
+    #     self.cache.add_instrument(ETHUSD_BITMEX)
     #
     #     self.portfolio.register_account(account)
     #
@@ -728,7 +734,7 @@ class PortfolioTests(unittest.TestCase):
     #     position = Position(instrument=ETHUSD_BITMEX, fill=fill)
     #
     #     self.portfolio.update_position(TestStubs.event_position_opened(position))
-    #     self.data_cache.add_quote_tick(last_ethusd)
+    #     self.cache.add_quote_tick(last_ethusd)
     #     self.portfolio.update_tick(last_ethusd)
     #
     #     # Act
@@ -774,8 +780,8 @@ class PortfolioTests(unittest.TestCase):
     #         0,
     #     )
     #
-    #     self.data_cache.add_quote_tick(last_audusd)
-    #     self.data_cache.add_quote_tick(last_gbpusd)
+    #     self.cache.add_quote_tick(last_audusd)
+    #     self.cache.add_quote_tick(last_gbpusd)
     #     self.portfolio.update_tick(last_audusd)
     #     self.portfolio.update_tick(last_gbpusd)
     #
@@ -880,7 +886,7 @@ class PortfolioTests(unittest.TestCase):
     #         0,
     #     )
     #
-    #     self.data_cache.add_quote_tick(last_audusd)
+    #     self.cache.add_quote_tick(last_audusd)
     #     self.portfolio.update_tick(last_audusd)
     #
     #     order1 = self.order_factory.market(
@@ -1111,8 +1117,8 @@ class PortfolioTests(unittest.TestCase):
     #         0,
     #     )
     #
-    #     self.data_cache.add_quote_tick(last_audusd)
-    #     self.data_cache.add_quote_tick(last_gbpusd)
+    #     self.cache.add_quote_tick(last_audusd)
+    #     self.cache.add_quote_tick(last_gbpusd)
     #     self.portfolio.update_tick(last_audusd)
     #     self.portfolio.update_tick(last_gbpusd)
     #
