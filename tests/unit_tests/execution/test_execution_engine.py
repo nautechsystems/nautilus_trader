@@ -1895,7 +1895,7 @@ class ExecutionEngineTests(unittest.TestCase):
         position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
-        self.assertEqual(-50000, position_flipped.relative_qty)
+        self.assertEqual(-50000, position_flipped.net_qty)
         self.assertEqual(50000, position_flipped.last_event.last_qty)
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
@@ -1975,7 +1975,7 @@ class ExecutionEngineTests(unittest.TestCase):
         position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
-        self.assertEqual(50000, position_flipped.relative_qty)
+        self.assertEqual(50000, position_flipped.net_qty)
         self.assertEqual(50000, position_flipped.last_event.last_qty)
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))

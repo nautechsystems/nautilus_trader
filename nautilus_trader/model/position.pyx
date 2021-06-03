@@ -72,7 +72,7 @@ cdef class Position:
         # Properties
         self.entry = fill.order_side
         self.side = Position.side_from_order_side(fill.order_side)
-        self.relative_qty = Decimal()
+        self.net_qty = Decimal()
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
         self.timestamp_ns = fill.execution_ns
@@ -128,7 +128,7 @@ cdef class Position:
         return len(self._events)
 
     cdef str status_string_c(self):
-        cdef str quantity = " " if self.relative_qty == 0 else f" {self.quantity.to_str()} "
+        cdef str quantity = " " if self.net_qty == 0 else f" {self.quantity.to_str()} "
         return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
 
     cdef bint is_open_c(self) except *:
@@ -389,14 +389,14 @@ cdef class Position:
             self._handle_sell_order_fill(fill)
 
         # Set quantities
-        self.quantity = Quantity(abs(self.relative_qty), self.size_precision)
+        self.quantity = Quantity(abs(self.net_qty), self.size_precision)
         if self.quantity > self.peak_qty:
             self.peak_qty = self.quantity
 
         # Set state
-        if self.relative_qty > 0:
+        if self.net_qty > 0:
             self.side = PositionSide.LONG
-        elif self.relative_qty < 0:
+        elif self.net_qty < 0:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
@@ -529,10 +529,10 @@ cdef class Position:
             realized_pnl: Decimal = Decimal()
 
         # LONG POSITION
-        if self.relative_qty > 0:
+        if self.net_qty > 0:
             self.avg_px_open = self._calculate_avg_px_open_px(fill)
         # SHORT POSITION
-        elif self.relative_qty < 0:
+        elif self.net_qty < 0:
             self.avg_px_close = self._calculate_avg_px_close_px(fill)
             self.realized_points = self._calculate_points(self.avg_px_open, self.avg_px_close)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
@@ -542,7 +542,7 @@ cdef class Position:
 
         # Update quantities
         self._buy_qty = self._buy_qty + fill.last_qty
-        self.relative_qty = self.relative_qty + fill.last_qty
+        self.net_qty = self.net_qty + fill.last_qty
 
     cdef void _handle_sell_order_fill(self, OrderFilled fill) except *:
         # Initialize realized PnL for fill
@@ -552,10 +552,10 @@ cdef class Position:
             realized_pnl: Decimal = Decimal()
 
         # SHORT POSITION
-        if self.relative_qty < 0:
+        if self.net_qty < 0:
             self.avg_px_open = self._calculate_avg_px_open_px(fill)
         # LONG POSITION
-        elif self.relative_qty > 0:
+        elif self.net_qty > 0:
             self.avg_px_close = self._calculate_avg_px_close_px(fill)
             self.realized_points = self._calculate_points(self.avg_px_open, self.avg_px_close)
             self.realized_return = self._calculate_return(self.avg_px_open, self.avg_px_close)
@@ -565,18 +565,16 @@ cdef class Position:
 
         # Update quantities
         self._sell_qty = self._sell_qty + fill.last_qty
-        self.relative_qty = self.relative_qty - fill.last_qty
+        self.net_qty = self.net_qty - fill.last_qty
 
     cdef object _calculate_avg_px_open_px(self, OrderFilled fill):
         if not self.avg_px_open:
             return fill.last_px
-
         return self._calculate_avg_px(self.quantity, self.avg_px_open, fill)
 
     cdef object _calculate_avg_px_close_px(self, OrderFilled fill):
         if not self.avg_px_close:
             return fill.last_px
-
         close_qty: Decimal = self._sell_qty if self.side == PositionSide.LONG else self._buy_qty
         return self._calculate_avg_px(close_qty, self.avg_px_close, fill)
 
