@@ -206,17 +206,23 @@ cdef class Order:
         return self.type == OrderType.MARKET
 
     cdef bint is_working_c(self) except *:
-        return self._fsm.state == OrderState.ACCEPTED \
-            or self._fsm.state == OrderState.PARTIALLY_FILLED \
+        return (
+            self._fsm.state == OrderState.ACCEPTED
             or self._fsm.state == OrderState.TRIGGERED
+            or self._fsm.state == OrderState.PENDING_CANCEL
+            or self._fsm.state == OrderState.PENDING_REPLACE
+            or self._fsm.state == OrderState.PARTIALLY_FILLED
+        )
 
     cdef bint is_completed_c(self) except *:
-        return self._fsm.state == OrderState.INVALID \
-            or self._fsm.state == OrderState.DENIED \
-            or self._fsm.state == OrderState.REJECTED \
-            or self._fsm.state == OrderState.CANCELED \
-            or self._fsm.state == OrderState.EXPIRED \
+        return (
+            self._fsm.state == OrderState.INVALID
+            or self._fsm.state == OrderState.DENIED
+            or self._fsm.state == OrderState.REJECTED
+            or self._fsm.state == OrderState.CANCELED
+            or self._fsm.state == OrderState.EXPIRED
             or self._fsm.state == OrderState.FILLED
+        )
 
     @property
     def symbol(self):
@@ -371,8 +377,12 @@ cdef class Order:
         """
         If the order is open/working at the trading venue.
 
-        An order is considered working when its state is either `ACCEPTED`,
-        `TRIGGERED` or `PARTIALLY_FILLED`.
+        An order is considered working when its state is either:
+         - `ACCEPTED`
+         - `TRIGGERED`
+         - `PENDING_CANCEL`
+         - `PENDING_REPLACE`
+         - `PARTIALLY_FILLED`
 
         Returns
         -------
@@ -388,8 +398,13 @@ cdef class Order:
         If the order is closed/completed.
 
         An order is considered completed when its state can no longer change.
-        The possible states of completed orders include: `INVALID`, `DENIED`,
-        `REJECTED`, `CANCELED`, `EXPIRED` and `FILLED`.
+        The possible states of completed orders include:
+         - `INVALID`
+         - `DENIED`
+         - `REJECTED`
+         - `CANCELED`
+         - `EXPIRED`
+         - `FILLED`
 
         Returns
         -------
