@@ -31,7 +31,11 @@ cdef class Position:
     Represents a position in a financial market.
     """
 
-    def __init__(self, Instrument instrument, OrderFilled fill not None):
+    def __init__(
+        self,
+        Instrument instrument not None,
+        OrderFilled fill not None,
+    ):
         """
         Initialize a new instance of the `Position` class.
 
@@ -107,12 +111,15 @@ cdef class Position:
         return f"{type(self).__name__}({self.status_string_c()}, id={self.id.value})"
 
     cdef list client_order_ids_c(self):
+        # Note the inner set {}
         return sorted(list({fill.client_order_id for fill in self._events}))
 
     cdef list venue_order_ids_c(self):
+        # Note the inner set {}
         return sorted(list({fill.venue_order_id for fill in self._events}))
 
     cdef list execution_ids_c(self):
+        # Checked for duplicate before appending to events
         return [fill.execution_id for fill in self._events]
 
     cdef list events_c(self):
@@ -568,9 +575,7 @@ cdef class Position:
         self.net_qty = self.net_qty - fill.last_qty
 
     cdef object _calculate_avg_px_open_px(self, OrderFilled fill):
-        if not self.avg_px_open:
-            return fill.last_px
-        return self._calculate_avg_px(self.quantity, self.avg_px_open, fill)
+        return self._calculate_avg_px(self.quantity.as_decimal(), self.avg_px_open, fill)
 
     cdef object _calculate_avg_px_close_px(self, OrderFilled fill):
         if not self.avg_px_close:
