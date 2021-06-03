@@ -41,7 +41,7 @@ cdef class Tick(Data):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `QuoteTick` class.
+        Initialize a new instance of the `Tick` class.
 
         Parameters
         ----------
