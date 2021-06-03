@@ -52,7 +52,7 @@ cdef class OrderBook:
         int size_precision,
     ):
         """
-        Initialize a new instance of the `OrderBook` class.
+        Initialize a new instance of the ``OrderBook`` class.
 
         Parameters
         ----------
@@ -698,7 +698,7 @@ cdef class L3OrderBook(OrderBook):
         int size_precision,
     ):
         """
-        Initialize a new instance of the `L3OrderBook` class.
+        Initialize a new instance of the ``L3OrderBook`` class.
 
         Parameters
         ----------
@@ -739,7 +739,7 @@ cdef class L2OrderBook(OrderBook):
         int size_precision,
     ):
         """
-        Initialize a new instance of the `L2OrderBook` class.
+        Initialize a new instance of the ``L2OrderBook`` class.
 
         Parameters
         ----------
@@ -851,7 +851,7 @@ cdef class L1OrderBook(OrderBook):
         int size_precision,
     ):
         """
-        Initialize a new instance of the `L1OrderBook` class.
+        Initialize a new instance of the ``L1OrderBook`` class.
 
         Parameters
         ----------
@@ -1018,7 +1018,7 @@ cdef class OrderBookData(Data):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookData` class.
+        Initialize a new instance of the ``OrderBookData`` class.
 
         Parameters
         ----------
@@ -1053,7 +1053,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookSnapshot` class.
+        Initialize a new instance of the ``OrderBookSnapshot`` class.
 
         Parameters
         ----------
@@ -1099,7 +1099,7 @@ cdef class OrderBookDeltas(OrderBookData):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookDeltas` class.
+        Initialize a new instance of the ``OrderBookDeltas`` class.
 
         Parameters
         ----------
@@ -1142,7 +1142,7 @@ cdef class OrderBookDelta(OrderBookData):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookDelta` class.
+        Initialize a new instance of the ``OrderBookDelta`` class.
 
         Parameters
         ----------

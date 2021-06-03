@@ -35,7 +35,7 @@ cdef class Ladder:
         int size_precision,
     ):
         """
-        Initialize a new instance of the `Ladder` class.
+        Initialize a new instance of the ``Ladder`` class.
 
         Parameters
         ----------

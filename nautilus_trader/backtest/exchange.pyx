@@ -86,7 +86,7 @@ cdef class SimulatedExchange:
         OrderBookLevel exchange_order_book_level=OrderBookLevel.L1,
     ):
         """
-        Initialize a new instance of the `SimulatedExchange` class.
+        Initialize a new instance of the ``SimulatedExchange`` class.
 
         Parameters
         ----------

@@ -83,7 +83,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `CCXTExecutionClient` class.
+        Initialize a new instance of the ``CCXTExecutionClient`` class.
 
         Parameters
         ----------
@@ -740,7 +740,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BinanceCCXTExecutionClient` class.
+        Initialize a new instance of the ``BinanceCCXTExecutionClient`` class.
 
         Parameters
         ----------
@@ -844,7 +844,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BitmexCCXTExecutionClient` class.
+        Initialize a new instance of the ``BitmexCCXTExecutionClient`` class.
 
         Parameters
         ----------

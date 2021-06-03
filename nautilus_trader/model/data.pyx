@@ -27,7 +27,7 @@ cdef class Data:
 
     def __init__(self, int64_t timestamp_origin_ns, int64_t timestamp_ns):
         """
-        Initialize a new instance of the `Data` class.
+        Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
@@ -55,7 +55,7 @@ cdef class DataType:
 
     def __init__(self, type data_type not None, dict metadata=None):
         """
-        Initialize a new instance of the `DataType` class.
+        Initialize a new instance of the ``DataType`` class.
 
         Parameters
         ----------
@@ -112,7 +112,7 @@ cdef class GenericData(Data):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `GenericData` class.
+        Initialize a new instance of the ``GenericData`` class.
 
         Parameters
         ----------

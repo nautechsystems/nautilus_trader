@@ -32,7 +32,7 @@ cdef class Order:
         str id=None,
     ):
         """
-        Initialize a new instance of the `Order` class.
+        Initialize a new instance of the ``Order`` class.
 
         Parameters
         ----------

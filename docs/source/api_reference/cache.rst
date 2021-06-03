@@ -1,13 +1,21 @@
-Execution
-=========
+Cache
+=====
 
-.. automodule:: nautilus_trader.execution
+.. automodule:: nautilus_trader.cache
 
+Base
+----
 
-Client
-------
+.. automodule:: nautilus_trader.cache.base
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
 
-.. automodule:: nautilus_trader.execution.client
+Cache
+-----
+
+.. automodule:: nautilus_trader.cache.cache
    :show-inheritance:
    :inherited-members:
    :members:
@@ -16,25 +24,16 @@ Client
 Database
 --------
 
-.. automodule:: nautilus_trader.execution.database
+.. automodule:: nautilus_trader.cache.database
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 
-Engine
-------
+Identifier
+----------
 
-.. automodule:: nautilus_trader.execution.engine
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
-Messages
---------
-
-.. automodule:: nautilus_trader.execution.messages
+.. automodule:: nautilus_trader.cache.identifier
    :show-inheritance:
    :inherited-members:
    :members:

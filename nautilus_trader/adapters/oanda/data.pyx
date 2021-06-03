@@ -67,7 +67,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `OandaDataClient` class.
+        Initialize a new instance of the ``OandaDataClient`` class.
 
         Parameters
         ----------

@@ -56,7 +56,7 @@ cdef class Option(Instrument):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Option` class.
+        Initialize a new instance of the ``Option`` class.
 
         Parameters
         ----------

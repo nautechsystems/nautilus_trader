@@ -35,7 +35,7 @@ cdef class DataCommand(Command):
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `DataCommand` class.
+        Initializes a new instance of the `DataCommand`` class.
 
         Parameters
         ----------
@@ -82,7 +82,7 @@ cdef class Subscribe(DataCommand):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Subscribe` class.
+        Initialize a new instance of the ``Subscribe`` class.
 
         Parameters
         ----------
@@ -121,7 +121,7 @@ cdef class Unsubscribe(DataCommand):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Unsubscribe` class.
+        Initialize a new instance of the ``Unsubscribe`` class.
 
         Parameters
         ----------
@@ -160,7 +160,7 @@ cdef class DataRequest(Request):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `DataRequest` class.
+        Initialize a new instance of the ``DataRequest`` class.
 
         Parameters
         ----------
@@ -211,7 +211,7 @@ cdef class DataResponse(Response):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `DataResponse` class.
+        Initialize a new instance of the ``DataResponse`` class.
 
         Parameters
         ----------

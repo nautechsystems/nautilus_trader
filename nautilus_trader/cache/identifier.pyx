@@ -23,7 +23,7 @@ cdef class IdentifierCache:
 
     def __init__(self):
         """
-        Initialize a new instance of the `IdentifierCache` class.
+        Initialize a new instance of the ``IdentifierCache`` class.
         """
         self._cached_trader_ids = ObjectCache(TraderId, TraderId)
         self._cached_account_ids = ObjectCache(AccountId, AccountId.from_str_c)

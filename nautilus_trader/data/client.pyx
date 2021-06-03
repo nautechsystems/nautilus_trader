@@ -56,7 +56,7 @@ cdef class DataClient:
         dict config=None,
     ):
         """
-        Initialize a new instance of the `DataClient` class.
+        Initialize a new instance of the ``DataClient`` class.
 
         Parameters
         ----------
@@ -171,7 +171,7 @@ cdef class MarketDataClient(DataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `MarketDataClient` class.
+        Initialize a new instance of the ``MarketDataClient`` class.
 
         Parameters
         ----------

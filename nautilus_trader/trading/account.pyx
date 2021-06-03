@@ -38,7 +38,7 @@ cdef class Account:
 
     def __init__(self, AccountState event):
         """
-        Initialize a new instance of the `Account` class.
+        Initialize a new instance of the ``Account`` class.
 
         Parameters
         ----------

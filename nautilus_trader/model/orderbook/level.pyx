@@ -30,7 +30,7 @@ cdef class Level:
 
     def __init__(self, double price):
         """
-        Initialize a new instance of the `Level` class.
+        Initialize a new instance of the ``Level`` class.
 
         Parameters
         ----------

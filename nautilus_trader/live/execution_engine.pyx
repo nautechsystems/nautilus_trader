@@ -55,7 +55,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionEngine` class.
+        Initialize a new instance of the ``LiveExecutionEngine`` class.
 
         Parameters
         ----------

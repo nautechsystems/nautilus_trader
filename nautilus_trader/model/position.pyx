@@ -37,7 +37,7 @@ cdef class Position:
         OrderFilled fill not None,
     ):
         """
-        Initialize a new instance of the `Position` class.
+        Initialize a new instance of the ``Position`` class.
 
         Parameters
         ----------

@@ -46,7 +46,7 @@ cdef class LiveRiskEngine(RiskEngine):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveRiskEngine` class.
+        Initialize a new instance of the ``LiveRiskEngine`` class.
 
         Parameters
         ----------

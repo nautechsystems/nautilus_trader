@@ -56,7 +56,7 @@ class EMACross(TradingStrategy):
         order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------

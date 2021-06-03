@@ -41,7 +41,7 @@ cdef class BacktestExecClient(ExecutionClient):
         bint is_frozen_account=False,
     ):
         """
-        Initialize a new instance of the `BacktestExecClient` class.
+        Initialize a new instance of the ``BacktestExecClient`` class.
 
         Parameters
         ----------

@@ -47,7 +47,7 @@ cdef class LiveDataEngine(DataEngine):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveDataEngine` class.
+        Initialize a new instance of the ``LiveDataEngine`` class.
 
         Parameters
         ----------

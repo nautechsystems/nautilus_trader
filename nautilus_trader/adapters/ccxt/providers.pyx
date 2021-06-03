@@ -41,7 +41,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
     def __init__(self, client not None: ccxt.Exchange, bint load_all=False):
         """
-        Initialize a new instance of the `CCXTInstrumentProvider` class.
+        Initialize a new instance of the ``CCXTInstrumentProvider`` class.
 
         Parameters
         ----------

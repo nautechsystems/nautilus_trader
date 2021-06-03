@@ -58,7 +58,7 @@ cdef class CurrencySpot(Instrument):
         dict info=None,
     ):
         """
-        Initialize a new instance of the `CurrencySpot` instrument class.
+        Initialize a new instance of the ``CurrencySpot` instrument class.
 
         Parameters
         ----------

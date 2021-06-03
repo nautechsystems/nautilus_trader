@@ -69,7 +69,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         dict config,
     ):
         """
-        Initialize a new instance of the `RedisCacheDatabase` class.
+        Initialize a new instance of the ``RedisCacheDatabase`` class.
 
         Parameters
         ----------

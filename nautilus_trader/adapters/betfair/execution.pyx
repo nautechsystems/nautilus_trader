@@ -82,7 +82,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         bint load_instruments=True,
     ):
         """
-        Initialize a new instance of the `BetfairExecutionClient` class.
+        Initialize a new instance of the ``BetfairExecutionClient`` class.
 
         Parameters
         ----------
