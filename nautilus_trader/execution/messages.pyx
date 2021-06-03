@@ -17,8 +17,11 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -62,6 +65,14 @@ cdef class OrderStatusReport:
         self.filled_qty = filled_qty
         self.timestamp_ns = timestamp_ns
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"client_order_id={self.client_order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
+                f"order_state={OrderStateParser.to_str(self.order_state)}, "
+                f"filled_qty={self.filled_qty}, "
+                f"timestamp_ns={self.timestamp_ns})")
+
 
 cdef class PositionStatusReport:
     """
@@ -93,6 +104,13 @@ cdef class PositionStatusReport:
         self.side = position_side
         self.qty = qty
         self.timestamp_ns = timestamp_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id}, "
+                f"side={PositionSideParser.to_str(self.side)}, "
+                f"qty={self.qty}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
 
 cdef class ExecutionReport:
@@ -145,6 +163,18 @@ cdef class ExecutionReport:
         self.execution_ns = execution_ns
         self.timestamp_ns = timestamp_ns
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"client_order_id={self.client_order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
+                f"id={self.id}, "
+                f"last_qty={self.last_qty}, "
+                f"last_px={self.last_px}, "
+                f"commission={self.commission.to_str()}, "
+                f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+                f"execution_ns={self.execution_ns}, "
+                f"timestamp_ns={self.timestamp_ns})")
+
 
 cdef class ExecutionMassStatus:
     """
@@ -182,6 +212,15 @@ cdef class ExecutionMassStatus:
         self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
         self._exec_reports = {}      # type: dict[VenueOrderId, list[ExecutionReport]]
         self._position_reports = {}  # type: dict[InstrumentId, PositionStatusReport]
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"client_id={self.client_id}, "
+                f"account_id={self.account_id}, "
+                f"timestamp_ns={self.timestamp_ns}, "
+                f"order_reports={self._order_reports}, "
+                f"exec_reports={self._exec_reports}, "
+                f"position_reports={self._position_reports})")
 
     cpdef dict order_reports(self):
         """
