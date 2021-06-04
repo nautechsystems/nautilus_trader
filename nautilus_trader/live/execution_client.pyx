@@ -100,7 +100,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionClient` class.
+        Initialize a new instance of the ``LiveExecutionClient`` class.
 
         Parameters
         ----------

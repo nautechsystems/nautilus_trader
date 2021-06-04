@@ -55,7 +55,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionEngine` class.
+        Initialize a new instance of the ``LiveExecutionEngine`` class.
 
         Parameters
         ----------
@@ -179,7 +179,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             if client is None:
                 self._log.error(
                     f"Cannot reconcile state: "
-                    f"No registered client for {order.instrument_id.venue} for active {order}."
+                    f"No client found for {order.instrument_id.venue} for active {order}."
                 )
                 continue
             client_orders[client.id].append(order)
@@ -190,12 +190,21 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         for name, client in self._clients.items():
             client_mass_status[name] = await client.generate_mass_status(client_orders[name])
 
-        # Reconcile states
+        # Reconcile order states
         cdef ExecutionMassStatus mass_status
         cdef OrderStatusReport order_state_report
         for name, mass_status in client_mass_status.items():
-            for order_state_report in mass_status.order_reports().values():
+            order_reports = mass_status.order_reports()
+            if not order_reports:
+                continue
+            for order_state_report in order_reports.values():
                 order = active_orders.get(order_state_report.client_order_id)
+                if order is None:
+                    self._log.error(
+                        f"Cannot reconcile state: "
+                        f"No order found for {repr(order_state_report.client_order_id)}."
+                    )
+                    continue
                 exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
                 await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
 
@@ -209,6 +218,12 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             resolved = True
             for order in active_orders.values():
                 client = self._routing_map.get(order.instrument_id.venue)
+                if client is None:
+                    self._log.error(
+                        f"Cannot reconcile state: "
+                        f"No client found for {order.instrument_id.venue}."
+                    )
+                    return False  # Will never reconcile
                 mass_status = client_mass_status.get(client.id)
                 if mass_status is None:
                     return False  # Will never reconcile

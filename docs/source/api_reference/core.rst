@@ -22,7 +22,7 @@ Datetime
    :member-order: bysource
 
 Finite-State Machine (FSM)
---------------------------------
+--------------------------
 
 .. automodule:: nautilus_trader.core.fsm
    :show-inheritance:

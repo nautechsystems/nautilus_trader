@@ -141,7 +141,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the `MsgPackOrderSerializer` class.
+        Initialize a new instance of the ``MsgPackOrderSerializer`` class.
 
         """
         super().__init__()
@@ -392,7 +392,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the `MsgPackOrderSerializer` class.
+        Initialize a new instance of the ``MsgPackOrderSerializer`` class.
 
         """
         super().__init__()
@@ -555,7 +555,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the `MsgPackCommandSerializer` class.
+        Initialize a new instance of the ``MsgPackCommandSerializer`` class.
 
         """
         super().__init__()
@@ -699,7 +699,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the `MsgPackEventSerializer` class.
+        Initialize a new instance of the ``MsgPackEventSerializer`` class.
 
         """
         super().__init__()

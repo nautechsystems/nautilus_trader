@@ -65,7 +65,7 @@ cdef class MarketOrder(Order):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `MarketOrder` class.
+        Initialize a new instance of the ``MarketOrder`` class.
 
         Parameters
         ----------

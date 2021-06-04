@@ -46,7 +46,7 @@ cdef class SimulationModule:
 
     def __init__(self):
         """
-        Initialize a new instance of the `SimulationModule` class.
+        Initialize a new instance of the ``SimulationModule`` class.
         """
         self._exchange = None  # Must be registered
 
@@ -89,7 +89,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
     def __init__(self, rate_data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `FXRolloverInterestModule` class.
+        Initialize a new instance of the ``FXRolloverInterestModule`` class.
 
         Parameters
         ----------

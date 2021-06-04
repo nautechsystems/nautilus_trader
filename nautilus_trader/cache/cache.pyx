@@ -60,7 +60,7 @@ cdef class Cache(CacheFacade):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `Cache` class.
+        Initialize a new instance of the ``Cache`` class.
 
         Parameters
         ----------

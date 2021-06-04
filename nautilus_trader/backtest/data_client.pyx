@@ -49,7 +49,7 @@ cdef class BacktestDataClient(DataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `BacktestDataClient` class.
+        Initialize a new instance of the ``BacktestDataClient`` class.
 
         Parameters
         ----------
@@ -193,7 +193,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BacktestDataProducer` class.
+        Initialize a new instance of the ``BacktestDataProducer`` class.
 
         Parameters
         ----------

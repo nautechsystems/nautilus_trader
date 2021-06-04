@@ -57,7 +57,7 @@ cdef class CFDInstrument(Instrument):
         dict info=None,
     ):
         """
-        Initialize a new instance of the `CFDInstrument` class.
+        Initialize a new instance of the ``CFDInstrument`` class.
 
         Parameters
         ----------

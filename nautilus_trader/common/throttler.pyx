@@ -47,7 +47,7 @@ cdef class Throttler:
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `Throttler` class.
+        Initialize a new instance of the ``Throttler`` class.
 
         Parameters
         ----------

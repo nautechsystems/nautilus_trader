@@ -58,7 +58,7 @@ cdef class CryptoSwap(Instrument):
         dict info=None,
     ):
         """
-        Initialize a new instance of the `CryptoSwap` instrument class.
+        Initialize a new instance of the ``CryptoSwap` instrument class.
 
         Parameters
         ----------

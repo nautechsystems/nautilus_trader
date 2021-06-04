@@ -45,7 +45,7 @@ cdef class FuzzyCandle:
         CandleWickSize lower_wick_size,
     ):
         """
-        Initialize a new instance of the `FuzzyCandle` class.
+        Initialize a new instance of the ``FuzzyCandle`` class.
 
         Parameters
         ----------
@@ -98,7 +98,7 @@ cdef class FuzzyCandlesticks(Indicator):
         double threshold4=3.0,
     ):
         """
-        Initialize a new instance of the `FuzzyCandlesticks` class.
+        Initialize a new instance of the ``FuzzyCandlesticks`` class.
 
         Parameters
         ----------

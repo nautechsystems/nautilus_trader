@@ -46,7 +46,7 @@ cdef class QuoteTickDataWrangler:
         dict data_bars_ask=None,
     ):
         """
-        Initialize a new instance of the `QuoteTickDataWrangler` class.
+        Initialize a new instance of the ``QuoteTickDataWrangler`` class.
 
         Parameters
         ----------
@@ -274,7 +274,7 @@ cdef class TradeTickDataWrangler:
 
     def __init__(self, Instrument instrument not None, data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `TradeTickDataWrangler` class.
+        Initialize a new instance of the ``TradeTickDataWrangler`` class.
 
         Parameters
         ----------
@@ -363,7 +363,7 @@ cdef class BarDataWrangler:
         data: pd.DataFrame=None,
     ):
         """
-        Initialize a new instance of the `BarDataWrangler` class.
+        Initialize a new instance of the ``BarDataWrangler`` class.
 
         Parameters
         ----------

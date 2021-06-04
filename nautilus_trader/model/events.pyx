@@ -63,7 +63,7 @@ cdef class AccountState(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `AccountState` class.
+        Initialize a new instance of the ``AccountState`` class.
 
         Parameters
         ----------
@@ -114,7 +114,7 @@ cdef class OrderEvent(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderEvent` base class.
+        Initialize a new instance of the ``OrderEvent` base class.
 
         Parameters
         ----------
@@ -158,7 +158,7 @@ cdef class OrderInitialized(OrderEvent):
         dict options not None,
     ):
         """
-        Initialize a new instance of the `OrderInitialized` class.
+        Initialize a new instance of the ``OrderInitialized`` class.
 
         Parameters
         ----------
@@ -226,7 +226,7 @@ cdef class OrderInvalid(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderInvalid` class.
+        Initialize a new instance of the ``OrderInvalid`` class.
 
         Parameters
         ----------
@@ -278,7 +278,7 @@ cdef class OrderDenied(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderDenied` class.
+        Initialize a new instance of the ``OrderDenied`` class.
 
         Parameters
         ----------
@@ -329,7 +329,7 @@ cdef class OrderSubmitted(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderSubmitted` class.
+        Initialize a new instance of the ``OrderSubmitted`` class.
 
         Parameters
         ----------
@@ -377,7 +377,7 @@ cdef class OrderRejected(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderRejected` class.
+        Initialize a new instance of the ``OrderRejected`` class.
 
         Parameters
         ----------
@@ -443,7 +443,7 @@ cdef class OrderAccepted(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderAccepted` class.
+        Initialize a new instance of the ``OrderAccepted`` class.
 
         Parameters
         ----------
@@ -501,7 +501,7 @@ cdef class OrderPendingReplace(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderPendingReplace` class.
+        Initialize a new instance of the ``OrderPendingReplace`` class.
 
         Parameters
         ----------
@@ -559,7 +559,7 @@ cdef class OrderPendingCancel(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderPendingCancel` class.
+        Initialize a new instance of the ``OrderPendingCancel`` class.
 
         Parameters
         ----------
@@ -619,7 +619,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderUpdateRejected` class.
+        Initialize a new instance of the ``OrderUpdateRejected`` class.
 
         Parameters
         ----------
@@ -689,7 +689,7 @@ cdef class OrderCancelRejected(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderCancelRejected` class.
+        Initialize a new instance of the ``OrderCancelRejected`` class.
 
         Parameters
         ----------
@@ -758,7 +758,7 @@ cdef class OrderUpdated(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderUpdated` class.
+        Initialize a new instance of the ``OrderUpdated`` class.
 
         Parameters
         ----------
@@ -823,7 +823,7 @@ cdef class OrderCanceled(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderCanceled` class.
+        Initialize a new instance of the ``OrderCanceled`` class.
 
         Parameters
         ----------
@@ -880,7 +880,7 @@ cdef class OrderTriggered(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderTriggered` class.
+        Initialize a new instance of the ``OrderTriggered`` class.
 
         Parameters
         ----------
@@ -937,7 +937,7 @@ cdef class OrderExpired(OrderEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderExpired` class.
+        Initialize a new instance of the ``OrderExpired`` class.
 
         Parameters
         ----------
@@ -1005,7 +1005,7 @@ cdef class OrderFilled(OrderEvent):
         dict info=None,
     ):
         """
-        Initialize a new instance of the `OrderFilled` class.
+        Initialize a new instance of the ``OrderFilled`` class.
 
         Parameters
         ----------
@@ -1140,7 +1140,7 @@ cdef class PositionEvent(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionEvent` class.
+        Initialize a new instance of the ``PositionEvent`` class.
 
         Parameters
         ----------
@@ -1173,7 +1173,7 @@ cdef class PositionOpened(PositionEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionOpened` class.
+        Initialize a new instance of the ``PositionOpened`` class.
 
         Parameters
         ----------
@@ -1220,7 +1220,7 @@ cdef class PositionChanged(PositionEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionChanged` class.
+        Initialize a new instance of the ``PositionChanged`` class.
 
         Parameters
         ----------
@@ -1270,7 +1270,7 @@ cdef class PositionClosed(PositionEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionClosed` class.
+        Initialize a new instance of the ``PositionClosed`` class.
 
         Parameters
         ----------
@@ -1320,7 +1320,7 @@ cdef class StatusEvent(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `StatusEvent` base class.
+        Initialize a new instance of the ``StatusEvent` base class.
 
         Parameters
         ----------
@@ -1345,7 +1345,7 @@ cdef class VenueStatusEvent(StatusEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `VenueStatusEvent` base class.
+        Initialize a new instance of the ``VenueStatusEvent` base class.
 
         Parameters
         ----------
@@ -1380,7 +1380,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `InstrumentStatusEvent` base class.
+        Initialize a new instance of the ``InstrumentStatusEvent` base class.
 
         Parameters
         ----------
@@ -1417,7 +1417,7 @@ cdef class InstrumentClosePrice(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `InstrumentClosePrice` base class.
+        Initialize a new instance of the ``InstrumentClosePrice` base class.
 
         Parameters
         ----------

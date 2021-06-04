@@ -55,8 +55,8 @@ cdef class Position:
     """The entry direction from open.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
-    cdef readonly object relative_qty
-    """The relative quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
+    cdef readonly object net_qty
+    """The net quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty

@@ -35,7 +35,7 @@ cdef class AverageTrueRange(Indicator):
         double value_floor=0,
     ):
         """
-        Initialize a new instance of the `AverageTrueRange` class.
+        Initialize a new instance of the ``AverageTrueRange`` class.
 
         Parameters
         ----------

@@ -57,7 +57,7 @@ cdef class BaseDecimal:
 
     def __init__(self, value, uint8_t precision):
         """
-        Initialize a new instance of the `BaseDecimal` class.
+        Initialize a new instance of the ``BaseDecimal`` class.
 
         Use a precision of 0 for whole numbers (no fractional units).
 
@@ -253,7 +253,7 @@ cdef class Quantity(BaseDecimal):
 
     def __init__(self, value, uint8_t precision):
         """
-        Initialize a new instance of the `Quantity` class.
+        Initialize a new instance of the ``Quantity`` class.
 
         Use a precision of 0 for whole numbers (no fractional units).
 
@@ -386,7 +386,7 @@ cdef class Price(BaseDecimal):
 
     def __init__(self, value, uint8_t precision):
         """
-        Initialize a new instance of the `Price` class.
+        Initialize a new instance of the ``Price`` class.
 
         Use a precision of 0 for whole numbers (no fractional units).
 
@@ -461,7 +461,7 @@ cdef class Money(BaseDecimal):
 
     def __init__(self, value, Currency currency not None):
         """
-        Initialize a new instance of the `Money` class.
+        Initialize a new instance of the ``Money`` class.
 
         Parameters
         ----------
@@ -570,7 +570,7 @@ cdef class AccountBalance:
         Money free not None,
     ):
         """
-        Initialize a new instance of the `AccountBalance` class.
+        Initialize a new instance of the ``AccountBalance`` class.
 
         Parameters
         ----------

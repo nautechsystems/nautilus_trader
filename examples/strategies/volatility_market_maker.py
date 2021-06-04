@@ -57,7 +57,7 @@ class VolatilityMarketMaker(TradingStrategy):
         order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `VolatilityMarketMaker` class.
+        Initialize a new instance of the ``VolatilityMarketMaker`` class.
 
         Parameters
         ----------
@@ -189,7 +189,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.error("No quotes yet.")
+            self.log.info("No quotes yet...")
             return
 
         # Maintain buy orders
@@ -262,7 +262,7 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.error("No quotes yet.")
+            self.log.info("No quotes yet...")
             return
 
         # If order filled then replace order at atr multiple distance from the market

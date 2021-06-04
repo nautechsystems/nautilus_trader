@@ -67,7 +67,7 @@ cdef class EMACross(TradingStrategy):
         str order_id_tag,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------

@@ -29,7 +29,7 @@ cdef class RateOfChange(Indicator):
 
     def __init__(self, int period, bint use_log=False):
         """
-        Initialize a new instance of the `RateOfChange` class.
+        Initialize a new instance of the ``RateOfChange`` class.
 
         Parameters
         ----------

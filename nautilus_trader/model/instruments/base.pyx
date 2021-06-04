@@ -63,7 +63,7 @@ cdef class Instrument(Data):
         dict info=None,
     ):
         """
-        Initialize a new instance of the `Instrument` class.
+        Initialize a new instance of the ``Instrument`` class.
 
         Parameters
         ----------

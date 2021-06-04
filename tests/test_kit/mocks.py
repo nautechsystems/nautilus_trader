@@ -58,7 +58,7 @@ class ObjectStorer:
 
     def __init__(self):
         """
-        Initialize a new instance of the `ObjectStorer` class.
+        Initialize a new instance of the ``ObjectStorer`` class.
         """
         self.count = 0
         self._store = []
@@ -107,7 +107,7 @@ class MockStrategy(TradingStrategy):
 
     def __init__(self, bar_type: BarType):
         """
-        Initialize a new instance of the `MockStrategy` class.
+        Initialize a new instance of the ``MockStrategy`` class.
 
         Parameters
         ----------
@@ -206,7 +206,7 @@ class KaboomStrategy(TradingStrategy):
 
     def __init__(self):
         """
-        Initialize a new instance of the `KaboomStrategy` class.
+        Initialize a new instance of the ``KaboomStrategy`` class.
         """
         super().__init__(order_id_tag="000")
 
@@ -276,7 +276,7 @@ class MockMarketDataClient(MarketDataClient):
         logger: Logger,
     ):
         """
-        Initialize a new instance of the `DataClient` class.
+        Initialize a new instance of the ``DataClient`` class.
 
         Parameters
         ----------
@@ -412,7 +412,7 @@ class MockExecutionClient(ExecutionClient):
         logger,
     ):
         """
-        Initialize a new instance of the `MockExecutionClient` class.
+        Initialize a new instance of the ``MockExecutionClient`` class.
 
         Parameters
         ----------
@@ -497,7 +497,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         logger,
     ):
         """
-        Initialize a new instance of the `MockExecutionClient` class.
+        Initialize a new instance of the ``MockExecutionClient`` class.
 
         Parameters
         ----------
@@ -601,7 +601,7 @@ class MockCacheDatabase(CacheDatabase):
 
     def __init__(self, trader_id: TraderId, logger: Logger):
         """
-        Initialize a new instance of the `MockCacheDatabase` class.
+        Initialize a new instance of the ``MockCacheDatabase`` class.
 
         Parameters
         ----------

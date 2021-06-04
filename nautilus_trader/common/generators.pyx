@@ -32,7 +32,7 @@ cdef class IdentifierGenerator:
 
     def __init__(self, TraderId trader_id not None, Clock clock not None):
         """
-        Initialize a new instance of the `IdentifierGenerator` class.
+        Initialize a new instance of the ``IdentifierGenerator`` class.
 
         Parameters
         ----------
@@ -77,7 +77,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         int initial_count=0,
     ):
         """
-        Initialize a new instance of the `ClientOrderIdGenerator` class.
+        Initialize a new instance of the ``ClientOrderIdGenerator`` class.
 
         Parameters
         ----------
@@ -149,7 +149,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     def __init__(self, TraderId trader_id not None, Clock clock not None):
         """
-        Initialize a new instance of the `PositionIdGenerator` class.
+        Initialize a new instance of the ``PositionIdGenerator`` class.
 
         Parameters
         ----------

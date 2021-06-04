@@ -110,7 +110,7 @@ cdef class Logger:
         bint bypass_logging=False,
     ):
         """
-        Initialize a new instance of the `Logger` class.
+        Initialize a new instance of the ``Logger`` class.
 
         Parameters
         ----------
@@ -223,7 +223,7 @@ cdef class LoggerAdapter:
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `LoggerAdapter` class.
+        Initialize a new instance of the ``LoggerAdapter`` class.
 
         Parameters
         ----------

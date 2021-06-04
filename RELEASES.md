@@ -7,6 +7,7 @@
 - `TradingStrategy.execution` consolidated into `TradingStrategy.cache`.
 - Moved `redis` subpackage into `infrastructure`.
 - Renamed `InMemoryExecutionDatabase` to `BypassCacheDatabase`.
+- Renamed `Position.relative_qty` to `Position.net_qty`.
 
 ## Enhancements
 - `ExecutionClient` now has the option of calculating account state.
@@ -14,9 +15,12 @@
 - Improved configuration options and naming.
 - Simplified `Portfolio` component registration.
 - Simplified wiring of `Cache` into components.
+- Add `repr` to execution messages.
 
 ## Fixes
+- Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.
 - Fixed loss of precision for nanosecond timestamps in Redis.
+- Fixed state reconciliation when uninstantiated client.
 
 ---
 
