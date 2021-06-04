@@ -653,7 +653,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             self._cache_order(venue_order_id, order)
 
-        cdef int64_t timestamp_ns = <int64_t>(event["timestamp"])
+        cdef int64_t timestamp_ns = 0
+        if event['timestamp'] is not None:
+            timestamp_ns = <int64_t>(event["timestamp"])
+        else:
+            timestamp_ns = <int64_t>(event["lastTradeTimestamp"])
+
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`
         if status == "open" and event["filled"] == 0:
