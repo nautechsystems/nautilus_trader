@@ -74,31 +74,6 @@ cdef class Account:
     cpdef Money equity(self, Currency currency=*)
     cpdef Money commission(self, Currency currency)
 
-    @staticmethod
-    cdef Money market_value_c(Instrument instrument, Quantity quantity, close_price: Decimal)
-
-    @staticmethod
-    cdef Money notional_value_c(Instrument instrument, Quantity quantity, close_price: Decimal)
-
-    @staticmethod
-    cdef Money calculate_initial_margin_c(Instrument instrument, Quantity quantity, Price price)
-
-    @staticmethod
-    cdef Money calculate_maint_margin_c(
-        Instrument instrument,
-        PositionSide side,
-        Quantity quantity,
-        Price last,
-    )
-
-    @staticmethod
-    cdef Money calculate_commission_c(
-        Instrument instrument,
-        Quantity last_qty,
-        last_px: Decimal,
-        LiquiditySide liquidity_side,
-    )
-
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 
     cpdef dict initial_margins(self)

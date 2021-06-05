@@ -174,7 +174,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             if self._exchange.base_currency is not None:
                 currency = self._exchange.base_currency
-                xrate = self._exchange.cache.get_xrate(
+                xrate: Decimal = self._exchange.cache.get_xrate(
                     venue=instrument.id.venue,
                     from_currency=instrument.quote_currency,
                     to_currency=currency,

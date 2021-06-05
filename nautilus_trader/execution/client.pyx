@@ -123,8 +123,8 @@ cdef class ExecutionClient:
             logger=logger,
         )
         self._engine = engine
-        self._account = None  # Initialized on first call
         self._config = config
+        self._account = None  # Initialized on connection
 
         self.id = client_id
         self.venue = Venue(client_id.value) if venue_type != VenueType.BROKERAGE_MULTI_VENUE else None
@@ -755,9 +755,8 @@ cdef class ExecutionClient:
         self._engine.process(event)
 
     cdef list _calculate_balances(self, OrderFilled fill):
-        # TODO(cs): Refactor this entire block vvv
         # Determine any position
-        position_id = fill.position_id
+        cdef PositionId position_id = fill.position_id
         if fill.position_id.is_null():
             # Check for open positions
             positions_open = self._engine.cache.positions_open(
@@ -771,9 +770,9 @@ cdef class ExecutionClient:
 
         # Determine any position
         cdef Position position = None
-        if position_id.value != "NULL":
+        if position_id.not_null():
             position = self._engine.cache.position(position_id)
-        # *** position could be None here ***
+        # *** position could still be None here ***
 
         cdef Instrument instrument = self._engine.cache.instrument(fill.instrument_id)
         if instrument is None:
@@ -783,7 +782,6 @@ cdef class ExecutionClient:
             )
             return
 
-        # TODO(cs): Refactor to different asset classes/account types
         cdef Money pnl = None
         if position and position.entry != fill.order_side:
             # Calculate position PnL
