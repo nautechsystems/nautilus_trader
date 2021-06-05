@@ -27,6 +27,7 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AggressorSide
@@ -309,6 +310,8 @@ class TestStubs:
 
         return AccountState(
             account_id,
+            AccountType.CASH,
+            USD,
             True,  # reported
             [
                 AccountBalance(
@@ -318,7 +321,7 @@ class TestStubs:
                     Money(1_000_000, USD),
                 )
             ],
-            {"default_currency": "USD"},
+            {"base_currency": "USD"},
             uuid4(),
             0,
             0,

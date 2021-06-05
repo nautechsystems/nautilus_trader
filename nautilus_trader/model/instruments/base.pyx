@@ -40,7 +40,6 @@ cdef class Instrument(Data):
         AssetClass asset_class,
         AssetType asset_type,
         Currency quote_currency not None,
-        Currency cost_currency not None,
         bint is_inverse,
         int price_precision,
         int size_precision,
@@ -75,8 +74,6 @@ cdef class Instrument(Data):
             The instrument asset type.
         quote_currency : Currency
             The quote currency.
-        cost_currency : Currency
-            The currency used for costing calculations.
         is_inverse : Currency
             If the instrument costing is inverse (quantity expressed in quote currency units).
         price_precision : int
@@ -183,7 +180,6 @@ cdef class Instrument(Data):
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.quote_currency = quote_currency
-        self.cost_currency = cost_currency
         self.is_inverse = is_inverse
         self.price_precision = price_precision
         self.price_increment = price_increment
@@ -219,14 +215,18 @@ cdef class Instrument(Data):
                 f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
                 f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
                 f"quote_currency={self.quote_currency}, "
-                f"cost_currency={self.quote_currency}, "
                 f"is_inverse={self.is_inverse}, "
                 f"price_precision={self.price_precision}, "
                 f"price_increment={self.price_increment}, "
-                f"size_precision={self.size_precision})"
+                f"size_precision={self.size_precision}, "
                 f"size_increment={self.size_increment}, "
                 f"multiplier={self.multiplier}, "
-                f"lot_size={self.lot_size})")
+                f"lot_size={self.lot_size}, "
+                f"margin_init={self.margin_init}, "
+                f"margin_maint={self.margin_maint}, "
+                f"maker_fee={self.maker_fee}, "
+                f"taker_fee={self.taker_fee}, "
+                f"info={self.info})")
 
     @property
     def symbol(self):

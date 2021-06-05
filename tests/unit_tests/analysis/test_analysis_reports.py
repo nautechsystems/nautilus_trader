@@ -20,6 +20,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -57,6 +58,8 @@ class ReportProviderTests(unittest.TestCase):
         # Arrange
         state = AccountState(
             account_id=AccountId("BITMEX", "1513111"),
+            account_type=AccountType.MARGIN,
+            base_currency=BTC,
             reported=True,
             balances=[
                 AccountBalance(

@@ -33,6 +33,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -80,6 +81,8 @@ if __name__ == "__main__":
         venue=BINANCE,
         venue_type=VenueType.EXCHANGE,
         oms_type=OMSType.NETTING,
+        account_type=AccountType.CASH,  # Spot cash account
+        base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
         fill_model=fill_model,
     )

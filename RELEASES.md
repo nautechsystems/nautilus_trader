@@ -8,6 +8,8 @@
 - Moved `redis` subpackage into `infrastructure`.
 - Renamed `InMemoryExecutionDatabase` to `BypassCacheDatabase`.
 - Renamed `Position.relative_qty` to `Position.net_qty`.
+- Renamed `default_currency` to `base_currency`.
+- Remove `cost_currency` from `Instrument`.
 
 ## Enhancements
 - `ExecutionClient` now has the option of calculating account state.
@@ -15,7 +17,9 @@
 - Improved configuration options and naming.
 - Simplified `Portfolio` component registration.
 - Simplified wiring of `Cache` into components.
-- Add `repr` to execution messages.
+- Added `repr` to execution messages.
+- Added `AccountType` enum.
+- Add `cost_currency` to `Position`.
 
 ## Fixes
 - Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.

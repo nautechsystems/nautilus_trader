@@ -25,7 +25,8 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -77,8 +78,10 @@ class TestBacktestExecClientTests:
             venue=Venue("BINANCE"),
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            starting_balances=[Money(1_000_000, USDT)],
             is_frozen_account=False,
-            starting_balances=[Money(1_000_000, USD)],
             instruments=[ETHUSDT_BINANCE],
             modules=[],
             cache=self.exec_engine.cache,
@@ -90,6 +93,8 @@ class TestBacktestExecClientTests:
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,

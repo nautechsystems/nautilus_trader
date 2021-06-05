@@ -23,6 +23,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
@@ -95,14 +97,15 @@ class TestLiveRiskEngine:
             config={},
         )
 
-        self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
-            ClientId(self.venue.value),
-            VenueType.ECN,
-            self.account_id,
-            self.exec_engine,
-            self.clock,
-            self.logger,
+            client_id=ClientId("SIM"),
+            venue_type=VenueType.ECN,
+            account_id=TestStubs.account_id(),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         # Wire up components

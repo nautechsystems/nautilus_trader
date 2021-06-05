@@ -32,8 +32,6 @@ cdef class Instrument(Data):
     """The asset type of the instrument.\n\n:returns: `AssetType`"""
     cdef readonly Currency quote_currency
     """The quote currency for the instrument.\n\n:returns: `Currency`"""
-    cdef readonly Currency cost_currency
-    """The currency used for PnL calculations for the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `Currency`"""
     cdef readonly int price_precision

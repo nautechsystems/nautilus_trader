@@ -27,6 +27,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -61,7 +62,6 @@ class TestLiveExecutionEngine:
         self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER-000")
-        self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -111,7 +111,9 @@ class TestLiveExecutionEngine:
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
             venue_type=VenueType.ECN,
-            account_id=self.account_id,
+            account_id=TestStubs.account_id(),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             engine=self.exec_engine,
             instrument_provider=self.instrument_provider,
             clock=self.clock,

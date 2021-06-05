@@ -141,7 +141,6 @@ cdef class CFDInstrument(Instrument):
             asset_class=asset_class,
             asset_type=AssetType.CFD,
             quote_currency=quote_currency,
-            cost_currency=quote_currency,
             is_inverse=False,
             price_precision=price_precision,
             size_precision=size_precision,

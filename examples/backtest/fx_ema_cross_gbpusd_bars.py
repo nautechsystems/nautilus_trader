@@ -32,6 +32,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -92,6 +93,8 @@ if __name__ == "__main__":
         venue=SIM,
         venue_type=VenueType.ECN,
         oms_type=OMSType.HEDGING,  # Venue will generate position_ids
+        account_type=AccountType.MARGIN,
+        base_currency=USD,  # Standard single-currency account
         starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],

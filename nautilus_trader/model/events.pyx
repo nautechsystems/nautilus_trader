@@ -19,6 +19,8 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -55,6 +57,8 @@ cdef class AccountState(Event):
     def __init__(
         self,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,
         bint reported,
         list balances not None,
         dict info not None,
@@ -69,6 +73,10 @@ cdef class AccountState(Event):
         ----------
         account_id : AccountId
             The account identifier.
+        account_type : AccountId
+            The account type for the event.
+        base_currency : Currency, optional
+            The account base currency. Use None for multi-currency accounts.
         reported : bool
             If the state is reported from the exchange (otherwise system calculated).
         balances : list[AccountBalance]
@@ -86,14 +94,18 @@ cdef class AccountState(Event):
         super().__init__(event_id, timestamp_ns)
 
         self.account_id = account_id
-        self.is_reported = reported
+        self.account_type = account_type
+        self.base_currency = base_currency
         self.balances = balances
+        self.is_reported = reported
         self.info = info
         self.updated_ns = updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
+                f"account_type={AccountTypeParser.to_str(self.account_type)}, "
+                f"base_currency={self.base_currency}, "
                 f"is_reported={self.is_reported}, "
                 f"balances=[{', '.join([str(b) for b in self.balances])}], "
                 f"event_id={self.id})")

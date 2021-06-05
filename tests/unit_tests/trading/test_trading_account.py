@@ -28,6 +28,7 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import AccountState
@@ -95,7 +96,7 @@ class AccountTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money("0.00000000", BTC), margin)
+        self.assertEqual(Money(0.00, USD), margin)
 
     def test_calculate_position_margin_with_no_leverage_returns_zero(self):
         # Arrange
@@ -110,7 +111,7 @@ class AccountTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money("0.00000000", BTC), margin)
+        self.assertEqual(Money(0.00, USD), margin)
 
     def test_calculate_notional_value(self):
         # Arrange
@@ -188,7 +189,7 @@ class AccountTests(unittest.TestCase):
     def test_calculate_commission_fx_taker(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY", Venue("IDEALPRO"))
-
+        print(instrument)
         # Act
         commission = Account.calculate_commission(
             instrument,
@@ -203,7 +204,9 @@ class AccountTests(unittest.TestCase):
     def test_instantiated_accounts_basic_properties(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             reported=True,
             balances=[
                 AccountBalance(
@@ -213,7 +216,7 @@ class AccountTests(unittest.TestCase):
                     Money(1_000_000, USD),
                 ),
             ],
-            info={"default_currency": "USD"},
+            info={},
             event_id=uuid4(),
             updated_ns=0,
             timestamp_ns=0,
@@ -237,7 +240,9 @@ class AccountTests(unittest.TestCase):
     def test_instantiate_single_asset_account(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             reported=True,
             balances=[
                 AccountBalance(
@@ -247,7 +252,7 @@ class AccountTests(unittest.TestCase):
                     Money(1_000_000, USD),
                 ),
             ],
-            info={"default_currency": "USD"},
+            info={},
             event_id=uuid4(),
             updated_ns=0,
             timestamp_ns=0,
@@ -261,7 +266,7 @@ class AccountTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         # Assert
-        self.assertEqual(USD, account.default_currency)
+        self.assertEqual(USD, account.base_currency)
         self.assertEqual(event, account.last_event)
         self.assertEqual([event], account.events)
         self.assertEqual(1, account.event_count)
@@ -281,7 +286,9 @@ class AccountTests(unittest.TestCase):
     def test_instantiate_multi_asset_account(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(
@@ -312,7 +319,7 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId("SIM", "001"), account.id)
-        self.assertEqual(None, account.default_currency)
+        self.assertEqual(None, account.base_currency)
         self.assertEqual(event, account.last_event)
         self.assertEqual([event], account.events)
         self.assertEqual(1, account.event_count)
@@ -348,7 +355,9 @@ class AccountTests(unittest.TestCase):
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
         event1 = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(
@@ -378,7 +387,9 @@ class AccountTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         event2 = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(
@@ -417,7 +428,9 @@ class AccountTests(unittest.TestCase):
     def test_update_initial_margin(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(
@@ -458,7 +471,9 @@ class AccountTests(unittest.TestCase):
     def test_update_maint_margin(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(
@@ -501,7 +516,9 @@ class AccountTests(unittest.TestCase):
     ):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             reported=True,
             balances=[
                 AccountBalance(
@@ -511,7 +528,7 @@ class AccountTests(unittest.TestCase):
                     Money(1_000_000, USD),
                 ),
             ],
-            info={"default_currency": "USD"},
+            info={},
             event_id=uuid4(),
             updated_ns=0,
             timestamp_ns=0,
@@ -534,7 +551,9 @@ class AccountTests(unittest.TestCase):
     ):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(
@@ -571,7 +590,9 @@ class AccountTests(unittest.TestCase):
     def test_equity_with_single_asset_account_no_default_returns_none(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             reported=True,
             balances=[
                 AccountBalance(
@@ -602,7 +623,9 @@ class AccountTests(unittest.TestCase):
     def test_equity_with_single_asset_account_returns_expected_money(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             reported=True,
             balances=[
                 AccountBalance(
@@ -612,7 +635,7 @@ class AccountTests(unittest.TestCase):
                     Money("100000.00", USD),
                 ),
             ],
-            info={"default_currency": "USD"},
+            info={},
             event_id=uuid4(),
             updated_ns=0,
             timestamp_ns=0,
@@ -633,7 +656,9 @@ class AccountTests(unittest.TestCase):
     def test_equity_with_multi_asset_account_returns_expected_money(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(
@@ -670,7 +695,9 @@ class AccountTests(unittest.TestCase):
     def test_margin_available_for_single_asset_account(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             reported=True,
             balances=[
                 AccountBalance(
@@ -680,7 +707,7 @@ class AccountTests(unittest.TestCase):
                     Money("100000.00", USD),
                 ),
             ],
-            info={"default_currency": "USD"},
+            info={},
             event_id=uuid4(),
             updated_ns=0,
             timestamp_ns=0,
@@ -707,7 +734,9 @@ class AccountTests(unittest.TestCase):
     def test_margin_available_for_multi_asset_account(self):
         # Arrange
         event = AccountState(
-            AccountId("SIM", "001"),
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
             reported=True,
             balances=[
                 AccountBalance(

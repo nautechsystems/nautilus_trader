@@ -69,12 +69,12 @@ cdef class LiveRiskEngine(RiskEngine):
         if "qsize" not in config:
             config["qsize"] = 10000
         super().__init__(
-            exec_engine,
-            portfolio,
-            cache,
-            clock,
-            logger,
-            config,
+            exec_engine=exec_engine,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop = loop

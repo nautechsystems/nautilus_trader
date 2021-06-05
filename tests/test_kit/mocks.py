@@ -291,10 +291,10 @@ class MockMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self.calls = []
@@ -407,6 +407,8 @@ class MockExecutionClient(ExecutionClient):
         client_id,
         venue_type,
         account_id,
+        account_type,
+        base_currency,
         engine,
         clock,
         logger,
@@ -422,6 +424,10 @@ class MockExecutionClient(ExecutionClient):
             The client venue type.
         account_id : AccountId
             The account_id for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : ExecutionEngine
             The execution engine for the component.
         clock : Clock
@@ -431,12 +437,14 @@ class MockExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            client_id,
-            venue_type,
-            account_id,
-            engine,
-            clock,
-            logger,
+            client_id=client_id,
+            venue_type=venue_type,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self.calls = []
@@ -491,6 +499,8 @@ class MockLiveExecutionClient(LiveExecutionClient):
         client_id,
         venue_type,
         account_id,
+        account_type,
+        base_currency,
         engine,
         instrument_provider,
         clock,
@@ -507,6 +517,10 @@ class MockLiveExecutionClient(LiveExecutionClient):
             The client venue type.
         account_id : AccountId
             The account_id for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : ExecutionEngine
             The execution engine for the component.
         instrument_provider : InstrumentProvider
@@ -518,13 +532,15 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         """
         super().__init__(
-            client_id,
-            venue_type,
-            account_id,
-            engine,
-            instrument_provider,
-            clock,
-            logger,
+            client_id=client_id,
+            venue_type=venue_type,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            instrument_provider=instrument_provider,
+            clock=clock,
+            logger=logger,
         )
 
         self._order_status_reports = {}  # type: dict[VenueOrderId, OrderStatusReport]

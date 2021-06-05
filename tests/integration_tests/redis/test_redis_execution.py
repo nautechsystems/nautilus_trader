@@ -24,6 +24,7 @@ from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
@@ -615,6 +616,8 @@ class TestExecutionCacheWithRedisDatabaseTests:
             venue=Venue("SIM"),
             venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             modules=[],
         )

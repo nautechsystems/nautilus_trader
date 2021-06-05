@@ -35,6 +35,7 @@ from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -78,6 +79,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self,
         client not None: ccxt.Exchange,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -91,6 +94,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             The unified CCXT client.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -106,13 +113,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef str exchange_name = client.name.upper()
         super().__init__(
-            ClientId(exchange_name),
-            VenueType.EXCHANGE,
-            account_id,
-            engine,
-            instrument_provider,
-            clock,
-            logger,
+            client_id=ClientId(exchange_name),
+            venue_type=VenueType.EXCHANGE,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            instrument_provider=instrument_provider,
+            clock=clock,
+            logger=logger,
             config={
                 "name": f"CCXTExecClient-{exchange_name}",
             }
@@ -457,10 +466,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._update_instruments_task = self._loop.create_task(update)
 
     async def _update_balances(self):
-        cdef dict params = {'type': 'spot'}  # TODO: Hard coded to spot account for now
         cdef dict response
         try:
-            response = await self._client.fetch_balance(params)
+            response = await self._client.fetch_balance()
         except TypeError:
             # Temporary workaround for testing
             response = self._client.fetch_balance
@@ -473,13 +481,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     async def _watch_balances(self):
-        cdef dict params = {'type': 'spot'}  # TODO: Hard coded to spot account for now
         cdef dict event
         try:
             while True:
                 try:
-                    event = await self._client.watch_balance(params)
-                    self._on_account_state(event)
+                    event = await self._client.watch_balance()
+                    # self._log.info(str(event), LogColor.GREEN)  # TODO: Development
+                    self._on_account_state(event)  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_balances.__name__)
                     continue
@@ -494,6 +502,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 try:
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_orders()
+                    # self._log.info(str(events[0]), LogColor.GREEN)  # TODO: Development
                     self._on_order_status(events[0])  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
@@ -509,12 +518,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 try:
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_my_trades()
+                    # self._log.info(str(events[0]), LogColor.GREEN)  # TODO: Development
                     self._on_exec_report(events[0])  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_balances.__name__)
                     continue
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled `_watch_my_trades` for {self.account_id}.")
+            self._log.debug(f"Cancelled `_watch_exec_reports` for {self.account_id}.")
         except Exception as ex:
             self._log.exception(ex)
 
@@ -737,12 +747,13 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
     """
 
     def __init__(
-            self,
-            client not None: ccxt.Exchange,
-            AccountId account_id not None,
-            LiveExecutionEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
+        self,
+        client not None: ccxt.Exchange,
+        AccountId account_id not None,
+        AccountType account_type,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the ``BinanceCCXTExecutionClient`` class.
@@ -753,6 +764,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             The unified CCXT client.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -764,11 +777,13 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         cdef str exchange_name = client.name.upper()
         Condition.true(exchange_name == "BINANCE", "client.name != BINANCE")
         super().__init__(
-            client,
-            account_id,
-            engine,
-            clock,
-            logger,
+            client=client,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=None,  # Multi-currency accounts
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self.venue = Venue(exchange_name)
@@ -841,12 +856,12 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
     """
 
     def __init__(
-            self,
-            client not None: ccxt.Exchange,
-            AccountId account_id not None,
-            LiveExecutionEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
+        self,
+        client not None: ccxt.Exchange,
+        AccountId account_id not None,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the ``BitmexCCXTExecutionClient`` class.
@@ -868,11 +883,13 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         cdef str exchange_name = client.name.upper()
         Condition.true(exchange_name == "BITMEX", "client.name != BITMEX")
         super().__init__(
-            client,
-            account_id,
-            engine,
-            clock,
-            logger,
+            client=client,
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=Currency.from_str_c("BTC"),
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self.venue = Venue(exchange_name)

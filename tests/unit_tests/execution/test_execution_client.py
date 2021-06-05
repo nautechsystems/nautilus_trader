@@ -25,6 +25,8 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
@@ -75,8 +77,10 @@ class ExecutionClientTests(unittest.TestCase):
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
-            venue_type=VenueType.BROKERAGE,
-            account_id=self.account_id,
+            venue_type=VenueType.ECN,
+            account_id=TestStubs.account_id(),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
@@ -97,6 +101,8 @@ class ExecutionClientTests(unittest.TestCase):
             client_id=ClientId("IB"),
             venue_type=VenueType.BROKERAGE_MULTI_VENUE,
             account_id=AccountId("IB", "U1258001"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,

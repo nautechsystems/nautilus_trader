@@ -19,6 +19,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
@@ -37,6 +38,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -50,8 +52,6 @@ cdef class ExecutionClient:
     cdef ExecutionEngine _engine
     cdef Account _account
     cdef dict _config
-    cdef dict _net_position_ids
-    cdef dict _last_balances
 
     cdef readonly ClientId id
     """The clients identifier.\n\n:returns: `ClientId`"""
@@ -61,7 +61,11 @@ cdef class ExecutionClient:
     """The clients venue type.\n\n:returns: `VenueType`"""
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
-    cdef readonly bint calculated_account_state
+    cdef readonly AccountType account_type
+    """The clients account type.\n\n:returns: `AccountType`"""
+    cdef readonly Currency base_currency
+    """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
+    cdef readonly bint calculate_account_state
     """If the account state is calculated on order fill.\n\n:returns: `bool"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
@@ -137,5 +141,5 @@ cdef class ExecutionClient:
 
     cdef void _handle_event(self, Event event) except *
     cdef list _calculate_balances(self, OrderFilled fill)
-    cdef list _calculate_balance_single_currency(self, Currency currency, OrderFilled fill, Money pnl)
-    cdef list _calculate_balance_multi_currency(self, Currency currency, OrderFilled fill, Money pnl)
+    cdef list _calculate_balance_single_currency(self, Instrument instrument, OrderFilled fill, Money pnl)
+    cdef list _calculate_balance_multi_currency(self, Instrument instrument, OrderFilled fill, Money pnl)

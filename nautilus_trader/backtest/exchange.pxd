@@ -21,11 +21,11 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -50,7 +50,7 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
+from nautilus_trader.trading.account cimport Account
 
 
 cdef class SimulatedExchange:
@@ -71,17 +71,15 @@ cdef class SimulatedExchange:
     cdef readonly BacktestExecClient exec_client
     """The execution client wired to the exchange.\n\n:returns: `BacktestExecClient`"""
 
-    cdef readonly bint is_frozen_account
-    """If the account for the exchange is frozen.\n\n:returns: `bool`"""
+    cdef readonly AccountType account_type
+    """The account base currency.\n\n:returns: `AccountType`"""
+    cdef readonly Currency base_currency
+    """The account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
     cdef readonly list starting_balances
     """The account starting balances for each backtest run.\n\n:returns: `bool`"""
-    cdef readonly Currency default_currency
-    """The account default currency.\n\n:returns: `Currency` or None"""
-    cdef readonly dict total_commissions
-    """The total commissions generated with the exchange.\n\n:returns: `dict[Currency, Money]`"""
+    cdef readonly bint is_frozen_account
+    """If the account for the exchange is frozen.\n\n:returns: `bool`"""
 
-    cdef readonly ExchangeRateCalculator xrate_calculator
-    """The exchange rate calculator for the exchange.\n\n:returns: `ExchangeRateCalculator`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly list modules
@@ -102,13 +100,12 @@ cdef class SimulatedExchange:
     cdef dict _symbol_ord_count
     cdef int _executions_count
 
-    cpdef list balances_total(self)
-    cpdef Money balance_total(self, Currency currency)
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
     cpdef OrderBook get_book(self, InstrumentId instrument_id)
     cpdef dict get_books(self)
     cpdef dict get_working_orders(self)
+    cpdef Account get_account(self)
 
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *

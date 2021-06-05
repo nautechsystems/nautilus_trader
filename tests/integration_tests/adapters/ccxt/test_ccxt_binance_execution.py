@@ -23,6 +23,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -112,6 +113,7 @@ class BinanceExecutionClientTests(unittest.TestCase):
         self.client = BinanceCCXTExecutionClient(
             client=self.mock_ccxt,
             account_id=self.account_id,
+            account_type=AccountType.CASH,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,

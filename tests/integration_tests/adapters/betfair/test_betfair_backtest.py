@@ -19,6 +19,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import VenueType
@@ -72,6 +73,8 @@ def test_betfair_backtest(instrument_provider):
         venue=BETFAIR_VENUE,
         venue_type=VenueType.EXCHANGE,
         oms_type=OMSType.NETTING,
+        account_type=AccountType.CASH,
+        base_currency=GBP,
         starting_balances=[Money(100_000, GBP)],
         order_book_level=OrderBookLevel.L2,
     )
