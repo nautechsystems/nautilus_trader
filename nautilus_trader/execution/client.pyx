@@ -20,6 +20,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -73,6 +74,8 @@ cdef class ExecutionClient:
         ClientId client_id not None,
         VenueType venue_type,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         ExecutionEngine engine not None,
         Clock clock not None,
         Logger logger not None,
@@ -89,6 +92,10 @@ cdef class ExecutionClient:
             The venue type for the client (determines venue -> client_id mapping).
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency. Use ``None`` for multi-currency accounts.
         engine : ExecutionEngine
             The execution engine to connect to the client.
         clock : Clock
@@ -118,14 +125,15 @@ cdef class ExecutionClient:
         self._engine = engine
         self._account = None  # Initialized on first call
         self._config = config
-        self._net_position_ids = {}  # type: dict[InstrumentId, PositionId]
-        self._last_balances = {}     # type: dict[Currency, AccountBalance]
 
         self.id = client_id
         self.venue = Venue(client_id.value) if venue_type != VenueType.BROKERAGE_MULTI_VENUE else None
         self.venue_type = venue_type
         self.account_id = account_id
-        self.calculated_account_state = config.get("calculated_account_state", False)
+        self.account_type = account_type
+        self.base_currency = base_currency
+        self.calculate_account_state = config.get("calculate_account_state", False)
+
         self.is_connected = False
 
         self._log.info(f"Initialized.")
@@ -230,20 +238,14 @@ cdef class ExecutionClient:
             The additional implementation specific account information.
 
         """
-        if info is None:
-            info = {}
-
-        # Update last balances
-        cdef AccountBalance balance
-        for balance in balances:
-            self._last_balances[balance.currency] = balance
-
         # Generate event
         cdef AccountState account_state = AccountState(
             account_id=self.account_id,
+            account_type=self.account_type,
+            base_currency=self.base_currency,
             reported=reported,
             balances=balances,
-            info=info,
+            info=info or {},
             event_id=self._uuid_factory.generate(),
             updated_ns=updated_ns,
             timestamp_ns=self._clock.timestamp_ns(),
@@ -699,6 +701,17 @@ cdef class ExecutionClient:
             The Unix timestamp (nanos) when the order was filled.
 
         """
+        # Check account
+        if self._account is None:
+            account = self._engine.cache.account_for_venue(instrument_id.venue)
+            if account is None:
+                self._log.error(
+                    "Cannot generate order filled: "
+                    f"no account found for venue {instrument_id.venue}."
+                )
+                return
+            self._account = account
+
         # Generate event
         cdef OrderFilled fill = OrderFilled(
             account_id=self.account_id,
@@ -719,8 +732,11 @@ cdef class ExecutionClient:
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
+        # Update commissions
+        self._account.update_commissions(fill.commission)
+
         cdef list balances
-        if self.calculated_account_state:
+        if self.calculate_account_state:
             # Calculate balances prior to handling fill event
             balances = self._calculate_balances(fill)
             self._handle_event(fill)
@@ -777,90 +793,80 @@ cdef class ExecutionClient:
                 quantity=fill.last_qty,
             )
         else:
-            pnl = Money(0, instrument.cost_currency)
-
-        if self._account is None:
-            # TODO(cs): Temporary - refactor
-            account = self._engine.cache.account_for_venue(fill.instrument_id.venue)
-            if account is None:
-                self._log.error(
-                    "Cannot calculate account state: "
-                    f"no account found for venue {fill.instrument_id.venue}."
-                )
-                return
-            self._account = account
+            pnl = Money(0, instrument.quote_currency)
 
         cdef Money commission = fill.commission
         cdef AccountBalance balance = None
 
         # Calculate final PnL
-        if self._account.default_currency:
+        if self.base_currency:
             return self._calculate_balance_single_currency(
-                currency=self._account.default_currency,
+                instrument=instrument,
                 fill=fill,
                 pnl=pnl,
             )
         else:
             return self._calculate_balance_multi_currency(
-                currency=instrument.cost_currency,
+                instrument=instrument,
                 fill=fill,
                 pnl=pnl,
             )
 
-    cdef list _calculate_balance_single_currency(self, Currency currency, OrderFilled fill, Money pnl):
+    cdef list _calculate_balance_single_currency(self, Instrument instrument, OrderFilled fill, Money pnl):
         cdef Money commission = fill.commission
-        if commission.currency != currency:
+        if commission.currency != self.base_currency:
             xrate: Decimal = self._engine.cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
-                to_currency=currency,
+                to_currency=self.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(
                     f"Cannot calculate account state: "
-                    f"insufficient data for {fill.commission.currency}/{currency}."
+                    f"insufficient data for {fill.commission.currency}/{self.base_currency}."
                 )
                 return None  # Cannot calculate
 
             # Convert to default account currency
-            commission = Money(commission * xrate, currency)
+            commission = Money(commission * xrate, self.base_currency)
 
-        if pnl.currency != currency:
+        if pnl.currency != self.base_currency:
             xrate: Decimal = self._engine.cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
-                to_currency=currency,
+                to_currency=self.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(
                     f"Cannot calculate account state: "
-                    f"insufficient data for {pnl.currency}/{currency}."
+                    f"insufficient data for {pnl.currency}/{self.base_currency}."
                 )
                 return None  # Cannot calculate
 
             # Convert to default account currency
-            pnl = Money(pnl * xrate, currency)
+            pnl = Money(pnl * xrate, self.base_currency)
 
-        pnl = Money(pnl - commission, currency)
+        pnl = Money(pnl - commission, self.base_currency)
         if pnl.as_decimal() == 0:
             return  # No adjustment
 
-        cdef AccountBalance balance = self._last_balances.get(currency)
+        cdef AccountBalance balance = self._account.balance()
         cdef AccountBalance new_balance = AccountBalance(
-            currency=currency,
-            total=Money(balance.total + pnl, currency),
+            currency=self.base_currency,
+            total=Money(balance.total + pnl, self.base_currency),
             locked=balance.locked,
-            free=Money(balance.free + pnl, currency),
+            free=Money(balance.free + pnl, self.base_currency),
         )
         return [new_balance]
 
-    cdef list _calculate_balance_multi_currency(self, Currency currency, OrderFilled fill, Money pnl):
+    cdef list _calculate_balance_multi_currency(self, Instrument instrument, OrderFilled fill, Money pnl):
+        cdef Currency currency = instrument.quote_currency
         cdef Money commission = fill.commission
         cdef list balances = []
         if commission.currency != pnl.currency and commission.as_decimal() > 0:
-            balance = self._last_balances.get(commission.currency)
+            balance = self._account.balance(commission.currency)
             if balance is None:
                 self._log.error(
                     "Cannot calculate account state: "
@@ -876,7 +882,7 @@ cdef class ExecutionClient:
         if pnl.as_decimal() == 0:
             return  # No adjustment
 
-        balance = self._last_balances.get(currency)
+        balance = self._account.balance(currency)
         if balance is None:
             self._log.error(
                 "Cannot calculate account state: "
@@ -885,7 +891,7 @@ cdef class ExecutionClient:
             return
 
         cdef AccountBalance new_balance = AccountBalance(
-            currency=currency,
+            currency=instrument.quote_currency,
             total=Money(balance.total + pnl, currency),
             locked=balance.locked,
             free=Money(balance.free + pnl, currency),

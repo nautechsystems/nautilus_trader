@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
@@ -89,6 +90,8 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             client_id=ClientId("BINANCE"),
             venue_type=VenueType.EXCHANGE,
             account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,

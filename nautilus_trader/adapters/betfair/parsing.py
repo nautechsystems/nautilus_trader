@@ -45,6 +45,7 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
@@ -188,6 +189,8 @@ def betfair_account_to_account_state(
     free = balance - locked
     return AccountState(
         account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
+        account_type=AccountType.CASH,
+        base_currency=currency,
         reported=True,
         balances=[
             AccountBalance(

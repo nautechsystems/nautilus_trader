@@ -87,10 +87,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         """
         super().__init__(
-            ClientId(client.name.upper()),
-            engine,
-            clock,
-            logger,
+            client_id=ClientId(client.name.upper()),
+            engine=engine,
+            clock=clock,
+            logger=logger,
             config={
                 "name": f"CCXTDataClient-{client.name.upper()}",
                 "unavailable_methods": [

@@ -36,6 +36,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -115,8 +116,10 @@ class TradingStrategyTests(unittest.TestCase):
             venue=Venue("SIM"),
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
-            is_frozen_account=False,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
+            is_frozen_account=False,
             cache=self.exec_engine.cache,
             instruments=[USDJPY_SIM],
             modules=[],
@@ -135,6 +138,8 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,

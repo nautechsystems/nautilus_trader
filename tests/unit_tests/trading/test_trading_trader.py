@@ -25,6 +25,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
@@ -81,8 +82,10 @@ class TraderTests(unittest.TestCase):
             venue=Venue("SIM"),
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
-            is_frozen_account=False,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
+            is_frozen_account=False,
             cache=self.exec_engine.cache,
             instruments=[USDJPY_SIM],
             modules=[],
@@ -101,6 +104,8 @@ class TraderTests(unittest.TestCase):
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=clock,
             logger=logger,

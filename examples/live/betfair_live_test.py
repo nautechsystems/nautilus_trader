@@ -73,6 +73,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+            "base_currency": "AUD",
             "market_filter": {"market_id": market_id},
         },
     },

@@ -22,6 +22,8 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -73,6 +75,11 @@ cdef class Position:
         self.strategy_id = fill.strategy_id
         self.instrument_id = fill.instrument_id
 
+        # Determine any base currency
+        cdef Currency base_currency = None
+        if isinstance(instrument, (CurrencySpot, CryptoSwap)):
+            base_currency = instrument.base_currency
+
         # Properties
         self.entry = fill.order_side
         self.side = Position.side_from_order_side(fill.order_side)
@@ -88,13 +95,14 @@ cdef class Position:
         self.price_precision = instrument.price_precision
         self.size_precision = instrument.size_precision
         self.multiplier = instrument.multiplier
-        self.quote_currency = instrument.quote_currency
-        self.cost_currency = instrument.cost_currency
         self.is_inverse = instrument.is_inverse
+        self.quote_currency = instrument.quote_currency
+        self.base_currency = base_currency
+        self.cost_currency = base_currency if instrument.is_inverse else instrument.quote_currency
+
         self.realized_points = Decimal()
         self.realized_return = Decimal()
         self.realized_pnl = Money(0, self.cost_currency)
-        self.commission = Money(0, self.cost_currency)
 
         self.apply(fill)
 
@@ -386,8 +394,6 @@ cdef class Position:
         cdef Currency currency = fill.commission.currency
         cdef Money cum_commission = Money(self._commissions.get(currency, Decimal()) + fill.commission, currency)
         self._commissions[currency] = cum_commission
-        if currency == self.cost_currency:
-            self.commission = cum_commission
 
         # Calculate avg prices, points, return, PnL
         if fill.order_side == OrderSide.BUY:
@@ -428,7 +434,7 @@ cdef class Position:
         Condition.not_none(last, "last")
 
         if self.is_inverse:
-            return Money(self.quantity * self.multiplier, self.quote_currency)
+            return Money(self.quantity * self.multiplier * (1 / last), self.base_currency)
         else:
             return Money(self.quantity * self.multiplier * last, self.quote_currency)
 
@@ -439,7 +445,10 @@ cdef class Position:
         quantity: Decimal,
     ):
         """
-        Return a generic PnL from the given parameters.
+        Return a PnL calculated from the given parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
 
         Parameters
         ----------
@@ -453,7 +462,6 @@ cdef class Position:
         Returns
         -------
         Money
-            In quote currency.
 
         """
         Condition.type(avg_px_open, (Decimal, Price), "avg_px_open")
@@ -472,6 +480,9 @@ cdef class Position:
         """
         Return the unrealized PnL from the given last quote tick.
 
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
         Parameters
         ----------
         last : Price
@@ -480,7 +491,6 @@ cdef class Position:
         Returns
         -------
         Money
-            In quote currency.
 
         """
         Condition.not_none(last, "last")
@@ -500,6 +510,9 @@ cdef class Position:
         """
         Return the total PnL from the given last quote tick.
 
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
         Parameters
         ----------
         last : Price
@@ -508,7 +521,6 @@ cdef class Position:
         Returns
         -------
         Money
-            In quote currency.
 
         """
         Condition.not_none(last, "last")
@@ -575,7 +587,7 @@ cdef class Position:
         self.net_qty = self.net_qty - fill.last_qty
 
     cdef object _calculate_avg_px_open_px(self, OrderFilled fill):
-        return self._calculate_avg_px(self.quantity.as_decimal(), self.avg_px_open, fill)
+        return self._calculate_avg_px(abs(self.net_qty), self.avg_px_open, fill)
 
     cdef object _calculate_avg_px_close_px(self, OrderFilled fill):
         if not self.avg_px_close:
@@ -620,6 +632,8 @@ cdef class Position:
         quantity: Decimal,
     ):
         if self.is_inverse:
+            # In base currency
             return quantity * self.multiplier * self._calculate_points_inverse(avg_px_open, avg_px_close)
         else:
+            # In quote currency
             return quantity * self.multiplier * self._calculate_points(avg_px_open, avg_px_close)

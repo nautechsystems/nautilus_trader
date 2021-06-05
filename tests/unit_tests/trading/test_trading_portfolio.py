@@ -24,6 +24,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import StrategyId
@@ -214,6 +215,8 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         account_state = AccountState(
             account_id=AccountId("BINANCE", "1513111"),
+            account_type=AccountType.CASH,
+            base_currency=None,
             reported=True,
             balances=[
                 AccountBalance(
@@ -753,7 +756,7 @@ class PortfolioTests(unittest.TestCase):
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
-    #         info={"default_currency": "USD"},
+    #         info={"base_currency": "USD"},
     #         event_id=uuid4(),
     #         timestamp_ns=0,
     #     )
@@ -870,7 +873,7 @@ class PortfolioTests(unittest.TestCase):
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
-    #         info={"default_currency": "USD"},
+    #         info={"base_currency": "USD"},
     #         event_id=uuid4(),
     #         timestamp_ns=0,
     #     )
@@ -964,7 +967,7 @@ class PortfolioTests(unittest.TestCase):
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
-    #         info={"default_currency": "USD"},
+    #         info={"base_currency": "USD"},
     #         event_id=uuid4(),
     #         timestamp_ns=0,
     #     )
@@ -1030,7 +1033,7 @@ class PortfolioTests(unittest.TestCase):
     #         balances=[Money(1_000_000.00, USD)],
     #         balances_free=[Money(1_000_000.00, USD)],
     #         balances_locked=[Money(0.00, USD)],
-    #         info={"default_currency": "USD"},
+    #         info={"base_currency": "USD"},
     #         event_id=uuid4(),
     #         timestamp_ns=0,
     #     )

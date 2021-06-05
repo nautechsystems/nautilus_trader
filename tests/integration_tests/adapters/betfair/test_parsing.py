@@ -19,6 +19,7 @@ from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -100,13 +101,19 @@ def test_account_statement(betfair_client, uuid, clock):
         timestamp_ns=timestamp_ns,
     )
     expected = AccountState(
-        AccountId(issuer="BETFAIR", number="Testy-McTest"),
-        True,  # reported
-        [AccountBalance(AUD, Money(1000.0, AUD), Money(0.00, AUD), Money(1000.0, AUD))],
-        {"funds": funds, "detail": detail},
-        uuid,
-        result.timestamp_ns,
-        result.timestamp_ns,
+        account_id=AccountId(issuer="BETFAIR", number="Testy-McTest"),
+        account_type=AccountType.CASH,
+        base_currency=AUD,
+        reported=True,  # reported
+        balances=[
+            AccountBalance(
+                AUD, Money(1000.0, AUD), Money(0.00, AUD), Money(1000.0, AUD)
+            )
+        ],
+        info={"funds": funds, "detail": detail},
+        event_id=uuid,
+        updated_ns=result.timestamp_ns,
+        timestamp_ns=result.timestamp_ns,
     )
     assert result == expected
 

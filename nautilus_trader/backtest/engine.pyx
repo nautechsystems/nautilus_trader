@@ -47,6 +47,7 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -62,6 +63,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
@@ -564,6 +566,8 @@ cdef class BacktestEngine:
         Venue venue,
         VenueType venue_type,
         OMSType oms_type,
+        AccountType account_type,
+        Currency base_currency,
         list starting_balances,
         bint is_frozen_account=False,
         list modules=None,
@@ -582,6 +586,10 @@ cdef class BacktestEngine:
         oms_type : OMSType
             The order management system type for the exchange. If HEDGING and
             no position_id for an order then will generate a new position_id.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
         is_frozen_account : bool
@@ -615,8 +623,10 @@ cdef class BacktestEngine:
             venue=venue,
             venue_type=venue_type,
             oms_type=oms_type,
-            is_frozen_account=is_frozen_account,
+            account_type=account_type,
+            base_currency=base_currency,
             starting_balances=starting_balances,
+            is_frozen_account=is_frozen_account,
             instruments=self._data_engine.cache.instruments(venue),
             modules=modules,
             cache=self._exec_engine.cache,
@@ -632,6 +642,8 @@ cdef class BacktestEngine:
         exec_client = BacktestExecClient(
             exchange=exchange,
             account_id=AccountId(venue.value, "001"),
+            account_type=account_type,
+            base_currency=base_currency,
             engine=self._exec_engine,
             clock=self._test_clock,
             logger=self._test_logger,
@@ -755,8 +767,6 @@ cdef class BacktestEngine:
                 self._data_producer = CachedProducer(self._data_producer)
 
         log_memory(self._log)
-        # TODO: get_size_of is often hanging - also a non-trivial function for Python
-        # self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
 
         # Setup start datetime
         if start is None:
@@ -901,12 +911,15 @@ cdef class BacktestEngine:
             self._log.info("=================================================================")
             self._log.info(f" {exchange.exec_client.account_id.value}")
             self._log.info("=================================================================")
+            account = exchange.exec_client.get_account()
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                account_balances_starting = ', '.join([b.to_str() for b in exchange.starting_balances])
-                account_balances_ending = ', '.join([b.to_str() for b in exchange.balances_total()])
-                account_commissions = ', '.join([b.to_str() for b in exchange.total_commissions.values()])
+                if account is None:
+                    continue
+                account_balances_starting = ', '.join([b.to_str() for b in account.starting_balances().values()])
+                account_balances_ending = ', '.join([b.to_str() for b in account.balances_total().values()])
+                account_commissions = ', '.join([b.to_str() for b in account.commissions().values()])
                 unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()])
                 account_starting_length = len(account_balances_starting)
                 account_balances_ending = pad_string(account_balances_ending, account_starting_length)
@@ -932,9 +945,6 @@ cdef class BacktestEngine:
                     positions.append(position)
 
             # Calculate statistics
-            account = self._exec_engine.cache.account_for_venue(Venue(exchange.id.value))
-            if account is None:
-                continue
             self.analyzer.calculate_statistics(account, positions)
 
             # Present PnL performance stats per asset

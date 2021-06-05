@@ -26,6 +26,7 @@ from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -72,6 +73,8 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             venue=self.venue,
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
         )
@@ -192,6 +195,8 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
             venue=self.venue,
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=GBP,
             starting_balances=[Money(1_000_000, GBP)],
             modules=[fx_rollover_interest],
         )
@@ -244,6 +249,8 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
             venue=self.venue,
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=AUD,
             starting_balances=[Money(1_000_000, AUD)],
             modules=[fx_rollover_interest],
         )
@@ -312,6 +319,8 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT)],
         )
 
@@ -362,6 +371,8 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT)],
         )
 
