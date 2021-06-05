@@ -1,15 +1,23 @@
 # NautilusTrader 1.122.0 Beta - Release Notes
 
+This release includes numerous breaking changes with a view to enhancing the core
+functionality and API for the platform. There have been large changes to the 
+accounting which simplify functionality and add 'hooks' in preparation for 
+accurate handle and calculation of margins.
 
 ## Breaking Changes
-- `Account.balance()` renamed to `Account.balance_total()`.
-- `TradingStrategy.data` consolidated into `TradingStrategy.cache`.
-- `TradingStrategy.execution` consolidated into `TradingStrategy.cache`.
+- Renamed `Account.balance()` to `Account.balance_total()`.
+- Consolidated`TradingStrategy.data` into `TradingStrategy.cache`.
+- Consolidated `TradingStrategy.execution` into `TradingStrategy.cache`.
 - Moved `redis` subpackage into `infrastructure`.
+- Moved some accounting methods back to `Instrument`.
+- Removed `Instrument.market_value()`.
+- Renamed `Portfolio.market_values()` to `Portfolio.net_exposures()`.
+- Renamed `Portfolio.market_value()` to `Portfolio.net_exposure()`.
 - Renamed `InMemoryExecutionDatabase` to `BypassCacheDatabase`.
 - Renamed `Position.relative_qty` to `Position.net_qty`.
 - Renamed `default_currency` to `base_currency`.
-- Remove `cost_currency` from `Instrument`.
+- Removed `cost_currency` property from `Instrument`.
 
 ## Enhancements
 - `ExecutionClient` now has the option of calculating account state.
@@ -19,7 +27,8 @@
 - Simplified wiring of `Cache` into components.
 - Added `repr` to execution messages.
 - Added `AccountType` enum.
-- Add `cost_currency` to `Position`.
+- Added `cost_currency` to `Position`.
+- Added `cost_currency()` method to `Instrument`.
 
 ## Fixes
 - Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.

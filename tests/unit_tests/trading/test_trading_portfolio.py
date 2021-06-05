@@ -100,7 +100,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.market_value, AUDUSD_SIM.id)
+        self.assertRaises(NotImplementedError, portfolio.net_exposure, AUDUSD_SIM.id)
 
     def test_market_values_raises_not_implemented_error(self):
         # Arrange
@@ -108,7 +108,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.market_values, BITMEX)
+        self.assertRaises(NotImplementedError, portfolio.net_exposures, BITMEX)
 
     def test_net_position_raises_not_implemented_error(self):
         # Arrange
@@ -297,7 +297,7 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.market_values(SIM))
+        self.assertEqual(None, self.portfolio.net_exposures(SIM))
 
     def test_update_tick(self):
         # Arrange

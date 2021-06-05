@@ -1140,8 +1140,7 @@ cdef class SimulatedExchange:
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
-        cdef Money commission = Account.calculate_commission_c(
-            instrument=instrument,
+        cdef Money commission = instrument.calculate_commission(
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,

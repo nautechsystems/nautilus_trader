@@ -170,3 +170,18 @@ cdef class CryptoSwap(Instrument):
             self.is_quanto = True
         else:
             self.is_quanto = False
+
+    cpdef Currency cost_currency(self):
+        """
+        Return the currency used for cost and PnL calculations.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = base_currency
+        - Quanto instrument = settlement_currency
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.settlement_currency
