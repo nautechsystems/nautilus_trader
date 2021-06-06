@@ -322,7 +322,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
             The event received.
 
         """
-        if isinstance(event, OrderFilled):
+        if isinstance(event, OrderFilled) and self.trailing_stop:
             if event.client_order_id == self.trailing_stop.client_order_id:
                 last_bar = self.cache.bar(self.bar_type)
                 if event.order_side == OrderSide.BUY:
