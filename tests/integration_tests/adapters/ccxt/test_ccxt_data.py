@@ -77,7 +77,10 @@ class CCXTDataClientTests(unittest.TestCase):
             clock=self.clock,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -85,6 +88,7 @@ class CCXTDataClientTests(unittest.TestCase):
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

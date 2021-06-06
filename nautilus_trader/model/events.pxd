@@ -16,6 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -41,6 +42,10 @@ from nautilus_trader.model.position cimport Position
 cdef class AccountState(Event):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly AccountType account_type
+    """The account type for the event.\n\n:returns: `AccountType`"""
+    cdef readonly Currency base_currency
+    """The account type for the event.\n\n:returns: `Currency` or None"""
     cdef readonly list balances
     """The account balances.\n\n:returns: `list[AccountBalance]`"""
     cdef readonly bint is_reported

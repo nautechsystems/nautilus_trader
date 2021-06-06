@@ -56,7 +56,7 @@ cdef class Trader(Component):
         bint warn_no_strategies=True,
     ):
         """
-        Initialize a new instance of the `Trader` class.
+        Initialize a new instance of the ``Trader`` class.
 
         Parameters
         ----------

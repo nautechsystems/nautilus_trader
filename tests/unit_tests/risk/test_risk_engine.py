@@ -17,13 +17,14 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
-from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
@@ -37,7 +38,6 @@ from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
-from tests.test_kit.mocks import MockExecutionDatabase
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -57,17 +57,14 @@ class TestRiskEngine:
         self.venue = Venue("SIM")
 
         self.portfolio = Portfolio(
+            cache=TestStubs.cache(),
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_data_cache(DataCache(self.logger))
 
-        self.database = MockExecutionDatabase(
-            trader_id=self.trader_id, logger=self.logger
-        )
         self.exec_engine = ExecutionEngine(
-            database=self.database,
             portfolio=self.portfolio,
+            cache=TestStubs.cache(),
             clock=self.clock,
             logger=self.logger,
         )
@@ -75,24 +72,26 @@ class TestRiskEngine:
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=TestStubs.cache(),
             clock=self.clock,
             logger=self.logger,
             config={},
         )
 
         self.exec_client = MockExecutionClient(
-            ClientId(self.venue.value),
-            VenueType.ECN,
-            self.account_id,
-            self.exec_engine,
-            self.clock,
-            self.logger,
+            client_id=ClientId(self.venue.value),
+            venue_type=VenueType.ECN,
+            account_id=self.account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         # Wire up components
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         # Prepare data
         self.exec_engine.cache.add_instrument(AUDUSD_SIM)

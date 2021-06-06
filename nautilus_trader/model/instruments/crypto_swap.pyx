@@ -58,7 +58,7 @@ cdef class CryptoSwap(Instrument):
         dict info=None,
     ):
         """
-        Initialize a new instance of the `CryptoSwap` instrument class.
+        Initialize a new instance of the ``CryptoSwap` instrument class.
 
         Parameters
         ----------
@@ -142,7 +142,6 @@ cdef class CryptoSwap(Instrument):
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             quote_currency=quote_currency,
-            cost_currency=base_currency if is_inverse else quote_currency,
             is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,
@@ -171,3 +170,30 @@ cdef class CryptoSwap(Instrument):
             self.is_quanto = True
         else:
             self.is_quanto = False
+
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base currency.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.base_currency
+
+    # TODO(cs): WIP
+    # cpdef Currency get_cost_currency(self):
+    #     """
+    #     Return the currency used for cost and PnL calculations.
+    #
+    #     - Standard linear instruments = quote_currency
+    #     - Inverse instruments = base_currency
+    #     - Quanto instrument = settlement_currency
+    #
+    #     Returns
+    #     -------
+    #     Currency
+    #
+    #     """
+    #     return self.settlement_currency

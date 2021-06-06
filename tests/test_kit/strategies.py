@@ -37,7 +37,7 @@ class TickTock(TradingStrategy):
 
     def __init__(self, instrument: Instrument, bar_type: BarType):
         """
-        Initialize a new instance of the `TickTock` class.
+        Initialize a new instance of the ``TickTock`` class.
 
         Parameters
         ----------
@@ -102,7 +102,7 @@ class EMACross(TradingStrategy):
         extra_id_tag: str = "",
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------
@@ -138,7 +138,7 @@ class EMACross(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
             self.stop()
@@ -206,7 +206,7 @@ class EMACross(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]...",
+                f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -342,7 +342,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         extra_id_tag: str = "",
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------
@@ -365,7 +365,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
             self.stop()

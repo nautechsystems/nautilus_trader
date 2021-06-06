@@ -15,21 +15,19 @@
 
 import asyncio
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -64,7 +62,6 @@ class TestLiveExecutionEngine:
         self.logger = Logger(self.clock)
 
         self.trader_id = TraderId("TESTER-000")
-        self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -78,25 +75,22 @@ class TestLiveExecutionEngine:
             clock=self.clock,
         )
 
-        self.portfolio = Portfolio(
-            clock=self.clock,
-            logger=self.logger,
-        )
-        self.portfolio.register_data_cache(DataCache(self.logger))
-
-        self.analyzer = PerformanceAnalyzer()
-
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        self.database = InMemoryExecutionDatabase(
-            trader_id=self.trader_id, logger=self.logger
+        self.cache = TestStubs.cache()
+
+        self.portfolio = Portfolio(
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
+
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            database=self.database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -105,6 +99,7 @@ class TestLiveExecutionEngine:
             loop=self.loop,
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -116,7 +111,9 @@ class TestLiveExecutionEngine:
         self.client = MockLiveExecutionClient(
             client_id=ClientId(SIM.value),
             venue_type=VenueType.ECN,
-            account_id=self.account_id,
+            account_id=TestStubs.account_id(),
+            account_type=AccountType.CASH,
+            base_currency=USD,
             engine=self.exec_engine,
             instrument_provider=self.instrument_provider,
             clock=self.clock,
@@ -126,7 +123,6 @@ class TestLiveExecutionEngine:
         # Wired up components
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.client)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def teardown(self):
         self.exec_engine.dispose()
@@ -154,8 +150,8 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            database=self.database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -199,8 +195,8 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            database=self.database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},

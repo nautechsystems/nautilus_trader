@@ -19,7 +19,6 @@ import unittest
 
 import pytest
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -27,13 +26,13 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
@@ -80,7 +79,10 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -88,24 +90,19 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.clock,
+            cache=self.cache,
             logger=self.logger,
             config={
                 "use_previous_close": False
             },  # To correctly reproduce historical data bars
         )
 
-        self.analyzer = PerformanceAnalyzer()
         self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("SIM", "001")
 
-        exec_db = InMemoryExecutionDatabase(
-            trader_id=self.trader_id,
-            logger=self.logger,
-        )
-
         self.exec_engine = ExecutionEngine(
-            database=exec_db,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -113,6 +110,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -121,12 +119,14 @@ class SimulatedExchangeTests(unittest.TestCase):
             venue=SIM,
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
-            is_frozen_account=False,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
+            is_frozen_account=False,
             instruments=[AUDUSD_SIM, USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
-            exec_cache=self.exec_engine.cache,
+            cache=self.exec_engine.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -134,6 +134,8 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
@@ -150,8 +152,6 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exec_engine.cache.add_instrument(AUDUSD_SIM)
         self.exec_engine.cache.add_instrument(USDJPY_SIM)
         self.exec_engine.cache.add_instrument(XBTUSD_BITMEX)
-        self.portfolio.register_data_cache(self.data_engine.cache)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         # Create mock strategy
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
@@ -1173,14 +1173,14 @@ class SimulatedExchangeTests(unittest.TestCase):
         fill_event2 = self.strategy.object_storer.get_store()[4]
         fill_event3 = self.strategy.object_storer.get_store()[7]
 
-        account = self.exec_engine.cache.account_for_venue(Venue("SIM"))
-
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Money(180.01, JPY), fill_event1.commission)
         self.assertEqual(Money(180.01, JPY), fill_event2.commission)
         self.assertEqual(Money(90.00, JPY), fill_event3.commission)
-        self.assertTrue(Money(999995.00, USD), account.balance())
+        self.assertTrue(
+            Money(999995.00, USD), self.exchange.get_account().balance_total(USD)
+        )
 
     def test_expire_order(self):
         # Arrange: Prepare market
@@ -1268,7 +1268,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price.from_str("96.711"), order.avg_px)
         self.assertEqual(
-            Money(999998.00, USD), self.exchange.account_balances[USD].total
+            Money(999997.86, USD), self.exchange.get_account().balance_total(USD)
         )
 
     def test_process_quote_tick_triggers_buy_stop_limit_order(self):
@@ -1441,7 +1441,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price.from_str("90.001"), order.avg_px)
         self.assertEqual(
-            Money(999998.00, USD), self.exchange.account_balances[USD].total
+            Money(999998.00, USD), self.exchange.get_account().balance_total(USD)
         )
 
     def test_process_quote_tick_fills_sell_stop_order(self):
@@ -1481,7 +1481,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price.from_str("90.000"), order.avg_px)
         self.assertEqual(
-            Money(999998.00, USD), self.exchange.account_balances[USD].total
+            Money(999998.00, USD), self.exchange.get_account().balance_total(USD)
         )
 
     def test_process_quote_tick_fills_sell_limit_order(self):
@@ -1521,7 +1521,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         self.assertEqual(Price.from_str("90.101"), order.avg_px)
         self.assertEqual(
-            Money(999998.00, USD), self.exchange.account_balances[USD].total
+            Money(999998.00, USD), self.exchange.get_account().balance_total(USD)
         )
 
     def test_process_quote_tick_fills_buy_limit_entry_with_bracket(self):
@@ -1569,7 +1569,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(2, len(self.exchange.get_working_orders()))
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
         self.assertEqual(
-            Money(999998.00, USD), self.exchange.account_balances[USD].total
+            Money(999998.00, USD), self.exchange.get_account().balance_total(USD)
         )
 
     def test_process_quote_tick_fills_sell_limit_entry_with_bracket(self):
@@ -1731,13 +1731,13 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick3)
 
         # Assert
-        print(self.exchange.exec_cache.position(PositionId("2-001")))
+        print(self.exchange.cache.position(PositionId("2-001")))
         self.assertEqual(OrderState.FILLED, entry.state)
         self.assertEqual(OrderState.FILLED, bracket.stop_loss.state)
         self.assertEqual(OrderState.CANCELED, bracket.take_profit.state)
         self.assertEqual(0, len(self.exchange.get_working_orders()))
         # TODO: WIP - fix handling of OCO orders
-        # self.assertEqual(0, len(self.exchange.exec_cache.positions_open()))
+        # self.assertEqual(0, len(self.exchange.cache.positions_open()))
 
     def test_realized_pnl_contains_commission(self):
         # Arrange: Prepare market
@@ -1761,7 +1761,6 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money(-180.01, JPY), position.realized_pnl)
-        self.assertEqual(Money(180.01, JPY), position.commission)
         self.assertEqual([Money(180.01, JPY)], position.commissions())
 
     def test_unrealized_pnl(self):
@@ -1819,10 +1818,10 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         # Act
         self.exchange.adjust_account(value)
-        result = self.exchange.account_balances[USD]
+        result = self.exchange.exec_client.get_account().balance_total(USD)
 
         # Assert
-        self.assertEqual(Money("1001000.00", USD), result.total)
+        self.assertEqual(Money(1001000.00, USD), result)
 
     def test_adjust_account_when_account_frozen_does_not_change_balance(self):
         # Arrange
@@ -1830,24 +1829,28 @@ class SimulatedExchangeTests(unittest.TestCase):
             venue=SIM,
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             is_frozen_account=True,  # <-- Freezing account
             starting_balances=[Money(1_000_000, USD)],
             instruments=[AUDUSD_SIM, USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
-            exec_cache=self.exec_engine.cache,
+            cache=self.exec_engine.cache,
             clock=self.clock,
             logger=self.logger,
         )
+        exchange.register_client(self.exec_client)
+        exchange.reset()
 
         value = Money(1000, USD)
 
         # Act
         exchange.adjust_account(value)
-        result = exchange.account_balances[USD]
+        result = exchange.get_account().balance_total(USD)
 
         # Assert
-        self.assertEqual(Money("1000000.00", USD), result.total)
+        self.assertEqual(Money(1000000.00, USD), result)
 
     def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
         # Arrange: Prepare market
@@ -1905,7 +1908,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.assertEqual(Money(999619.98, JPY), position_closed.realized_pnl)
         self.assertEqual([Money(380.02, JPY)], position_closed.commissions())
         self.assertEqual(
-            Money(1014994.55, USD), self.exchange.account_balances[USD].total
+            Money(1016660.97, USD), self.exchange.get_account().balance_total(USD)
         )
 
 
@@ -1920,13 +1923,17 @@ class BitmexExchangeTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={
@@ -1934,19 +1941,12 @@ class BitmexExchangeTests(unittest.TestCase):
             },  # To correctly reproduce historical data bars
         )
 
-        self.analyzer = PerformanceAnalyzer()
-
         self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BITMEX", "001")
 
-        exec_db = InMemoryExecutionDatabase(
-            trader_id=self.trader_id,
-            logger=self.logger,
-        )
-
         self.exec_engine = ExecutionEngine(
-            database=exec_db,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -1954,6 +1954,7 @@ class BitmexExchangeTests(unittest.TestCase):
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -1962,9 +1963,11 @@ class BitmexExchangeTests(unittest.TestCase):
             venue=Venue("BITMEX"),
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
+            account_type=AccountType.MARGIN,
+            base_currency=BTC,
+            starting_balances=[Money(20, BTC)],
             is_frozen_account=False,
-            starting_balances=[Money(1_000_000, USD)],
-            exec_cache=self.exec_engine.cache,
+            cache=self.exec_engine.cache,
             instruments=[XBTUSD_BITMEX],
             modules=[],
             fill_model=FillModel(),
@@ -1975,6 +1978,8 @@ class BitmexExchangeTests(unittest.TestCase):
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=BTC,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
@@ -1982,8 +1987,6 @@ class BitmexExchangeTests(unittest.TestCase):
 
         # Wire up components
         self.data_engine.cache.add_instrument(XBTUSD_BITMEX)
-        self.portfolio.register_data_cache(self.data_engine.cache)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
@@ -2061,11 +2064,11 @@ class BitmexExchangeTests(unittest.TestCase):
             self.strategy.object_storer.get_store()[5].liquidity_side,
         )
         self.assertEqual(
-            Money("0.00652543", BTC),
+            Money(0.00652543, BTC),
             self.strategy.object_storer.get_store()[1].commission,
         )
         self.assertEqual(
-            Money("-0.00217552", BTC),
+            Money(-0.00217552, BTC),
             self.strategy.object_storer.get_store()[5].commission,
         )
 
@@ -2077,13 +2080,17 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={
@@ -2091,18 +2098,12 @@ class OrderBookExchangeTests(unittest.TestCase):
             },  # To correctly reproduce historical data bars
         )
 
-        self.analyzer = PerformanceAnalyzer()
         self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("SIM", "001")
 
-        exec_db = InMemoryExecutionDatabase(
-            trader_id=self.trader_id,
-            logger=self.logger,
-        )
-
         self.exec_engine = ExecutionEngine(
-            database=exec_db,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -2110,6 +2111,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -2118,12 +2120,14 @@ class OrderBookExchangeTests(unittest.TestCase):
             venue=SIM,
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
-            is_frozen_account=False,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
+            is_frozen_account=False,
             instruments=[AUDUSD_SIM, USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
-            exec_cache=self.exec_engine.cache,
+            cache=self.exec_engine.cache,
             clock=self.clock,
             logger=self.logger,
             exchange_order_book_level=OrderBookLevel.L2,
@@ -2132,6 +2136,8 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
@@ -2151,8 +2157,6 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
-        self.portfolio.register_data_cache(self.data_engine.cache)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.strategy.register_trader(
@@ -2171,8 +2175,20 @@ class OrderBookExchangeTests(unittest.TestCase):
         # Arrange: Prepare market
         self.exec_engine.cache.add_instrument(USDJPY_SIM)
 
+        quote = QuoteTick(
+            USDJPY_SIM.id,
+            Price.from_str("110.000"),
+            Price.from_str("110.010"),
+            Quantity.from_int(1500000),
+            Quantity.from_int(1500000),
+            0,
+            0,
+        )
+        self.data_engine.process(quote)
         snapshot = TestStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -2194,15 +2210,27 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(Decimal("2000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.33333333333333333333333333"), order.avg_px)
         self.assertEqual(
-            Money(999999.86, USD), self.exchange.account_balances[USD].total
+            Money(999999.98, USD), self.exchange.get_account().balance_total(USD)
         )
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
         self.exec_engine.cache.add_instrument(USDJPY_SIM)
 
+        quote = QuoteTick(
+            USDJPY_SIM.id,
+            Price.from_str("110.000"),
+            Price.from_str("110.010"),
+            Quantity.from_int(1500000),
+            Quantity.from_int(1500000),
+            0,
+            0,
+        )
+        self.data_engine.process(quote)
         snapshot = TestStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+            instrument_id=USDJPY_SIM.id,
+            bid_volume=1000,
+            ask_volume=1000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book(snapshot)
@@ -2222,7 +2250,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.assertEqual(Quantity.from_str("6000.0"), order.filled_qty)  # No slippage
         self.assertEqual(Decimal("15.93333333333333333333333333"), order.avg_px)
         self.assertEqual(
-            Money(999999.61, USD), self.exchange.account_balances[USD].total
+            Money(999999.94, USD), self.exchange.get_account().balance_total(USD)
         )
 
     def test_passive_post_only_insert(self):

@@ -15,6 +15,8 @@
 
 import pytest
 
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AccountTypeParser
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AggressorSideParser
 from nautilus_trader.model.enums import AssetClass
@@ -57,8 +59,50 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.enums import VenueTypeParser
 
 
+class TestAccountType:
+    def test_account_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            AccountTypeParser.to_str_py(-1)
+
+        with pytest.raises(ValueError):
+            AccountTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [AccountType.CASH, "CASH"],
+            [AccountType.MARGIN, "MARGIN"],
+        ],
+    )
+    def test_account_type_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = AccountTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CASH", AccountType.CASH],
+            ["MARGIN", AccountType.MARGIN],
+        ],
+    )
+    def test_account_type_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = AccountTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
 class TestAggressorSide:
-    def test_aggressor_side_parser_given_invalid_value_raises_value_error(self):
+    def test_account_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert

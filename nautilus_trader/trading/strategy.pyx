@@ -103,7 +103,7 @@ cdef class TradingStrategy(Component):
 
     def __init__(self, str order_id_tag not None):
         """
-        Initialize a new instance of the `TradingStrategy` class.
+        Initialize a new instance of the ``TradingStrategy`` class.
 
         Parameters
         ----------
@@ -146,8 +146,7 @@ cdef class TradingStrategy(Component):
         self.uuid_factory = self._uuid_factory
         self.log = self._log
 
-        self.data = None           # Initialized when registered with the data engine
-        self.execution = None      # Initialized when registered with the risk engine
+        self.cache = None          # Initialized when registered with the risk engine
         self.portfolio = None      # Initialized when registered with the risk engine
         self.order_factory = None  # Initialized when registered with a trader
 
@@ -503,7 +502,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(engine, "engine")
 
         self._data_engine = engine
-        self.data = engine.cache
+        self.cache = engine.cache
 
     cpdef void register_risk_engine(self, RiskEngine engine) except *:
         """
@@ -522,7 +521,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(engine, "engine")
 
         self._risk_engine = engine
-        self.execution = engine.cache
+        self.cache = engine.cache
 
     cpdef void register_portfolio(self, Portfolio portfolio) except *:
         """
@@ -1508,7 +1507,7 @@ cdef class TradingStrategy(Component):
         # instrument_id can be None
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
-        cdef list working_orders = self.execution.orders_working(
+        cdef list working_orders = self.cache.orders_working(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,
@@ -1587,7 +1586,7 @@ cdef class TradingStrategy(Component):
         # instrument_id can be None
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
-        cdef list positions_open = self.execution.positions_open(
+        cdef list positions_open = self.cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
             strategy_id=self.id,

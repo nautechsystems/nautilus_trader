@@ -76,15 +76,6 @@ Identifiers
    :members:
    :member-order: bysource
 
-Instrument
-----------
-
-.. automodule:: nautilus_trader.model.instrument
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Objects
 -------
 

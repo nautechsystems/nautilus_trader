@@ -20,10 +20,13 @@ from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
@@ -101,8 +104,25 @@ def live_logger(event_loop, clock):
 
 
 @pytest.fixture()
-def portfolio(clock, live_logger):
+def cache_db(trader_id, live_logger):
+    return BypassCacheDatabase(
+        trader_id=trader_id,
+        logger=live_logger,
+    )
+
+
+@pytest.fixture()
+def cache(live_logger, cache_db):
+    return Cache(
+        database=cache_db,
+        logger=live_logger,
+    )
+
+
+@pytest.fixture()
+def portfolio(cache, clock, live_logger):
     return Portfolio(
+        cache=cache,
         clock=clock,
         logger=live_logger,
     )
@@ -179,6 +199,7 @@ async def execution_client(
     client = BetfairExecutionClient(
         client=betfair_client,
         account_id=account_id,
+        base_currency=AUD,
         engine=exec_engine,
         clock=clock,
         logger=live_logger,

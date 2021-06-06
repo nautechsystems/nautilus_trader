@@ -1,3 +1,44 @@
+# NautilusTrader 1.122.0 Beta - Release Notes
+
+This release includes numerous breaking changes with a view to enhancing the core
+functionality and API of the platform. The data and execution caches have been 
+unified for simplicity. There have also been large changes to the accounting 
+functionality, with 'hooks' added in preparation for accurate calculation and 
+handling of margins.
+
+## Breaking Changes
+- Renamed `Account.balance()` to `Account.balance_total()`.
+- Consolidated`TradingStrategy.data` into `TradingStrategy.cache`.
+- Consolidated `TradingStrategy.execution` into `TradingStrategy.cache`.
+- Moved `redis` subpackage into `infrastructure`.
+- Moved some accounting methods back to `Instrument`.
+- Removed `Instrument.market_value()`.
+- Renamed `Portfolio.market_values()` to `Portfolio.net_exposures()`.
+- Renamed `Portfolio.market_value()` to `Portfolio.net_exposure()`.
+- Renamed `InMemoryExecutionDatabase` to `BypassCacheDatabase`.
+- Renamed `Position.relative_qty` to `Position.net_qty`.
+- Renamed `default_currency` to `base_currency`.
+- Removed `cost_currency` property from `Instrument`.
+
+## Enhancements
+- `ExecutionClient` now has the option of calculating account state.
+- Unified data and execution caches into single `Cache`.
+- Improved configuration options and naming.
+- Simplified `Portfolio` component registration.
+- Simplified wiring of `Cache` into components.
+- Added `repr` to execution messages.
+- Added `AccountType` enum.
+- Added `cost_currency` to `Position`.
+- Added `get_cost_currency()` to `Instrument`.
+- Added `get_base_currency()` to `Instrument`.
+
+## Fixes
+- Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.
+- Fixed loss of precision for nanosecond timestamps in Redis.
+- Fixed state reconciliation when uninstantiated client.
+
+---
+
 # NautilusTrader 1.121.0 Beta - Release Notes
 
 In this release there has been a major change to the use of inlines for method
@@ -85,7 +126,7 @@ natural flow of command and event messages.
 ## Breaking Changes
 - Serializations involving `Money`.
 - Changed usage of `Price` and `Quantity`.
-- Renamed `BypassExecutionDatabase` to `InMemoryExecutionDatabase`.
+- Renamed `BypassExecutionDatabase` to `BypassCacheDatabase`.
 
 ## Enhancements
 - Rewired `RiskEngine` and `ExecutionEngine` sequence.

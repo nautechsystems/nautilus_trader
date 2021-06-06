@@ -18,6 +18,7 @@ import asyncio
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -25,7 +26,6 @@ from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport OrderStatusReport
@@ -48,23 +48,23 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        ExecutionDatabase database not None,
         Portfolio portfolio not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionEngine` class.
+        Initialize a new instance of the ``LiveExecutionEngine`` class.
 
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        database : ExecutionDatabase
-            The execution database for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -78,11 +78,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if "qsize" not in config:
             config["qsize"] = 10000
         super().__init__(
-            database,
-            portfolio,
-            clock,
-            logger,
-            config,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop = loop
@@ -179,7 +179,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             if client is None:
                 self._log.error(
                     f"Cannot reconcile state: "
-                    f"No registered client for {order.instrument_id.venue} for active {order}."
+                    f"No client found for {order.instrument_id.venue} for active {order}."
                 )
                 continue
             client_orders[client.id].append(order)
@@ -190,12 +190,21 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         for name, client in self._clients.items():
             client_mass_status[name] = await client.generate_mass_status(client_orders[name])
 
-        # Reconcile states
+        # Reconcile order states
         cdef ExecutionMassStatus mass_status
         cdef OrderStatusReport order_state_report
         for name, mass_status in client_mass_status.items():
-            for order_state_report in mass_status.order_reports().values():
+            order_reports = mass_status.order_reports()
+            if not order_reports:
+                continue
+            for order_state_report in order_reports.values():
                 order = active_orders.get(order_state_report.client_order_id)
+                if order is None:
+                    self._log.error(
+                        f"Cannot reconcile state: "
+                        f"No order found for {repr(order_state_report.client_order_id)}."
+                    )
+                    continue
                 exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
                 await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
 
@@ -209,6 +218,12 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             resolved = True
             for order in active_orders.values():
                 client = self._routing_map.get(order.instrument_id.venue)
+                if client is None:
+                    self._log.error(
+                        f"Cannot reconcile state: "
+                        f"No client found for {order.instrument_id.venue}."
+                    )
+                    return False  # Will never reconcile
                 mass_status = client_mass_status.get(client.id)
                 if mass_status is None:
                     return False  # Will never reconcile

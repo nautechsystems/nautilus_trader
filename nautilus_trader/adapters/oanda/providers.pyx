@@ -45,7 +45,7 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
         bint load_all=False,
     ):
         """
-        Initialize a new instance of the `OandaInstrumentProvider` class.
+        Initialize a new instance of the ``OandaInstrumentProvider`` class.
 
         Parameters
         ----------

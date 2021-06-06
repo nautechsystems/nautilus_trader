@@ -51,7 +51,7 @@ cdef class PerformanceAnalyzer:
 
     def __init__(self):
         """
-        Initialize a new instance of the `PerformanceAnalyzer` class.
+        Initialize a new instance of the ``PerformanceAnalyzer`` class.
         """
         self._account_balances_starting = {}  # type: dict[Currency, Money]
         self._account_balances = {}           # type: dict[Currency, Money]
@@ -74,7 +74,7 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(positions, "positions")
 
         self._account_balances_starting = account.starting_balances()
-        self._account_balances = account.balances()
+        self._account_balances = account.balances_total()
         self._realized_pnls = {}
         self._daily_returns = pd.Series(dtype=float64)
 
@@ -207,8 +207,11 @@ cdef class PerformanceAnalyzer:
             currency = next(iter(self._account_balances.keys()))
         Condition.is_in(currency, self._account_balances, "currency", "self._account_balances")
 
-        account_balance = self._account_balances[currency]
-        account_balance_starting = self._account_balances_starting[currency]
+        account_balance = self._account_balances.get(currency)
+        account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
+
+        if account_balance is None:
+            return 0.0
 
         return float(account_balance - account_balance_starting)
 
@@ -242,8 +245,11 @@ cdef class PerformanceAnalyzer:
             currency = next(iter(self._account_balances.keys()))
         Condition.is_in(currency, self._account_balances, "currency", "self._account_balances")
 
-        account_balance = self._account_balances[currency]
-        account_balance_starting = self._account_balances_starting[currency]
+        account_balance = self._account_balances.get(currency)
+        account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
+
+        if account_balance is None:
+            return 0.0
 
         if account_balance_starting.as_decimal() == 0:
             # Protect divide by zero
@@ -676,14 +682,14 @@ cdef class PerformanceAnalyzer:
         """
         return [
             f"PnL:               {round(self.total_pnl(currency), currency.precision):,} {currency}",
-            f"PnL%:              {round(self.total_pnl_percentage(currency), 2)}%",
+            f"PnL%:              {round(self.total_pnl_percentage(currency), 4)}%",
             f"Max Winner:        {round(self.max_winner(currency), currency.precision):,} {currency}",
             f"Avg Winner:        {round(self.avg_winner(currency), currency.precision):,} {currency}",
             f"Min Winner:        {round(self.min_winner(currency), currency.precision):,} {currency}",
             f"Min Loser:         {round(self.min_loser(currency), currency.precision):,} {currency}",
             f"Avg Loser:         {round(self.avg_loser(currency), currency.precision):,} {currency}",
             f"Max Loser:         {round(self.max_loser(currency), currency.precision):,} {currency}",
-            f"Win Rate:          {round(self.win_rate(currency), 2)}",
+            f"Win Rate:          {round(self.win_rate(currency), 4)}",
             f"Expectancy:        {round(self.expectancy(currency), currency.precision):,} {currency}",
         ]
 

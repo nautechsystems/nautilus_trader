@@ -22,7 +22,7 @@ implementations which can control many `Timer` instances.
 
 System level commands and enums.
 
-The base `Component` class.
+The base `Component`` class.
 
 Trading domain specific components for generating `Order` and `Identifier` objects.
 

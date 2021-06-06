@@ -80,7 +80,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         dict bars_ask=None,
     ):
         """
-        Initialize a new instance of the `BacktestDataProducer` class.
+        Initialize a new instance of the ``BacktestDataProducer`` class.
 
         Parameters
         ----------
@@ -546,12 +546,12 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
 cdef class CachedProducer(DataProducerFacade):
     """
-    Cached wrap for the `BacktestDataProducer` class.
+    Cached wrap for the `BacktestDataProducer`` class.
     """
 
     def __init__(self, BacktestDataProducer producer):
         """
-        Initialize a new instance of the `CachedProducer` class.
+        Initialize a new instance of the ``CachedProducer`` class.
 
         Parameters
         ----------

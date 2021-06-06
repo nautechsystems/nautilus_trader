@@ -27,7 +27,7 @@ cdef class Identifier:
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `Identifier` class.
+        Initialize a new instance of the ``Identifier`` class.
 
         Parameters
         ----------
@@ -88,7 +88,7 @@ cdef class Symbol(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `Symbol` class.
+        Initialize a new instance of the ``Symbol`` class.
 
         Parameters
         ----------
@@ -112,7 +112,7 @@ cdef class Venue(Identifier):
 
     def __init__(self, str name):
         """
-        Initialize a new instance of the `Venue` class.
+        Initialize a new instance of the ``Venue`` class.
 
         Parameters
         ----------
@@ -137,7 +137,7 @@ cdef class InstrumentId(Identifier):
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
         """
-        Initialize a new instance of the `InstrumentId` class.
+        Initialize a new instance of the ``InstrumentId`` class.
 
         Parameters
         ----------
@@ -194,7 +194,7 @@ cdef class TraderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `TraderId` class.
+        Initialize a new instance of the ``TraderId`` class.
 
         Must be correctly formatted with two valid strings either side of a hyphen.
         It is expected a trader identifier is the abbreviated name of the trader
@@ -242,7 +242,7 @@ cdef class StrategyId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `StrategyId` class.
+        Initialize a new instance of the ``StrategyId`` class.
 
         Must be correctly formatted with two valid strings either side of a hyphen.
         Is is expected a strategy identifier is the class name of the strategy with
@@ -304,7 +304,7 @@ cdef class AccountId(Identifier):
 
     def __init__(self, str issuer, str number):
         """
-        Initialize a new instance of the `AccountId` class.
+        Initialize a new instance of the ``AccountId`` class.
 
         Parameters
         ----------
@@ -369,7 +369,7 @@ cdef class ClientId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `ClientId` class.
+        Initialize a new instance of the ``ClientId`` class.
 
         Parameters
         ----------
@@ -394,7 +394,7 @@ cdef class ClientOrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `ClientOrderId` class.
+        Initialize a new instance of the ``ClientOrderId`` class.
 
         Parameters
         ----------
@@ -429,7 +429,7 @@ cdef class ClientOrderLinkId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `ClientOrderLinkId` class.
+        Initialize a new instance of the ``ClientOrderLinkId`` class.
 
         Parameters
         ----------
@@ -454,7 +454,7 @@ cdef class VenueOrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `VenueOrderId` class.
+        Initialize a new instance of the ``VenueOrderId`` class.
 
         Parameters
         ----------
@@ -500,7 +500,7 @@ cdef class PositionId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `PositionId` class.
+        Initialize a new instance of the ``PositionId`` class.
 
         Parameters
         ----------
@@ -544,7 +544,7 @@ cdef class ExecutionId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `ExecutionId` class.
+        Initialize a new instance of the ``ExecutionId`` class.
 
         Parameters
         ----------
@@ -567,7 +567,7 @@ cdef class TradeMatchId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the `TradeMatchId` class.
+        Initialize a new instance of the ``TradeMatchId`` class.
 
         Parameters
         ----------

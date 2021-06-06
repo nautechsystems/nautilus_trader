@@ -95,7 +95,7 @@ cdef class Component:
         bint log_initialized=True,
     ):
         """
-        Initialize a new instance of the `Component` class.
+        Initialize a new instance of the ``Component`` class.
 
         Parameters
         ----------

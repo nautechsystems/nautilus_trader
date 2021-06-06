@@ -28,7 +28,7 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionDatabase:
+cdef class CacheDatabase:
     cdef LoggerAdapter _log
 
     cdef readonly TraderId trader_id
@@ -62,5 +62,5 @@ cdef class ExecutionDatabase:
     cpdef void update_strategy(self, TradingStrategy strategy) except *
 
 
-cdef class InMemoryExecutionDatabase(ExecutionDatabase):
+cdef class BypassCacheDatabase(CacheDatabase):
     cdef dict _instruments

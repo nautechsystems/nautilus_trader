@@ -64,7 +64,7 @@ cdef str TRIGGER
 cdef str CURRENCY
 cdef str TIME_IN_FORCE
 cdef str LIQUIDITY_SIDE
-cdef str ACCOUNT_NUMBER
+cdef str ACCOUNT_TYPE
 cdef str BALANCES
 cdef str MARGIN_BALANCE
 cdef str MARGIN_AVAILABLE
@@ -80,7 +80,6 @@ cdef str ASSET_CLASS
 cdef str ASSET_TYPE
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
-cdef str COST_CURRENCY
 cdef str SETTLEMENT_CURRENCY
 cdef str IS_INVERSE
 cdef str BROKER_SYMBOL

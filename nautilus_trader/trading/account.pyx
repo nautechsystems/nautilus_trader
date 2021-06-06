@@ -16,18 +16,12 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
-
-# TODO(cs): Add C @staticmethod(s)
 
 cdef class Account:
     """
@@ -38,7 +32,7 @@ cdef class Account:
 
     def __init__(self, AccountState event):
         """
-        Initialize a new instance of the `Account` class.
+        Initialize a new instance of the ``Account`` class.
 
         Parameters
         ----------
@@ -49,21 +43,18 @@ cdef class Account:
         Condition.not_none(event, "event")
 
         self.id = event.account_id
+        self.type = event.account_type
+        self.base_currency = event.base_currency
 
-        default_currency_str = event.info.get("default_currency")
-        if default_currency_str:
-            self.default_currency = Currency.from_str_c(default_currency_str)
-        else:
-            self.default_currency = None
+        cdef dict initial_margins = event.info.get("initial_margins", {})
+        cdef dict maint_margins = event.info.get("maint_margins", {})
 
-        initial_margins = event.info.get("initial_margins", {})
-        maint_margins = event.info.get("maint_margins", {})
-
-        self._events = [event]
         self._starting_balances = {b.currency: b.total for b in event.balances}
-        self._balances = {}                      # type: dict[Currency, AccountBalance]
-        self._initial_margins = initial_margins  # type: dict[Currency, Money]
-        self._maint_margins = maint_margins      # type: dict[Currency, Money]
+        self._events = [event]                    # type: list[AccountState]
+        self._balances = {}                       # type: dict[Currency, AccountBalance]
+        self._commissions = {}                    # type: dict[Currency, Money]
+        self._initial_margins = initial_margins   # type: dict[Currency, Money]
+        self._maint_margins = maint_margins       # type: dict[Currency, Money]
         self._portfolio = None  # Initialized when registered with portfolio
 
         self._update_balances(event.balances)
@@ -160,7 +151,13 @@ cdef class Account:
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(self.id, event.account_id, "id", "event.account_id")
+        Condition.equal(event.account_id, self.id, "self.id", "event.account_id")
+        Condition.equal(event.base_currency, self.base_currency, "self.base_currency", "event.base_currency")
+
+        if self.base_currency:
+            # Single-currency account
+            Condition.true(len(event.balances) == 1, "single-currency account has multiple currency update")
+            Condition.equal(event.balances[0].currency, self.base_currency, "event.balances[0].currency", "self.base_currency")
 
         self._events.append(event)
         self._update_balances(event.balances)
@@ -189,7 +186,7 @@ cdef class Account:
 
         Parameters
         ----------
-        margin : Decimal
+        margin : Money
             The current maintenance margin for the currency.
 
         Warnings
@@ -199,7 +196,31 @@ cdef class Account:
         """
         Condition.not_none(margin, "money")
 
-        self._maint_margins[margin.currency] = margin
+        self._maint_margins[margin.currency] = margin\
+
+    cpdef void update_commissions(self, Money commission) except *:
+        """
+        Update the commissions.
+
+        Parameters
+        ----------
+        commission : Money
+            The commission to update with.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(commission, "commission")
+
+        # Increment total commissions
+        if commission.as_decimal() == 0:
+            return  # Nothing to update
+
+        cdef Currency currency = commission.currency
+        total_commissions: Decimal = self._commissions.get(currency, Decimal())
+        self._commissions[currency] = Money(total_commissions + commission, currency)
 
 # -- QUERIES-CASH ----------------------------------------------------------------------------------
 
@@ -227,7 +248,18 @@ cdef class Account:
 
     cpdef dict balances(self):
         """
-        Return the account balances.
+        Return the account balances totals.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._balances.copy()
+
+    cpdef dict balances_total(self):
+        """
+        Return the account balances totals.
 
         Returns
         -------
@@ -258,7 +290,46 @@ cdef class Account:
         """
         return {c: b.locked for c, b in self._balances.items()}
 
-    cpdef Money balance(self, Currency currency=None):
+    cpdef dict commissions(self):
+        """
+        Return the total commissions for the account.
+        """
+        return self._commissions.copy()
+
+    cpdef AccountBalance balance(self, Currency currency=None):
+        """
+        Return the current account balance total.
+
+        For multi-currency accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
+
+        Returns
+        -------
+        AccountBalance or None
+
+        Raises
+        ------
+        ValueError
+            If currency is None and base_currency is None.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
+
+        """
+        if currency is None:
+            currency = self.base_currency
+        Condition.not_none(currency, "currency")
+
+        return self._balances.get(currency)
+
+    cpdef Money balance_total(self, Currency currency=None):
         """
         Return the current account balance total.
 
@@ -277,7 +348,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
@@ -286,7 +357,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
 
         cdef AccountBalance balance = self._balances.get(currency)
@@ -313,7 +384,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
@@ -322,7 +393,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
 
         cdef AccountBalance balance = self._balances.get(currency)
@@ -349,7 +420,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
@@ -358,7 +429,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
 
         cdef AccountBalance balance = self._balances.get(currency)
@@ -385,7 +456,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
         ValueError
             If portfolio is not registered.
 
@@ -396,7 +467,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
         Condition.not_none(self._portfolio, "self._portfolio")
 
@@ -426,7 +497,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
@@ -435,7 +506,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
 
         balance: Decimal = self._balances.get(currency)
@@ -448,202 +519,21 @@ cdef class Account:
 
         return Money(balance.free + unrealized_pnl, currency)
 
-    @staticmethod
-    def market_value(
-        Instrument instrument,
-        Quantity quantity,
-        close_price: Decimal,
-    ):
+    cpdef Money commission(self, Currency currency):
         """
-        Calculate the market value from the given parameters.
+        Return the total commissions for the given currency.
 
         Parameters
         ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        quantity : Quantity
-            The total quantity.
-        close_price : Decimal or Price
-            The closing price.
+        currency : Currency
+            The currency for the commission.
 
         Returns
         -------
-        Money
-            In the quote currency.
+        Money or None
 
         """
-        Condition.not_none(quantity, "quantity")
-        Condition.type(close_price, (Decimal, Price), "close_price")
-        Condition.not_none(close_price, "close_price")
-
-        if instrument.is_inverse:
-            close_price = 1 / close_price
-
-        market_value: Decimal = (quantity * instrument.multiplier * close_price)
-        return Money(market_value, instrument.cost_currency)
-
-    @staticmethod
-    def notional_value(Instrument instrument, Quantity quantity, close_price: Decimal):
-        """
-        Calculate the notional value from the given parameters.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        quantity : Quantity
-            The total quantity.
-        close_price : Decimal or Price
-            The closing price.
-
-        Returns
-        -------
-        Money
-            In the settlement currency.
-
-        """
-        Condition.not_none(quantity, "quantity")
-        Condition.type(close_price, (Decimal, Price), "close_price")
-        Condition.not_none(close_price, "close_price")
-
-        if instrument.is_inverse:
-            return Money(quantity * instrument.multiplier, instrument.quote_currency)
-
-        notional_value: Decimal = quantity * instrument.multiplier * close_price
-        return Money(notional_value, instrument.quote_currency)
-
-    @staticmethod
-    def calculate_initial_margin(
-        Instrument instrument,
-        Quantity quantity,
-        Price price,
-    ):
-        """
-        Calculate the initial margin from the given parameters.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        quantity : Quantity
-            The order quantity.
-        price : Price
-            The order price.
-
-        Returns
-        -------
-        Money
-            In the instruments PnL currency.
-
-        """
-        Condition.not_none(quantity, "quantity")
-        Condition.not_none(price, "price")
-
-        # TODO: Temporarily no margin
-        leverage = 1
-        if leverage == 1:
-            return Money(0, instrument.cost_currency)
-
-        notional = Account.notional_value(quantity, price)
-        margin = notional / leverage * instrument.margin_init
-        margin += notional * instrument.taker_fee * 2
-
-        return Money(margin, instrument.cost_currency)
-
-    @staticmethod
-    def calculate_maint_margin(
-        Instrument instrument,
-        PositionSide side,
-        Quantity quantity,
-        Price last,
-    ):
-        """
-        Calculate the maintenance margin from the given parameters.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        side : PositionSide
-            The currency position side.
-        quantity : Quantity
-            The currency position quantity.
-        last : Price
-            The position instruments last price.
-
-        Returns
-        -------
-        Money
-            In quote currency.
-
-        """
-        # side checked in _get_close_price
-        Condition.not_none(quantity, "quantity")
-        Condition.not_none(last, "last")
-
-        # TODO: Temporarily no margin
-        leverage = 1
-        if leverage == 1:
-            return Money(0, instrument.cost_currency)  # No margin necessary
-
-        cdef Money notional = Account.notional_value(instrument, quantity, last)
-        margin = (notional / leverage) * instrument.margin_maint
-        margin += notional * instrument.taker_fee
-
-        return Money(margin, instrument.cost_currency)
-
-    @staticmethod
-    def calculate_commission(
-        Instrument instrument,
-        Quantity last_qty,
-        last_px: Decimal,
-        LiquiditySide liquidity_side,
-    ):
-        """
-        Calculate the commission generated from a transaction with the given
-        parameters.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        last_qty : Quantity
-            The transaction quantity.
-        last_px : Decimal or Price
-            The transaction price.
-        liquidity_side : LiquiditySide
-            The liquidity side for the transaction.
-
-        Returns
-        -------
-        Money
-            In quote currency.
-
-        Raises
-        ------
-        ValueError
-            If liquidity_side is NONE.
-
-        """
-        Condition.not_none(last_qty, "last_qty")
-        Condition.type(last_px, (Decimal, Price), "last_px")
-        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-
-        cdef Money notional = Account.notional_value(instrument, last_qty, last_px)
-
-        if liquidity_side == LiquiditySide.MAKER:
-            commission: Decimal = notional * instrument.maker_fee
-        elif liquidity_side == LiquiditySide.TAKER:
-            commission: Decimal = notional * instrument.taker_fee
-        else:
-            raise RuntimeError(
-                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
-            )
-
-        if instrument.is_inverse:
-            commission *= 1 / last_px
-
-        return Money(commission, instrument.cost_currency)
+        return self._commissions.get(currency)
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 
@@ -688,7 +578,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
@@ -697,7 +587,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
 
         return self._initial_margins.get(currency)
@@ -721,7 +611,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
@@ -730,7 +620,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
 
         return self._maint_margins.get(currency)
@@ -756,7 +646,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and default_currency is None.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
@@ -765,7 +655,7 @@ cdef class Account:
 
         """
         if currency is None:
-            currency = self.default_currency
+            currency = self.base_currency
         Condition.not_none(currency, "currency")
 
         cdef Money equity = self.equity(currency)
@@ -776,6 +666,75 @@ cdef class Account:
         maint_margin: Decimal = self._maint_margins.get(currency, Decimal())
 
         return Money(equity - initial_margin - maint_margin, currency)
+
+# -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef list calculate_pnls(
+        self,
+        Instrument instrument,
+        Position position,
+        OrderFilled fill,
+    ):
+        """
+        Return the calculated immediate PnL.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        position : Position, optional
+            The position for the calculation (can be None).
+        fill : OrderFilled
+            The fill for the calculation.
+
+        Returns
+        -------
+        list[Money] or None
+
+        """
+        if self.type == AccountType.CASH:
+            return self._calculate_pnls_cash_account(instrument, fill)
+        elif self.type == AccountType.MARGIN:
+            return [self._calculate_pnl_margin_account(instrument, position, fill)]
+
+    cdef list _calculate_pnls_cash_account(
+        self,
+        Instrument instrument,
+        OrderFilled fill,
+    ):
+        # Assumption that a cash account never deals
+        # with inverse or quanto instruments.
+        cdef list pnls = []
+
+        cdef Currency quote_currency = instrument.quote_currency
+        cdef Currency base_currency = instrument.get_base_currency()
+
+        if fill.order_side == OrderSide.BUY:
+            if base_currency:
+                pnls.append(Money(fill.last_qty, base_currency))
+            pnls.append(Money(-(fill.last_qty * (1 / fill.last_px)), quote_currency))
+        else:  # OrderSide.SELL
+            if base_currency:
+                pnls.append(Money(-fill.last_qty, base_currency))
+            pnls.append(Money(fill.last_qty * (1 / fill.last_px), quote_currency))
+
+        return pnls
+
+    cdef Money _calculate_pnl_margin_account(
+        self,
+        Instrument instrument,
+        Position position,
+        OrderFilled fill,
+    ):
+        if position and position.entry != fill.order_side:
+            # Calculate positional PnL
+            return position.calculate_pnl(
+                avg_px_open=position.avg_px_open,
+                avg_px_close=fill.last_px,
+                quantity=fill.last_qty,
+            )
+        else:
+            return Money(0, instrument.get_cost_currency())
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

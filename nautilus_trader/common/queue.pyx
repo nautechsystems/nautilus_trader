@@ -40,7 +40,7 @@ cdef class Queue:
 
     def __init__(self, int maxsize=0):
         """
-        Initialize a new instance of the `Queue` class.
+        Initialize a new instance of the ``Queue`` class.
 
         Parameters
         ----------

@@ -15,12 +15,12 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
-from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
@@ -59,8 +59,8 @@ cdef class DataEngine(Component):
 
     cdef readonly Portfolio portfolio
     """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
-    cdef readonly DataCache cache
-    """The engines data cache.\n\n:returns: `DataCache`"""
+    cdef readonly Cache cache
+    """The engines cache.\n\n:returns: `Cache`"""
     cdef readonly int command_count
     """The total count of data commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int data_count

@@ -26,6 +26,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -68,6 +69,8 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             venue=Venue("SIM"),
             venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )
@@ -125,6 +128,8 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             venue=Venue("SIM"),
             venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
         )
 
@@ -177,6 +182,8 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             venue=Venue("SIM"),
             venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
         )

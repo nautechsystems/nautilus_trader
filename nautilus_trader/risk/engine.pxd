@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -37,8 +37,8 @@ cdef class RiskEngine(Component):
 
     cdef readonly TraderId trader_id
     """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
-    cdef readonly ExecutionCache cache
-    """The engines execution cache.\n\n:returns: `ExecutionCache`"""
+    cdef readonly CacheFacade cache
+    """The engines cache.\n\n:returns: `CacheFacade`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count

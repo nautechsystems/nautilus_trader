@@ -58,7 +58,7 @@ cdef class CurrencySpot(Instrument):
         dict info=None,
     ):
         """
-        Initialize a new instance of the `CurrencySpot` instrument class.
+        Initialize a new instance of the ``CurrencySpot` instrument class.
 
         Parameters
         ----------
@@ -148,7 +148,6 @@ cdef class CurrencySpot(Instrument):
             asset_class=asset_class,
             asset_type=AssetType.SPOT,
             quote_currency=quote_currency,
-            cost_currency=quote_currency,
             is_inverse=False,
             price_precision=price_precision,
             size_precision=size_precision,
@@ -172,3 +171,14 @@ cdef class CurrencySpot(Instrument):
         )
 
         self.base_currency = base_currency
+
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base currency.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.base_currency

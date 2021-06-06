@@ -19,14 +19,14 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.client import ExecutionClient
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
@@ -58,18 +58,17 @@ class ExecutionClientTests(unittest.TestCase):
         self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
-        portfolio = Portfolio(
+        self.cache = TestStubs.cache()
+
+        self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
-        portfolio.register_data_cache(DataCache(self.logger))
 
-        database = InMemoryExecutionDatabase(
-            trader_id=self.trader_id, logger=self.logger
-        )
         self.exec_engine = ExecutionEngine(
-            database=database,
-            portfolio=portfolio,
+            portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -78,8 +77,10 @@ class ExecutionClientTests(unittest.TestCase):
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
-            venue_type=VenueType.BROKERAGE,
-            account_id=self.account_id,
+            venue_type=VenueType.ECN,
+            account_id=TestStubs.account_id(),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
@@ -100,6 +101,8 @@ class ExecutionClientTests(unittest.TestCase):
             client_id=ClientId("IB"),
             venue_type=VenueType.BROKERAGE_MULTI_VENUE,
             account_id=AccountId("IB", "U1258001"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,

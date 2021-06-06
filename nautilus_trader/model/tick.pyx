@@ -41,7 +41,7 @@ cdef class Tick(Data):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `QuoteTick` class.
+        Initialize a new instance of the ``Tick`` class.
 
         Parameters
         ----------
@@ -80,7 +80,7 @@ cdef class QuoteTick(Tick):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `QuoteTick` class.
+        Initialize a new instance of the ``QuoteTick`` class.
 
         Parameters
         ----------
@@ -236,7 +236,7 @@ cdef class TradeTick(Tick):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `TradeTick` class.
+        Initialize a new instance of the ``TradeTick`` class.
 
         Parameters
         ----------

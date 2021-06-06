@@ -44,7 +44,7 @@ cdef class BarBuilder:
 
     def __init__(self, BarType bar_type not None, bint use_previous_close=False):
         """
-        Initialize a new instance of the `BarBuilder` class.
+        Initialize a new instance of the ``BarBuilder`` class.
 
         Parameters
         ----------
@@ -228,7 +228,7 @@ cdef class BarAggregator:
         bint use_previous_close,
     ):
         """
-        Initialize a new instance of the `BarAggregator` class.
+        Initialize a new instance of the ``BarAggregator`` class.
 
         Parameters
         ----------
@@ -316,7 +316,7 @@ cdef class TickBarAggregator(BarAggregator):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TickBarAggregator` class.
+        Initialize a new instance of the ``TickBarAggregator`` class.
 
         Parameters
         ----------
@@ -329,9 +329,9 @@ cdef class TickBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -357,7 +357,7 @@ cdef class VolumeBarAggregator(BarAggregator):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TickBarAggregator` class.
+        Initialize a new instance of the ``TickBarAggregator`` class.
 
         Parameters
         ----------
@@ -370,9 +370,9 @@ cdef class VolumeBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -420,7 +420,7 @@ cdef class ValueBarAggregator(BarAggregator):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TickBarAggregator` class.
+        Initialize a new instance of the ``TickBarAggregator`` class.
 
         Parameters
         ----------
@@ -433,9 +433,9 @@ cdef class ValueBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -501,7 +501,7 @@ cdef class TimeBarAggregator(BarAggregator):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TimeBarAggregator` class.
+        Initialize a new instance of the ``TimeBarAggregator`` class.
 
         Parameters
         ----------
@@ -518,9 +518,9 @@ cdef class TimeBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=use_previous_close,
         )
 
@@ -694,7 +694,7 @@ cdef class BulkTickBarBuilder:
         callback not None: callable,
     ):
         """
-        Initialize a new instance of the `BulkTickBarBuilder` class.
+        Initialize a new instance of the ``BulkTickBarBuilder`` class.
 
         Parameters
         ----------
@@ -748,7 +748,7 @@ cdef class BulkTimeBarUpdater:
 
     def __init__(self, TimeBarAggregator aggregator not None):
         """
-        Initialize a new instance of the `BulkTimeBarUpdater` class.
+        Initialize a new instance of the ``BulkTimeBarUpdater`` class.
 
         Parameters
         ----------
