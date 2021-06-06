@@ -16,14 +16,13 @@
 
 from decimal import Decimal
 import os
-import pathlib
 import sys
 
 import pandas as pd
 
 
 sys.path.insert(
-    0, str(pathlib.Path(__file__).parents[2])
+    0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -32,6 +31,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -83,6 +83,8 @@ if __name__ == "__main__":
         venue=SIM,
         venue_type=VenueType.ECN,
         oms_type=OMSType.HEDGING,  # Venue will generate position_ids
+        account_type=AccountType.MARGIN,
+        base_currency=USD,  # Standard single-currency account
         starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],

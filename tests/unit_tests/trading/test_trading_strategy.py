@@ -20,7 +20,6 @@ import unittest
 from parameterized import parameterized
 import pytz
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -31,13 +30,13 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -76,13 +75,17 @@ class TradingStrategyTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={
@@ -90,19 +93,11 @@ class TradingStrategyTests(unittest.TestCase):
             },  # To correctly reproduce historical data bars
         )
 
-        self.analyzer = PerformanceAnalyzer()
-
-        trader_id = TraderId("TESTER-000")
         account_id = TestStubs.account_id()
 
-        self.exec_db = InMemoryExecutionDatabase(
-            trader_id=trader_id,
-            logger=self.logger,
-        )
-
         self.exec_engine = ExecutionEngine(
-            database=self.exec_db,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -110,6 +105,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -120,9 +116,11 @@ class TradingStrategyTests(unittest.TestCase):
             venue=Venue("SIM"),
             venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
-            is_frozen_account=False,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
-            exec_cache=self.exec_engine.cache,
+            is_frozen_account=False,
+            cache=self.exec_engine.cache,
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
@@ -140,6 +138,8 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
@@ -150,16 +150,14 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_client(self.data_client)
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
-        self.portfolio.register_data_cache(self.data_engine.cache)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
         # Add instruments
         self.data_engine.process(AUDUSD_SIM)
         self.data_engine.process(GBPUSD_SIM)
         self.data_engine.process(USDJPY_SIM)
-        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
-        self.exec_engine.cache.add_instrument(GBPUSD_SIM)
-        self.exec_engine.cache.add_instrument(USDJPY_SIM)
+        self.cache.add_instrument(AUDUSD_SIM)
+        self.cache.add_instrument(GBPUSD_SIM)
+        self.cache.add_instrument(USDJPY_SIM)
 
         self.exchange.process_tick(
             TestStubs.quote_tick_3decimal(USDJPY_SIM.id)
@@ -724,7 +722,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_data_engine(self.data_engine)
 
         # Assert
-        self.assertIsNotNone(strategy.data)
+        self.assertIsNotNone(strategy.cache)
 
     def test_register_risk_engine(self):
         # Arrange
@@ -739,7 +737,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_risk_engine(self.risk_engine)
 
         # Assert
-        self.assertIsNotNone(strategy.execution)
+        self.assertIsNotNone(strategy.cache)
 
     def test_register_portfolio(self):
         # Arrange
@@ -1819,11 +1817,11 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order)
 
         # Assert
-        self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
-        self.assertNotIn(order.client_order_id, strategy.execution.orders_working())
-        self.assertFalse(strategy.execution.is_order_working(order.client_order_id))
-        self.assertTrue(strategy.execution.is_order_completed(order.client_order_id))
+        self.assertIn(order, strategy.cache.orders())
+        self.assertEqual(OrderState.FILLED, strategy.cache.orders()[0].state)
+        self.assertNotIn(order.client_order_id, strategy.cache.orders_working())
+        self.assertFalse(strategy.cache.is_order_working(order.client_order_id))
+        self.assertTrue(strategy.cache.is_order_completed(order.client_order_id))
 
     def test_submit_bracket_order_with_valid_order_successfully_submits(self):
         # Arrange
@@ -1853,11 +1851,11 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_bracket_order(order)
 
         # Assert
-        self.assertIn(entry, strategy.execution.orders())
+        self.assertIn(entry, strategy.cache.orders())
         self.assertEqual(OrderState.ACCEPTED, entry.state)
-        self.assertIn(entry, strategy.execution.orders_working())
-        self.assertTrue(strategy.execution.is_order_working(entry.client_order_id))
-        self.assertFalse(strategy.execution.is_order_completed(entry.client_order_id))
+        self.assertIn(entry, strategy.cache.orders_working())
+        self.assertTrue(strategy.cache.is_order_working(entry.client_order_id))
+        self.assertFalse(strategy.cache.is_order_completed(entry.client_order_id))
 
     def test_cancel_order(self):
         # Arrange
@@ -1883,16 +1881,16 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.cancel_order(order)
 
         # Assert
-        self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[0].state)
+        self.assertIn(order, strategy.cache.orders())
+        self.assertEqual(OrderState.CANCELED, strategy.cache.orders()[0].state)
         self.assertEqual(
             order.client_order_id,
-            strategy.execution.orders_completed()[0].client_order_id,
+            strategy.cache.orders_completed()[0].client_order_id,
         )
-        self.assertNotIn(order.client_order_id, strategy.execution.orders_working())
-        self.assertTrue(strategy.execution.order_exists(order.client_order_id))
-        self.assertFalse(strategy.execution.is_order_working(order.client_order_id))
-        self.assertTrue(strategy.execution.is_order_completed(order.client_order_id))
+        self.assertNotIn(order.client_order_id, strategy.cache.orders_working())
+        self.assertTrue(strategy.cache.order_exists(order.client_order_id))
+        self.assertFalse(strategy.cache.is_order_working(order.client_order_id))
+        self.assertTrue(strategy.cache.is_order_completed(order.client_order_id))
 
     def test_update_order_when_no_changes_does_not_submit_command(self):
         # Arrange
@@ -1948,15 +1946,13 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(order, strategy.execution.orders()[0])
-        self.assertEqual(OrderState.ACCEPTED, strategy.execution.orders()[0].state)
-        self.assertEqual(
-            Quantity.from_int(110000), strategy.execution.orders()[0].quantity
-        )
-        self.assertEqual(Price.from_str("90.001"), strategy.execution.orders()[0].price)
-        self.assertTrue(strategy.execution.order_exists(order.client_order_id))
-        self.assertTrue(strategy.execution.is_order_working(order.client_order_id))
-        self.assertFalse(strategy.execution.is_order_completed(order.client_order_id))
+        self.assertEqual(order, strategy.cache.orders()[0])
+        self.assertEqual(OrderState.ACCEPTED, strategy.cache.orders()[0].state)
+        self.assertEqual(Quantity.from_int(110000), strategy.cache.orders()[0].quantity)
+        self.assertEqual(Price.from_str("90.001"), strategy.cache.orders()[0].price)
+        self.assertTrue(strategy.cache.order_exists(order.client_order_id))
+        self.assertTrue(strategy.cache.is_order_working(order.client_order_id))
+        self.assertFalse(strategy.cache.is_order_completed(order.client_order_id))
         self.assertTrue(strategy.portfolio.is_flat(order.instrument_id))
 
     def test_cancel_all_orders(self):
@@ -1991,12 +1987,12 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.cancel_all_orders(USDJPY_SIM.id)
 
         # Assert
-        self.assertIn(order1, strategy.execution.orders())
-        self.assertIn(order2, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[0].state)
-        self.assertEqual(OrderState.CANCELED, strategy.execution.orders()[1].state)
-        self.assertIn(order1, strategy.execution.orders_completed())
-        self.assertIn(order2, strategy.execution.orders_completed())
+        self.assertIn(order1, self.cache.orders())
+        self.assertIn(order2, self.cache.orders())
+        self.assertEqual(OrderState.CANCELED, self.cache.orders()[0].state)
+        self.assertEqual(OrderState.CANCELED, self.cache.orders()[1].state)
+        self.assertIn(order1, self.cache.orders_completed())
+        self.assertIn(order2, strategy.cache.orders_completed())
 
     def test_flatten_position_when_position_already_flat_does_nothing(self):
         # Arrange
@@ -2026,7 +2022,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order1)
         strategy.submit_order(order2, PositionId("1-001"))  # Generated by exchange
 
-        position = strategy.execution.positions_closed()[0]
+        position = strategy.cache.positions_closed()[0]
 
         # Act
         strategy.flatten_position(position)
@@ -2055,7 +2051,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.submit_order(order)
 
-        position = strategy.execution.positions_open()[0]
+        position = self.cache.positions_open()[0]
 
         # Act
         strategy.flatten_position(position)

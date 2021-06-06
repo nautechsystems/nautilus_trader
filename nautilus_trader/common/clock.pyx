@@ -46,7 +46,7 @@ cdef class Clock:
 
     def __init__(self):
         """
-        Initialize a new instance of the `Clock` class.
+        Initialize a new instance of the ``Clock`` class.
         """
         self._uuid_factory = UUIDFactory()
         self._timers = {}    # type: dict[str, Timer]
@@ -424,7 +424,7 @@ cdef class TestClock(Clock):
 
     def __init__(self, int64_t initial_ns=0):
         """
-        Initialize a new instance of the `TestClock` class.
+        Initialize a new instance of the ``TestClock`` class.
 
         Parameters
         ----------
@@ -560,7 +560,7 @@ cdef class LiveClock(Clock):
 
     def __init__(self, loop=None):
         """
-        Initialize a new instance of the `LiveClock` class.
+        Initialize a new instance of the ``LiveClock`` class.
 
         If loop is None then threads will be used for timers.
 

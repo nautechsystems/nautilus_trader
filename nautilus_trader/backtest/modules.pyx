@@ -46,7 +46,7 @@ cdef class SimulationModule:
 
     def __init__(self):
         """
-        Initialize a new instance of the `SimulationModule` class.
+        Initialize a new instance of the ``SimulationModule`` class.
         """
         self._exchange = None  # Must be registered
 
@@ -89,7 +89,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
     def __init__(self, rate_data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `FXRolloverInterestModule` class.
+        Initialize a new instance of the ``FXRolloverInterestModule`` class.
 
         Parameters
         ----------
@@ -136,7 +136,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             self._rollover_applied = True
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        cdef list open_positions = self._exchange.exec_cache.positions_open()
+        cdef list open_positions = self._exchange.cache.positions_open()
 
         cdef Position position
         cdef Instrument instrument
@@ -172,16 +172,17 @@ cdef class FXRolloverInterestModule(SimulationModule):
             elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
                 rollover *= 3
 
-            if self._exchange.default_currency is not None:
-                currency = self._exchange.default_currency
-                xrate = self._exchange.get_xrate(
-                    from_currency=instrument.cost_currency,
+            if self._exchange.base_currency is not None:
+                currency = self._exchange.base_currency
+                xrate: Decimal = self._exchange.cache.get_xrate(
+                    venue=instrument.id.venue,
+                    from_currency=instrument.quote_currency,
                     to_currency=currency,
                     price_type=PriceType.MID,
                 )
                 rollover *= xrate
             else:
-                currency = instrument.cost_currency
+                currency = instrument.quote_currency
 
             rollover_total = self._rollover_totals.get(currency, Decimal())
             rollover_total = Money(rollover_total + rollover, currency)

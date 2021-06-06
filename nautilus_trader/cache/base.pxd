@@ -13,6 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -21,14 +26,44 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 
 
-cdef class ExecutionCacheFacade:
+cdef class CacheFacade:
 
-# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------  # noqa
+# -- DATA QUERIES ----------------------------------------------------------------------------------  # noqa
+
+    cpdef list quote_ticks(self, InstrumentId instrument_id)
+    cpdef list trade_ticks(self, InstrumentId instrument_id)
+    cpdef list bars(self, BarType bar_type)
+    cpdef Price price(self, InstrumentId instrument_id, PriceType price_type)
+    cpdef OrderBook order_book(self, InstrumentId instrument_id)
+    cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=*)
+    cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
+    cpdef Bar bar(self, BarType bar_type, int index=*)
+    cpdef int quote_tick_count(self, InstrumentId instrument_id) except *
+    cpdef int trade_tick_count(self, InstrumentId instrument_id) except *
+    cpdef int bar_count(self, BarType bar_type) except *
+    cpdef bint has_order_book(self, InstrumentId instrument_id) except *
+    cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *
+    cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *
+    cpdef bint has_bars(self, BarType bar_type) except *
+
+    cpdef object get_xrate(
+        self,
+        Venue venue,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=*,
+    )
+
+# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id)
     cpdef list instrument_ids(self, Venue venue=*)

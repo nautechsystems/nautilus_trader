@@ -54,7 +54,7 @@ class BetfairTestStrategy(TradingStrategy):
         market_width=Decimal(0.05),  # noqa (B008)
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the ``BetfairTestStrategy`` class.
 
         Parameters
         ----------
@@ -152,8 +152,8 @@ class BetfairTestStrategy(TradingStrategy):
             self.send_orders(midpoint=self.midpoint)
         elif self._state == "UPDATE" and not self._in_flight:
             self.log.info("Sending order update...", color=LogColor.YELLOW)
-            for client_order_id in self.execution.client_order_ids_working():
-                order = self.execution.order(client_order_id)
+            for client_order_id in self.cache.client_order_ids_working():
+                order = self.cache.order(client_order_id)
                 new_price = (
                     order.price * 0.90
                     if order.side == OrderSide.BUY
@@ -164,7 +164,7 @@ class BetfairTestStrategy(TradingStrategy):
             self._state = "CANCEL"
             self.log.info(f"Trigger cancel {self._in_flight}", color=LogColor.YELLOW)
         elif self._state == "CANCEL" and not self._in_flight:
-            orders = self.execution.orders()
+            orders = self.cache.orders()
             self.log.info(f"Sending cancel for orders: {orders}", color=LogColor.YELLOW)
             for order in orders:
                 self.cancel_order(order=order)

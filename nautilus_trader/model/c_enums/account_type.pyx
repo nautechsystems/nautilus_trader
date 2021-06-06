@@ -12,3 +12,32 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+
+cdef class AccountTypeParser:
+
+    @staticmethod
+    cdef str to_str(int value):
+        if value == 1:
+            return "CASH"
+        elif value == 2:
+            return "MARGIN"
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    cdef AccountType from_str(str value) except *:
+        if value == "CASH":
+            return AccountType.CASH
+        elif value == "MARGIN":
+            return AccountType.MARGIN
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    def to_str_py(int value):
+        return AccountTypeParser.to_str(value)
+
+    @staticmethod
+    def from_str_py(str value):
+        return AccountTypeParser.from_str(value)

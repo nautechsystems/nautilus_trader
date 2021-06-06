@@ -15,12 +15,12 @@
 
 import pytest
 
+from nautilus_trader.cache.database import BypassCacheDatabase
+from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.database import ExecutionDatabase
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from tests.test_kit.stubs import TestStubs
@@ -30,7 +30,7 @@ AUDUSD_SIM = TestStubs.audusd_id()
 GBPUSD_SIM = TestStubs.gbpusd_id()
 
 
-class TestExecutionDatabase:
+class TestCacheDatabase:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -46,7 +46,10 @@ class TestExecutionDatabase:
             clock=TestClock(),
         )
 
-        self.database = ExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = CacheDatabase(
+            trader_id=self.trader_id,
+            logger=self.logger,
+        )
 
     def test_flush_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
@@ -129,7 +132,7 @@ class TestExecutionDatabase:
             self.database.update_strategy(None)
 
 
-class TestInMemoryExecutionDatabase:
+class TestBypassCacheDatabase:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -145,7 +148,7 @@ class TestInMemoryExecutionDatabase:
             clock=TestClock(),
         )
 
-        self.database = InMemoryExecutionDatabase(
+        self.database = BypassCacheDatabase(
             trader_id=self.trader_id, logger=self.logger
         )
 

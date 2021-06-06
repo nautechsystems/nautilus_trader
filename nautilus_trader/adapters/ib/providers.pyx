@@ -43,7 +43,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         int client_id=1,
     ):
         """
-        Initialize a new instance of the `IBInstrumentProvider` class.
+        Initialize a new instance of the ``IBInstrumentProvider`` class.
 
         Parameters
         ----------

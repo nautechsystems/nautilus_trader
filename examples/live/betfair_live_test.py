@@ -15,12 +15,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import pathlib
+import os
 import sys
 
 
 sys.path.insert(
-    0, str(pathlib.Path(__file__).parents[2])
+    0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
 from examples.strategies.betfair_test_strategy import BetfairTestStrategy
@@ -39,14 +39,16 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "connection_timeout": 30.0,  # Timeout for successful connections for all engine clients
-        "disconnection_timeout": 30.0,  # Timeout for successful disconnection for all engine clients
-        "check_residuals_delay": 15.0,  # How long to wait after stopping for residual events (secs)
+        "timeout_connection": 30.0,  # Timeout for all engines client to connect and initialize
+        "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
+        "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
+        "timeout_disconnection": 30.0,  # Timeout for all engine clients to disconnect
+        "check_residuals_delay": 15.0,  # Delay to await residual events after stopping engines
     },
     "logging": {
         "level_stdout": "DBG",
     },
-    "exec_database": {
+    "cache_database": {
         "type": "memory",
     },
     "data_engine": {},
@@ -71,6 +73,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+            "base_currency": "AUD",
             "market_filter": {"market_id": market_id},
         },
     },

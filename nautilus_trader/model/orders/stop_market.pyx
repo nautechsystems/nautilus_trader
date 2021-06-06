@@ -59,7 +59,7 @@ cdef class StopMarketOrder(PassiveOrder):
         bint reduce_only=False,
     ):
         """
-        Initialize a new instance of the `StopMarketOrder` class.
+        Initialize a new instance of the ``StopMarketOrder`` class.
 
         Parameters
         ----------

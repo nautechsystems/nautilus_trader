@@ -13,24 +13,6 @@ Aggregation
    :members:
    :member-order: bysource
 
-Base
-----
-
-.. automodule:: nautilus_trader.data.base
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
-Cache
------
-
-.. automodule:: nautilus_trader.data.cache
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Client
 ------
 

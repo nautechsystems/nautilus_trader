@@ -81,7 +81,7 @@ cdef class LiveDataClient(DataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveDataClient` class.
+        Initialize a new instance of the ``LiveDataClient`` class.
 
         Parameters
         ----------
@@ -98,11 +98,11 @@ cdef class LiveDataClient(DataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
@@ -124,7 +124,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveMarketDataClient` class.
+        Initialize a new instance of the ``LiveMarketDataClient`` class.
 
         Parameters
         ----------
@@ -141,11 +141,11 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

@@ -57,7 +57,7 @@ class VolatilityMarketMaker(TradingStrategy):
         order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `VolatilityMarketMaker` class.
+        Initialize a new instance of the ``VolatilityMarketMaker`` class.
 
         Parameters
         ----------
@@ -94,7 +94,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
             self.stop()
@@ -182,14 +182,14 @@ class VolatilityMarketMaker(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]...",
+                f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 
-        last: QuoteTick = self.data.quote_tick(self.instrument_id)
+        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.error("No quotes yet.")
+            self.log.info("No quotes yet...")
             return
 
         # Maintain buy orders
@@ -260,9 +260,9 @@ class VolatilityMarketMaker(TradingStrategy):
             The event received.
 
         """
-        last: QuoteTick = self.data.quote_tick(self.instrument_id)
+        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.error("No quotes yet.")
+            self.log.info("No quotes yet...")
             return
 
         # If order filled then replace order at atr multiple distance from the market

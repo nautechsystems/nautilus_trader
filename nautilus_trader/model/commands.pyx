@@ -43,7 +43,7 @@ cdef class TradingCommand(Command):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `TradingCommand` class.
+        Initialize a new instance of the ``TradingCommand`` class.
 
         Parameters
         ----------
@@ -86,7 +86,7 @@ cdef class SubmitOrder(TradingCommand):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `SubmitOrder` class.
+        Initialize a new instance of the ``SubmitOrder`` class.
 
         Parameters
         ----------
@@ -147,7 +147,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `SubmitBracketOrder` class.
+        Initialize a new instance of the ``SubmitBracketOrder`` class.
 
         Parameters
         ----------
@@ -205,7 +205,7 @@ cdef class UpdateOrder(TradingCommand):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `UpdateOrder` class.
+        Initialize a new instance of the ``UpdateOrder`` class.
 
         Parameters
         ----------
@@ -275,7 +275,7 @@ cdef class CancelOrder(TradingCommand):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `CancelOrder` class.
+        Initialize a new instance of the ``CancelOrder`` class.
 
         Parameters
         ----------

@@ -112,14 +112,15 @@ Index
 
     api_reference/analysis
     api_reference/backtest
+    api_reference/cache
     api_reference/common
     api_reference/core
     api_reference/data
     api_reference/execution
     api_reference/indicators
+    api_reference/infrastructure
     api_reference/live
     api_reference/model
-    api_reference/redis
     api_reference/risk
     api_reference/serialization
     api_reference/trading

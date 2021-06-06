@@ -56,7 +56,7 @@ cdef class Future(Instrument):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Future` class.
+        Initialize a new instance of the ``Future`` class.
 
         Parameters
         ----------
@@ -93,7 +93,6 @@ cdef class Future(Instrument):
             asset_class=asset_class,
             asset_type=AssetType.FUTURE,
             quote_currency=currency,
-            cost_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
             size_precision=0,  # No fractional contracts

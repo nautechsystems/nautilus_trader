@@ -15,6 +15,7 @@
 
 import asyncio
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
@@ -40,12 +41,13 @@ cdef class LiveDataEngine(DataEngine):
         self,
         loop not None: asyncio.AbstractEventLoop,
         Portfolio portfolio not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveDataEngine` class.
+        Initialize a new instance of the ``LiveDataEngine`` class.
 
         Parameters
         ----------
@@ -53,10 +55,12 @@ cdef class LiveDataEngine(DataEngine):
             The event loop for the engine.
         portfolio : int
             The portfolio to register.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
-            The clock for the component.
+            The clock for the engine.
         logger : Logger
-            The logger for the component.
+            The logger for the engine.
         config : dict[str, object], optional
             The configuration options.
 
@@ -66,10 +70,11 @@ cdef class LiveDataEngine(DataEngine):
         if "qsize" not in config:
             config["qsize"] = 10000
         super().__init__(
-            portfolio,
-            clock,
-            logger,
-            config,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop = loop

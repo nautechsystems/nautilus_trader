@@ -4,24 +4,6 @@ Execution
 .. automodule:: nautilus_trader.execution
 
 
-Base
-----
-
-.. automodule:: nautilus_trader.execution.base
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
-Cache
------
-
-.. automodule:: nautilus_trader.execution.cache
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Client
 ------
 

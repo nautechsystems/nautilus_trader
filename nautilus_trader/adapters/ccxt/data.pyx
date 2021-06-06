@@ -67,7 +67,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `CCXTDataClient` class.
+        Initialize a new instance of the ``CCXTDataClient`` class.
 
         Parameters
         ----------
@@ -87,10 +87,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         """
         super().__init__(
-            ClientId(client.name.upper()),
-            engine,
-            clock,
-            logger,
+            client_id=ClientId(client.name.upper()),
+            engine=engine,
+            clock=clock,
+            logger=logger,
             config={
                 "name": f"CCXTDataClient-{client.name.upper()}",
                 "unavailable_methods": [

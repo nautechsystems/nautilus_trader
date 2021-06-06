@@ -35,6 +35,7 @@ from libc.stdint cimport int64_t
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
@@ -46,9 +47,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.time cimport unix_timestamp_ms
-from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
@@ -87,21 +86,21 @@ cdef class ExecutionEngine(Component):
 
     def __init__(
         self,
-        ExecutionDatabase database not None,
         Portfolio portfolio not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
     ):
         """
-        Initialize a new instance of the `ExecutionEngine` class.
+        Initialize a new instance of the ``ExecutionEngine`` class.
 
         Parameters
         ----------
-        database : ExecutionDatabase
-            The execution database for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -122,14 +121,14 @@ cdef class ExecutionEngine(Component):
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._default_client = None  # type: Optional[ExecutionClient]
         self._pos_id_generator = PositionIdGenerator(
-            trader_id=database.trader_id,
+            trader_id=cache.trader_id,
             clock=clock,
         )
         self._portfolio = portfolio
         self._risk_engine = None  # Initialized when risk engine registered
 
-        self.trader_id = database.trader_id
-        self.cache = ExecutionCache(database, logger)
+        self.trader_id = cache.trader_id
+        self.cache = cache
 
         # Counters
         self.command_count = 0
@@ -628,6 +627,9 @@ cdef class ExecutionEngine(Component):
             account = Account(event)
             self.cache.add_account(account)
             self._portfolio.register_account(account)
+            for client in self._clients.values():
+                if client.account_id == account.id and client.get_account() is None:
+                    client.register_account(account)
         else:
             account.apply(event=event)
             self.cache.update_account(account)

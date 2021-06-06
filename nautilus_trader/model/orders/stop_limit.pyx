@@ -67,7 +67,7 @@ cdef class StopLimitOrder(PassiveOrder):
         bint hidden=False,
     ):
         """
-        Initialize a new instance of the `StopLimitOrder` class.
+        Initialize a new instance of the ``StopLimitOrder`` class.
 
         Parameters
         ----------

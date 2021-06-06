@@ -72,13 +72,17 @@ class DataEngineTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -107,8 +111,6 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process(BTCUSDT_BINANCE)
         self.data_engine.process(ETHUSDT_BINANCE)
         self.data_engine.process(XBTUSD_BITMEX)
-
-        self.portfolio.register_data_cache(self.data_engine.cache)
 
     def test_registered_venues(self):
         # Arrange
@@ -166,7 +168,7 @@ class DataEngineTests(unittest.TestCase):
         strategy.register_data_engine(self.data_engine)
 
         # Assert
-        self.assertEqual(self.data_engine.cache, strategy.data)
+        self.assertEqual(self.data_engine.cache, strategy.cache)
 
     def test_reset(self):
         # Arrange

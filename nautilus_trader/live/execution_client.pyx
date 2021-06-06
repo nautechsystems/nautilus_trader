@@ -29,9 +29,11 @@ from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -93,6 +95,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         ClientId client_id not None,
         VenueType venue_type,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
         LiveClock clock not None,
@@ -100,7 +104,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionClient` class.
+        Initialize a new instance of the ``LiveExecutionClient`` class.
 
         Parameters
         ----------
@@ -110,6 +114,10 @@ cdef class LiveExecutionClient(ExecutionClient):
             The client venue type.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : LiveDataEngine
             The data engine for the client.
         instrument_provider : InstrumentProvider
@@ -123,21 +131,19 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            client_id,
-            venue_type,
-            account_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            venue_type=venue_type,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
         self._instrument_provider = instrument_provider
-
-        self._account_last_free = {}
-        self._account_last_used = {}
-        self._account_last_total = {}
 
     cpdef void reset(self) except *:
         """

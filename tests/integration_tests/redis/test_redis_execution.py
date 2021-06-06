@@ -20,9 +20,11 @@ import redis
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
@@ -36,7 +38,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
@@ -70,7 +71,7 @@ class TestRedisExecutionDatabase:
             "port": 6379,
         }
 
-        self.database = RedisExecutionDatabase(
+        self.database = RedisCacheDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
             instrument_serializer=MsgPackInstrumentSerializer(),
@@ -591,8 +592,8 @@ class TestExecutionCacheWithRedisDatabaseTests:
         # Fixture Setup
         self.engine = BacktestEngine(
             bypass_logging=False,  # Uncomment this to see integrity check failure messages
-            exec_db_type="redis",
-            exec_db_flush=False,
+            cache_db_type="redis",
+            cache_db_flush=False,
         )
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -615,6 +616,8 @@ class TestExecutionCacheWithRedisDatabaseTests:
             venue=Venue("SIM"),
             venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             modules=[],
         )

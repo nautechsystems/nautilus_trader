@@ -16,6 +16,7 @@
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -70,6 +71,8 @@ class TestEvents:
         )
         event = AccountState(
             account_id=AccountId("SIM", "000"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             reported=True,
             balances=[balance],
             info={},
@@ -82,11 +85,11 @@ class TestEvents:
         # Act
         # Assert
         assert (
-            f"AccountState(account_id=SIM-000, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == str(event)
         )
         assert (
-            f"AccountState(account_id=SIM-000, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
             == repr(event)
         )
 
@@ -355,7 +358,7 @@ class TestEvents:
             last_qty=Quantity.from_str("0.561000"),
             last_px=Price.from_str("15600.12445"),
             currency=USDT,
-            commission=Money("12.20000000", USDT),
+            commission=Money(12.20000000, USDT),
             liquidity_side=LiquiditySide.MAKER,
             execution_ns=0,
             event_id=uuid,

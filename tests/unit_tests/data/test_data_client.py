@@ -52,13 +52,17 @@ class DataClientTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -149,13 +153,17 @@ class MarketDataClientTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

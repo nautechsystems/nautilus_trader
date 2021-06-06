@@ -368,7 +368,7 @@ cdef class EconomicNewsEventFilter:
         news_data not None: pd.DataFrame,
     ):
         """
-        Initialize a new instance of the `EconomicNewsEventFilter` class.
+        Initialize a new instance of the ``EconomicNewsEventFilter`` class.
 
         Parameters
         ----------

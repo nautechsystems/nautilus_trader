@@ -31,7 +31,6 @@ from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
@@ -126,12 +125,11 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
-        database = InMemoryExecutionDatabase(trader_id=trader_id, logger=live_logger)
+    def exec_engine(event_loop, clock, live_logger, portfolio):
         return MockLiveExecutionEngine(
             loop=event_loop,
-            database=database,
             portfolio=portfolio,
+            cache=TestStubs.cache,
             clock=clock,
             logger=live_logger,
         )

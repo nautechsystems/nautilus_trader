@@ -56,7 +56,7 @@ cdef class LimitOrder(PassiveOrder):
         bint hidden=False,
     ):
         """
-        Initialize a new instance of the `LimitOrder` class.
+        Initialize a new instance of the ``LimitOrder`` class.
 
         Parameters
         ----------

@@ -88,7 +88,7 @@ cdef class Message:
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Message` class.
+        Initialize a new instance of the ``Message`` class.
 
         Parameters
         ----------
@@ -126,7 +126,7 @@ cdef class Command(Message):
 
     def __init__(self, UUID identifier not None, int64_t timestamp_ns):
         """
-        Initialize a new instance of the `Command` class.
+        Initialize a new instance of the ``Command`` class.
 
         Parameters
         ----------
@@ -152,7 +152,7 @@ cdef class Document(Message):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Document` class.
+        Initialize a new instance of the ``Document`` class.
 
         Parameters
         ----------
@@ -178,7 +178,7 @@ cdef class Event(Message):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Event` class.
+        Initialize a new instance of the ``Event`` class.
 
         Parameters
         ----------
@@ -200,7 +200,7 @@ cdef class Request(Message):
 
     def __init__(self, UUID identifier not None, int64_t timestamp_ns):
         """
-        Initialize a new instance of the `Request` class.
+        Initialize a new instance of the ``Request`` class.
 
         Parameters
         ----------
@@ -227,7 +227,7 @@ cdef class Response(Message):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Response` class.
+        Initialize a new instance of the ``Response`` class.
 
         Parameters
         ----------

@@ -22,7 +22,6 @@ from nautilus_trader.adapters.ccxt.execution import BitmexCCXTExecutionClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.database import InMemoryExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -31,6 +30,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
@@ -65,18 +65,18 @@ class BitmexExecutionClientTests(unittest.TestCase):
         # Setup logging
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
-        database = InMemoryExecutionDatabase(
-            trader_id=self.trader_id, logger=self.logger
-        )
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            database=database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -116,7 +116,6 @@ class BitmexExecutionClientTests(unittest.TestCase):
 
         # Wire up components
         self.exec_engine.register_client(self.client)
-        self.portfolio.register_exec_cache(self.exec_engine.cache)
 
     def tearDown(self):
         self.loop.stop()

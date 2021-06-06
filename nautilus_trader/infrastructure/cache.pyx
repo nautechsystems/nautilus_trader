@@ -15,9 +15,9 @@
 
 import redis
 
+from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.currency cimport Currency
@@ -53,9 +53,9 @@ cdef str _POSITIONS = 'Positions'
 cdef str _STRATEGIES = 'Strategies'
 
 
-cdef class RedisExecutionDatabase(ExecutionDatabase):
+cdef class RedisCacheDatabase(CacheDatabase):
     """
-    Provides an execution database backed by Redis.
+    Provides an cache database backed by Redis.
 
     """
 
@@ -69,7 +69,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         dict config,
     ):
         """
-        Initialize a new instance of the `RedisExecutionDatabase` class.
+        Initialize a new instance of the ``RedisCacheDatabase`` class.
 
         Parameters
         ----------

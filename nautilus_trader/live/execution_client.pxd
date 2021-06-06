@@ -25,8 +25,5 @@ cdef class LiveExecutionClient(ExecutionClient):
     cdef object _loop
 
     cdef InstrumentProvider _instrument_provider
-    cdef dict _account_last_free
-    cdef dict _account_last_used
-    cdef dict _account_last_total
 
     cdef void _on_reset(self) except *

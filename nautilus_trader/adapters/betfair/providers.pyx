@@ -49,7 +49,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         dict market_filter=None,
     ):
         """
-        Initialize a new instance of the `BetfairInstrumentProvider` class.
+        Initialize a new instance of the ``BetfairInstrumentProvider`` class.
 
         Parameters
         ----------
