@@ -1821,7 +1821,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         result = self.exchange.exec_client.get_account().balance_total(USD)
 
         # Assert
-        self.assertEqual(Money("1001000.00", USD), result)
+        self.assertEqual(Money(1001000.00, USD), result)
 
     def test_adjust_account_when_account_frozen_does_not_change_balance(self):
         # Arrange
@@ -1850,7 +1850,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         result = exchange.get_account().balance_total(USD)
 
         # Assert
-        self.assertEqual(Money("1000000.00", USD), result)
+        self.assertEqual(Money(1000000.00, USD), result)
 
     def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
         # Arrange: Prepare market
