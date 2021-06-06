@@ -809,14 +809,14 @@ cdef class Portfolio(PortfolioFacade):
                 if xrate == 0:
                     self._log.debug(
                         f"Cannot calculate initial margin: "
-                        f"insufficient data for {instrument.quote_currency}/{currency}."
+                        f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                     )
                     self._pending_calcs.add(instrument.id)
                     return False  # Cannot calculate
 
                 margin *= xrate
             else:
-                currency = instrument.quote_currency
+                currency = instrument.get_cost_currency()
 
             # Update total margin
             total_margin = margins.get(currency, Decimal(0))
@@ -828,7 +828,7 @@ cdef class Portfolio(PortfolioFacade):
             total_margin_money = Money(total_margin, currency)
             account.update_initial_margin(total_margin_money)
 
-            self._log.info(f"{venue} initial_margin={total_margin_money}")
+            self._log.info(f"{venue} initial_margin={total_margin_money.to_str()}")
 
         return True
 
@@ -887,14 +887,14 @@ cdef class Portfolio(PortfolioFacade):
                 if xrate == 0:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"insufficient data for {instrument.quote_currency}/{currency})."
+                        f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency})."
                     )
                     self._pending_calcs.add(instrument.id)
                     return False  # Cannot calculate
 
                 margin *= xrate
             else:
-                currency = instrument.quote_currency
+                currency = instrument.get_cost_currency()
 
             # Update total margin
             total_margin = margins.get(currency, Decimal(0))
@@ -906,7 +906,7 @@ cdef class Portfolio(PortfolioFacade):
             total_margin_money = Money(total_margin, currency)
             account.update_maint_margin(total_margin_money)
 
-            self._log.info(f"{venue} maint_margin={total_margin_money}")
+            self._log.info(f"{venue} maint_margin={total_margin_money.to_str()}")
 
         return True
 
@@ -931,7 +931,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.base_currency is not None:
             currency = account.base_currency
         else:
-            currency = instrument.quote_currency
+            currency = instrument.get_cost_currency()
 
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
@@ -941,7 +941,7 @@ cdef class Portfolio(PortfolioFacade):
             if account.base_currency is not None:
                 return Money(0, account.base_currency)
             else:
-                return Money(0, instrument.quote_currency)
+                return Money(0, instrument.get_cost_currency())
 
         total_pnl: Decimal = Decimal(0)
 
@@ -971,7 +971,7 @@ cdef class Portfolio(PortfolioFacade):
                 if xrate == 0:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"insufficient data for {instrument.quote_currency}/{currency}."
+                        f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                     )
                     self._pending_calcs.add(instrument.id)
                     return None  # Cannot calculate
