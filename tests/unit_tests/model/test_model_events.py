@@ -358,7 +358,7 @@ class TestEvents:
             last_qty=Quantity.from_str("0.561000"),
             last_px=Price.from_str("15600.12445"),
             currency=USDT,
-            commission=Money("12.20000000", USDT),
+            commission=Money(12.20000000, USDT),
             liquidity_side=LiquiditySide.MAKER,
             execution_ns=0,
             event_id=uuid,

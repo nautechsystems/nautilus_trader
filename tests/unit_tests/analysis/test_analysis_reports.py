@@ -64,9 +64,9 @@ class ReportProviderTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     currency=BTC,
-                    total=Money("10.00000000", BTC),
-                    free=Money("10.00000000", BTC),
-                    locked=Money("0.00000000", BTC),
+                    total=Money(10.00000000, BTC),
+                    free=Money(10.00000000, BTC),
+                    locked=Money(0.00000000, BTC),
                 )
             ],
             info={},

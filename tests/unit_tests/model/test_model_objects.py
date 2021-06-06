@@ -750,19 +750,19 @@ class TestMoney:
         "value, expected",
         [
             [0, Money(0, USD)],
-            [1, Money("1", USD)],
-            [-1, Money("-1", USD)],
+            [1, Money(1, USD)],
+            [-1, Money(-1, USD)],
             ["0", Money(0, USD)],
             ["0.0", Money(0, USD)],
             ["-0.0", Money(0, USD)],
-            ["1.0", Money("1", USD)],
-            ["-1.0", Money("-1", USD)],
+            ["1.0", Money(1, USD)],
+            ["-1.0", Money(-1, USD)],
             [Decimal(), Money(0, USD)],
-            [Decimal("1.1"), Money("1.1", USD)],
-            [Decimal("-1.1"), Money("-1.1", USD)],
+            [Decimal("1.1"), Money(1.1, USD)],
+            [Decimal("-1.1"), Money(-1.1, USD)],
             [BaseDecimal(0, 0), Money(0, USD)],
-            [BaseDecimal(1.1, 1), Money("1.1", USD)],
-            [BaseDecimal(-1.1, 1), Money("-1.1", USD)],
+            [BaseDecimal(1.1, 1), Money(1.1, USD)],
+            [BaseDecimal(-1.1, 1), Money(-1.1, USD)],
         ],
     )
     def test_instantiate_with_various_valid_inputs_returns_expected_money(
@@ -868,7 +868,7 @@ class TestMoney:
 
     def test_repr(self):
         # Arrange
-        money = Money("1.00", USD)
+        money = Money(1.00, USD)
 
         # Act
         result = repr(money)
