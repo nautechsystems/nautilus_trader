@@ -1,9 +1,10 @@
 # NautilusTrader 1.122.0 Beta - Release Notes
 
 This release includes numerous breaking changes with a view to enhancing the core
-functionality and API for the platform. There have been large changes to the 
-accounting which simplify functionality and add 'hooks' in preparation for 
-accurate handle and calculation of margins.
+functionality and API of the platform. The data and execution caches have been 
+unified for simplicity. There have also been large changes to the accounting 
+functionality, with 'hooks' added in preparation for accurate calculation and 
+handling of margins.
 
 ## Breaking Changes
 - Renamed `Account.balance()` to `Account.balance_total()`.
