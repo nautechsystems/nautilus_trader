@@ -169,15 +169,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("10.00000000", BTC),
-                    Money("0.00000000", BTC),
-                    Money("10.00000000", BTC),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -199,28 +199,28 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(event, account.last_event)
         self.assertEqual([event], account.events)
         self.assertEqual(1, account.event_count)
-        self.assertEqual(Money("10.00000000", BTC), account.balance_total(BTC))
-        self.assertEqual(Money("20.00000000", ETH), account.balance_total(ETH))
-        self.assertEqual(Money("10.00000000", BTC), account.balance_free(BTC))
-        self.assertEqual(Money("20.00000000", ETH), account.balance_free(ETH))
-        self.assertEqual(Money("0.00000000", BTC), account.balance_locked(BTC))
-        self.assertEqual(Money("0.00000000", ETH), account.balance_locked(ETH))
+        self.assertEqual(Money(10.00000000, BTC), account.balance_total(BTC))
+        self.assertEqual(Money(20.00000000, ETH), account.balance_total(ETH))
+        self.assertEqual(Money(10.00000000, BTC), account.balance_free(BTC))
+        self.assertEqual(Money(20.00000000, ETH), account.balance_free(ETH))
+        self.assertEqual(Money(0.00000000, BTC), account.balance_locked(BTC))
+        self.assertEqual(Money(0.00000000, ETH), account.balance_locked(ETH))
         self.assertEqual(
-            {BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)},
+            {BTC: Money(10.00000000, BTC), ETH: Money(20.00000000, ETH)},
             account.balances_total(),
         )
         self.assertEqual(
-            {BTC: Money("10.00000000", BTC), ETH: Money("20.00000000", ETH)},
+            {BTC: Money(10.00000000, BTC), ETH: Money(20.00000000, ETH)},
             account.balances_free(),
         )
         self.assertEqual(
-            {BTC: Money("0.00000000", BTC), ETH: Money("0.00000000", ETH)},
+            {BTC: Money(0.00000000, BTC), ETH: Money(0.00000000, ETH)},
             account.balances_locked(),
         )
-        self.assertEqual(Money("0.00000000", BTC), account.unrealized_pnl(BTC))
-        self.assertEqual(Money("0.00000000", ETH), account.unrealized_pnl(ETH))
-        self.assertEqual(Money("10.00000000", BTC), account.equity(BTC))
-        self.assertEqual(Money("20.00000000", ETH), account.equity(ETH))
+        self.assertEqual(Money(0.00000000, BTC), account.unrealized_pnl(BTC))
+        self.assertEqual(Money(0.00000000, ETH), account.unrealized_pnl(ETH))
+        self.assertEqual(Money(10.00000000, BTC), account.equity(BTC))
+        self.assertEqual(Money(20.00000000, ETH), account.equity(ETH))
         self.assertEqual({}, account.initial_margins())
         self.assertEqual({}, account.maint_margins())
         self.assertEqual(None, account.initial_margin(BTC))
@@ -238,15 +238,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("10.00000000", BTC),
-                    Money("0.00000000", BTC),
-                    Money("10.00000000", BTC),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -270,15 +270,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("9.00000000", BTC),
-                    Money("0.50000000", BTC),
-                    Money("8.50000000", BTC),
+                    Money(9.00000000, BTC),
+                    Money(0.50000000, BTC),
+                    Money(8.50000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -294,12 +294,12 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(event2, account.last_event)
         self.assertEqual([event1, event2], account.events)
         self.assertEqual(2, account.event_count)
-        self.assertEqual(Money("9.00000000", BTC), account.balance_total(BTC))
-        self.assertEqual(Money("8.50000000", BTC), account.balance_free(BTC))
-        self.assertEqual(Money("0.50000000", BTC), account.balance_locked(BTC))
-        self.assertEqual(Money("20.00000000", ETH), account.balance_total(ETH))
-        self.assertEqual(Money("20.00000000", ETH), account.balance_free(ETH))
-        self.assertEqual(Money("0.00000000", ETH), account.balance_locked(ETH))
+        self.assertEqual(Money(9.00000000, BTC), account.balance_total(BTC))
+        self.assertEqual(Money(8.50000000, BTC), account.balance_free(BTC))
+        self.assertEqual(Money(0.50000000, BTC), account.balance_locked(BTC))
+        self.assertEqual(Money(20.00000000, ETH), account.balance_total(ETH))
+        self.assertEqual(Money(20.00000000, ETH), account.balance_free(ETH))
+        self.assertEqual(Money(0.00000000, ETH), account.balance_locked(ETH))
 
     def test_update_initial_margin(self):
         # Arrange
@@ -311,15 +311,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("10.00000000", BTC),
-                    Money("0.00000000", BTC),
-                    Money("10.00000000", BTC),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -335,7 +335,7 @@ class AccountTests(unittest.TestCase):
         account.register_portfolio(self.portfolio)
         self.portfolio.register_account(account)
 
-        margin = Money("0.00100000", BTC)
+        margin = Money(0.00100000, BTC)
 
         # Act
         account.update_initial_margin(margin)
@@ -354,15 +354,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("10.00000000", BTC),
-                    Money("0.00000000", BTC),
-                    Money("10.00000000", BTC),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -378,7 +378,7 @@ class AccountTests(unittest.TestCase):
         account.register_portfolio(self.portfolio)
         self.portfolio.register_account(account)
 
-        margin = Money("0.00050000", BTC)
+        margin = Money(0.00050000, BTC)
 
         # Act
         account.update_maint_margin(margin)
@@ -434,15 +434,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("10.00000000", BTC),
-                    Money("0.00000000", BTC),
-                    Money("10.00000000", BTC),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -461,7 +461,7 @@ class AccountTests(unittest.TestCase):
         result = account.unrealized_pnl(BTC)
 
         # Assert
-        self.assertEqual(Money("0.00000000", BTC), result)
+        self.assertEqual(Money(0.00000000, BTC), result)
 
     def test_equity_with_single_asset_account_no_default_returns_none(self):
         # Arrange
@@ -473,9 +473,9 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     USD,
-                    Money("100000.00", USD),
-                    Money("0.00", USD),
-                    Money("100000.00", USD),
+                    Money(100000.00, USD),
+                    Money(0.00, USD),
+                    Money(100000.00, USD),
                 ),
             ],
             info={},  # No default currency set
@@ -506,9 +506,9 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     USD,
-                    Money("100000.00", USD),
-                    Money("0.00", USD),
-                    Money("100000.00", USD),
+                    Money(100000.00, USD),
+                    Money(0.00, USD),
+                    Money(100000.00, USD),
                 ),
             ],
             info={},
@@ -527,7 +527,7 @@ class AccountTests(unittest.TestCase):
         result = account.equity()
 
         # Assert
-        self.assertEqual(Money("100000.00", USD), result)
+        self.assertEqual(Money(100000.00, USD), result)
 
     def test_equity_with_multi_asset_account_returns_expected_money(self):
         # Arrange
@@ -539,15 +539,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("10.00000000", BTC),
-                    Money("0.00000000", BTC),
-                    Money("10.00000000", BTC),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -566,7 +566,7 @@ class AccountTests(unittest.TestCase):
         result = account.equity(BTC)
 
         # Assert
-        self.assertEqual(Money("10.00000000", BTC), result)
+        self.assertEqual(Money(10.00000000, BTC), result)
 
     def test_margin_available_for_single_asset_account(self):
         # Arrange
@@ -578,9 +578,9 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     USD,
-                    Money("100000.00", USD),
-                    Money("0.00", USD),
-                    Money("100000.00", USD),
+                    Money(100000.00, USD),
+                    Money(0.00, USD),
+                    Money(100000.00, USD),
                 ),
             ],
             info={},
@@ -597,15 +597,15 @@ class AccountTests(unittest.TestCase):
 
         # Act
         result1 = account.margin_available()
-        account.update_initial_margin(Money("500.00", USD))
+        account.update_initial_margin(Money(500.00, USD))
         result2 = account.margin_available()
-        account.update_maint_margin(Money("1000.00", USD))
+        account.update_maint_margin(Money(1000.00, USD))
         result3 = account.margin_available()
 
         # Assert
-        self.assertEqual(Money("100000.00", USD), result1)
-        self.assertEqual(Money("99500.00", USD), result2)
-        self.assertEqual(Money("98500.00", USD), result3)
+        self.assertEqual(Money(100000.00, USD), result1)
+        self.assertEqual(Money(99500.00, USD), result2)
+        self.assertEqual(Money(98500.00, USD), result3)
 
     def test_margin_available_for_multi_asset_account(self):
         # Arrange
@@ -617,15 +617,15 @@ class AccountTests(unittest.TestCase):
             balances=[
                 AccountBalance(
                     BTC,
-                    Money("10.00000000", BTC),
-                    Money("0.00000000", BTC),
-                    Money("10.00000000", BTC),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
                 ),
                 AccountBalance(
                     ETH,
-                    Money("20.00000000", ETH),
-                    Money("0.00000000", ETH),
-                    Money("20.00000000", ETH),
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
                 ),
             ],
             info={},  # No default currency set
@@ -642,14 +642,14 @@ class AccountTests(unittest.TestCase):
 
         # Act
         result1 = account.margin_available(BTC)
-        account.update_initial_margin(Money("0.00010000", BTC))
+        account.update_initial_margin(Money(0.00010000, BTC))
         result2 = account.margin_available(BTC)
-        account.update_maint_margin(Money("0.00020000", BTC))
+        account.update_maint_margin(Money(0.00020000, BTC))
         result3 = account.margin_available(BTC)
         result4 = account.margin_available(ETH)
 
         # Assert
-        self.assertEqual(Money("10.00000000", BTC), result1)
-        self.assertEqual(Money("9.99990000", BTC), result2)
-        self.assertEqual(Money("9.99970000", BTC), result3)
-        self.assertEqual(Money("20.00000000", ETH), result4)
+        self.assertEqual(Money(10.00000000, BTC), result1)
+        self.assertEqual(Money(9.99990000, BTC), result2)
+        self.assertEqual(Money(9.99970000, BTC), result3)
+        self.assertEqual(Money(20.00000000, ETH), result4)
