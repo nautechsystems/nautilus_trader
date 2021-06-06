@@ -141,5 +141,5 @@ cdef class ExecutionClient:
 
     cdef void _handle_event(self, Event event) except *
     cdef list _calculate_balances(self, OrderFilled fill)
-    cdef list _calculate_balance_single_currency(self, Instrument instrument, OrderFilled fill, Money pnl)
-    cdef list _calculate_balance_multi_currency(self, Instrument instrument, OrderFilled fill, Money pnl)
+    cdef list _calculate_balance_single_currency(self, OrderFilled fill, Money pnl)
+    cdef list _calculate_balance_multi_currency(self, OrderFilled fill, list pnls)

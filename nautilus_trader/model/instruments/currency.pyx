@@ -171,3 +171,14 @@ cdef class CurrencySpot(Instrument):
         )
 
         self.base_currency = base_currency
+
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base currency.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.base_currency

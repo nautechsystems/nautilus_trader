@@ -31,7 +31,7 @@ from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         oms_type=OMSType.NETTING,
         account_type=AccountType.CASH,  # Spot cash account
         base_currency=None,  # Multi-currency account
-        starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
+        starting_balances=[Money(1_000_000, USDT), Money(10, ETH)],
         fill_model=fill_model,
     )
 

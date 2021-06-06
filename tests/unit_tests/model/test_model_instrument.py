@@ -17,7 +17,9 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -125,15 +127,28 @@ class TestInstrument:
     @pytest.mark.parametrize(
         "instrument, expected",
         [
+            [AUDUSD_SIM, AUD],
+            [BTCUSDT_BINANCE, BTC],
+            [XBTUSD_BITMEX, BTC],
+            [ETHUSD_BITMEX, ETH],
+        ],
+    )
+    def test_base_currency_for_various_instruments(self, instrument, expected):
+        # Arrange, Act, Asset
+        assert instrument.get_base_currency() == expected
+
+    @pytest.mark.parametrize(
+        "instrument, expected",
+        [
             [AUDUSD_SIM, USD],
             [BTCUSDT_BINANCE, USDT],
             [XBTUSD_BITMEX, BTC],
-            [ETHUSD_BITMEX, BTC],
+            [ETHUSD_BITMEX, ETH],
         ],
     )
     def test_cost_currency_for_various_instruments(self, instrument, expected):
         # Arrange, Act, Asset
-        assert instrument.cost_currency() == expected
+        assert instrument.get_cost_currency() == expected
 
     def test_calculate_notional_value(self):
         # Arrange

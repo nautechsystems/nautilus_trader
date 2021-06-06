@@ -13,19 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
@@ -81,6 +77,12 @@ cdef class Account:
     cpdef Money initial_margin(self, Currency currency=*)
     cpdef Money maint_margin(self, Currency currency=*)
     cpdef Money margin_available(self, Currency currency=*)
+
+# -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef list calculate_pnls(self, Instrument instrument, Position position, OrderFilled fill)
+    cdef list _calculate_pnls_cash_account(self, Instrument instrument, OrderFilled fill)
+    cdef Money _calculate_pnl_margin_account(self, Instrument instrument, Position position, OrderFilled fill)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

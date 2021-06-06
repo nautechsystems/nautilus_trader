@@ -1003,9 +1003,10 @@ cdef class Cache(CacheFacade):
         """
         self._instruments[instrument.id] = instrument
 
-        if isinstance(instrument, (CurrencySpot, CryptoSwap)):
-            self._xrate_symbols[instrument.id] = (f"{instrument.base_currency}/"
-                                                  f"{instrument.quote_currency}")
+        if instrument.get_base_currency() is not None:
+            self._xrate_symbols[instrument.id] = (
+                f"{instrument.base_currency}/{instrument.quote_currency}"
+            )
 
         self._log.debug(f"Added instrument {instrument.id.value}.")
 
