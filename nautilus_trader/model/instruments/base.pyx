@@ -272,7 +272,7 @@ cdef class Instrument(Data):
 
         - Standard linear instruments = quote_currency
         - Inverse instruments = base_currency
-        - Quanto instrument = settlement_currency
+        - Quanto instruments = settlement_currency
 
         Returns
         -------
