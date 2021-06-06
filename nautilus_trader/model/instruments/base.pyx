@@ -255,7 +255,18 @@ cdef class Instrument(Data):
         """
         return self.id.venue
 
-    cpdef Currency cost_currency(self):
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base currency (if applicable).
+
+        Returns
+        -------
+        Currency or None
+
+        """
+        return None
+
+    cpdef Currency get_cost_currency(self):
         """
         Return the currency used for cost and PnL calculations.
 

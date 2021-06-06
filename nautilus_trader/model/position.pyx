@@ -22,8 +22,6 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
-from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -75,11 +73,6 @@ cdef class Position:
         self.strategy_id = fill.strategy_id
         self.instrument_id = fill.instrument_id
 
-        # Determine any base currency
-        cdef Currency base_currency = None
-        if isinstance(instrument, (CurrencySpot, CryptoSwap)):
-            base_currency = instrument.base_currency
-
         # Properties
         self.entry = fill.order_side
         self.side = Position.side_from_order_side(fill.order_side)
@@ -97,8 +90,8 @@ cdef class Position:
         self.multiplier = instrument.multiplier
         self.is_inverse = instrument.is_inverse
         self.quote_currency = instrument.quote_currency
-        self.base_currency = base_currency
-        self.cost_currency = base_currency if instrument.is_inverse else instrument.quote_currency
+        self.base_currency = instrument.get_base_currency()  # Can be None
+        self.cost_currency = instrument.get_cost_currency()
 
         self.realized_points = Decimal()
         self.realized_return = Decimal()

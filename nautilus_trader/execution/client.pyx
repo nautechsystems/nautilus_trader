@@ -782,36 +782,21 @@ cdef class ExecutionClient:
             )
             return
 
-        cdef Money pnl = None
-        if position and position.entry != fill.order_side:
-            # Calculate position PnL
-            pnl = position.calculate_pnl(
-                avg_px_open=position.avg_px_open,
-                avg_px_close=fill.last_px,
-                quantity=fill.last_qty,
-            )
-        else:
-            pnl = Money(0, instrument.quote_currency)
+        cdef list pnls = self._account.calculate_pnls(instrument, position, fill)
 
-        cdef Money commission = fill.commission
-        cdef AccountBalance balance = None
+        if self.base_currency is not None:
+            # Check single currency PnLs
+            assert len(pnls) == 1
 
         # Calculate final PnL
         if self.base_currency:
-            return self._calculate_balance_single_currency(
-                instrument=instrument,
-                fill=fill,
-                pnl=pnl,
-            )
+            return self._calculate_balance_single_currency(fill=fill, pnl=pnls[0])
         else:
-            return self._calculate_balance_multi_currency(
-                instrument=instrument,
-                fill=fill,
-                pnl=pnl,
-            )
+            return self._calculate_balance_multi_currency(fill=fill, pnls=pnls)
 
-    cdef list _calculate_balance_single_currency(self, Instrument instrument, OrderFilled fill, Money pnl):
+    cdef list _calculate_balance_single_currency(self, OrderFilled fill, Money pnl):
         cdef Money commission = fill.commission
+        cdef list balances = []
         if commission.currency != self.base_currency:
             xrate: Decimal = self._engine.cache.get_xrate(
                 venue=fill.instrument_id.venue,
@@ -826,7 +811,7 @@ cdef class ExecutionClient:
                 )
                 return None  # Cannot calculate
 
-            # Convert to default account currency
+            # Convert to account base currency
             commission = Money(commission * xrate, self.base_currency)
 
         if pnl.currency != self.base_currency:
@@ -843,12 +828,12 @@ cdef class ExecutionClient:
                 )
                 return None  # Cannot calculate
 
-            # Convert to default account currency
+            # Convert to account base currency
             pnl = Money(pnl * xrate, self.base_currency)
 
         pnl = Money(pnl - commission, self.base_currency)
         if pnl.as_decimal() == 0:
-            return  # No adjustment
+            return balances  # Nothing to adjust
 
         cdef AccountBalance balance = self._account.balance()
         cdef AccountBalance new_balance = AccountBalance(
@@ -857,42 +842,58 @@ cdef class ExecutionClient:
             locked=balance.locked,
             free=Money(balance.free + pnl, self.base_currency),
         )
-        return [new_balance]
-
-    cdef list _calculate_balance_multi_currency(self, Instrument instrument, OrderFilled fill, Money pnl):
-        cdef Currency currency = instrument.quote_currency
-        cdef Money commission = fill.commission
-        cdef list balances = []
-        if commission.currency != pnl.currency and commission.as_decimal() > 0:
-            balance = self._account.balance(commission.currency)
-            if balance is None:
-                self._log.error(
-                    "Cannot calculate account state: "
-                    f"no cached balances for {currency}."
-                )
-                return
-            balance.total = Money(balance.total - commission, currency)
-            balance.free = Money(balance.free - commission, currency)
-            balances.append(balance)
-        else:
-            pnl = Money(pnl - commission, currency)
-
-        if pnl.as_decimal() == 0:
-            return  # No adjustment
-
-        balance = self._account.balance(currency)
-        if balance is None:
-            self._log.error(
-                "Cannot calculate account state: "
-                f"no cached balances for {currency}."
-            )
-            return
-
-        cdef AccountBalance new_balance = AccountBalance(
-            currency=instrument.quote_currency,
-            total=Money(balance.total + pnl, currency),
-            locked=balance.locked,
-            free=Money(balance.free + pnl, currency),
-        )
         balances.append(new_balance)
-        return [new_balance]
+
+        return balances
+
+    cdef list _calculate_balance_multi_currency(self, OrderFilled fill, list pnls):
+        cdef list balances = []
+
+        cdef Money commission = fill.commission
+        cdef AccountBalance balance = None
+        cdef AccountBalance new_balance = None
+        cdef Money pnl
+        for pnl in pnls:
+            currency = pnl.currency
+            if commission.currency != currency and commission.as_decimal() > 0:
+                balance = self._account.balance(commission.currency)
+                if balance is None:
+                    self._log.error(
+                        "Cannot calculate account state: "
+                        f"no cached balances for {currency}."
+                    )
+                    return
+                balance.total = Money(balance.total - commission, currency)
+                balance.free = Money(balance.free - commission, currency)
+                balances.append(balance)
+            else:
+                pnl = Money(pnl - commission, currency)
+
+            if not balances and pnl.as_decimal() == 0:
+                return  # No adjustment
+
+            balance = self._account.balance(currency)
+            if balance is None:
+                if pnl.as_decimal() < 0:
+                    self._log.error(
+                        "Cannot calculate account state: "
+                        f"no cached balances for {currency}."
+                    )
+                    return
+                new_balance = AccountBalance(
+                    currency=currency,
+                    total=Money(pnl, currency),
+                    locked=Money(0, currency),
+                    free=Money(pnl, currency),
+                )
+            else:
+                new_balance = AccountBalance(
+                    currency=currency,
+                    total=Money(balance.total + pnl, currency),
+                    locked=balance.locked,
+                    free=Money(balance.free + pnl, currency),
+                )
+
+            balances.append(new_balance)
+
+        return balances

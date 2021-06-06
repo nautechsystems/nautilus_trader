@@ -28,7 +28,8 @@ accurate handle and calculation of margins.
 - Added `repr` to execution messages.
 - Added `AccountType` enum.
 - Added `cost_currency` to `Position`.
-- Added `cost_currency()` method to `Instrument`.
+- Added `get_cost_currency()` to `Instrument`.
+- Added `get_base_currency()` to `Instrument`.
 
 ## Fixes
 - Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.

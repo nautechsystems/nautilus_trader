@@ -16,15 +16,11 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Account:
@@ -670,6 +666,75 @@ cdef class Account:
         maint_margin: Decimal = self._maint_margins.get(currency, Decimal())
 
         return Money(equity - initial_margin - maint_margin, currency)
+
+# -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef list calculate_pnls(
+        self,
+        Instrument instrument,
+        Position position,
+        OrderFilled fill,
+    ):
+        """
+        Return the calculated immediate PnL.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        position : Position, optional
+            The position for the calculation (can be None).
+        fill : OrderFilled
+            The fill for the calculation.
+
+        Returns
+        -------
+        list[Money] or None
+
+        """
+        if self.type == AccountType.CASH:
+            return self._calculate_pnls_cash_account(instrument, fill)
+        elif self.type == AccountType.MARGIN:
+            return [self._calculate_pnl_margin_account(instrument, position, fill)]
+
+    cdef list _calculate_pnls_cash_account(
+        self,
+        Instrument instrument,
+        OrderFilled fill,
+    ):
+        # Assumption that a cash account never deals
+        # with inverse or quanto instruments.
+        cdef list pnls = []
+
+        cdef Currency quote_currency = instrument.quote_currency
+        cdef Currency base_currency = instrument.get_base_currency()
+
+        if fill.order_side == OrderSide.BUY:
+            if base_currency:
+                pnls.append(Money(fill.last_qty, base_currency))
+            pnls.append(Money(-(fill.last_qty * (1 / fill.last_px)), quote_currency))
+        else:  # OrderSide.SELL
+            if base_currency:
+                pnls.append(Money(-fill.last_qty, base_currency))
+            pnls.append(Money(fill.last_qty * (1 / fill.last_px), quote_currency))
+
+        return pnls
+
+    cdef Money _calculate_pnl_margin_account(
+        self,
+        Instrument instrument,
+        Position position,
+        OrderFilled fill,
+    ):
+        if position and position.entry != fill.order_side:
+            # Calculate positional PnL
+            return position.calculate_pnl(
+                avg_px_open=position.avg_px_open,
+                avg_px_close=fill.last_px,
+                quantity=fill.last_qty,
+            )
+        else:
+            return Money(0, instrument.get_cost_currency())
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

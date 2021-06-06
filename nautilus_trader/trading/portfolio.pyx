@@ -539,11 +539,11 @@ cdef class Portfolio(PortfolioFacade):
             if xrate == 0:
                 self._log.error(
                     f"Cannot calculate net exposures: "
-                    f"insufficient data for {instrument.cost_currency()}/{account.base_currency}."
+                    f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                 )
                 return None  # Cannot calculate
 
-            net_exposure: Decimal = net_exposures.get(instrument.cost_currency(), Decimal(0))
+            net_exposure: Decimal = net_exposures.get(instrument.get_cost_currency(), Decimal(0))
             net_exposure += instrument.notional_value(
                 position.quantity,
                 last,
@@ -552,7 +552,7 @@ cdef class Portfolio(PortfolioFacade):
             if account.base_currency is not None:
                 net_exposures[account.base_currency] = net_exposure
             else:
-                net_exposures[instrument.cost_currency()] = net_exposure
+                net_exposures[instrument.get_cost_currency()] = net_exposure
 
         return {k: Money(v, k) for k, v in net_exposures.items()}
 
@@ -616,7 +616,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef list positions_open = self._cache.positions_open(instrument_id.venue)
         if not positions_open:
-            return Money(0, instrument.cost_currency())
+            return Money(0, instrument.get_cost_currency())
 
         net_exposure = Decimal(0)
 
@@ -643,7 +643,7 @@ cdef class Portfolio(PortfolioFacade):
             if xrate == 0:
                 self._log.error(
                     f"Cannot calculate net exposure: "
-                    f"insufficient data for {instrument.cost_currency()}/{account.base_currency}."
+                    f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                 )
                 return None  # Cannot calculate
 
@@ -655,7 +655,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.base_currency is not None:
             return Money(net_exposure, account.base_currency)
         else:
-            return Money(net_exposure, instrument.cost_currency())
+            return Money(net_exposure, instrument.get_cost_currency())
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
@@ -986,7 +986,7 @@ cdef class Portfolio(PortfolioFacade):
         if account.base_currency is not None:
             return self._cache.get_xrate(
                 venue=instrument.id.venue,
-                from_currency=instrument.cost_currency(),
+                from_currency=instrument.get_cost_currency(),
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )
