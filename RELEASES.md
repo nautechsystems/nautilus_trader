@@ -1,3 +1,17 @@
+# NautilusTrader 1.123.0 Beta - Release Notes
+
+
+## Breaking Changes
+None
+
+## Enhancements
+- Adapters dependencies optional.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.122.0 Beta - Release Notes
 
 This release includes numerous breaking changes with a view to enhancing the core
