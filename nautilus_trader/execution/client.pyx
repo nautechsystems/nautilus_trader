@@ -785,7 +785,7 @@ cdef class ExecutionClient:
         cdef list pnls = self._account.calculate_pnls(instrument, position, fill)
 
         if self.base_currency is not None:
-            # Check single currency PnLs
+            # Check single-currency PnLs
             assert len(pnls) == 1
 
         # Calculate final PnL
