@@ -367,7 +367,7 @@ cdef class OrderBook:
     @property
     def timestamp_ns(self):
         """
-        The Unix timestamp (nanos) of the last update.
+        The UNIX timestamp (nanos) of the last update.
 
         Returns
         -------
@@ -1027,9 +1027,9 @@ cdef class OrderBookData(Data):
         level : OrderBookLevel
             The order book level (L1, L2, L3).
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         super().__init__(timestamp_origin_ns, timestamp_ns)
@@ -1066,9 +1066,9 @@ cdef class OrderBookSnapshot(OrderBookData):
         asks : list
             The asks for the snapshot.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
@@ -1110,9 +1110,9 @@ cdef class OrderBookDeltas(OrderBookData):
         deltas : list[OrderBookDelta]
             The list of order book changes.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
@@ -1151,9 +1151,9 @@ cdef class OrderBookDelta(OrderBookData):
         order : Order
             The order to apply.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)

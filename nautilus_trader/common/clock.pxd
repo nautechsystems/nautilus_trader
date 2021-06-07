@@ -40,7 +40,7 @@ cdef class Clock:
     cdef readonly datetime next_event_time
     """The timestamp of the next time event.\n\n:returns: `datetime`"""
     cdef readonly int64_t next_event_time_ns
-    """The Unix timestamp (nanos) of the next time event.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanos) of the next time event.\n\n:returns: `int64`"""
     cdef readonly str next_event_name
     """The name of the next time event.\n\n:returns: `str`"""
 

@@ -48,9 +48,9 @@ cdef class Tick(Data):
         instrument_id : InstrumentId
             The ticks instrument identifier.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         super().__init__(timestamp_origin_ns, timestamp_ns)
@@ -95,9 +95,9 @@ cdef class QuoteTick(Tick):
         ask_size : Quantity
             The size at the best ask.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, timestamp_origin_ns, timestamp_ns)
@@ -251,9 +251,9 @@ cdef class TradeTick(Tick):
         match_id : TradeMatchId
             The trade match identifier.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, timestamp_origin_ns, timestamp_ns)

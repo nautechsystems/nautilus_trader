@@ -32,9 +32,9 @@ cdef class Data:
         Parameters
         ----------
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         # Design-time assert correct ordering of timestamps
@@ -121,7 +121,7 @@ cdef class GenericData(Data):
         data : object
             The data object to wrap.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the data.
+            The UNIX timestamp (nanos) of the data.
 
         Raises
         ------

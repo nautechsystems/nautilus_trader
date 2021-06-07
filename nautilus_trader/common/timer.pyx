@@ -53,9 +53,9 @@ cdef class TimeEvent(Event):
         event_timestamp : datetime
             The event timestamp (UTC).
         event_timestamp_ns : int64
-            The Unix timestamp (nanos) of the event.
+            The UNIX timestamp (nanos) of the event.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanos) of the event initialization.
 
         """
         Condition.valid_string(name, "name")
@@ -146,9 +146,9 @@ cdef class Timer:
         interval_ns : int64
             The time interval for the timer (not negative).
         start_time_ns : int64
-            The Unix time (nanoseconds) for timer start.
+            The UNIX time (nanoseconds) for timer start.
         stop_time_ns : int64, optional
-            The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
+            The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
         Condition.valid_string(name, "name")
@@ -194,7 +194,7 @@ cdef class Timer:
         event_id : UUID
             The identifier for the time event.
         timestamp_ns : int64
-            The Unix timestamp (nanos) for time event initialization.
+            The UNIX timestamp (nanos) for time event initialization.
 
         Returns
         -------
@@ -218,7 +218,7 @@ cdef class Timer:
         Parameters
         ----------
         now_ns : int64
-            The Unix time now (nanoseconds).
+            The UNIX time now (nanoseconds).
 
         """
         self.next_time_ns += self.interval_ns
@@ -256,9 +256,9 @@ cdef class TestTimer(Timer):
         interval_ns : int64
             The time interval for the timer (not negative).
         start_time_ns : int64
-            The Unix time (nanoseconds) for timer start.
+            The UNIX time (nanoseconds) for timer start.
         stop_time_ns : int64, optional
-            The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
+            The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
         Condition.valid_string(name, "name")
@@ -281,7 +281,7 @@ cdef class TestTimer(Timer):
         Parameters
         ----------
         to_time_ns : int64
-            The Unix time (nanoseconds) to advance the timer to.
+            The UNIX time (nanoseconds) to advance the timer to.
 
         Returns
         -------

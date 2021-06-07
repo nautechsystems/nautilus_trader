@@ -71,9 +71,9 @@ cdef class Future(Instrument):
         price_increment : Decimal
             The minimum price increment (tick size).
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         Raises
         ------

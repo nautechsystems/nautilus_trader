@@ -37,7 +37,7 @@ cdef class Message:
     cdef readonly UUID id
     """The message identifier.\n\n:returns: `UUID`"""
     cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of message initialization.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanos) of message initialization.\n\n:returns: `int64`"""
 
 
 cdef class Command(Message):
