@@ -385,7 +385,7 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef Bar from_serializable_str_c(BarType bar_type, str values):
-        Condition.valid_string(values, 'values')
+        Condition.valid_string(values, "values")
 
         cdef list pieces = values.split(',', maxsplit=6)
 
