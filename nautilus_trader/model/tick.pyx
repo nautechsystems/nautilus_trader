@@ -166,8 +166,8 @@ cdef class QuoteTick(Tick):
 
     @staticmethod
     cdef QuoteTick from_serializable_str_c(InstrumentId instrument_id, str values):
-        Condition.not_none(instrument_id, 'instrument_id')
-        Condition.valid_string(values, 'values')
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.valid_string(values, "values")
 
         cdef list pieces = values.split(',', maxsplit=5)
 
@@ -276,8 +276,8 @@ cdef class TradeTick(Tick):
 
     @staticmethod
     cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values):
-        Condition.not_none(instrument_id, 'instrument_id')
-        Condition.valid_string(values, 'values')
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.valid_string(values, "values")
 
         cdef list pieces = values.split(',', maxsplit=5)
 
