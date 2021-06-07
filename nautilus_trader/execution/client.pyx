@@ -233,7 +233,7 @@ cdef class ExecutionClient:
         reported : bool
             If the balances are reported directly from the exchange.
         updated_ns : int64
-            The Unix timestamp (nanos) of the account update.
+            The UNIX timestamp (nanos) of the account update.
         info : dict [str, object]
             The additional implementation specific account information.
 
@@ -291,7 +291,7 @@ cdef class ExecutionClient:
         client_order_id : ClientOrderId
             The client order identifier.
         submitted_ns : int64
-            The Unix timestamp (nanos) when the order was submitted.
+            The UNIX timestamp (nanos) when the order was submitted.
 
         """
         # Generate event
@@ -321,7 +321,7 @@ cdef class ExecutionClient:
         reason : datetime
             The order rejected reason.
         rejected_ns : int64
-            The Unix timestamp (nanos) when the order was rejected.
+            The UNIX timestamp (nanos) when the order was rejected.
 
         """
         # Generate event
@@ -352,7 +352,7 @@ cdef class ExecutionClient:
         venue_order_id : VenueOrderId
             The venue order identifier.
         accepted_ns : int64
-            The Unix timestamp (nanos) when the order was accepted.
+            The UNIX timestamp (nanos) when the order was accepted.
 
         """
         # Generate event
@@ -383,7 +383,7 @@ cdef class ExecutionClient:
         venue_order_id : VenueOrderId
             The venue order identifier.
         pending_ns : datetime
-            The Unix timestamp (nanos) when the replace was pending.
+            The UNIX timestamp (nanos) when the replace was pending.
 
         """
         # Generate event
@@ -414,7 +414,7 @@ cdef class ExecutionClient:
         venue_order_id : VenueOrderId
             The venue order identifier.
         pending_ns : datetime
-            The Unix timestamp (nanos) when the cancel was pending.
+            The UNIX timestamp (nanos) when the cancel was pending.
 
         """
         # Generate event
@@ -448,7 +448,7 @@ cdef class ExecutionClient:
         reason : str
             The order update rejected reason.
         rejected_ns : datetime
-            The Unix timestamp (nanos) when the order update was rejected.
+            The UNIX timestamp (nanos) when the order update was rejected.
 
         """
         cdef VenueOrderId venue_order_id = None
@@ -491,7 +491,7 @@ cdef class ExecutionClient:
         reason : str
             The order cancel rejected reason.
         rejected_ns : datetime
-            The Unix timestamp (nanos) when the order cancel was rejected.
+            The UNIX timestamp (nanos) when the order cancel was rejected.
 
         """
         cdef VenueOrderId venue_order_id = None
@@ -538,7 +538,7 @@ cdef class ExecutionClient:
         price : Price
             The orders current price.
         updated_ns : int64
-            The Unix timestamp (nanos) when the order was updated.
+            The UNIX timestamp (nanos) when the order was updated.
         venue_order_id_modified : bool
             If the identifier was modified for this event.
 
@@ -578,7 +578,7 @@ cdef class ExecutionClient:
         venue_order_id : VenueOrderId
             The venue order identifier.
         canceled_ns : int64
-            The Unix timestamp (nanos) when order was canceled.
+            The UNIX timestamp (nanos) when order was canceled.
 
         """
         # Generate event
@@ -609,7 +609,7 @@ cdef class ExecutionClient:
         venue_order_id : VenueOrderId
             The venue order identifier.
         triggered_ns : int64
-            The Unix timestamp (nanos) when the order was triggered.
+            The UNIX timestamp (nanos) when the order was triggered.
 
         """
         # Generate event
@@ -640,7 +640,7 @@ cdef class ExecutionClient:
         venue_order_id : VenueOrderId
             The venue order identifier.
         expired_ns : int64
-            The Unix timestamp (nanos) when the order expired.
+            The UNIX timestamp (nanos) when the order expired.
 
         """
         # Generate event
@@ -698,7 +698,7 @@ cdef class ExecutionClient:
         liquidity_side : LiquiditySide
             The execution liquidity side.
         execution_ns : int64
-            The Unix timestamp (nanos) when the order was filled.
+            The UNIX timestamp (nanos) when the order was filled.
 
         """
         # Check account

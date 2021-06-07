@@ -112,9 +112,9 @@ cdef class Instrument(Data):
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
 

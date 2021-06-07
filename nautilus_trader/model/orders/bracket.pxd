@@ -34,4 +34,4 @@ cdef class BracketOrder:
     cdef readonly LimitOrder take_profit
     """The take-profit order.\n\n:returns: `LimitOrder`"""
     cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the bracket order.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanos) of the bracket order.\n\n:returns: `int64`"""

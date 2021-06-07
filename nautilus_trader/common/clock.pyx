@@ -63,7 +63,7 @@ cdef class Clock:
 
     cpdef double timestamp(self) except *:
         """
-        Return the current Unix time in seconds.
+        Return the current UNIX time in seconds.
 
         Returns
         -------
@@ -78,7 +78,7 @@ cdef class Clock:
 
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current Unix time in nanoseconds.
+        Return the current UNIX time in nanoseconds.
 
         Returns
         -------
@@ -429,7 +429,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         initial_ns : int64
-            The initial Unix time for the clock (nanos).
+            The initial UNIX time for the clock (nanos).
 
         """
         super().__init__()
@@ -451,7 +451,7 @@ cdef class TestClock(Clock):
 
     cpdef double timestamp(self) except *:
         """
-        Return the current Unix time in seconds.
+        Return the current UNIX time in seconds.
 
         Returns
         -------
@@ -466,7 +466,7 @@ cdef class TestClock(Clock):
 
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current Unix time in nanoseconds (ns).
+        Return the current UNIX time in nanoseconds (ns).
 
         Returns
         -------
@@ -486,7 +486,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         to_time_ns : int64
-            The Unix time (nanos) to set.
+            The UNIX time (nanos) to set.
 
         """
         self._time_ns = to_time_ns
@@ -498,7 +498,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         to_time_ns : int64
-            The Unix time (nanos) advance the clock to.
+            The UNIX time (nanos) advance the clock to.
 
         Returns
         -------
@@ -577,7 +577,7 @@ cdef class LiveClock(Clock):
 
     cpdef double timestamp(self) except *:
         """
-        Return the current Unix time in seconds from the system clock.
+        Return the current UNIX time in seconds from the system clock.
 
         Returns
         -------
@@ -592,7 +592,7 @@ cdef class LiveClock(Clock):
 
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current Unix time in nanoseconds (ns) from the system clock.
+        Return the current UNIX time in nanoseconds (ns) from the system clock.
 
         Returns
         -------
