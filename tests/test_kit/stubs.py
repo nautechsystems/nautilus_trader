@@ -30,6 +30,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
@@ -77,6 +78,21 @@ from tests.test_kit.providers import TestInstrumentProvider
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+
+
+class MyData(Data):
+    """
+    Represents an example user defined data class.
+    """
+
+    def __init__(
+        self,
+        value,
+        timestamp_origin_ns=0,
+        timestamp_ns=0,
+    ):
+        super().__init__(timestamp_origin_ns, timestamp_ns)
+        self.value = value
 
 
 class TestStubs:

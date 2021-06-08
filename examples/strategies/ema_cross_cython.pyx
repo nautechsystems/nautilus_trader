@@ -22,7 +22,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
@@ -229,13 +229,13 @@ cdef class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    cpdef void on_data(self, GenericData data) except *:
+    cpdef void on_data(self, Data data) except *:
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The data received.
 
         """

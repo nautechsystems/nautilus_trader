@@ -20,8 +20,8 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
@@ -90,15 +90,12 @@ class BetfairTestStrategy(TradingStrategy):
             self._in_flight.remove(event.client_order_id)
         self.trigger()
 
-    def on_data(self, data: GenericData):
+    def on_data(self, data: Data):
         # self.log.debug(str(data))
-        if data.data_type.type == InstrumentSearch:
+        if isinstance(data, InstrumentSearch):
             # Find and set instrument
-            instrument_search = data.data
-            self.log.info(
-                f"Received {len(instrument_search.instruments)} from instrument search"
-            )
-            self.instrument_id = instrument_search.instruments[0].id
+            self.log.info(f"Received {len(data.instruments)} from instrument search")
+            self.instrument_id = data.instruments[0].id
             # Subscribe to live data
             self.subscribe_order_book_deltas(
                 instrument_id=self.instrument_id,

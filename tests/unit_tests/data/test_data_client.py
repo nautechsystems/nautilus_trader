@@ -22,6 +22,7 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AggressorSide
@@ -35,6 +36,8 @@ from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -125,22 +128,37 @@ class DataClientTests(unittest.TestCase):
 
     def test_handle_data_sends_to_data_engine(self):
         # Arrange
-        data_type = DataType(str, {"Type": "NEWS_WIRE"})
-        data = GenericData(data_type, "Some news headline", 0, 0)
+        data_type = DataType(NewsEvent, {"Type": "NEWS_WIRE"})
+        data = NewsEvent(
+            impact=NewsImpact.HIGH,
+            name="Unemployment Rate",
+            currency=USD,
+            timestamp_origin_ns=0,
+            timestamp_ns=0,
+        )
+        generic_data = GenericData(data_type, data)
 
         # Act
-        self.client._handle_data_py(data)
+        self.client._handle_data_py(generic_data)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
 
     def test_handle_data_response_sends_to_data_engine(self):
         # Arrange
-        data_type = DataType(str, {"Type": "ECONOMIC_DATA", "topic": "unemployment"})
-        data = GenericData(data_type, "may 2020, 6.9%", 0, 0)
+        data_type = DataType(NewsEvent, {"Type": "NEWS_WIRE"})
+        data = NewsEvent(
+            impact=NewsImpact.HIGH,
+            name="Unemployment Rate",
+            currency=USD,
+            timestamp_origin_ns=0,
+            timestamp_ns=0,
+        )
 
         # Act
-        self.client._handle_data_response_py(data, self.uuid_factory.generate())
+        self.client._handle_data_response_py(
+            data_type, data, self.uuid_factory.generate()
+        )
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
