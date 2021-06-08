@@ -15,8 +15,6 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.correctness cimport Condition
-
 
 cdef class Data:
     """
@@ -37,7 +35,7 @@ cdef class Data:
             The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
-        # Design-time assert correct ordering of timestamps
+        # Design-time invariant: correct ordering of timestamps
         assert timestamp_ns >= timestamp_origin_ns
         self.timestamp_origin_ns = timestamp_origin_ns
         self.timestamp_ns = timestamp_ns
@@ -60,7 +58,7 @@ cdef class DataType:
         Parameters
         ----------
         data_type : type
-            The PyObject type of the data.
+            The ``Data`` type of the data.
         metadata : dict
             The data types metadata.
 
@@ -107,9 +105,7 @@ cdef class GenericData(Data):
     def __init__(
         self,
         DataType data_type not None,
-        data not None,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        Data data not None,
     ):
         """
         Initialize a new instance of the ``GenericData`` class.
@@ -118,19 +114,10 @@ cdef class GenericData(Data):
         ----------
         data_type : DataType
             The data type.
-        data : object
+        data : Data
             The data object to wrap.
-        timestamp_ns : int64
-            The UNIX timestamp (nanos) of the data.
-
-        Raises
-        ------
-        ValueError
-            If type(data) is not of type data_type.type.
 
         """
-        Condition.type(data, data_type.type, "data")
-        super().__init__(timestamp_origin_ns, timestamp_ns)
-
+        super().__init__(data.timestamp_origin_ns, data.timestamp_ns)
         self.data_type = data_type
         self.data = data

@@ -32,7 +32,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -134,18 +134,18 @@ cdef class DataClient:
     def _handle_data_py(self, Data data):
         self._handle_data(data)
 
-    def _handle_data_response_py(self, GenericData data, UUID correlation_id):
-        self._handle_data_response(data, correlation_id)
+    def _handle_data_response_py(self, DataType data_type, Data data, UUID correlation_id):
+        self._handle_data_response(data_type, data, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *:
         self._engine.process(data)
 
-    cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *:
+    cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=data.data_type,
+            data_type=data_type,
             data=data,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

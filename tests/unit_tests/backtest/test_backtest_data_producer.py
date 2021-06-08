@@ -25,6 +25,7 @@ from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import MyData
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -64,28 +65,23 @@ class TestBacktestDataProducer:
             timestamp_ns=0,
         )
 
-        data_type = DataType(str, metadata={"news_wire": "hacks"})
+        data_type = DataType(MyData, metadata={"news_wire": "hacks"})
         generic_data1 = [
             GenericData(
-                data_type, data="AAPL hacked", timestamp_origin_ns=0, timestamp_ns=0
+                data_type,
+                data=MyData("AAPL hacked"),
             ),
             GenericData(
                 data_type,
-                data="AMZN hacked",
-                timestamp_origin_ns=500_000,
-                timestamp_ns=500_000,
+                data=MyData("AMZN hacked", 500_000, 500_000),
             ),
             GenericData(
                 data_type,
-                data="NFLX hacked",
-                timestamp_origin_ns=1_000_000,
-                timestamp_ns=1_000_000,
+                data=MyData("NFLX hacked", 1_000_000, 1_000_000),
             ),
             GenericData(
                 data_type,
-                data="MSFT hacked",
-                timestamp_origin_ns=2_000_000,
-                timestamp_ns=2_000_000,
+                data=MyData("MSFT hacked", 2_000_000, 2_000_000),
             ),
         ]
 

@@ -57,8 +57,8 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderDenied
@@ -403,13 +403,13 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_data(self, GenericData data) except *:
+    cpdef void on_data(self, Data data) except *:
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The data received.
 
         Warnings
@@ -1885,7 +1885,7 @@ cdef class TradingStrategy(Component):
         for i in range(length):
             self.handle_bar(bars[i], is_historical=True)
 
-    cpdef void handle_data(self, GenericData data) except *:
+    cpdef void handle_data(self, Data data) except *:
         """
         Handle the given data.
 
@@ -1893,7 +1893,7 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The received data.
 
         Warnings
