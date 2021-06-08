@@ -40,6 +40,7 @@ from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import MyData
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -52,35 +53,28 @@ class TestBacktestEngineData:
         # Arrange
         engine = BacktestEngine()
 
-        data_type = DataType(str, metadata={"news_wire": "hacks"})
+        data_type = DataType(MyData, metadata={"news_wire": "hacks"})
 
         generic_data1 = [
+            GenericData(data_type, MyData("AAPL hacked")),
             GenericData(
-                data_type, data="AAPL hacked", timestamp_origin_ns=0, timestamp_ns=0
+                data_type,
+                MyData("AMZN hacked", 1000, 1000),
             ),
             GenericData(
                 data_type,
-                data="AMZN hacked",
-                timestamp_origin_ns=1000,
-                timestamp_ns=1000,
+                MyData("NFLX hacked", 3000, 3000),
             ),
             GenericData(
                 data_type,
-                data="NFLX hacked",
-                timestamp_origin_ns=3000,
-                timestamp_ns=3000,
-            ),
-            GenericData(
-                data_type,
-                data="MSFT hacked",
-                timestamp_origin_ns=2000,
-                timestamp_ns=2000,
+                MyData("MSFT hacked", 2000, 2000),
             ),
         ]
 
         generic_data2 = [
             GenericData(
-                data_type, data="FB hacked", timestamp_origin_ns=1500, timestamp_ns=1500
+                data_type,
+                MyData("FB hacked", 1500, 1500),
             ),
         ]
 

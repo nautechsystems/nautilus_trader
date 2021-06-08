@@ -59,7 +59,7 @@ cdef class DataClient:
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *
-    cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *
+    cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):
