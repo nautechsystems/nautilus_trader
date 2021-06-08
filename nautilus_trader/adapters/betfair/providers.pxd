@@ -36,3 +36,4 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)
     cpdef str get_account_currency(self)
     cpdef void set_instruments(self, list instruments) except *
+    cpdef void add_instruments(self, list instruments) except *

@@ -383,7 +383,7 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
         kw = dict(
             market_id=market["id"],
             selection_id=str(runner["id"]),
-            handicap=str(runner.get("hc") or "0.0"),
+            handicap=str(runner.get("hc") or ""),
         )
         instrument = instrument_provider.get_betting_instrument(**kw)
         if instrument is None:
@@ -430,7 +430,7 @@ def build_market_snapshot_messages(
                     kw = dict(
                         market_id=market_id,
                         selection_id=str(selection_id),
-                        handicap=str(handicap or "0.0"),
+                        handicap=str(handicap or ""),
                     )
                     instrument = instrument_provider.get_betting_instrument(**kw)
                     if instrument is None:
@@ -488,7 +488,7 @@ def build_market_update_messages(
             kw = dict(
                 market_id=market["id"],
                 selection_id=str(runner["id"]),
-                handicap=str(runner.get("hc") or "0.0"),
+                handicap=str(runner.get("hc") or ""),
             )
             instrument = instrument_provider.get_betting_instrument(**kw)
             if instrument is None:

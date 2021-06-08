@@ -333,3 +333,12 @@ cdef class TradeTick(Tick):
                 f"{self.match_id},"
                 f"{self.timestamp_origin_ns},"
                 f"{self.timestamp_ns}")
+
+    cpdef tuple _hash(self):
+        return self.instrument_id, self.price, self.size, self.aggressor_side, self.match_id, self.timestamp_origin_ns
+
+    def __eq__(self, other: TradeTick):
+        return isinstance(other, type(self)) and self._hash() == other._hash()
+
+    def __hash__(self):
+        return hash(self._hash())

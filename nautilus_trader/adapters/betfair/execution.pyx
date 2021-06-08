@@ -378,7 +378,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 instrument = self._instrument_provider.get_betting_instrument(
                     market_id=market_id,
                     selection_id=str(selection["id"]),
-                    handicap=str(selection.get("hc", "0.0")),
+                    handicap=str(selection.get("hc", "")),
                 )
                 for order in selection.get("uo", []):
                     self._log.debug(f"order_update: {order}")

@@ -58,3 +58,4 @@ cdef class TradeTick(Tick):
     @staticmethod
     cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values)
     cpdef str to_serializable_str(self)
+    cpdef tuple _hash(self)

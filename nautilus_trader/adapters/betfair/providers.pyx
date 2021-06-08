@@ -153,6 +153,9 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cpdef void set_instruments(self, list instruments) except *:
         self._instruments = {ins.id: ins for ins in instruments}
 
+    cpdef void add_instruments(self, list instruments) except *:
+        self._instruments.update({ins.id: ins for ins in instruments})
+
 
 def _parse_date(s, tz):
     # pd.Timestamp is ~5x faster than datetime.datetime.isoformat here.
@@ -187,7 +190,7 @@ def parse_market_definition(market_definition):
                 {
                     "name": r.get("runnerName") or "NO_NAME",
                     "selection_id": r["selectionId"],
-                    "handicap": str(r.get("hc", r.get("handicap")) or "0.0"),
+                    "handicap": str(r.get("hc", r.get("handicap")) or ""),
                     "sort_priority": r.get("sortPriority"),
                     "runner_id": r.get("metadata", {}).get("runnerId")
                     if str(r.get("metadata", {}).get("runnerId")) != str(r["selectionId"])
@@ -203,19 +206,19 @@ def parse_market_definition(market_definition):
             "event_type_id": market_definition["eventTypeId"],
             "event_type_name": market_definition.get("eventTypeName", EVENT_TYPE_TO_NAME[market_definition["eventTypeId"]]),
             "event_id": market_definition["eventId"],
-            "event_name": market_definition.get("eventName"),
+            "event_name": market_definition.get("eventName", ""),
             "event_open_date": pd.Timestamp(market_definition["openDate"], tz=market_definition["timezone"]),
             "betting_type": market_definition["bettingType"],
             "country_code": market_definition.get("countryCode"),
             "market_type": market_definition.get("marketType"),
-            "market_name": market_definition.get("name"),
+            "market_name": market_definition.get("name", ""),
             "market_start_time": pd.Timestamp(market_definition["marketTime"], tz=market_definition["timezone"]),
             "market_id": market_definition["marketId"],
             "runners": [
                 {
                     "name": r.get("name") or "NO_NAME",
                     "selection_id": r["id"],
-                    "handicap": r.get("hc", "0.0"),
+                    "handicap": r.get("hc", ""),
                     "sort_priority": r.get("sortPriority"),
                 }
                 for r in market_definition["runners"]
@@ -252,7 +255,7 @@ def make_instruments(market_definition, currency):
             market_type=market_definition["market_type"],
             selection_id=str(runner["selection_id"]),
             selection_name=runner["name"],
-            selection_handicap=str(runner.get("hc", runner.get("handicap")) or "0.0"),
+            selection_handicap=str(runner.get("hc", runner.get("handicap")) or ""),
             currency=currency,
             # TODO - Add the provider, use clock
             timestamp_origin_ns=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
