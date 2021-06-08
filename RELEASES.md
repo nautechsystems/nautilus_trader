@@ -1,13 +1,38 @@
-# NautilusTrader 1.122.0 Beta - Release Notes
+# NautilusTrader 1.123.0 Beta - Release Notes
 
 
 ## Breaking Changes
-- `Account.balance()` renamed to `Account.balance_total()`.
-- `TradingStrategy.data` consolidated into `TradingStrategy.cache`.
-- `TradingStrategy.execution` consolidated into `TradingStrategy.cache`.
+None
+
+## Enhancements
+- Adapters dependencies optional.
+
+## Fixes
+None
+
+---
+
+# NautilusTrader 1.122.0 Beta - Release Notes
+
+This release includes numerous breaking changes with a view to enhancing the core
+functionality and API of the platform. The data and execution caches have been 
+unified for simplicity. There have also been large changes to the accounting 
+functionality, with 'hooks' added in preparation for accurate calculation and 
+handling of margins.
+
+## Breaking Changes
+- Renamed `Account.balance()` to `Account.balance_total()`.
+- Consolidated`TradingStrategy.data` into `TradingStrategy.cache`.
+- Consolidated `TradingStrategy.execution` into `TradingStrategy.cache`.
 - Moved `redis` subpackage into `infrastructure`.
+- Moved some accounting methods back to `Instrument`.
+- Removed `Instrument.market_value()`.
+- Renamed `Portfolio.market_values()` to `Portfolio.net_exposures()`.
+- Renamed `Portfolio.market_value()` to `Portfolio.net_exposure()`.
 - Renamed `InMemoryExecutionDatabase` to `BypassCacheDatabase`.
 - Renamed `Position.relative_qty` to `Position.net_qty`.
+- Renamed `default_currency` to `base_currency`.
+- Removed `cost_currency` property from `Instrument`.
 
 ## Enhancements
 - `ExecutionClient` now has the option of calculating account state.
@@ -15,7 +40,11 @@
 - Improved configuration options and naming.
 - Simplified `Portfolio` component registration.
 - Simplified wiring of `Cache` into components.
-- Add `repr` to execution messages.
+- Added `repr` to execution messages.
+- Added `AccountType` enum.
+- Added `cost_currency` to `Position`.
+- Added `get_cost_currency()` to `Instrument`.
+- Added `get_base_currency()` to `Instrument`.
 
 ## Fixes
 - Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.

@@ -71,9 +71,9 @@ cdef class Future(Instrument):
         price_increment : Decimal
             The minimum price increment (tick size).
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
 
         Raises
         ------
@@ -93,7 +93,6 @@ cdef class Future(Instrument):
             asset_class=asset_class,
             asset_type=AssetType.FUTURE,
             quote_currency=currency,
-            cost_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
             size_precision=0,  # No fractional contracts

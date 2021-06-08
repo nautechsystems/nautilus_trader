@@ -78,11 +78,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if "qsize" not in config:
             config["qsize"] = 10000
         super().__init__(
-            portfolio,
-            cache,
-            clock,
-            logger,
-            config,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop = loop

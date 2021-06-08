@@ -98,9 +98,9 @@ cdef class CFDInstrument(Instrument):
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -141,7 +141,6 @@ cdef class CFDInstrument(Instrument):
             asset_class=asset_class,
             asset_type=AssetType.CFD,
             quote_currency=quote_currency,
-            cost_currency=quote_currency,
             is_inverse=False,
             price_precision=price_precision,
             size_precision=size_precision,

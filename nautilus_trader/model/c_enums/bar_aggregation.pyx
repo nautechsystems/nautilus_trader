@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+
 cdef class BarAggregationParser:
 
     @staticmethod

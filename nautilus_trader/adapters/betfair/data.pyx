@@ -101,10 +101,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             market_filter=market_filter
         )
         super().__init__(
-            ClientId(BETFAIR_VENUE.value),
-            engine,
-            clock,
-            logger,
+            client_id=ClientId(BETFAIR_VENUE.value),
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
         self._instrument_provider = instrument_provider
         self._stream = BetfairMarketStreamClient(

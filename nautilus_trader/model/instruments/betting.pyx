@@ -90,7 +90,6 @@ cdef class BettingInstrument(Instrument):
             asset_class=AssetClass.BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
-            cost_currency=Currency.from_str_c(currency),
             is_inverse=False,
             price_precision=5,
             size_precision=4,

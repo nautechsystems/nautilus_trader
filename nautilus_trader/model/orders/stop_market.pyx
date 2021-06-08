@@ -82,7 +82,7 @@ cdef class StopMarketOrder(PassiveOrder):
         init_id : UUID
             The order initialization event identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the order initialization.
+            The UNIX timestamp (nanos) of the order initialization.
         reduce_only : bool, optional
             If the order will only reduce an open position.
 

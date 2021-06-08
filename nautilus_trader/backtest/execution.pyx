@@ -18,10 +18,12 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 
@@ -35,6 +37,8 @@ cdef class BacktestExecClient(ExecutionClient):
         self,
         SimulatedExchange exchange not None,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         ExecutionEngine engine not None,
         TestClock clock not None,
         Logger logger not None,
@@ -49,6 +53,10 @@ cdef class BacktestExecClient(ExecutionClient):
             The simulated exchange for the backtest.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : ExecutionEngine
             The execution engine for the client.
         clock : TestClock
@@ -63,10 +71,12 @@ cdef class BacktestExecClient(ExecutionClient):
             client_id=ClientId(exchange.id.value),
             venue_type=exchange.venue_type,
             account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
             engine=engine,
             clock=clock,
             logger=logger,
-            config={"calculated_account_state": False if is_frozen_account else True},
+            config={"calculate_account_state": False if is_frozen_account else True},
         )
 
         self._exchange = exchange

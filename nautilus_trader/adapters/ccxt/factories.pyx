@@ -25,6 +25,7 @@ from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.identifiers cimport AccountId
 
 
@@ -143,6 +144,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         # Build internal configuration
+        cdef str account_type_str = config.get("defaultType", "spot")
         cdef dict internal_config = {
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
@@ -151,7 +153,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
             "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": engine.get_event_loop(),
             "options": {
-                "defaultType": config.get("defaultType", "spot"),
+                "defaultType": account_type_str,
                 "OHLCVLimit": 1,
                 "balancesLimit": 1,
                 "tradesLimit": 1,
@@ -187,12 +189,14 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
 
         # Set account identifier
         account_id = AccountId(issuer=exchange_name, number=account_id_env_var)
+        account_type = AccountType.CASH if account_type_str == "spot" else AccountType.MARGIN
 
         # Create client
         if exchange_name == "BINANCE":
             return BinanceCCXTExecutionClient(
                 client=client,
                 account_id=account_id,
+                account_type=account_type,
                 engine=engine,
                 clock=clock,
                 logger=logger,
@@ -209,6 +213,8 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
             return CCXTExecutionClient(
                 client=client,
                 account_id=account_id,
+                account_type=account_type,
+                base_currency=None,  # Multi-currency account
                 engine=engine,
                 clock=clock,
                 logger=logger,

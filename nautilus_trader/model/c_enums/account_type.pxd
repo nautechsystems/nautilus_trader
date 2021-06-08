@@ -14,34 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class AggressorSideParser:
+cpdef enum AccountType:
+    CASH = 1,
+    MARGIN = 2,
+
+
+cdef class AccountTypeParser:
 
     @staticmethod
-    cdef str to_str(int value):
-        if value == 0:
-            return "UNKNOWN"
-        elif value == 1:
-            return "BUY"
-        elif value == 2:
-            return "SELL"
-        else:
-            raise ValueError(f"value was invalid, was {value}")
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef AggressorSide from_str(str value) except *:
-        if value == "UNKNOWN":
-            return AggressorSide.UNKNOWN
-        elif value == "BUY":
-            return AggressorSide.BUY
-        elif value == "SELL":
-            return AggressorSide.SELL
-        else:
-            raise ValueError(f"value was invalid, was {value}")
-
-    @staticmethod
-    def to_str_py(int value):
-        return AggressorSideParser.to_str(value)
-
-    @staticmethod
-    def from_str_py(str value):
-        return AggressorSideParser.from_str(value)
+    cdef AccountType from_str(str value) except *

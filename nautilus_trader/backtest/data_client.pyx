@@ -71,11 +71,11 @@ cdef class BacktestDataClient(DataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self.is_connected = False
@@ -208,10 +208,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self.is_connected = False

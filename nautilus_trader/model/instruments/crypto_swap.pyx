@@ -101,9 +101,9 @@ cdef class CryptoSwap(Instrument):
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -142,7 +142,6 @@ cdef class CryptoSwap(Instrument):
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             quote_currency=quote_currency,
-            cost_currency=base_currency if is_inverse else quote_currency,
             is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,
@@ -171,3 +170,30 @@ cdef class CryptoSwap(Instrument):
             self.is_quanto = True
         else:
             self.is_quanto = False
+
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base currency.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.base_currency
+
+    # TODO(cs): WIP
+    # cpdef Currency get_cost_currency(self):
+    #     """
+    #     Return the currency used for cost and PnL calculations.
+    #
+    #     - Standard linear instruments = quote_currency
+    #     - Inverse instruments = base_currency
+    #     - Quanto instrument = settlement_currency
+    #
+    #     Returns
+    #     -------
+    #     Currency
+    #
+    #     """
+    #     return self.settlement_currency

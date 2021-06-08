@@ -330,9 +330,9 @@ cdef class Bar(Data):
         volume : Quantity
             The bars volume.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
         check : bool
             If bar parameters should be checked valid.
 
@@ -385,7 +385,7 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef Bar from_serializable_str_c(BarType bar_type, str values):
-        Condition.valid_string(values, 'values')
+        Condition.valid_string(values, "values")
 
         cdef list pieces = values.split(',', maxsplit=6)
 

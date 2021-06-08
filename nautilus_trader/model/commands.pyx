@@ -56,7 +56,7 @@ cdef class TradingCommand(Command):
         command_id : UUID
             The commands identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the command.
+            The UNIX timestamp (nanos) of the command.
 
         """
         super().__init__(command_id, timestamp_ns)
@@ -101,7 +101,7 @@ cdef class SubmitOrder(TradingCommand):
         command_id : UUID
             The commands identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the command.
+            The UNIX timestamp (nanos) of the command.
 
         """
         super().__init__(
@@ -160,7 +160,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         command_id : UUID
             The command identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the command.
+            The UNIX timestamp (nanos) of the command.
 
         """
         super().__init__(
@@ -226,7 +226,7 @@ cdef class UpdateOrder(TradingCommand):
         command_id : UUID
             The command identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the command.
+            The UNIX timestamp (nanos) of the command.
 
         """
         super().__init__(
@@ -292,7 +292,7 @@ cdef class CancelOrder(TradingCommand):
         command_id : UUID
             The command identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the command.
+            The UNIX timestamp (nanos) of the command.
 
         """
         super().__init__(

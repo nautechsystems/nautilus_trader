@@ -97,7 +97,7 @@ cdef class Message:
         identifier : UUID
             The message identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the message initialization.
+            The UNIX timestamp (nanos) of the message initialization.
 
         """
         self.type = msg_type
@@ -133,7 +133,7 @@ cdef class Command(Message):
         identifier : UUID
             The command identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the command initialization.
+            The UNIX timestamp (nanos) of the command initialization.
 
         """
         super().__init__(MessageType.COMMAND, identifier, timestamp_ns)
@@ -159,7 +159,7 @@ cdef class Document(Message):
         identifier : UUID
             The document identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the document initialization.
+            The UNIX timestamp (nanos) of the document initialization.
 
         """
         super().__init__(MessageType.DOCUMENT, identifier, timestamp_ns)
@@ -185,7 +185,7 @@ cdef class Event(Message):
         identifier : UUID
             The event identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanos) of the event initialization.
 
         """
         super().__init__(MessageType.EVENT, identifier, timestamp_ns)
@@ -207,7 +207,7 @@ cdef class Request(Message):
         identifier : UUID
             The request identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the request initialization.
+            The UNIX timestamp (nanos) of the request initialization.
 
         """
         super().__init__(MessageType.REQUEST, identifier, timestamp_ns)
@@ -236,7 +236,7 @@ cdef class Response(Message):
         identifier : UUID
             The response identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the response initialization.
+            The UNIX timestamp (nanos) of the response initialization.
 
         """
         super().__init__(MessageType.RESPONSE, identifier, timestamp_ns)

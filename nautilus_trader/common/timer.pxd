@@ -27,7 +27,7 @@ cdef class TimeEvent(Event):
     cdef readonly datetime event_timestamp
     """The events timestamp (UTC).\n\n:returns: `datetime`"""
     cdef readonly int64_t event_timestamp_ns
-    """The Unix timestamp (nanos) of the event.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanos) of the event.\n\n:returns: `int64`"""
 
 
 cdef class TimeEventHandler:

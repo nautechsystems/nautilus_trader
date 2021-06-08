@@ -27,6 +27,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -75,8 +76,10 @@ cdef class SimulatedExchange:
         Venue venue not None,
         VenueType venue_type,
         OMSType oms_type,
-        bint is_frozen_account,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         list starting_balances not None,
+        bint is_frozen_account,
         list instruments not None,
         list modules not None,
         CacheFacade cache not None,
@@ -96,10 +99,14 @@ cdef class SimulatedExchange:
             The venues type.
         oms_type : OMSType
             The order management system type used by the exchange (HEDGING or NETTING).
-        is_frozen_account : bool
-            If the account for this exchange is frozen (balances will not change).
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting balances for the exchange.
+        is_frozen_account : bool
+            If the account for this exchange is frozen (balances will not change).
         cache : CacheFacade
             The read-only cache for the exchange.
         fill_model : FillModel
@@ -120,6 +127,8 @@ cdef class SimulatedExchange:
         ValueError
             If starting_balances contains a type other than Money.
         ValueError
+            If base currency and multiple starting balances.
+        ValueError
             If modules contains a type other than SimulationModule.
 
         """
@@ -128,6 +137,8 @@ cdef class SimulatedExchange:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules", "SimulationModule")
+        if base_currency:
+            Condition.true(len(starting_balances) == 1, "single-currency account has multiple starting currencies")
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
@@ -145,12 +156,11 @@ cdef class SimulatedExchange:
         self.cache = cache
         self.exec_client = None  # Initialized when execution client registered
 
-        self.is_frozen_account = is_frozen_account
+        self.account_type = account_type
+        self.base_currency = base_currency
         self.starting_balances = starting_balances
-        self.default_currency = None if len(starting_balances) > 1 else starting_balances[0].currency
-        self.total_commissions = {}  # type: dict[Currency, Money]
+        self.is_frozen_account = is_frozen_account
 
-        self.xrate_calculator = ExchangeRateCalculator()
         self.fill_model = fill_model
 
         # Load modules
@@ -187,44 +197,6 @@ cdef class SimulatedExchange:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.id})"
-
-    cpdef list balances_total(self):
-        """
-        Return the total balances for the connected execution clients account
-        (if registered).
-
-        Returns
-        -------
-        list[Money] or None
-
-        """
-        if self.exec_client is None:
-            return None
-
-        cdef Account account = self.exec_client.get_account()
-        if account is None:
-            return []
-
-        return list(account.balances_total().values())
-
-    cpdef Money balance_total(self, Currency currency):
-        """
-        Return the total balance of the given currency for the connected
-        execution clients account (if registered).
-
-        Returns
-        -------
-        Money or None
-
-        """
-        if self.exec_client is None:
-            return None
-
-        cdef Account account = self.exec_client.get_account()
-        if account is None:
-            return None
-
-        return account.balance_total(currency)
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
@@ -328,6 +300,20 @@ cdef class SimulatedExchange:
         """
         return self._working_orders.copy()
 
+    cpdef Account get_account(self):
+        """
+        Return the account for the registered client (if registered).
+
+        Returns
+        -------
+        Account or None
+
+        """
+        if not self.exec_client:
+            return None
+
+        return self.exec_client.get_account()
+
     cpdef void register_client(self, BacktestExecClient client) except *:
         """
         Register the given execution client with the simulated exchange.
@@ -381,7 +367,7 @@ cdef class SimulatedExchange:
             )
             return
 
-        cdef AccountBalance balance = account.balances().get(adjustment.currency)
+        cdef AccountBalance balance = account.balance(adjustment.currency)
         if balance is None:
             self._log.error(
                 f"Cannot adjust account: no balance found for {adjustment.currency}"
@@ -391,18 +377,11 @@ cdef class SimulatedExchange:
         balance.total = Money(balance.total + adjustment, adjustment.currency)
         balance.free = Money(balance.free + adjustment, adjustment.currency)
 
-        cdef dict info
-        if self.default_currency is None:
-            info = {}
-        else:
-            info = {"default_currency": self.default_currency.code}
-
         # Generate and handle event
         self.exec_client.generate_account_state(
             balances=[balance],
             reported=True,
             updated_ns=self._clock.timestamp_ns(),
-            info=info,
         )
 
     cpdef void process_order_book(self, OrderBookData data) except *:
@@ -457,7 +436,7 @@ cdef class SimulatedExchange:
         Parameters
         ----------
         now_ns : int64
-            The Unix timestamp (nanos) now.
+            The UNIX timestamp (nanos) now.
 
         """
         self._clock.set_time(now_ns)
@@ -490,8 +469,6 @@ cdef class SimulatedExchange:
 
         for module in self.modules:
             module.reset()
-
-        self.total_commissions = {}
 
         self._generate_fresh_account_state()
 
@@ -659,17 +636,11 @@ cdef class SimulatedExchange:
             for money in self.starting_balances
         ]
 
-        cdef dict info
-        if self.default_currency is None:
-            info = {}
-        else:
-            info = {"default_currency": self.default_currency.code}
         # Generate event
         self.exec_client.generate_account_state(
             balances=balances,
             reported=True,
             updated_ns=self._clock.timestamp_ns(),
-            info=info,
         )
 
     cdef void _generate_order_submitted(self, Order order) except *:
@@ -1169,8 +1140,7 @@ cdef class SimulatedExchange:
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
-        cdef Money commission = Account.calculate_commission(
-            instrument=instrument,
+        cdef Money commission = instrument.calculate_commission(
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,
@@ -1210,26 +1180,6 @@ cdef class SimulatedExchange:
                         self._log.debug(f"Cancelling {order.client_order_id} as linked position closed.")
                         self._cancel_oco_order(order)
                 del self._position_oco_orders[position.id]
-
-        # TODO(cs): Move the below into account or execution client
-        # Settle commission
-        cdef Currency currency = instrument.cost_currency
-        if self.default_currency:  # Single-asset account
-            currency = self.default_currency
-            if commission.currency != currency:
-                xrate: Decimal = self.cache.get_xrate(
-                    venue=order.instrument_id.venue,
-                    from_currency=commission.currency,
-                    to_currency=currency,
-                    price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
-                )
-
-                # Convert to account currency
-                commission = Money(commission * xrate, currency)
-
-        # Increment total commissions
-        total_commissions: Decimal = self.total_commissions.get(currency, Decimal()) + commission
-        self.total_commissions[currency] = Money(total_commissions, currency)
 
     cdef void _check_oco_order(self, ClientOrderId client_order_id) except *:
         # Check held OCO orders and remove any paired with the given client_order_id

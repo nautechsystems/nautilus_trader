@@ -29,6 +29,7 @@ from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
@@ -173,7 +174,6 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             ASSET_CLASS: self.convert_snake_to_camel(asset_class),
             ASSET_TYPE: self.convert_snake_to_camel(asset_type),
             QUOTE_CURRENCY: instrument.quote_currency.code,
-            COST_CURRENCY: instrument.cost_currency.code,
             IS_INVERSE: instrument.is_inverse,
             PRICE_PRECISION: instrument.price_precision,
             SIZE_PRECISION: instrument.size_precision,
@@ -252,7 +252,6 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef AssetClass asset_class = AssetClassParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_CLASS]))
         cdef AssetType asset_type = AssetTypeParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_TYPE]))
         cdef Currency quote_currency = Currency.from_str_c(unpacked[QUOTE_CURRENCY])
-        cdef Currency cost_currency = Currency.from_str_c(unpacked[COST_CURRENCY])
         cdef bint is_inverse = unpacked[IS_INVERSE]
         cdef uint8_t price_precision = unpacked[PRICE_PRECISION]
         cdef uint8_t size_precision = unpacked[SIZE_PRECISION]
@@ -289,7 +288,6 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 asset_class=asset_class,
                 asset_type=asset_type,
                 quote_currency=quote_currency,
-                cost_currency=cost_currency,
                 is_inverse=is_inverse,
                 price_precision=price_precision,
                 size_precision=size_precision,
@@ -735,6 +733,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
+            package[ACCOUNT_TYPE] = AccountTypeParser.to_str(event.account_type)
+            package[BASE_CURRENCY] = event.base_currency.code if event.base_currency is not None else None
             package[IS_REPORTED] = event.is_reported
             package[BALANCES] = [[b.currency.code, str(b.total), str(b.locked), str(b.free)] for b in event.balances]
             package[UPDATED_TIMESTAMP] = str(event.updated_ns)
@@ -883,8 +883,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict options          # typing for OrderInitialized
         cdef OrderType order_type  # typing for OrderInitialized
         if event_type == AccountState.__name__:
+            base_currency = unpacked[BASE_CURRENCY]
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                AccountTypeParser.from_str(unpacked[ACCOUNT_TYPE]),
+                Currency.from_str_c(base_currency) if base_currency is not None else None,
                 unpacked[IS_REPORTED],
                 [AccountBalance(
                     currency=Currency.from_str_c(b[0]),

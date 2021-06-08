@@ -15,12 +15,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import pathlib
+import os
 import sys
 
 
 sys.path.insert(
-    0, str(pathlib.Path(__file__).parents[2])
+    0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
 from examples.strategies.betfair_test_strategy import BetfairTestStrategy
@@ -73,6 +73,7 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+            "base_currency": "AUD",
             "market_filter": {"market_id": market_id},
         },
     },

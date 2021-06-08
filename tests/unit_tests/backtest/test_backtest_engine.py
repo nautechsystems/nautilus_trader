@@ -20,6 +20,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderBookDeltaType
@@ -379,6 +380,8 @@ class TestBacktestEngine:
             venue=Venue("SIM"),
             venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )

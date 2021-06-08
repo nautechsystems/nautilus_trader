@@ -20,7 +20,7 @@ at commit.
 
 Setup
 -----
-The following steps are for Unix-like systems, and only need to be completed once.
+The following steps are for UNIX-like systems, and only need to be completed once.
 
 1. Install ``poetry`` by running::
 

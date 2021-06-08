@@ -23,8 +23,11 @@ from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
+
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+
 from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 
@@ -134,6 +137,7 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         exec_client = BetfairExecutionClient(
             client=client,
             account_id=account_id,
+            base_currency=Currency.from_str_c(config.get("base_currency")),
             engine=engine,
             clock=clock,
             logger=logger,

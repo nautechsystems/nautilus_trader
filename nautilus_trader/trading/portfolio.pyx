@@ -71,7 +71,7 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict market_values(self, Venue venue):
+    cpdef dict net_exposures(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -79,7 +79,7 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money market_value(self, InstrumentId instrument_id):
+    cpdef Money net_exposure(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -479,9 +479,9 @@ cdef class Portfolio(PortfolioFacade):
 
         return {k: Money(v, k) for k, v in unrealized_pnls.items()}
 
-    cpdef dict market_values(self, Venue venue):
+    cpdef dict net_exposures(self, Venue venue):
         """
-        Return the market values for the given venue (if found).
+        Return the net exposures for the given venue (if found).
 
         Parameters
         ----------
@@ -499,7 +499,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             self._log.error(
-                f"Cannot calculate market value: "
+                f"Cannot calculate net exposures: "
                 f"no account registered for {venue}."
             )
             return None  # Cannot calculate
@@ -508,7 +508,7 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return {}  # Nothing to calculate
 
-        cdef dict market_values = {}  # type: dict[Currency, Decimal]
+        cdef dict net_exposures = {}  # type: dict[Currency, Decimal]
 
         cdef Position position
         cdef Instrument instrument
@@ -517,7 +517,7 @@ cdef class Portfolio(PortfolioFacade):
             instrument = self._cache.instrument(position.instrument_id)
             if instrument is None:
                 self._log.error(
-                    f"Cannot calculate market value: "
+                    f"Cannot calculate net exposures: "
                     f"no instrument for {position.instrument_id}."
                 )
                 return None  # Cannot calculate
@@ -525,12 +525,12 @@ cdef class Portfolio(PortfolioFacade):
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(
-                    f"Cannot calculate market value: "
+                    f"Cannot calculate net exposures: "
                     f"no prices for {position.instrument_id}."
                 )
                 continue  # Cannot calculate
 
-            xrate = self._calculate_xrate(
+            xrate: Decimal = self._calculate_xrate_to_base(
                 instrument=instrument,
                 account=account,
                 side=position.entry,
@@ -538,24 +538,23 @@ cdef class Portfolio(PortfolioFacade):
 
             if xrate == 0:
                 self._log.error(
-                    f"Cannot calculate market value: "
-                    f"insufficient data for {instrument.cost_currency}/{account.default_currency}."
+                    f"Cannot calculate net exposures: "
+                    f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                 )
                 return None  # Cannot calculate
 
-            market_value = market_values.get(instrument.quote_currency, Decimal(0))
-            market_value += Account.market_value(
-                instrument,
+            net_exposure: Decimal = net_exposures.get(instrument.get_cost_currency(), Decimal(0))
+            net_exposure += instrument.notional_value(
                 position.quantity,
                 last,
             ) * xrate
 
-            if account.default_currency is not None:
-                market_values[account.default_currency] = market_value
+            if account.base_currency is not None:
+                net_exposures[account.base_currency] = net_exposure
             else:
-                market_values[instrument.quote_currency] = market_value
+                net_exposures[instrument.get_cost_currency()] = net_exposure
 
-        return {k: Money(v, k) for k, v in market_values.items()}
+        return {k: Money(v, k) for k, v in net_exposures.items()}
 
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
         """
@@ -582,14 +581,14 @@ cdef class Portfolio(PortfolioFacade):
 
         return pnl
 
-    cpdef Money market_value(self, InstrumentId instrument_id):
+    cpdef Money net_exposure(self, InstrumentId instrument_id):
         """
-        Return the market value for the given instrument identifier (if found).
+        Return the net exposure for the given instrument (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument for the market value.
+            The instrument for the calculation.
 
         Returns
         -------
@@ -602,7 +601,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._cache.account_for_venue(instrument_id.venue)
         if account is None:
             self._log.error(
-                f"Cannot calculate market value: "
+                f"Cannot calculate net exposure: "
                 f"no account registered for {instrument_id.venue}."
             )
             return None  # Cannot calculate
@@ -610,16 +609,16 @@ cdef class Portfolio(PortfolioFacade):
         cdef instrument = self._cache.instrument(instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot calculate market value: "
+                f"Cannot calculate net exposure: "
                 f"no instrument for {instrument_id}."
             )
             return None  # Cannot calculate
 
         cdef list positions_open = self._cache.positions_open(instrument_id.venue)
         if not positions_open:
-            return Money(0, instrument.quote_currency)
+            return Money(0, instrument.get_cost_currency())
 
-        market_value: Decimal = Decimal(0)
+        net_exposure = Decimal(0)
 
         cdef Position position
         cdef Price last
@@ -630,12 +629,12 @@ cdef class Portfolio(PortfolioFacade):
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(
-                    f"Cannot calculate market value: "
+                    f"Cannot calculate net exposure: "
                     f"no prices for {position.instrument_id}."
                 )
                 continue  # Cannot calculate
 
-            xrate = self._calculate_xrate(
+            xrate: Decimal = self._calculate_xrate_to_base(
                 instrument=instrument,
                 account=account,
                 side=position.entry,
@@ -643,21 +642,20 @@ cdef class Portfolio(PortfolioFacade):
 
             if xrate == 0:
                 self._log.error(
-                    f"Cannot calculate market value: "
-                    f"insufficient data for {instrument.cost_currency}/{account.default_currency}."
+                    f"Cannot calculate net exposure: "
+                    f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                 )
                 return None  # Cannot calculate
 
-            market_value += Account.market_value(
-                instrument,
+            net_exposure += instrument.notional_value(
                 position.quantity,
                 last,
             ) * xrate
 
-        if account.default_currency is not None:
-            return Money(market_value, account.default_currency)
+        if account.base_currency is not None:
+            return Money(net_exposure, account.base_currency)
         else:
-            return Money(market_value, instrument.quote_currency)
+            return Money(net_exposure, instrument.get_cost_currency())
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
@@ -795,15 +793,14 @@ cdef class Portfolio(PortfolioFacade):
                 return False  # Cannot calculate
 
             # Calculate margin
-            margin = Account.calculate_initial_margin(
-                instrument,
+            margin = instrument.calculate_initial_margin(
                 order.quantity,
                 order.price,
             )
 
-            if account.default_currency is not None:
-                currency = account.default_currency
-                xrate = self._calculate_xrate(
+            if account.base_currency is not None:
+                currency = account.base_currency
+                xrate: Decimal = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
                     side=order.side,
@@ -812,14 +809,14 @@ cdef class Portfolio(PortfolioFacade):
                 if xrate == 0:
                     self._log.debug(
                         f"Cannot calculate initial margin: "
-                        f"insufficient data for {instrument.cost_currency}/{currency}."
+                        f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                     )
                     self._pending_calcs.add(instrument.id)
                     return False  # Cannot calculate
 
                 margin *= xrate
             else:
-                currency = instrument.quote_currency
+                currency = instrument.get_cost_currency()
 
             # Update total margin
             total_margin = margins.get(currency, Decimal(0))
@@ -831,7 +828,7 @@ cdef class Portfolio(PortfolioFacade):
             total_margin_money = Money(total_margin, currency)
             account.update_initial_margin(total_margin_money)
 
-            self._log.info(f"{venue} initial_margin={total_margin_money}")
+            self._log.info(f"{venue} initial_margin={total_margin_money.to_str()}")
 
         return True
 
@@ -873,16 +870,15 @@ cdef class Portfolio(PortfolioFacade):
                 return False  # Cannot calculate
 
             # Calculate margin
-            margin = Account.calculate_maint_margin(
-                instrument,
+            margin = instrument.calculate_maint_margin(
                 position.side,
                 position.quantity,
                 last,
             )
 
-            if account.default_currency is not None:
-                currency = account.default_currency
-                xrate = self._calculate_xrate(
+            if account.base_currency is not None:
+                currency = account.base_currency
+                xrate: Decimal = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
                     side=position.entry,
@@ -891,14 +887,14 @@ cdef class Portfolio(PortfolioFacade):
                 if xrate == 0:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"insufficient data for {instrument.cost_currency}/{currency})."
+                        f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency})."
                     )
                     self._pending_calcs.add(instrument.id)
                     return False  # Cannot calculate
 
                 margin *= xrate
             else:
-                currency = instrument.quote_currency
+                currency = instrument.get_cost_currency()
 
             # Update total margin
             total_margin = margins.get(currency, Decimal(0))
@@ -910,7 +906,7 @@ cdef class Portfolio(PortfolioFacade):
             total_margin_money = Money(total_margin, currency)
             account.update_maint_margin(total_margin_money)
 
-            self._log.info(f"{venue} maint_margin={total_margin_money}")
+            self._log.info(f"{venue} maint_margin={total_margin_money.to_str()}")
 
         return True
 
@@ -932,20 +928,20 @@ cdef class Portfolio(PortfolioFacade):
             return None  # Cannot calculate
 
         cdef Currency currency
-        if account.default_currency is not None:
-            currency = account.default_currency
+        if account.base_currency is not None:
+            currency = account.base_currency
         else:
-            currency = instrument.quote_currency
+            currency = instrument.get_cost_currency()
 
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
         )
         if not positions_open:
-            if account.default_currency is not None:
-                return Money(0, account.default_currency)
+            if account.base_currency is not None:
+                return Money(0, account.base_currency)
             else:
-                return Money(0, instrument.cost_currency)
+                return Money(0, instrument.get_cost_currency())
 
         total_pnl: Decimal = Decimal(0)
 
@@ -965,8 +961,8 @@ cdef class Portfolio(PortfolioFacade):
 
             pnl = position.unrealized_pnl(last)
 
-            if account.default_currency is not None:
-                xrate = self._calculate_xrate(
+            if account.base_currency is not None:
+                xrate: Decimal = self._calculate_xrate_to_base(
                     instrument=instrument,
                     account=account,
                     side=position.entry,
@@ -975,7 +971,7 @@ cdef class Portfolio(PortfolioFacade):
                 if xrate == 0:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"insufficient data for {instrument.cost_currency}/{currency}."
+                        f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                     )
                     self._pending_calcs.add(instrument.id)
                     return None  # Cannot calculate
@@ -986,12 +982,12 @@ cdef class Portfolio(PortfolioFacade):
 
         return Money(total_pnl, currency)
 
-    cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side):
-        if account.default_currency is not None:
+    cdef object _calculate_xrate_to_base(self, Instrument instrument, Account account, OrderSide side):
+        if account.base_currency is not None:
             return self._cache.get_xrate(
                 venue=instrument.id.venue,
-                from_currency=instrument.cost_currency,
-                to_currency=account.default_currency,
+                from_currency=instrument.get_cost_currency(),
+                to_currency=account.base_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )
 

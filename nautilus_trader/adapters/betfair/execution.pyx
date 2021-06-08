@@ -30,6 +30,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -75,6 +76,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self,
         client not None,
         AccountId account_id not None,
+        Currency base_currency not None,
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -90,6 +92,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             The Betfair client.
         account_id : AccountId
             The account identifier for the client.
+        base_currency : Currency
+            The account base currency for the client.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -109,16 +113,18 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
-            ClientId(BETFAIR_VENUE.value),
-            VenueType.EXCHANGE,
-            account_id,
-            engine,
-            instrument_provider,
-            clock,
-            logger,
+            client_id=ClientId(BETFAIR_VENUE.value),
+            venue_type=VenueType.EXCHANGE,
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=base_currency,
+            engine=engine,
+            instrument_provider=instrument_provider,
+            clock=clock,
+            logger=logger,
             config={
                 "name": "BetfairExecClient",
-                "calculated_account_state": True,
+                "calculate_account_state": True,
             }
         )
 

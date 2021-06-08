@@ -23,6 +23,7 @@ from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -447,13 +448,15 @@ class TestMsgPackEventSerializer:
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "000"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             reported=True,
             balances=[
                 AccountBalance(
                     USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD)
                 )
             ],
-            info={"default_currency": "USD"},
+            info={},
             event_id=uuid4(),
             updated_ns=0,
             timestamp_ns=1_000_000_000,

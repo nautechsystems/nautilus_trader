@@ -22,6 +22,9 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
@@ -40,7 +43,6 @@ cdef class Instrument(Data):
         AssetClass asset_class,
         AssetType asset_type,
         Currency quote_currency not None,
-        Currency cost_currency not None,
         bint is_inverse,
         int price_precision,
         int size_precision,
@@ -75,8 +77,6 @@ cdef class Instrument(Data):
             The instrument asset type.
         quote_currency : Currency
             The quote currency.
-        cost_currency : Currency
-            The currency used for costing calculations.
         is_inverse : Currency
             If the instrument costing is inverse (quantity expressed in quote currency units).
         price_precision : int
@@ -112,9 +112,9 @@ cdef class Instrument(Data):
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
         timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanos) when originally occurred.
         timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanos) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -183,7 +183,6 @@ cdef class Instrument(Data):
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.quote_currency = quote_currency
-        self.cost_currency = cost_currency
         self.is_inverse = is_inverse
         self.price_precision = price_precision
         self.price_increment = price_increment
@@ -219,14 +218,18 @@ cdef class Instrument(Data):
                 f"asset_class={AssetClassParser.to_str(self.asset_class)}, "
                 f"asset_type={AssetTypeParser.to_str(self.asset_type)}, "
                 f"quote_currency={self.quote_currency}, "
-                f"cost_currency={self.quote_currency}, "
                 f"is_inverse={self.is_inverse}, "
                 f"price_precision={self.price_precision}, "
                 f"price_increment={self.price_increment}, "
-                f"size_precision={self.size_precision})"
+                f"size_precision={self.size_precision}, "
                 f"size_increment={self.size_increment}, "
                 f"multiplier={self.multiplier}, "
-                f"lot_size={self.lot_size})")
+                f"lot_size={self.lot_size}, "
+                f"margin_init={self.margin_init}, "
+                f"margin_maint={self.margin_maint}, "
+                f"maker_fee={self.maker_fee}, "
+                f"taker_fee={self.taker_fee}, "
+                f"info={self.info})")
 
     @property
     def symbol(self):
@@ -252,9 +255,38 @@ cdef class Instrument(Data):
         """
         return self.id.venue
 
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base currency (if applicable).
+
+        Returns
+        -------
+        Currency or None
+
+        """
+        return None
+
+    cpdef Currency get_cost_currency(self):
+        """
+        Return the currency used for cost and PnL calculations.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = base_currency
+        - Quanto instruments = settlement_currency
+
+        Returns
+        -------
+        Currency
+
+        """
+        if self.is_inverse:
+            return self.base_currency
+        else:
+            return self.quote_currency
+
     cpdef Price make_price(self, value):
         """
-        Create a new price from the given value using the instruments price
+        Return a new price from the given value using the instruments price
         precision.
 
         Parameters
@@ -271,7 +303,7 @@ cdef class Instrument(Data):
 
     cpdef Quantity make_qty(self, value):
         """
-        Create a new quantity from the given value using the instruments size
+        Return a new quantity from the given value using the instruments size
         precision.
 
         Parameters
@@ -285,3 +317,201 @@ cdef class Instrument(Data):
 
         """
         return Quantity(float(value), precision=self.size_precision)
+
+    cpdef Money notional_value(
+        self,
+        Quantity quantity,
+        close_price: Decimal,
+        bint inverse_as_quote=False,
+    ):
+        """
+        Calculate the notional value from the given parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The total quantity.
+        close_price : Decimal or Price
+            The closing price.
+        inverse_as_quote : bool
+            If inverse instrument calculations use quote currency (instead of base).
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.type(close_price, (Decimal, Price), "close_price")
+
+        if self.is_inverse:
+            if inverse_as_quote:
+                # Quantity is notional
+                return Money(quantity, self.quote_currency)
+            notional_value: Decimal = quantity * self.multiplier * (1 / close_price)
+            return Money(notional_value, self.base_currency)
+        else:
+            notional_value: Decimal = quantity * self.multiplier * close_price
+            return Money(notional_value, self.quote_currency)
+
+    cpdef Money calculate_initial_margin(
+        self,
+        Quantity quantity,
+        Price price,
+        leverage: Decimal=Decimal(1),
+        bint inverse_as_quote=False,
+    ):
+        """
+        Calculate the initial margin from the given parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+        leverage : Decimal, optional
+            The current account leverage for the instrument.
+        inverse_as_quote : bool
+            If inverse instrument calculations use quote currency (instead of base).
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        notional: Decimal = self.notional_value(
+            quantity=quantity,
+            close_price=price.as_decimal(),
+            inverse_as_quote=inverse_as_quote,
+        ).as_decimal()
+
+        adjusted_notional: Decimal = notional / leverage
+
+        margin: Decimal = adjusted_notional * self.margin_init
+        margin += (adjusted_notional * self.taker_fee * 2)
+
+        if self.is_inverse and not inverse_as_quote:
+            return Money(margin, self.base_currency)
+        else:
+            return Money(margin, self.quote_currency)
+
+    cpdef Money calculate_maint_margin(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        Price last,
+        leverage: Decimal=Decimal(1),
+        bint inverse_as_quote=False,
+    ):
+        """
+        Calculate the maintenance margin from the given parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The currency position side.
+        quantity : Quantity
+            The currency position quantity.
+        last : Price
+            The position instruments last price.
+        leverage : Decimal, optional
+            The current account leverage for the instrument.
+        inverse_as_quote : bool
+            If inverse instrument calculations use quote currency (instead of base).
+
+        Returns
+        -------
+        Money
+
+        """
+        # side checked in _get_close_price
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(last, "last")
+
+        notional: Decimal = self.notional_value(
+            quantity=quantity,
+            close_price=last.as_decimal(),
+            inverse_as_quote=inverse_as_quote
+        ).as_decimal()
+
+        adjusted_notional: Decimal = notional / leverage
+
+        margin: Decimal = adjusted_notional * self.margin_maint
+        margin += adjusted_notional * self.taker_fee
+
+        if self.is_inverse and not inverse_as_quote:
+            return Money(margin, self.base_currency)
+        else:
+            return Money(margin, self.quote_currency)
+
+    cpdef Money calculate_commission(
+        self,
+        Quantity last_qty,
+        last_px: Decimal,
+        LiquiditySide liquidity_side,
+        bint inverse_as_quote=False,
+    ):
+        """
+        Calculate the commission generated from a transaction with the given
+        parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        last_qty : Quantity
+            The transaction quantity.
+        last_px : Decimal or Price
+            The transaction price.
+        liquidity_side : LiquiditySide
+            The liquidity side for the transaction.
+        inverse_as_quote : bool
+            If inverse instrument calculations use quote currency (instead of base).
+
+        Returns
+        -------
+        Money
+
+        Raises
+        ------
+        ValueError
+            If liquidity_side is NONE.
+
+        """
+        Condition.not_none(last_qty, "last_qty")
+        Condition.type(last_px, (Decimal, Price), "last_px")
+        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
+
+        notional: Decimal = self.notional_value(
+            quantity=last_qty,
+            close_price=last_px,
+            inverse_as_quote=inverse_as_quote,
+        ).as_decimal()
+
+        if liquidity_side == LiquiditySide.MAKER:
+            commission: Decimal = notional * self.maker_fee
+        elif liquidity_side == LiquiditySide.TAKER:
+            commission: Decimal = notional * self.taker_fee
+        else:
+            raise RuntimeError(
+                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
+            )
+
+        if self.is_inverse and not inverse_as_quote:
+            return Money(commission, self.base_currency)
+        else:
+            return Money(commission, self.quote_currency)

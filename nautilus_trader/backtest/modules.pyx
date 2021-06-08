@@ -172,17 +172,17 @@ cdef class FXRolloverInterestModule(SimulationModule):
             elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
                 rollover *= 3
 
-            if self._exchange.default_currency is not None:
-                currency = self._exchange.default_currency
-                xrate = self._exchange.cache.get_xrate(
+            if self._exchange.base_currency is not None:
+                currency = self._exchange.base_currency
+                xrate: Decimal = self._exchange.cache.get_xrate(
                     venue=instrument.id.venue,
-                    from_currency=instrument.cost_currency,
+                    from_currency=instrument.quote_currency,
                     to_currency=currency,
                     price_type=PriceType.MID,
                 )
                 rollover *= xrate
             else:
-                currency = instrument.cost_currency
+                currency = instrument.quote_currency
 
             rollover_total = self._rollover_totals.get(currency, Decimal())
             rollover_total = Money(rollover_total + rollover, currency)

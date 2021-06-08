@@ -123,7 +123,7 @@ cdef class BarBuilder:
         size : Decimal
             The update size.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the update.
+            The UNIX timestamp (nanos) of the update.
 
         """
         Condition.not_none(price, "price")
@@ -186,7 +186,7 @@ cdef class BarBuilder:
         Parameters
         ----------
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the bar close.
+            The UNIX timestamp (nanos) of the bar close.
 
         Returns
         -------
@@ -329,9 +329,9 @@ cdef class TickBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -370,9 +370,9 @@ cdef class VolumeBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -433,9 +433,9 @@ cdef class ValueBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -518,9 +518,9 @@ cdef class TimeBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=use_previous_close,
         )
 

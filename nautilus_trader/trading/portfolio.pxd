@@ -42,10 +42,10 @@ cdef class PortfolioFacade:
     cpdef dict initial_margins(self, Venue venue)
     cpdef dict maint_margins(self, Venue venue)
     cpdef dict unrealized_pnls(self, Venue venue)
-    cpdef dict market_values(self, Venue venue)
+    cpdef dict net_exposures(self, Venue venue)
 
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id)
-    cpdef Money market_value(self, InstrumentId instrument_id)
+    cpdef Money net_exposure(self, InstrumentId instrument_id)
     cpdef object net_position(self, InstrumentId instrument_id)
 
     cpdef bint is_net_long(self, InstrumentId instrument_id) except *
@@ -84,5 +84,5 @@ cdef class Portfolio(PortfolioFacade):
     cdef bint _update_initial_margin(self, Venue venue, list orders_working) except *
     cdef bint _update_maint_margin(self, Venue venue, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
-    cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side)
+    cdef object _calculate_xrate_to_base(self, Instrument instrument, Account account, OrderSide side)
     cdef Price _get_last_price(self, Position position)
