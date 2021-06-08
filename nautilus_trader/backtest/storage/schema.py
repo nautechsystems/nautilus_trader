@@ -13,6 +13,9 @@ trade_tick_schema = {
 
 
 betting_instrument_schema = {
+    "venue": str,
+    "currency": str,
+    "instrument_id": str,
     "event_type_id": str,
     "event_type_name": str,
     "competition_id": str,
@@ -29,6 +32,8 @@ betting_instrument_schema = {
     "selection_id": str,
     "selection_name": str,
     "selection_handicap": str,
+    "timestamp_ns": int,
+    "timestamp_origin_ns": int,
 }
 
 order_book_schema = {

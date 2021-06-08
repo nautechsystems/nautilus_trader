@@ -1137,9 +1137,9 @@ cdef class OrderBookDelta(OrderBookData):
         InstrumentId instrument_id,
         OrderBookLevel level,
         OrderBookDeltaType delta_type,
-        Order order not None,
         int64_t timestamp_origin_ns,
         int64_t timestamp_ns,
+        Order order,
     ):
         """
         Initialize a new instance of the ``OrderBookDelta`` class.

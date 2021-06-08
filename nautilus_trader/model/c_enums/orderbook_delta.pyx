@@ -24,6 +24,8 @@ cdef class OrderBookDeltaTypeParser:
             return "UPDATE"
         elif value == 3:
             return "DELETE"
+        elif value == 4:
+            return "CLEAR"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
@@ -35,6 +37,8 @@ cdef class OrderBookDeltaTypeParser:
             return OrderBookDeltaType.UPDATE
         elif value == "DELETE":
             return OrderBookDeltaType.DELETE
+        elif value == "CLEAR":
+            return OrderBookDeltaType.CLEAR
         else:
             raise ValueError(f"value was invalid, was {value}")
 

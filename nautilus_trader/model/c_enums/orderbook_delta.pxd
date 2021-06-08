@@ -18,6 +18,7 @@ cpdef enum OrderBookDeltaType:
     ADD = 1,
     UPDATE = 2,
     DELETE = 3,
+    CLEAR = 4,
 
 
 cdef class OrderBookDeltaTypeParser:

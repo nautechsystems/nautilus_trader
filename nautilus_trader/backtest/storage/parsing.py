@@ -7,7 +7,7 @@ from nautilus_trader.model.enums import OrderBookDeltaTypeParser
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
-from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
@@ -101,8 +101,34 @@ def _parse_instrument_close_price(price: InstrumentClosePrice):
     }
 
 
-def _parse_instrument(instrument: Instrument):
-    pass
+# TODO (bm) - duplication with Serializers.pyx -> refactor msgpack serializer and add conversion to basic types
+# TODO (bm) - Instruments only queryable by attributes listed here (not quote currency etc)
+
+
+def _parse_betting_instrument(instrument: BettingInstrument):
+    return {
+        "venue_name": instrument.id.venue.value,
+        "currency": instrument.quote_currency.code,
+        "instrument_id": instrument.id.value,
+        "event_type_id": instrument.event_type_id,
+        "event_type_name": instrument.event_type_name,
+        "competition_id": instrument.competition_id,
+        "competition_name": instrument.competition_name,
+        "event_id": instrument.event_id,
+        "event_name": instrument.event_name,
+        "event_country_code": instrument.event_country_code,
+        "event_open_date": instrument.event_open_date,
+        "betting_type": instrument.betting_type,
+        "market_id": instrument.market_id,
+        "market_name": instrument.market_name,
+        "market_start_time": instrument.market_start_time,
+        "market_type": instrument.market_type,
+        "selection_id": instrument.selection_id,
+        "selection_name": instrument.selection_name,
+        "selection_handicap": instrument.selection_handicap,
+        "timestamp_ns": instrument.timestamp_ns,
+        "timestamp_origin_ns": instrument.timestamp_origin_ns,
+    }
 
 
 def nautilus_to_dict(obj):
@@ -112,3 +138,5 @@ def nautilus_to_dict(obj):
         yield from _parse_order_book_data(obj)
     elif isinstance(obj, InstrumentStatusEvent):
         yield from _parse_instrument_status_event(obj)
+    elif isinstance(obj, BettingInstrument):
+        yield _parse_betting_instrument(obj)

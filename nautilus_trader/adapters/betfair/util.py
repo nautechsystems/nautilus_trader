@@ -94,3 +94,25 @@ def one(iterable):
         raise ValueError(msg)
 
     return first_value
+
+
+def historical_instrument_provider_loader(instrument_provider):
+    from nautilus_trader.adapters.betfair.providers import make_instruments
+
+    def inner(line):
+        data = orjson.loads(line)
+        # Find instruments in data
+        for mc in data.get("mc", []):
+            if "marketDefinition" in mc:
+                market_def = {**mc["marketDefinition"], **{"marketId": mc["id"]}}
+                instruments = make_instruments(
+                    market_definition=market_def, currency="GBP"
+                )
+                instrument_provider.add_instruments(instruments)
+
+        # By this point we should always have some instruments loaded from historical data.
+        if not instrument_provider.list_instruments():
+            # TODO - Need to add historical search
+            raise Exception("No instruments found")
+
+    return inner
