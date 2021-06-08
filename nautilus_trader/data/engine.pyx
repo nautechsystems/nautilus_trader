@@ -63,8 +63,8 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -1063,7 +1063,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         elif isinstance(data, GenericData):
-            self._handle_custom_data(data)
+            self._handle_generic_data(data)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
@@ -1141,7 +1141,7 @@ cdef class DataEngine(Component):
         for handler in bar_handlers:
             handler(bar)
 
-    cdef void _handle_custom_data(self, GenericData data) except *:
+    cdef void _handle_generic_data(self, GenericData data) except *:
         # Send to all registered data handlers for that data type
         cdef list handlers = self._data_handlers.get(data.data_type, [])
         for handler in handlers:

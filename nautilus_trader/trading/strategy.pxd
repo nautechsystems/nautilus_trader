@@ -30,8 +30,8 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.commands cimport TradingCommand
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -98,7 +98,7 @@ cdef class TradingStrategy(Component):
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
-    cpdef void on_data(self, GenericData data) except *
+    cpdef void on_data(self, Data data) except *
     cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
@@ -200,7 +200,7 @@ cdef class TradingStrategy(Component):
     cpdef void handle_trade_ticks(self, list ticks) except *
     cpdef void handle_bar(self, Bar bar, bint is_historical=*) except *
     cpdef void handle_bars(self, list bars) except *
-    cpdef void handle_data(self, GenericData data) except *
+    cpdef void handle_data(self, Data data) except *
     cpdef void handle_event(self, Event event) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------

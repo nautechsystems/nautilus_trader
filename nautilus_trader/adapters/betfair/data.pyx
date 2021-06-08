@@ -30,7 +30,6 @@ from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
@@ -43,8 +42,14 @@ from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
-class InstrumentSearch:
-    def __init__(self, instruments):
+class InstrumentSearch(Data):
+    def __init__(
+        self,
+        instruments,
+        timestamp_origin_ns,
+        timestamp_ns,
+    ):
+        super().__init__(timestamp_origin_ns, timestamp_ns)
         self.instruments = instruments
 
 
@@ -212,13 +217,15 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
             instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
+            now = self._clock.timestamp_ns()
+            search = InstrumentSearch(
+                instruments=instruments,
+                timestamp_origin_ns=now,
+                timestamp_ns=now,
+            )
             self._handle_data_response(
-                data=GenericData(
-                    data_type=data_type,
-                    data=InstrumentSearch(instruments=instruments),
-                    timestamp_origin_ns=self._clock.timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
-                    timestamp_ns=self._clock.timestamp_ns(),
-                ),
+                data_type=data_type,
+                data=search,
                 correlation_id=correlation_id
             )
         else:

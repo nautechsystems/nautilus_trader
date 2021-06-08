@@ -120,7 +120,7 @@ cdef class DataEngine(Component):
     cdef void _handle_quote_tick(self, QuoteTick tick) except *
     cdef void _handle_trade_tick(self, TradeTick tick) except *
     cdef void _handle_bar(self, Bar bar) except *
-    cdef void _handle_custom_data(self, GenericData data) except *
+    cdef void _handle_generic_data(self, GenericData data) except *
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
