@@ -54,7 +54,7 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
     "warn.maybe_uninitialized": True,  # Warns about use of variables that are uninitialized
-    "warn.unused_result": True,
+    # "warn.unused_result": True,
     # "warn.unused": True,  # TODO: Unused entry 'genexpr'
 }
 
