@@ -23,7 +23,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -133,7 +132,7 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
             margin_maint=Decimal(values["marginRate"]),
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            timestamp_origin_ns=unix_timestamp_ns(),
-            timestamp_ns=unix_timestamp_ns(),
+            ts_event_ns=unix_timestamp_ns(),
+            ts_recv_ns=unix_timestamp_ns(),
             info=values,
         )

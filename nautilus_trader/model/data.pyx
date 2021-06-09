@@ -23,27 +23,27 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t timestamp_origin_ns, int64_t timestamp_ns):
+    def __init__(self, int64_t ts_event_ns, int64_t timestamp_ns):
         """
         Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
         timestamp_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
         # Design-time invariant: correct ordering of timestamps
-        assert timestamp_ns >= timestamp_origin_ns
-        self.timestamp_origin_ns = timestamp_origin_ns
-        self.timestamp_ns = timestamp_ns
+        assert timestamp_ns >= ts_event_ns
+        self.ts_event_ns = ts_event_ns
+        self.ts_recv_ns = timestamp_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"timestamp_origin_ns={self.timestamp_origin_ns}, "
-                f"timestamp_ns{self.timestamp_ns})")
+                f"ts_event_ns={self.ts_event_ns}, "
+                f"ts_recv_ns{self.ts_recv_ns})")
 
 
 cdef class DataType:
@@ -118,6 +118,6 @@ cdef class GenericData(Data):
             The data object to wrap.
 
         """
-        super().__init__(data.timestamp_origin_ns, data.timestamp_ns)
+        super().__init__(data.ts_event_ns, data.ts_recv_ns)
         self.data_type = data_type
         self.data = data

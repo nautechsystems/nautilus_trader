@@ -396,12 +396,12 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(data, "data")
 
-        self._clock.set_time(data.timestamp_ns)
+        self._clock.set_time(data.ts_recv_ns)
         self.get_book(data.instrument_id).apply(data)
 
         self._iterate_matching_engine(
             data.instrument_id,
-            data.timestamp_ns,
+            data.ts_recv_ns,
         )
 
     cpdef void process_tick(self, Tick tick) except *:
@@ -418,7 +418,7 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(tick, "tick")
 
-        self._clock.set_time(tick.timestamp_ns)
+        self._clock.set_time(tick.ts_recv_ns)
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
         if book.level == OrderBookLevel.L1:
@@ -426,7 +426,7 @@ cdef class SimulatedExchange:
 
         self._iterate_matching_engine(
             tick.instrument_id,
-            tick.timestamp_ns,
+            tick.ts_recv_ns,
         )
 
     cpdef void process_modules(self, int64_t now_ns) except *:

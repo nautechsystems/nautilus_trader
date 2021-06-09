@@ -60,8 +60,8 @@ cdef class Instrument(Data):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         dict info=None,
     ):
         """
@@ -111,9 +111,9 @@ cdef class Instrument(Data):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
+        ts_recv_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
@@ -177,7 +177,7 @@ cdef class Instrument(Data):
         Condition.not_negative(margin_maint, "margin_maint")
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
-        super().__init__(timestamp_origin_ns, timestamp_ns)
+        super().__init__(ts_event_ns, ts_recv_ns)
 
         self.id = instrument_id
         self.asset_class = asset_class

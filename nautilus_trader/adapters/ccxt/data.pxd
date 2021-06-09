@@ -45,8 +45,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *
@@ -57,8 +57,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double amount,
         str aggressor_side,
         str trade_match_id,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *
@@ -70,8 +70,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *

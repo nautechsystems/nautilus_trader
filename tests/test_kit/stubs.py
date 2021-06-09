@@ -88,10 +88,10 @@ class MyData(Data):
     def __init__(
         self,
         value,
-        timestamp_origin_ns=0,
+        ts_event_ns=0,
         timestamp_ns=0,
     ):
-        super().__init__(timestamp_origin_ns, timestamp_ns)
+        super().__init__(ts_event_ns, timestamp_ns)
         self.value = value
 
 
@@ -187,8 +187,8 @@ class TestStubs:
             low_price=Price.from_str("1.00001"),
             close_price=Price.from_str("1.00003"),
             volume=Quantity.from_int(1_000_000),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -200,8 +200,8 @@ class TestStubs:
             low_price=Price.from_str("90.001"),
             close_price=Price.from_str("90.003"),
             volume=Quantity.from_int(1_000_000),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -216,8 +216,8 @@ class TestStubs:
             ask=ask or Price.from_str("90.005"),
             bid_size=bid_volume or Quantity.from_int(1_000_000),
             ask_size=ask_volume or Quantity.from_int(1_000_000),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -230,8 +230,8 @@ class TestStubs:
             ask=ask or Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1_000_000),
             ask_size=Quantity.from_int(1_000_000),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -244,8 +244,8 @@ class TestStubs:
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
             match_id=TradeMatchId("123456"),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -306,8 +306,8 @@ class TestStubs:
             level=level,
             bids=[(bid_price - i, bid_volume * (1 + i)) for i in range(bid_levels)],
             asks=[(ask_price + i, ask_volume * (1 + i)) for i in range(ask_levels)],
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
