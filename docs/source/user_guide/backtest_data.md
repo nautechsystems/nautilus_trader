@@ -113,7 +113,7 @@ c = DataCatalog()
 c.import_from_data_loader(loader, progress=True) # `progress`: show progress bar for files
 ```
 
-## Accessing stored data via `DataCatalog
+## Accessing stored data via `DataCatalog`
 The `DataCatalog` has methods for querying different data types from the cache, as well as a `load_backtest_data` to 
 load data for a backtest. See the docstring for full details
 
@@ -138,14 +138,14 @@ os.environ.update({"NAUTILUS_BACKTEST_DIR": "/Users/MyUser/data/nautilus/"})
 
 # We create an empty BetfairInstrumentProvider that we will load instruments into as we read the files
 instrument_provider = BetfairInstrumentProvider.from_instruments([])
-
-# We use the standard `on_market_update` betfair parser that the adapter uses. We also use a utility function 
-# `historical_instrument_provider_loader` to read the market definition and parse the instruments, which gets passed 
-# to our instrument_provider (which adds the instruments) 
+ 
 parser = TextParser(
+    # use the standard `on_market_update` betfair parser that the adapter uses
     line_parser=lambda x: on_market_update(
         instrument_provider=instrument_provider, update=orjson.loads(x)
     ),
+    # We also use a utility function `historical_instrument_provider_loader` to read the market definition and parse
+    # the instruments, which gets passed to our instrument_provider (which adds the instruments)    
     instrument_provider_update=historical_instrument_provider_loader,
 )
 
@@ -158,11 +158,11 @@ loader = DataLoader(
 )
 
 c = DataCatalog()
-c.import_from_data_loader(loader, progress=True)
+c.import_from_data_loader(loader, progress=True) 
 
-# Data will be loaded now, inspect instruments or load from cache
+# Data now stored in parquet files ready for fast loading.
+# Query instruments, individual datasets or use `load_backtest_data` to load and format for backtest engine
 instruments = c.instruments()
+trade_ticks = c.trade_ticks()
 data = c.load_backtest_data(instrument_ids=[instruments[0].id])
-
-
 ```
