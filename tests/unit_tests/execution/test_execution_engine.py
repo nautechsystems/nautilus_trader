@@ -2045,7 +2045,7 @@ class ExecutionEngineTests(unittest.TestCase):
             venue_order_id=new_venue_id,
             quantity=order.quantity,
             price=order.price,
-            updated_ns=self.clock.timestamp_ns(),
+            ts_updated_ns=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )

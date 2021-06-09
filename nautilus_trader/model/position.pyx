@@ -79,8 +79,8 @@ cdef class Position:
         self.net_qty = Decimal()
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
-        self.timestamp_ns = fill.execution_ns
-        self.opened_timestamp_ns = fill.execution_ns
+        self.timestamp_ns = fill.ts_filled_ns
+        self.opened_timestamp_ns = fill.ts_filled_ns
         self.closed_timestamp_ns = 0
         self.open_duration_ns = 0
         self.avg_px_open = fill.last_px.as_decimal()
@@ -406,7 +406,7 @@ cdef class Position:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
-            self.closed_timestamp_ns = fill.execution_ns
+            self.closed_timestamp_ns = fill.ts_filled_ns
             self.open_duration_ns = self.closed_timestamp_ns - self.opened_timestamp_ns
 
     cpdef Money notional_value(self, Price last):

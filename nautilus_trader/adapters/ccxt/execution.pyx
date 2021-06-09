@@ -334,7 +334,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 last_px=Price(fill["price"], instrument.price_precision),
                 commission=self._parse_commission(fill),
                 liquidity_side=LiquiditySide.TAKER if fill["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-                execution_ns=millis_to_nanos(millis=fill["timestamp"]),
+                ts_filled_ns=millis_to_nanos(millis=fill["timestamp"]),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
             reports.append(report)
@@ -536,7 +536,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Generate event here to ensure it is processed before OrderAccepted
         self.generate_order_submitted(
             client_order_id=order.client_order_id,
-            submitted_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
 
         try:
@@ -553,7 +553,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self.generate_order_rejected(
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                rejected_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )
 
     async def _cancel_order(self, ClientOrderId client_order_id):
@@ -569,7 +569,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.generate_order_pending_cancel(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            pending_ns=self._clock.timestamp_ns(),
+            ts_pending_ns=self._clock.timestamp_ns(),
         )
 
         try:
@@ -642,7 +642,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.generate_account_state(
             balances=balances,
             reported=True,
-            updated_ns=update_ns,
+            ts_updated_ns=update_ns,
         )
 
     cdef void _on_order_status(self, dict event) except *:
@@ -712,7 +712,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             quote_currency=instrument.quote_currency,
             commission=self._parse_commission(event),
             liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-            execution_ns=(millis_to_nanos(millis=event["timestamp"])),
+            ts_filled_ns=(millis_to_nanos(millis=event["timestamp"])),
         )
 
     cdef Money _parse_commission(self, dict event):
@@ -829,7 +829,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         # Generate event here to ensure it is processed before OrderAccepted
         self.generate_order_submitted(
             client_order_id=order.client_order_id,
-            submitted_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
 
         try:
@@ -846,7 +846,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             self.generate_order_rejected(
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                rejected_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )
 
 
@@ -938,7 +938,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         # Generate event here to ensure it is processed before OrderAccepted
         self.generate_order_submitted(
             client_order_id=order.client_order_id,
-            submitted_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
 
         try:
@@ -955,5 +955,5 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             self.generate_order_rejected(
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                rejected_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )

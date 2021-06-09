@@ -220,7 +220,7 @@ cdef class ExecutionClient:
         self,
         list balances,
         bint reported,
-        int64_t updated_ns,
+        int64_t ts_updated_ns,
         dict info=None,
     ) except *:
         """
@@ -232,8 +232,8 @@ cdef class ExecutionClient:
             The account balances.
         reported : bool
             If the balances are reported directly from the exchange.
-        updated_ns : int64
-            The UNIX timestamp (nanos) of the account update.
+        ts_updated_ns : int64
+            The UNIX timestamp (nanos) the account was updated.
         info : dict [str, object]
             The additional implementation specific account information.
 
@@ -247,7 +247,7 @@ cdef class ExecutionClient:
             balances=balances,
             info=info or {},
             event_id=self._uuid_factory.generate(),
-            updated_ns=updated_ns,
+            ts_updated_ns=ts_updated_ns,
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
@@ -281,7 +281,7 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_submitted(
         self, ClientOrderId client_order_id,
-        int64_t submitted_ns,
+        int64_t ts_submitted_ns,
     ) except *:
         """
         Generate an `OrderSubmitted` event and send it to the `ExecutionEngine`.
@@ -290,7 +290,7 @@ cdef class ExecutionClient:
         ----------
         client_order_id : ClientOrderId
             The client order identifier.
-        submitted_ns : int64
+        ts_submitted_ns : int64
             The UNIX timestamp (nanos) when the order was submitted.
 
         """
@@ -298,7 +298,7 @@ cdef class ExecutionClient:
         cdef OrderSubmitted submitted = OrderSubmitted(
             self.account_id,
             client_order_id=client_order_id,
-            submitted_ns=submitted_ns,
+            ts_submitted_ns=ts_submitted_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -309,7 +309,7 @@ cdef class ExecutionClient:
         self,
         ClientOrderId client_order_id,
         str reason,
-        int64_t rejected_ns,
+        int64_t ts_rejected_ns,
     ) except *:
         """
         Generate an `OrderRejected` event and send it to the `ExecutionEngine`.
@@ -320,7 +320,7 @@ cdef class ExecutionClient:
             The client order identifier.
         reason : datetime
             The order rejected reason.
-        rejected_ns : int64
+        ts_rejected_ns : int64
             The UNIX timestamp (nanos) when the order was rejected.
 
         """
@@ -329,7 +329,7 @@ cdef class ExecutionClient:
             self.account_id,
             client_order_id=client_order_id,
             reason=reason,
-            rejected_ns=rejected_ns,
+            ts_rejected_ns=ts_rejected_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -340,7 +340,7 @@ cdef class ExecutionClient:
         self,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t accepted_ns,
+        int64_t ts_accepted_ns,
     ) except *:
         """
         Generate an `OrderAccepted` event and send it to the `ExecutionEngine`.
@@ -351,7 +351,7 @@ cdef class ExecutionClient:
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        accepted_ns : int64
+        ts_accepted_ns : int64
             The UNIX timestamp (nanos) when the order was accepted.
 
         """
@@ -360,7 +360,7 @@ cdef class ExecutionClient:
             self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            accepted_ns=accepted_ns,
+            ts_accepted_ns=ts_accepted_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -371,7 +371,7 @@ cdef class ExecutionClient:
         self,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t pending_ns,
+        int64_t ts_pending_ns,
     ) except *:
         """
         Generate an `OrderPendingReplace` event and send it to the `ExecutionEngine`.
@@ -382,7 +382,7 @@ cdef class ExecutionClient:
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        pending_ns : datetime
+        ts_pending_ns : datetime
             The UNIX timestamp (nanos) when the replace was pending.
 
         """
@@ -391,7 +391,7 @@ cdef class ExecutionClient:
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            pending_ns=pending_ns,
+            ts_pending_ns=ts_pending_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -402,7 +402,7 @@ cdef class ExecutionClient:
         self,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t pending_ns,
+        int64_t ts_pending_ns,
     ) except *:
         """
         Generate an `OrderPendingCancel` event and send it to the `ExecutionEngine`.
@@ -413,7 +413,7 @@ cdef class ExecutionClient:
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        pending_ns : datetime
+        ts_pending_ns : datetime
             The UNIX timestamp (nanos) when the cancel was pending.
 
         """
@@ -422,7 +422,7 @@ cdef class ExecutionClient:
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            pending_ns=pending_ns,
+            ts_pending_ns=ts_pending_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -434,7 +434,7 @@ cdef class ExecutionClient:
         ClientOrderId client_order_id,
         str response_to,
         str reason,
-        int64_t rejected_ns,
+        int64_t ts_rejected_ns,
     ) except *:
         """
         Generate an `OrderUpdateRejected` event and send it to the `ExecutionEngine`.
@@ -447,7 +447,7 @@ cdef class ExecutionClient:
             The order update rejected response.
         reason : str
             The order update rejected reason.
-        rejected_ns : datetime
+        ts_rejected_ns : datetime
             The UNIX timestamp (nanos) when the order update was rejected.
 
         """
@@ -465,7 +465,7 @@ cdef class ExecutionClient:
             venue_order_id=venue_order_id,
             response_to=response_to,
             reason=reason,
-            rejected_ns=rejected_ns,
+            ts_rejected_ns=ts_rejected_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -477,7 +477,7 @@ cdef class ExecutionClient:
         ClientOrderId client_order_id,
         str response_to,
         str reason,
-        int64_t rejected_ns,
+        int64_t ts_rejected_ns,
     ) except *:
         """
         Generate an `OrderCancelRejected` event and send it to the `ExecutionEngine`.
@@ -490,7 +490,7 @@ cdef class ExecutionClient:
             The order cancel rejected response.
         reason : str
             The order cancel rejected reason.
-        rejected_ns : datetime
+        ts_rejected_ns : datetime
             The UNIX timestamp (nanos) when the order cancel was rejected.
 
         """
@@ -508,7 +508,7 @@ cdef class ExecutionClient:
             venue_order_id=venue_order_id,
             response_to=response_to,
             reason=reason,
-            rejected_ns=rejected_ns,
+            ts_rejected_ns=ts_rejected_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -521,7 +521,7 @@ cdef class ExecutionClient:
         VenueOrderId venue_order_id,
         Quantity quantity,
         Price price,
-        int64_t updated_ns,
+        int64_t ts_updated_ns,
         bint venue_order_id_modified=False,
     ) except *:
         """
@@ -537,7 +537,7 @@ cdef class ExecutionClient:
             The orders current quantity.
         price : Price
             The orders current price.
-        updated_ns : int64
+        ts_updated_ns : int64
             The UNIX timestamp (nanos) when the order was updated.
         venue_order_id_modified : bool
             If the identifier was modified for this event.
@@ -555,7 +555,7 @@ cdef class ExecutionClient:
             venue_order_id=venue_order_id,
             quantity=quantity,
             price=price,
-            updated_ns=updated_ns,
+            ts_updated_ns=ts_updated_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -566,7 +566,7 @@ cdef class ExecutionClient:
         self,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t canceled_ns,
+        int64_t ts_canceled_ns,
     ) except *:
         """
         Generate an `OrderCanceled` event and send it to the `ExecutionEngine`.
@@ -577,7 +577,7 @@ cdef class ExecutionClient:
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        canceled_ns : int64
+        ts_canceled_ns : int64
             The UNIX timestamp (nanos) when order was canceled.
 
         """
@@ -586,7 +586,7 @@ cdef class ExecutionClient:
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            canceled_ns=canceled_ns,
+            ts_canceled_ns=ts_canceled_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -597,7 +597,7 @@ cdef class ExecutionClient:
         self,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t triggered_ns,
+        int64_t ts_triggered_ns,
     ) except *:
         """
         Generate an `OrderTriggered` event and send it to the `ExecutionEngine`.
@@ -608,7 +608,7 @@ cdef class ExecutionClient:
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        triggered_ns : int64
+        ts_triggered_ns : int64
             The UNIX timestamp (nanos) when the order was triggered.
 
         """
@@ -617,7 +617,7 @@ cdef class ExecutionClient:
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            triggered_ns=triggered_ns,
+            ts_triggered_ns=ts_triggered_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -628,7 +628,7 @@ cdef class ExecutionClient:
         self,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t expired_ns,
+        int64_t ts_expired_ns,
     ) except *:
         """
         Generate an `OrderExpired` event and send it to the `ExecutionEngine`.
@@ -639,7 +639,7 @@ cdef class ExecutionClient:
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        expired_ns : int64
+        ts_expired_ns : int64
             The UNIX timestamp (nanos) when the order expired.
 
         """
@@ -648,7 +648,7 @@ cdef class ExecutionClient:
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            expired_ns=expired_ns,
+            ts_expired_ns=ts_expired_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -668,7 +668,7 @@ cdef class ExecutionClient:
         Currency quote_currency,
         Money commission,
         LiquiditySide liquidity_side,
-        int64_t execution_ns,
+        int64_t ts_filled_ns,
     ) except *:
         """
         Generate an `OrderFilled` event and send it to the `ExecutionEngine`.
@@ -697,7 +697,7 @@ cdef class ExecutionClient:
             The fill commission.
         liquidity_side : LiquiditySide
             The execution liquidity side.
-        execution_ns : int64
+        ts_filled_ns : int64
             The UNIX timestamp (nanos) when the order was filled.
 
         """
@@ -727,7 +727,7 @@ cdef class ExecutionClient:
             currency=quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            execution_ns=execution_ns,
+            ts_filled_ns=ts_filled_ns,
             event_id=self._uuid_factory.generate(),
             timestamp_ns=self._clock.timestamp_ns(),
         )
@@ -744,7 +744,7 @@ cdef class ExecutionClient:
                 self.generate_account_state(
                     balances=balances,
                     reported=False,  # Calculated
-                    updated_ns=self._clock.timestamp_ns(),
+                    ts_updated_ns=self._clock.timestamp_ns(),
                 )
         else:
             self._handle_event(fill)

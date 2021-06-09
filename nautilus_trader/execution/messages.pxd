@@ -68,7 +68,7 @@ cdef class ExecutionReport:
     """The reported commission.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The reported liquidity side.\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t execution_ns
+    cdef readonly int64_t ts_filled_ns
     """The UNIX timestamp (nanos) of the execution.\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t timestamp_ns
     """The UNIX timestamp (nanos) of the report.\n\n:returns: `int64`"""

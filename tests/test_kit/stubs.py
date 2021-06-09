@@ -342,7 +342,7 @@ class TestStubs:
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -351,7 +351,7 @@ class TestStubs:
         return OrderSubmitted(
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
-            submitted_ns=0,
+            ts_submitted_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -364,7 +364,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
-            accepted_ns=0,
+            ts_accepted_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -375,7 +375,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
-            rejected_ns=0,
+            ts_rejected_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -386,7 +386,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            pending_ns=0,
+            ts_pending_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -397,7 +397,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            pending_ns=0,
+            ts_pending_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -413,7 +413,7 @@ class TestStubs:
         last_qty=None,
         last_px=None,
         liquidity_side=LiquiditySide.TAKER,
-        execution_ns=0,
+        ts_filled_ns=0,
     ) -> OrderFilled:
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
@@ -448,7 +448,7 @@ class TestStubs:
             currency=instrument.quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            execution_ns=execution_ns,
+            ts_filled_ns=ts_filled_ns,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -459,7 +459,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            canceled_ns=0,
+            ts_canceled_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -470,7 +470,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            expired_ns=0,
+            ts_expired_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -481,7 +481,7 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            triggered_ns=0,
+            ts_triggered_ns=0,
             event_id=uuid4(),
             timestamp_ns=0,
         )

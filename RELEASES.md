@@ -1,11 +1,25 @@
 # NautilusTrader 1.123.0 Beta - Release Notes
 
+In the interests of explicitness there is now a convention that timestamps are 
+named either `timestamp_ns`, or prepended with `ts`. Timestamps which are 
+represented with an `int64` are always in nanosecond resolution, and appended 
+with `_ns` accordingly.
 
 ## Breaking Changes
-None
+- Renamed `timestamp_origin_ns` to `ts_event_ns`.
+- Renamed `timestamp_ns` for data to `ts_recv_ns`.
+- Renamed `updated_ns` to `ts_updated_ns`.
+- Renamed `submitted_ns` to `ts_submitted_ns`.
+- Renamed `rejected_ns` to `ts_rejected_ns`.
+- Renamed `accepted_ns` to `ts_accepted_ns`.
+- Renamed `pending_ns` to `ts_pending_ns`.
+- Renamed `canceled_ns` to `ts_canceled_ns`.
+- Renamed `triggered_ns` to `ts_triggered_ns`.
+- Renamed `expired_ns` to `ts_expired_ns`.
+- Renamed `execution_ns` to `ts_filled_ns`.
 
 ## Enhancements
-- Adapters dependencies optional.
+- Adapters dependencies are now optional extras at installation.
 
 ## Fixes
 None
