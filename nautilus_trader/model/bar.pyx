@@ -308,8 +308,8 @@ cdef class Bar(Data):
         Price low_price not None,
         Price close_price not None,
         Quantity volume not None,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         bint check=False,
     ):
         """
@@ -329,9 +329,9 @@ cdef class Bar(Data):
             The bars close price.
         volume : Quantity
             The bars volume.
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
+        ts_recv_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
         check : bool
             If bar parameters should be checked valid.
@@ -350,7 +350,7 @@ cdef class Bar(Data):
             Condition.true(high_price >= low_price, 'high_price was < low_price')
             Condition.true(high_price >= close_price, 'high_price was < close_price')
             Condition.true(low_price <= close_price, 'low_price was > close_price')
-        super().__init__(timestamp_origin_ns, timestamp_ns)
+        super().__init__(ts_event_ns, ts_recv_ns)
 
         self.type = bar_type
         self.open = open_price
@@ -368,17 +368,17 @@ cdef class Bar(Data):
             and self.low == other.low
             and self.close == other.close
             and self.volume == other.volume
-            and self.timestamp_ns == other.timestamp_ns
+            and self.ts_recv_ns == other.ts_recv_ns
         )
 
     def __ne__(self, Bar other) -> bool:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash((self.type, self.open, self.high, self.low, self.close, self.volume, self.timestamp_origin_ns))
+        return hash((self.type, self.open, self.high, self.low, self.close, self.volume, self.ts_event_ns))
 
     def __str__(self) -> str:
-        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_origin_ns}"
+        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event_ns}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -399,8 +399,8 @@ cdef class Bar(Data):
             low_price=Price.from_str(pieces[2]),
             close_price=Price.from_str(pieces[3]),
             volume=Quantity.from_str(pieces[4]),
-            timestamp_origin_ns=int(pieces[5]),
-            timestamp_ns=int(pieces[6]),
+            ts_event_ns=int(pieces[5]),
+            ts_recv_ns=int(pieces[6]),
         )
 
     @staticmethod
@@ -431,4 +431,4 @@ cdef class Bar(Data):
         str
 
         """
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_origin_ns},{self.timestamp_ns}"
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event_ns},{self.ts_recv_ns}"

@@ -331,8 +331,8 @@ class TradingStrategyTests(unittest.TestCase):
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=EUR,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act
@@ -701,8 +701,8 @@ class TradingStrategyTests(unittest.TestCase):
                 impact=NewsImpact.HIGH,
                 name="Unemployment Rate",
                 currency=USD,
-                timestamp_origin_ns=0,
-                timestamp_ns=0,
+                ts_event_ns=0,
+                ts_recv_ns=0,
             ),
         )
 
@@ -1344,8 +1344,8 @@ class TradingStrategyTests(unittest.TestCase):
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act
@@ -1369,8 +1369,8 @@ class TradingStrategyTests(unittest.TestCase):
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act

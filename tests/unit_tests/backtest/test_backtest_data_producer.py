@@ -61,8 +61,8 @@ class TestBacktestDataProducer:
             level=OrderBookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         data_type = DataType(MyData, metadata={"news_wire": "hacks"})
@@ -90,8 +90,8 @@ class TestBacktestDataProducer:
             level=OrderBookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
-            timestamp_origin_ns=1_000_000,
-            timestamp_ns=1_000_000,
+            ts_event_ns=1_000_000,
+            ts_recv_ns=1_000_000,
         )
 
         producer = BacktestDataProducer(
@@ -109,7 +109,7 @@ class TestBacktestDataProducer:
             streamed_data.append(producer.next())
 
         # Assert
-        timestamps = [x.timestamp_ns for x in streamed_data]
+        timestamps = [x.ts_recv_ns for x in streamed_data]
         assert timestamps == [0, 0, 500000, 1000000, 1000000, 2000000]
         assert producer.min_timestamp_ns == 0
         assert producer.max_timestamp_ns == 2_000_000
@@ -142,7 +142,7 @@ class TestBacktestDataProducer:
         next_data = producer.next()
 
         # Assert
-        assert next_data.timestamp_ns == 1359676799800000000
+        assert next_data.ts_recv_ns == 1359676799800000000
         assert next_data.instrument_id == USDJPY_SIM.id
         assert str(next_data.bid) == "91.715"
         assert str(next_data.ask) == "91.717"

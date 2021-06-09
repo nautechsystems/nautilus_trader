@@ -299,7 +299,7 @@ cdef class BacktestEngine:
         # Add data
         self._generic_data = sorted(
             self._generic_data + data,
-            key=lambda x: x.timestamp_ns,
+            key=lambda x: x.ts_recv_ns,
         )
 
         self._log.info(f"Added {len(data)} GenericData points.")
@@ -357,7 +357,7 @@ cdef class BacktestEngine:
         # Add data
         self._order_book_data = sorted(
             self._order_book_data + data,
-            key=lambda x: x.timestamp_ns,
+            key=lambda x: x.ts_recv_ns,
         )
 
         self._log.info(f"Added {len(data)} {instrument_id} OrderBookData elements.")
@@ -830,13 +830,13 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            self._advance_time(data.timestamp_ns)
+            self._advance_time(data.ts_recv_ns)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
             self._data_engine.process(data)
-            self._process_modules(data.timestamp_ns)
+            self._process_modules(data.ts_recv_ns)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 

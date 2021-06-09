@@ -145,8 +145,8 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             trading_hours=details.tradingHours,
             liquid_hours=details.liquidHours,
             last_trade_time=details.lastTradeTime,
-            timestamp_origin_ns=timestamp,
-            timestamp_ns=timestamp,
+            ts_event_ns=timestamp,
+            ts_recv_ns=timestamp,
         )
 
         return future

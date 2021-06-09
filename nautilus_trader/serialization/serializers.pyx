@@ -191,8 +191,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
             MARGIN_MAINT: str(instrument.margin_maint),
             MAKER_FEE: str(instrument.maker_fee),
             TAKER_FEE: str(instrument.taker_fee),
-            TIMESTAMP_ORIGIN: str(instrument.timestamp_origin_ns),
-            TIMESTAMP: str(instrument.timestamp_ns),
+            TIMESTAMP_EVENT: str(instrument.ts_event_ns),
+            TIMESTAMP_RECV: str(instrument.ts_recv_ns),
         }
 
         if isinstance(instrument, CurrencySpot):
@@ -279,8 +279,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef object margin_maint = decimal.Decimal(unpacked[MARGIN_MAINT])
         cdef object maker_fee = decimal.Decimal(unpacked[MAKER_FEE])
         cdef object taker_fee = decimal.Decimal(unpacked[TAKER_FEE])
-        cdef int64_t timestamp_origin_ns = int(unpacked[TIMESTAMP_ORIGIN])
-        cdef int64_t timestamp_ns = int(unpacked[TIMESTAMP])
+        cdef int64_t ts_event_ns = int(unpacked[TIMESTAMP_EVENT])
+        cdef int64_t ts_recv_ns = int(unpacked[TIMESTAMP_RECV])
 
         if instrument_type == Instrument.__name__:
             return Instrument(
@@ -305,8 +305,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 margin_maint=margin_maint,
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
-                timestamp_origin_ns=timestamp_origin_ns,
-                timestamp_ns=timestamp_ns,
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
             )
         elif instrument_type == CurrencySpot.__name__:
             return CurrencySpot(
@@ -328,8 +328,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 margin_maint=margin_maint,
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
-                timestamp_origin_ns=timestamp_origin_ns,
-                timestamp_ns=timestamp_ns,
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
             )
         elif instrument_type == CryptoSwap.__name__:
             return CryptoSwap(
@@ -352,8 +352,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 margin_maint=margin_maint,
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
-                timestamp_origin_ns=timestamp_origin_ns,
-                timestamp_ns=timestamp_ns,
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
             )
         elif instrument_type == BettingInstrument.__name__:
             betting_info = unpacked["BettingInfo"]
@@ -376,8 +376,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
                 selection_id=betting_info.get("selection_id"),
                 selection_name=betting_info.get("selection_name"),
                 selection_handicap=betting_info.get("selection_handicap"),
-                timestamp_origin_ns=timestamp_origin_ns,
-                timestamp_ns=timestamp_ns,
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
             )
 
         raise ValueError(f"Invalid instrument type: was {instrument_type}")

@@ -133,8 +133,8 @@ class DataClientTests(unittest.TestCase):
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
         generic_data = GenericData(data_type, data)
 
@@ -151,8 +151,8 @@ class DataClientTests(unittest.TestCase):
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act
@@ -376,8 +376,8 @@ class MarketDataClientTests(unittest.TestCase):
             level=OrderBookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act
@@ -392,8 +392,8 @@ class MarketDataClientTests(unittest.TestCase):
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             deltas=[],
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act

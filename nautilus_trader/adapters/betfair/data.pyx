@@ -46,10 +46,10 @@ class InstrumentSearch(Data):
     def __init__(
         self,
         instruments,
-        timestamp_origin_ns,
-        timestamp_ns,
+        ts_event_ns,
+        ts_recv_ns,
     ):
-        super().__init__(timestamp_origin_ns, timestamp_ns)
+        super().__init__(ts_event_ns, ts_recv_ns)
         self.instruments = instruments
 
 
@@ -220,8 +220,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             now = self._clock.timestamp_ns()
             search = InstrumentSearch(
                 instruments=instruments,
-                timestamp_origin_ns=now,
-                timestamp_ns=now,
+                ts_event_ns=now,
+                ts_recv_ns=now,
             )
             self._handle_data_response(
                 data_type=data_type,

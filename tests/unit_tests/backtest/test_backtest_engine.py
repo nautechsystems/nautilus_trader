@@ -86,7 +86,7 @@ class TestBacktestEngineData:
         # TODO: WIP - Implement asserts
         # assert ClientId("NEWS_CLIENT") in data.clients
         # assert len(data.generic_data) == 5
-        # assert data.generic_data[-1].timestamp_ns == 3000  # sorted
+        # assert data.generic_data[-1].ts_recv_ns == 3000  # sorted
 
     def test_add_instrument_adds_to_container(self):
         # Arrange
@@ -110,8 +110,8 @@ class TestBacktestEngineData:
             level=OrderBookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         snapshot2 = OrderBookSnapshot(
@@ -119,8 +119,8 @@ class TestBacktestEngineData:
             level=OrderBookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
-            timestamp_origin_ns=1_000_000_000,
-            timestamp_ns=1_000_000_000,
+            ts_event_ns=1_000_000_000,
+            ts_recv_ns=1_000_000_000,
         )
 
         # Act
@@ -148,8 +148,8 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("40"),
                     side=OrderSide.SELL,
                 ),
-                timestamp_origin_ns=0,
-                timestamp_ns=0,
+                ts_event_ns=0,
+                ts_recv_ns=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -160,8 +160,8 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("30"),
                     side=OrderSide.SELL,
                 ),
-                timestamp_origin_ns=0,
-                timestamp_ns=0,
+                ts_event_ns=0,
+                ts_recv_ns=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -172,8 +172,8 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("20"),
                     side=OrderSide.SELL,
                 ),
-                timestamp_origin_ns=0,
-                timestamp_ns=0,
+                ts_event_ns=0,
+                ts_recv_ns=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -184,8 +184,8 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("20"),
                     side=OrderSide.BUY,
                 ),
-                timestamp_origin_ns=0,
-                timestamp_ns=0,
+                ts_event_ns=0,
+                ts_recv_ns=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -196,8 +196,8 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("30"),
                     side=OrderSide.BUY,
                 ),
-                timestamp_origin_ns=0,
-                timestamp_ns=0,
+                ts_event_ns=0,
+                ts_recv_ns=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -208,8 +208,8 @@ class TestBacktestEngineData:
                     volume=Quantity.from_str("40"),
                     side=OrderSide.BUY,
                 ),
-                timestamp_origin_ns=0,
-                timestamp_ns=0,
+                ts_event_ns=0,
+                ts_recv_ns=0,
             ),
         ]
 
@@ -217,16 +217,16 @@ class TestBacktestEngineData:
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             deltas=deltas,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=OrderBookLevel.L2,
             deltas=deltas,
-            timestamp_origin_ns=1000,
-            timestamp_ns=1000,
+            ts_event_ns=1000,
+            ts_recv_ns=1000,
         )
 
         # Act
