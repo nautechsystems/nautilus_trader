@@ -292,9 +292,7 @@ class DataCatalog:
                         self.fs.rm(fn, recursive=True)
 
                 sort_col = (
-                    "timestamp_origin_ns"
-                    if "timestamp_origin_ns" in df.columns
-                    else "timestamp_ns"
+                    "ts_event_ns" if "ts_event_ns" in df.columns else "ts_recv_ns"
                 )
                 df = df.astype(
                     {k: "category" for k in dictionary_columns.get(cls, [])}

@@ -1139,7 +1139,7 @@ cdef class OrderBookDelta(OrderBookData):
         OrderBookDeltaType delta_type,
         int64_t ts_event_ns,
         int64_t ts_recv_ns,
-        Order order not None,
+        Order order,
     ):
         """
         Initialize a new instance of the ``OrderBookDelta`` class.

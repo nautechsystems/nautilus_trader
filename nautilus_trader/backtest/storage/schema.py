@@ -7,8 +7,8 @@ trade_tick_schema = {
     "size": float,
     "aggressor_side": str,
     "match_id": str,
-    "timestamp_origin_ns": datetime,
-    "timestamp_ns": datetime,
+    "ts_event_ns": datetime,
+    "ts_recv_ns": datetime,
 }
 
 
@@ -33,12 +33,13 @@ betting_instrument_schema = {
     "selection_name": str,
     "selection_handicap": str,
     "timestamp_ns": int,
-    "timestamp_origin_ns": int,
+    "ts_recv_ns": int,
 }
 
 order_book_schema = {
     "instrument_id": str,
-    "timestamp_ns": datetime,
+    "ts_event_ns": datetime,
+    "ts_recv_ns": datetime,
     "side": str,
     "price": float,
     "volume": float,
@@ -47,7 +48,8 @@ order_book_schema = {
 
 order_book_updates_schema = {
     "instrument_id": str,
-    "timestamp_ns": datetime,
+    "ts_event_ns": datetime,
+    "ts_recv_ns": datetime,
     "type": str,
     "side": str,
     "price": float,

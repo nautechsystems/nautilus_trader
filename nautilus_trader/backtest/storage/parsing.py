@@ -35,8 +35,8 @@ dictionary_columns = {
 def _parse_delta(msg, delta):
     return {
         "instrument_id": msg.instrument_id.value,
-        "timestamp_ns": msg.timestamp_ns,
-        "timestamp_origin_ns": msg.timestamp_origin_ns,
+        "ts_recv_ns": msg.ts_recv_ns,
+        "ts_event_ns": msg.ts_event_ns,
         "type": OrderBookDeltaTypeParser.to_str_py(delta.type),
         "level": OrderBookLevelParser.to_str_py(delta.level),
         "id": delta.order.id if delta.order else None,
@@ -59,8 +59,8 @@ def _parse_order_book_data(data: OrderBookData):
                 level=data.level,
                 order=None,
                 delta_type=OrderBookDeltaType.CLEAR,
-                timestamp_origin_ns=data.timestamp_origin_ns,
-                timestamp_ns=data.timestamp_ns,
+                ts_event_ns=data.ts_event_ns,
+                ts_recv_ns=data.ts_recv_ns,
             ),
         )
         orders = list(zip(repeat(OrderSide.BUY), data.bids)) + list(
@@ -72,8 +72,8 @@ def _parse_order_book_data(data: OrderBookData):
                 OrderBookDelta(
                     instrument_id=data.instrument_id,
                     level=data.level,
-                    timestamp_ns=data.timestamp_ns,
-                    timestamp_origin_ns=data.timestamp_origin_ns,
+                    ts_event_ns=data.ts_event_ns,
+                    ts_recv_ns=data.ts_recv_ns,
                     order=Order(price=price, volume=volume, side=side),
                     delta_type=OrderBookDeltaType.ADD,
                 ),
@@ -89,8 +89,8 @@ def _parse_trade_tick(tick: TradeTick):
         "size": tick.size.as_double(),
         "aggressor_side": AggressorSideParser.to_str_py(tick.aggressor_side),
         "match_id": tick.match_id.value,
-        "timestamp_origin_ns": tick.timestamp_origin_ns,
-        "timestamp_ns": tick.timestamp_ns,
+        "ts_event_ns": tick.ts_event_ns,
+        "ts_recv_ns": tick.ts_recv_ns,
     }
 
 
@@ -99,7 +99,7 @@ def _parse_instrument_status_event(event: InstrumentStatusEvent):
         "instrument_id": event.instrument_id.value,
         "status": InstrumentStatusParser.to_str_py(event.status),
         "event_id": event.id.value,
-        "timestamp_ns": event.timestamp_ns,
+        "ts_event_ns": event.timestamp_ns,
     }
 
 
@@ -138,8 +138,8 @@ def _parse_betting_instrument(instrument: BettingInstrument):
         "selection_id": instrument.selection_id,
         "selection_name": instrument.selection_name,
         "selection_handicap": instrument.selection_handicap,
-        "timestamp_ns": instrument.timestamp_ns,
-        "timestamp_origin_ns": instrument.timestamp_origin_ns,
+        "ts_recv_ns": instrument.ts_recv_ns,
+        "ts_event_ns": instrument.ts_event_ns,
     }
 
 
@@ -196,10 +196,11 @@ def _unparse(cls, d):
             instrument_id=d["instrument_id"],
             level=d["level"],
             deltas=[cls(**d)],
-            timestamp_ns=d["timestamp_ns"],
-            timestamp_origin_ns=d["timestamp_origin_ns"],
+            ts_recv_ns=d["ts_recv_ns"],
+            ts_event_ns=d["ts_event_ns"],
         )
-
+    if cls == InstrumentStatusEvent:
+        d["timestamp_ns"] = d.pop("ts_event_ns")
     return cls(**d)
 
 
