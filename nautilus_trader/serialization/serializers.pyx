@@ -737,7 +737,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[BASE_CURRENCY] = event.base_currency.code if event.base_currency is not None else None
             package[IS_REPORTED] = event.is_reported
             package[BALANCES] = [[b.currency.code, str(b.total), str(b.locked), str(b.free)] for b in event.balances]
-            package[UPDATED_TIMESTAMP] = str(event.updated_ns)
+            package[UPDATED_TIMESTAMP] = str(event.ts_updated_ns)
             package[INFO] = event.info
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
@@ -774,63 +774,63 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[SUBMITTED_TIMESTAMP] = str(event.submitted_ns)
+            package[SUBMITTED_TIMESTAMP] = str(event.ts_submitted_ns)
         elif isinstance(event, OrderRejected):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[REJECTED_TIMESTAMP] = str(event.rejected_ns)
+            package[REJECTED_TIMESTAMP] = str(event.ts_rejected_ns)
             package[REASON] = event.reason
         elif isinstance(event, OrderAccepted):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
-            package[ACCEPTED_TIMESTAMP] = str(event.accepted_ns)
+            package[ACCEPTED_TIMESTAMP] = str(event.ts_accepted_ns)
         elif isinstance(event, OrderPendingReplace):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[PENDING_TIMESTAMP] = str(event.pending_ns)
+            package[PENDING_TIMESTAMP] = str(event.ts_pending_ns)
         elif isinstance(event, OrderPendingCancel):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[PENDING_TIMESTAMP] = str(event.pending_ns)
+            package[PENDING_TIMESTAMP] = str(event.ts_pending_ns)
         elif isinstance(event, OrderUpdateRejected):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[REJECTED_TIMESTAMP] = str(event.rejected_ns)
+            package[REJECTED_TIMESTAMP] = str(event.ts_rejected_ns)
             package[RESPONSE_TO] = event.response_to
             package[REASON] = event.reason
         elif isinstance(event, OrderCancelRejected):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[REJECTED_TIMESTAMP] = str(event.rejected_ns)
+            package[REJECTED_TIMESTAMP] = str(event.ts_rejected_ns)
             package[RESPONSE_TO] = event.response_to
             package[REASON] = event.reason
         elif isinstance(event, OrderUpdated):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
-            package[UPDATED_TIMESTAMP] = str(event.updated_ns)
+            package[UPDATED_TIMESTAMP] = str(event.ts_updated_ns)
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
         elif isinstance(event, OrderCanceled):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[CANCELED_TIMESTAMP] = str(event.canceled_ns)
+            package[CANCELED_TIMESTAMP] = str(event.ts_canceled_ns)
         elif isinstance(event, OrderTriggered):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
-            package[TRIGGERED_TIMESTAMP] = str(event.triggered_ns)
+            package[TRIGGERED_TIMESTAMP] = str(event.ts_triggered_ns)
         elif isinstance(event, OrderExpired):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[VENUE_ORDER_ID] = event.venue_order_id.value
-            package[EXPIRED_TIMESTAMP] = str(event.expired_ns)
+            package[EXPIRED_TIMESTAMP] = str(event.ts_expired_ns)
         elif isinstance(event, OrderFilled):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.client_order_id.value
@@ -845,7 +845,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CURRENCY] = event.currency.code
             package[COMMISSION] = event.commission.to_str().replace(',', '')
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_str(event.liquidity_side)
-            package[EXECUTION_TIMESTAMP] = str(event.execution_ns)
+            package[EXECUTION_TIMESTAMP] = str(event.ts_filled_ns)
         else:
             raise RuntimeError(f"Cannot serialize event: unrecognized event {event}")
 

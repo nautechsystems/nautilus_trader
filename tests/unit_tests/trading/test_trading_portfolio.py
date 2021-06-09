@@ -238,7 +238,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
         self.exec_engine.process(account_state)
@@ -342,7 +342,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -422,7 +422,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -528,7 +528,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -620,7 +620,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -712,7 +712,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -804,7 +804,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -857,7 +857,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -929,7 +929,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -1055,7 +1055,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -1157,7 +1157,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -1230,7 +1230,7 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 

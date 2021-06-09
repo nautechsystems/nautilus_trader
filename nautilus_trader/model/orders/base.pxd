@@ -79,7 +79,7 @@ cdef class Order:
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t execution_ns
+    cdef readonly int64_t ts_filled_ns
     """The UNIX timestamp (nanos) of the last execution (0 for no execution).\n\n:returns: `int64`"""
     cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or None"""

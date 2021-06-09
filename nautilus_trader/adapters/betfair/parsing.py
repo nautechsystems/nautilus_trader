@@ -179,7 +179,7 @@ def betfair_account_to_account_state(
     account_detail,
     account_funds,
     event_id,
-    updated_ns,
+    ts_updated_ns,
     timestamp_ns,
     account_id="001",
 ) -> AccountState:
@@ -202,7 +202,7 @@ def betfair_account_to_account_state(
         ],
         info={"funds": account_funds, "detail": account_detail},
         event_id=event_id,
-        updated_ns=updated_ns,
+        ts_updated_ns=ts_updated_ns,
         timestamp_ns=timestamp_ns,
     )
 
@@ -565,7 +565,7 @@ async def generate_trades_list(
             ),  # TODO: Possibly incorrect precision
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NONE,
-            execution_ns=timestamp_ns,
+            ts_filled_ns=timestamp_ns,
             timestamp_ns=timestamp_ns,
         )
     ]

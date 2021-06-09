@@ -458,7 +458,7 @@ class TestMsgPackEventSerializer:
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=1_000_000_000,
         )
 
