@@ -19,26 +19,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class Serializer:
-    """
-    The abstract base class for all serializers.
-
-    This class should not be used directly, but through a concrete subclass.
-    """
-    cdef str convert_camel_to_snake(self, str value):
-        return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
-
-    cdef str convert_snake_to_camel(self, str value):
-        return ''.join(x.title() for x in value.split('_'))
-
-    cpdef str py_convert_camel_to_snake(self, str value):
-        return self.convert_camel_to_snake(value)
-
-    cpdef str py_convert_snake_to_camel(self, str value):
-        return self.convert_snake_to_camel(value)
-
-
-cdef class InstrumentSerializer(Serializer):
+cdef class InstrumentSerializer:
     """
     The abstract base class for all instrument serializers.
 
@@ -61,7 +42,7 @@ cdef class InstrumentSerializer(Serializer):
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-cdef class OrderSerializer(Serializer):
+cdef class OrderSerializer:
     """
     The abstract base class for all order serializers.
 
@@ -84,7 +65,7 @@ cdef class OrderSerializer(Serializer):
         raise NotImplementedError("method must be implemented in the subclass ")
 
 
-cdef class CommandSerializer(Serializer):
+cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
 
@@ -106,7 +87,7 @@ cdef class CommandSerializer(Serializer):
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-cdef class EventSerializer(Serializer):
+cdef class EventSerializer:
     """
     The abstract base class for all event serializers.
 

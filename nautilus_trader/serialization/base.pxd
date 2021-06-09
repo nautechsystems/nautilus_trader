@@ -19,31 +19,21 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class Serializer:
-    cdef object _re_camel_to_snake
-
-    cdef str convert_camel_to_snake(self, str value)
-    cdef str convert_snake_to_camel(self, str value)
-
-    cpdef str py_convert_camel_to_snake(self, str value)
-    cpdef str py_convert_snake_to_camel(self, str value)
-
-
-cdef class InstrumentSerializer(Serializer):
+cdef class InstrumentSerializer:
     cpdef bytes serialize(self, Instrument instrument)
     cpdef Instrument deserialize(self, bytes instrument_bytes)
 
 
-cdef class OrderSerializer(Serializer):
+cdef class OrderSerializer:
     cpdef bytes serialize(self, Order order)
     cpdef Order deserialize(self, bytes order_bytes)
 
 
-cdef class CommandSerializer(Serializer):
+cdef class CommandSerializer:
     cpdef bytes serialize(self, Command command)
     cpdef Command deserialize(self, bytes command_bytes)
 
 
-cdef class EventSerializer(Serializer):
+cdef class EventSerializer:
     cpdef bytes serialize(self, Event event)
     cpdef Event deserialize(self, bytes event_bytes)

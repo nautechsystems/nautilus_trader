@@ -90,6 +90,13 @@ from nautilus_trader.serialization.base cimport InstrumentSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
 
 
+cdef inline str convert_camel_to_snake(str value):
+    return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
+
+cdef inline str convert_snake_to_camel(str value):
+    return ''.join(x.title() for x in value.split('_'))
+
+
 cdef class MsgPackSerializer:
     """
     Provides a serializer for the MessagePack specification.
@@ -171,8 +178,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef dict package = {
             TYPE: type(instrument).__name__,
             ID: instrument.id.value,
-            ASSET_CLASS: self.convert_snake_to_camel(asset_class),
-            ASSET_TYPE: self.convert_snake_to_camel(asset_type),
+            ASSET_CLASS: convert_snake_to_camel(asset_class),
+            ASSET_TYPE: convert_snake_to_camel(asset_type),
             QUOTE_CURRENCY: instrument.quote_currency.code,
             IS_INVERSE: instrument.is_inverse,
             PRICE_PRECISION: instrument.price_precision,
@@ -249,8 +256,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
 
         cdef str instrument_type = unpacked[TYPE]
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[ID])
-        cdef AssetClass asset_class = AssetClassParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_CLASS]))
-        cdef AssetType asset_type = AssetTypeParser.from_str(self.convert_camel_to_snake(unpacked[ASSET_TYPE]))
+        cdef AssetClass asset_class = AssetClassParser.from_str(convert_camel_to_snake(unpacked[ASSET_CLASS]))
+        cdef AssetType asset_type = AssetTypeParser.from_str(convert_camel_to_snake(unpacked[ASSET_TYPE]))
         cdef Currency quote_currency = Currency.from_str_c(unpacked[QUOTE_CURRENCY])
         cdef bint is_inverse = unpacked[IS_INVERSE]
         cdef uint8_t price_precision = unpacked[PRICE_PRECISION]
@@ -418,8 +425,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             ID: order.client_order_id.value,
             STRATEGY_ID: order.strategy_id.value,
             INSTRUMENT_ID: order.instrument_id.value,
-            ORDER_SIDE: self.convert_snake_to_camel(OrderSideParser.to_str(order.side)),
-            ORDER_TYPE: self.convert_snake_to_camel(OrderTypeParser.to_str(order.type)),
+            ORDER_SIDE: convert_snake_to_camel(OrderSideParser.to_str(order.side)),
+            ORDER_TYPE: convert_snake_to_camel(OrderTypeParser.to_str(order.type)),
             QUANTITY: str(order.quantity),
             TIME_IN_FORCE: TimeInForceParser.to_str(order.time_in_force),
             INIT_ID: order.init_id.value,
@@ -473,8 +480,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef ClientOrderId client_order_id = ClientOrderId(unpacked[ID])
         cdef StrategyId strategy_id = StrategyId(unpacked[STRATEGY_ID])
         cdef InstrumentId instrument_id = self.instrument_id_cache.get(unpacked[INSTRUMENT_ID])
-        cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
-        cdef OrderType order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
+        cdef OrderSide order_side = OrderSideParser.from_str(convert_camel_to_snake(unpacked[ORDER_SIDE]))
+        cdef OrderType order_type = OrderTypeParser.from_str(convert_camel_to_snake(unpacked[ORDER_TYPE]))
         cdef Quantity quantity = Quantity.from_str_c(unpacked[QUANTITY])
         cdef TimeInForce time_in_force = TimeInForceParser.from_str(unpacked[TIME_IN_FORCE])
         cdef UUID init_id = UUID.from_str_c(unpacked[INIT_ID])
@@ -743,8 +750,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CLIENT_ORDER_ID] = event.client_order_id.value
             package[STRATEGY_ID] = event.strategy_id.value
             package[INSTRUMENT_ID] = event.instrument_id.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
-            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
+            package[ORDER_SIDE] = convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
+            package[ORDER_TYPE] = convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
             package[QUANTITY] = str(event.quantity)
             package[TIME_IN_FORCE] = TimeInForceParser.to_str(event.time_in_force)
 
@@ -839,7 +846,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[POSITION_ID] = event.position_id.value
             package[STRATEGY_ID] = event.strategy_id.value
             package[INSTRUMENT_ID] = event.instrument_id.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
+            package[ORDER_SIDE] = convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[LAST_QTY] = str(event.last_qty)
             package[LAST_PX] = str(event.last_px)
             package[CURRENCY] = event.currency.code
@@ -903,7 +910,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             )
         elif event_type == OrderInitialized.__name__:
             options = {}
-            order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
+            order_type = OrderTypeParser.from_str(convert_camel_to_snake(unpacked[ORDER_TYPE]))
             if order_type == OrderType.LIMIT:
                 options[PRICE] = unpacked[PRICE]
                 options[EXPIRE_TIME] = maybe_nanos_to_unix_dt(unpacked.get(EXPIRE_TIME))
@@ -926,7 +933,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
-                OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                OrderSideParser.from_str(convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 order_type,
                 Quantity.from_str_c(unpacked[QUANTITY]),
                 TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
@@ -1061,7 +1068,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 PositionId(unpacked[POSITION_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_instrument_id(unpacked[INSTRUMENT_ID]),
-                OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                OrderSideParser.from_str(convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 Quantity.from_str_c(unpacked[LAST_QTY]),
                 Price.from_str_c(unpacked[LAST_PX]),
                 Currency.from_str_c(unpacked[CURRENCY]),
