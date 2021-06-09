@@ -1,3 +1,4 @@
+from decimal import Decimal
 import os
 import pathlib
 
@@ -5,6 +6,8 @@ import fsspec
 import orjson
 import pytest
 
+from examples.strategies.orderbook_imbalance import OrderbookImbalance
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
@@ -14,6 +17,13 @@ from nautilus_trader.backtest.data_loader import DataLoader
 from nautilus_trader.backtest.data_loader import ParquetParser
 from nautilus_trader.backtest.data_loader import TextParser
 from nautilus_trader.backtest.data_loader import parse_timestamp
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.c_enums.account_type import AccountType
+from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -113,8 +123,29 @@ def test_data_catalogue_import(catalogue_dir, data_loader):
     assert len(instruments) == 2
 
 
-def test_data_catalogue_backtest(catalogue_dir, data_loader):
+def test_data_catalogue_backtest_data(catalogue_dir, data_loader):
     catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
     data = catalogue.load_backtest_data()
     assert len(data) == 2698
+
+
+def test_data_catalogue_backtest_run(catalogue_dir, data_loader):
+    catalogue = DataCatalog()
+    catalogue.import_from_data_loader(loader=data_loader)
+    instruments = catalogue.instruments()
+    engine = BacktestEngine()
+    engine = catalogue.setup_engine(engine=engine, instruments=instruments)
+    engine.add_venue(
+        venue=BETFAIR_VENUE,
+        venue_type=VenueType.EXCHANGE,
+        account_type=AccountType.CASH,
+        base_currency=GBP,
+        oms_type=OMSType.NETTING,
+        starting_balances=[Money(1000, GBP)],
+        order_book_level=OrderBookLevel.L2,
+    )
+    strategy = OrderbookImbalance(
+        instrument=instruments[0], max_trade_size=Decimal("50"), order_id_tag="OI"
+    )
+    engine.run(strategies=[strategy])

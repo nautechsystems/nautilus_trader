@@ -188,9 +188,17 @@ def _unparse(cls, d):
                 volume=kw["volume"],
                 side=OrderSideParser.from_str_py(kw["side"]),
             )
+        else:
+            d["order"] = None
         d["delta_type"] = d.pop("type")
-        d["order"] = None
         d.pop("id")
+        return OrderBookDeltas(
+            instrument_id=d["instrument_id"],
+            level=d["level"],
+            deltas=[cls(**d)],
+            timestamp_ns=d["timestamp_ns"],
+            timestamp_origin_ns=d["timestamp_origin_ns"],
+        )
 
     return cls(**d)
 

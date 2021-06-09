@@ -10,9 +10,11 @@ import fsspec
 import orjson
 import pandas as pd
 import pyarrow as pa
+import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from tqdm import tqdm
 
+from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.storage.parsing import _unparse
 from nautilus_trader.backtest.storage.parsing import _unparse_value
 from nautilus_trader.backtest.storage.parsing import dictionary_columns
@@ -289,9 +291,14 @@ class DataCatalog:
                         # Remove file, will be written again
                         self.fs.rm(fn, recursive=True)
 
+                sort_col = (
+                    "timestamp_origin_ns"
+                    if "timestamp_origin_ns" in df.columns
+                    else "timestamp_ns"
+                )
                 df = df.astype(
                     {k: "category" for k in dictionary_columns.get(cls, [])}
-                ).sort_values("timestamp_ns")
+                ).sort_values(sort_col)
                 table = pa.Table.from_pandas(df)
                 pq.write_to_dataset(
                     table=table,
@@ -314,6 +321,44 @@ class DataCatalog:
             )
         else:
             self.fs.rm(self.root, recursive=True)
+
+    # ---- Backtest ---------------------------------------------------------------------------------------- #
+
+    def setup_engine(
+        self,
+        engine: BacktestEngine,
+        instruments,
+        **kwargs,
+    ) -> BacktestEngine:
+        """
+        Load data into a backtest engine
+
+        :param engine: The BacktestEngine to load data into.
+        :param instruments: List of instruments to load data for
+        :param kwargs: kwargs passed to `self.load_backtest_data`
+        :return:
+        """
+        data = self.load_backtest_data(
+            instrument_ids=[ins.id.value for ins in instruments], **kwargs
+        )
+
+        # Add instruments & data to engine
+        for instrument in instruments:
+            engine.add_instrument(instrument)
+            for name in data:
+                if name == "trade_ticks":
+                    engine.add_trade_tick_objects(
+                        instrument_id=instrument.id, data=data[name]
+                    )
+                elif name == "quote_ticks":
+                    engine.add_quote_ticks(instrument_id=instrument.id, data=data[name])
+                elif name == "order_book_deltas":
+                    engine.add_order_book_data(data=data[name])
+                # TODO currently broken - BacktestEngine needs to accept events
+                # elif name == "instrument_status_events":
+                #     engine.add_other_data(data=data[name])
+
+        return engine
 
     # ---- Queries ---------------------------------------------------------------------------------------- #
 
@@ -344,12 +389,15 @@ class DataCatalog:
             instrument_ids, list
         ), "instrument_ids must be list"
         queries = [
-            (order_book_deltas, self.order_book_deltas),
-            (trade_ticks, self.trade_ticks),
-            (instrument_status_events, self.instrument_status_events),
-            (quote_ticks, self.quote_ticks),
+            ("order_book_deltas", order_book_deltas, self.order_book_deltas),
+            ("trade_ticks", trade_ticks, self.trade_ticks),
+            (
+                "instrument_status_events",
+                instrument_status_events,
+                self.instrument_status_events,
+            ),
+            ("quote_ticks", quote_ticks, self.quote_ticks),
         ]
-        data = []
         start_timestamp_filter = (
             [("timestamp_ns", ">=", parse_timestamp(start_timestamp))]
             if start_timestamp
@@ -361,25 +409,34 @@ class DataCatalog:
             else []
         )
         filters = (start_timestamp_filter + end_timestamp_filter) or None
-        for to_load, query in queries:
+
+        data = {}
+
+        for name, to_load, query in queries:
             if to_load:
-                data.extend(query(instrument_ids=instrument_ids, filters=filters))
+                data[name] = query(
+                    instrument_ids=instrument_ids, filters=filters, as_nautilus=True
+                )
 
         return data
 
     def _query(self, filename, filters=None, instrument_ids=None):
         if instrument_ids is not None and not isinstance(instrument_ids, list):
             instrument_ids = [instrument_ids]
-        instrument_filter = (
-            [("instrument_id", "isin", instrument_ids)] if instrument_ids else []
-        )
-        filters = (filters or []) + instrument_filter
 
-        return pd.read_parquet(
-            path=f"{self.root}/{filename}.parquet",
+        kw = {}
+        if instrument_ids:
+            kw["filter"] = ds.field("instrument_id").isin(instrument_ids)
+        for filt in filters or []:
+            assert isinstance(filt, ds.Expression)
+            kw["filter"] = kw["filter"] & filt
+
+        dataset = ds.dataset(
+            source=f"{self.root}/{filename}.parquet",
+            partitioning="hive",
             filesystem=self.fs,
-            filters=filters or None,
         )
+        return dataset.to_table(**kw).to_pandas()
 
     @staticmethod
     def _make_objects(df, cls, ignore_keys=None):
@@ -395,7 +452,7 @@ class DataCatalog:
 
     def instruments(self, filters=None):
         """
-        :param filters: A list of tuple arrow filters, ie [("instrument_id", "=", "BTCUSD")]
+        :param filters: A list of tuple arrow filters, ie ["instrument_id", "=", "BTCUSD")]
         :return:
         """
         df = self._query("betting_instrument", filters=filters)
@@ -403,24 +460,34 @@ class DataCatalog:
             df=df, cls=BettingInstrument, ignore_keys=("instrument_id",)
         )
 
-    def instrument_status_events(self, instrument_ids=None, filters=None):
+    def instrument_status_events(
+        self, instrument_ids=None, filters=None, as_nautilus=False
+    ):
         df = self._query(
             "instrument_status_event", instrument_ids=instrument_ids, filters=filters
         )
+        if not as_nautilus:
+            return df
         return self._make_objects(df=df, cls=InstrumentStatusEvent, ignore_keys=None)
 
-    def trade_ticks(self, instrument_ids=None, filters=None):
+    def trade_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):
         df = self._query("trade_tick", instrument_ids=instrument_ids, filters=filters)
+        if not as_nautilus:
+            return df
         return self._make_objects(df=df, cls=TradeTick, ignore_keys=None)
 
-    def quote_ticks(self, instrument_ids=None, filters=None):
+    def quote_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):
         df = self._query("quote_tick", instrument_ids=instrument_ids, filters=filters)
+        if not as_nautilus:
+            return df
         return self._make_objects(df=df, cls=QuoteTick, ignore_keys=None)
 
-    def order_book_deltas(self, instrument_ids=None, filters=None):
+    def order_book_deltas(self, instrument_ids=None, filters=None, as_nautilus=False):
         df = self._query(
             "order_book_delta", instrument_ids=instrument_ids, filters=filters
         )
+        if not as_nautilus:
+            return df
         return self._make_objects(df=df, cls=OrderBookDelta, ignore_keys=None)
 
 

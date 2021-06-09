@@ -397,6 +397,7 @@ cdef class SimulatedExchange:
         Condition.not_none(data, "data")
 
         self._clock.set_time(data.timestamp_ns)
+        print("data:", data)
         self.get_book(data.instrument_id).apply(data)
 
         self._iterate_matching_engine(
