@@ -9,7 +9,7 @@ from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.backtest.data_loader import CSVParser
-from nautilus_trader.backtest.data_loader import DataCatalogue
+from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.data_loader import DataLoader
 from nautilus_trader.backtest.data_loader import ParquetParser
 from nautilus_trader.backtest.data_loader import TextParser
@@ -87,9 +87,7 @@ def data_loader():
         line_parser=lambda x: on_market_update(
             instrument_provider=instrument_provider, update=orjson.loads(x)
         ),
-        instrument_provider_update=historical_instrument_provider_loader(
-            instrument_provider
-        ),
+        instrument_provider_update=historical_instrument_provider_loader,
     )
     return DataLoader(
         path=TEST_DATA_DIR,
@@ -100,14 +98,14 @@ def data_loader():
 
 
 def test_data_catalogue_import(catalogue_dir, data_loader):
-    catalogue = DataCatalogue()
+    catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
     instruments = catalogue.instruments()
     assert len(instruments) == 18
 
 
 def test_data_catalogue_backtest(catalogue_dir, data_loader):
-    catalogue = DataCatalogue()
+    catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
     data = catalogue.load_backtest_data()
     assert len(data) == 1000

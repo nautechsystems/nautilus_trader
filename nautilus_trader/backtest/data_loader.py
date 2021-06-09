@@ -39,12 +39,12 @@ class ByteParser:
     ):
         self.instrument_provider_update = instrument_provider_update
 
-    def read(self, stream: Generator) -> Generator:
+    def read(self, stream: Generator, instrument_provider=None) -> Generator:
         raise NotImplementedError
 
 
 class CSVParser(ByteParser):
-    def read(self, stream: Generator) -> Generator:
+    def read(self, stream: Generator, instrument_provider=None) -> Generator:
         for chunk in stream:
             yield pd.read_csv(chunk)
 
@@ -70,7 +70,7 @@ class TextParser(ByteParser):
         self.line_preprocessor = line_preprocessor
         super().__init__(instrument_provider_update=instrument_provider_update)
 
-    def read(self, stream: Generator) -> Generator:
+    def read(self, stream: Generator, instrument_provider=None) -> Generator:
         raw = b""
         fn = None
         for chunk in stream:
@@ -98,12 +98,12 @@ class TextParser(ByteParser):
                 if not line:
                     continue
                 if self.instrument_provider_update is not None:
-                    self.instrument_provider_update(line)
+                    self.instrument_provider_update(instrument_provider, line)
                 yield from self.line_parser(line)
 
 
 class ParquetParser(ByteParser):
-    def read(self, stream: Generator) -> Generator:
+    def read(self, stream: Generator, instrument_provider=None) -> Generator:
         for chunk in stream:
             df = pd.read_parquet(chunk)
             yield df
@@ -167,7 +167,7 @@ class DataLoader:
     def stream_bytes(self, progress=False):
         path = self.path if not progress else tqdm(self.path)
         for fn in path:
-            with self.fs.open(fn, compression=self.compression) as f:
+            with fsspec.open(fn, compression=self.compression) as f:
                 yield NewFile(fn)
                 data = 1
                 while data:
@@ -177,7 +177,10 @@ class DataLoader:
         yield EOStream
 
     def run(self, progress=False):
-        stream = self.parser.read(self.stream_bytes(progress=progress))
+        stream = self.parser.read(
+            stream=self.stream_bytes(progress=progress),
+            instrument_provider=self.instrument_provider,
+        )
         while 1:
             chunk = list(takewhile(lambda x: x is not None, stream))
             if chunk == [EOStream]:
@@ -196,7 +199,7 @@ class DataLoader:
             yield chunk
 
 
-class DataCatalogue:
+class DataCatalog:
     def __init__(self, path=None, fs_protocol=None):
         self.fs = fsspec.filesystem(
             fs_protocol or os.environ.get("NAUTILUS_BACKTEST_FS_PROTOCOL", "file")
