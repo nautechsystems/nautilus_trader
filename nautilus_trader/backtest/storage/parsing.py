@@ -1,13 +1,24 @@
 from itertools import repeat
 
+import numpy as np
+
+from nautilus_trader.core.uuid import UUID
 from nautilus_trader.model.c_enums.aggressor_side import AggressorSideParser
+from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaType
+from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevelParser
 from nautilus_trader.model.enums import OrderBookDeltaTypeParser
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeMatchId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
@@ -27,6 +38,7 @@ def _parse_delta(msg, delta):
         "timestamp_ns": msg.timestamp_ns,
         "timestamp_origin_ns": msg.timestamp_origin_ns,
         "type": OrderBookDeltaTypeParser.to_str_py(delta.type),
+        "level": OrderBookLevelParser.to_str_py(delta.level),
         "id": delta.order.id if delta.order else None,
         "price": delta.order.price if delta.order else None,
         "volume": delta.order.volume if delta.order else None,
@@ -85,7 +97,7 @@ def _parse_trade_tick(tick: TradeTick):
 def _parse_instrument_status_event(event: InstrumentStatusEvent):
     yield {
         "instrument_id": event.instrument_id.value,
-        "status": event.status,
+        "status": InstrumentStatusParser.to_str_py(event.status),
         "event_id": event.id.value,
         "timestamp_ns": event.timestamp_ns,
     }
@@ -129,6 +141,58 @@ def _parse_betting_instrument(instrument: BettingInstrument):
         "timestamp_ns": instrument.timestamp_ns,
         "timestamp_origin_ns": instrument.timestamp_origin_ns,
     }
+
+
+def _unparse_value(cls, k, v):  # noqa: C901
+    # Shared attributes
+    if k == "instrument_id" and cls in (
+        OrderBookDelta,
+        TradeTick,
+        InstrumentStatusEvent,
+    ):
+        symbol, venue = v.rsplit(".", maxsplit=1)
+        return InstrumentId(symbol=Symbol(symbol), venue=Venue(venue))
+    elif k == "aggressor_side":
+        return AggressorSideParser.from_str_py(v)
+    elif k == "price" and cls in (TradeTick,):
+        return Price.from_str(str(v))
+    elif k == "event_id" and cls in (InstrumentStatusEvent,):
+        return UUID.from_str(v)
+
+    # Class specific parsing
+    if cls == OrderBookDelta:
+        if k == "type":
+            return OrderBookDeltaTypeParser.from_str_py(v)
+        elif k == "level":
+            return OrderBookLevelParser.from_str_py(v)
+    elif cls == TradeTick:
+        if k == "size":
+            return Quantity.from_str(str(v))
+        if k == "match_id":
+            return TradeMatchId(v)
+    elif cls == InstrumentStatusEvent:
+        if k == "status":
+            return InstrumentStatusParser.from_str_py(v)
+    return v
+
+
+def _unparse(cls, d):
+    """
+    Used to parse/unflatten a dict into a nautilus object - use if fields need renaming or nested objects exist
+    """
+    if cls == OrderBookDelta:
+        kw = {k: d.pop(k, None) for k in ("price", "volume", "side")}
+        if not np.isnan(kw["price"]):
+            d["order"] = Order(
+                price=kw["price"],
+                volume=kw["volume"],
+                side=OrderSideParser.from_str_py(kw["side"]),
+            )
+        d["delta_type"] = d.pop("type")
+        d["order"] = None
+        d.pop("id")
+
+    return cls(**d)
 
 
 def nautilus_to_dict(obj):

@@ -35,6 +35,12 @@ def test_data_loader_paths(glob, num_files):
     assert len(d.path) == num_files
 
 
+def test_data_loader_stream():
+    loader = DataLoader(path=TEST_DATA_DIR, parser=None, glob_pattern="1.166564490.bz2")
+    raw = list(loader.stream_bytes())
+    assert len(raw) == 6
+
+
 def test_data_loader_json_betting_parser():
     instrument_provider = BetfairInstrumentProvider.from_instruments([])
 
@@ -42,15 +48,18 @@ def test_data_loader_json_betting_parser():
         line_parser=lambda x: on_market_update(
             instrument_provider=instrument_provider, update=orjson.loads(x)
         ),
-        instrument_provider_update=historical_instrument_provider_loader(
-            instrument_provider
-        ),
+        instrument_provider_update=historical_instrument_provider_loader,
     )
-    loader = DataLoader(path=TEST_DATA_DIR, parser=parser, glob_pattern="**.zip")
-    assert len(loader.path) == 1
+    loader = DataLoader(
+        path=TEST_DATA_DIR,
+        parser=parser,
+        glob_pattern="**.bz2",
+        instrument_provider=instrument_provider,
+    )
+    assert len(loader.path) == 3
 
     data = [x for y in loader.run() for x in y]
-    assert len(data) == 19100
+    assert len(data) == 30829
 
 
 def test_data_loader_parquet():
@@ -101,11 +110,11 @@ def test_data_catalogue_import(catalogue_dir, data_loader):
     catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
     instruments = catalogue.instruments()
-    assert len(instruments) == 18
+    assert len(instruments) == 2
 
 
 def test_data_catalogue_backtest(catalogue_dir, data_loader):
     catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
     data = catalogue.load_backtest_data()
-    assert len(data) == 1000
+    assert len(data) == 2698

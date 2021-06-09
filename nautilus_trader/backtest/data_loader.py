@@ -13,6 +13,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from tqdm import tqdm
 
+from nautilus_trader.backtest.storage.parsing import _unparse
+from nautilus_trader.backtest.storage.parsing import _unparse_value
 from nautilus_trader.backtest.storage.parsing import dictionary_columns
 from nautilus_trader.backtest.storage.parsing import nautilus_to_dict
 from nautilus_trader.model.events import InstrumentStatusEvent
@@ -382,10 +384,14 @@ class DataCatalog:
     @staticmethod
     def _make_objects(df, cls, ignore_keys=None):
         rows = [
-            {k: v for k, v in r.items() if k not in (ignore_keys or ())}
+            {
+                k: _unparse_value(cls=cls, k=k, v=v)
+                for k, v in r.items()
+                if k not in (ignore_keys or ())
+            }
             for _, r in df.iterrows()
         ]
-        return [cls(**r) for r in rows]
+        return [_unparse(cls, r) for r in rows]
 
     def instruments(self, filters=None):
         """

@@ -28,15 +28,13 @@ to the actual parsing function) - this gives the user a chance to add any logic 
 data is attempted to be parsed. See the final section for a motivating example using Betfair.
 
 ### Parsers
-
-The first question is what format the data is stored (ignoring compression - fsspec handles this automatically for us). 
-Currently, there are 4 formats available: 
+The first configuration option is the format the data is stored - c urrently, there are 3 formats available: 
 - `TextParser` for generic text data (JSON or other). 
 - `CSVParser` for CSV data
 - `ParquetParser`for parquet data 
 
 Each parser has separate configuration based on its requirements (i.e. the `TextParser` will required an additional 
-`line_parser`to convert the JSON into actual nautilus objects)
+`line_parser`to convert the test line/JSON into actual nautilus objects)
 
 A simple example might be loading quote ticks from a CSV file:
 
@@ -52,7 +50,6 @@ import orjson
 from nautilus_trader.backtest.data_loader import TextParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.parsing import on_market_update
-
 
 instrument_provider = BetfairInstrumentProvider.from_instruments([])
 parser = TextParser(

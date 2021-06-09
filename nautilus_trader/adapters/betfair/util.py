@@ -99,6 +99,9 @@ def one(iterable):
 def historical_instrument_provider_loader(instrument_provider, line):
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
+    if instrument_provider is None:
+        return
+
     data = orjson.loads(line)
     # Find instruments in data
     for mc in data.get("mc", []):
