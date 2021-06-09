@@ -259,7 +259,7 @@ cdef class OrderBook:
             )
             self.update(order=order)
 
-        self.last_update_timestamp_ns = snapshot.timestamp_ns
+        self.last_update_timestamp_ns = snapshot.ts_recv_ns
 
     cpdef void apply(self, OrderBookData data) except *:
         """
@@ -332,7 +332,7 @@ cdef class OrderBook:
         elif delta.type == OrderBookDeltaType.DELETE:
             self.delete(order=delta.order)
 
-        self.last_update_timestamp_ns = delta.timestamp_ns
+        self.last_update_timestamp_ns = delta.ts_recv_ns
 
     cdef void _add(self, Order order) except *:
         if order.side == OrderSide.BUY:
@@ -1014,8 +1014,8 @@ cdef class OrderBookData(Data):
         self,
         InstrumentId instrument_id not None,
         OrderBookLevel level,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``OrderBookData`` class.
@@ -1026,13 +1026,13 @@ cdef class OrderBookData(Data):
             The instrument identifier for the book.
         level : OrderBookLevel
             The order book level (L1, L2, L3).
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
+        ts_recv_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(timestamp_origin_ns, timestamp_ns)
+        super().__init__(ts_event_ns, ts_recv_ns)
 
         self.instrument_id = instrument_id
         self.level = level
@@ -1049,8 +1049,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         OrderBookLevel level,
         list bids not None,
         list asks not None,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``OrderBookSnapshot`` class.
@@ -1065,13 +1065,13 @@ cdef class OrderBookSnapshot(OrderBookData):
             The bids for the snapshot.
         asks : list
             The asks for the snapshot.
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
+        ts_recv_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
+        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
 
         self.bids = bids
         self.asks = asks
@@ -1082,7 +1082,7 @@ cdef class OrderBookSnapshot(OrderBookData):
                 f"level={OrderBookLevelParser.to_str(self.level)}, "
                 f"bids={self.bids}, "
                 f"asks={self.asks}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.ts_recv_ns})")
 
 
 cdef class OrderBookDeltas(OrderBookData):
@@ -1095,8 +1095,8 @@ cdef class OrderBookDeltas(OrderBookData):
         InstrumentId instrument_id not None,
         OrderBookLevel level,
         list deltas not None,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``OrderBookDeltas`` class.
@@ -1109,13 +1109,13 @@ cdef class OrderBookDeltas(OrderBookData):
             The order book level (L1, L2, L3).
         deltas : list[OrderBookDelta]
             The list of order book changes.
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
+        ts_recv_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
+        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
 
         self.deltas = deltas
 
@@ -1124,7 +1124,7 @@ cdef class OrderBookDeltas(OrderBookData):
                 f"'{self.instrument_id}', "
                 f"level={OrderBookLevelParser.to_str(self.level)}, "
                 f"{self.deltas}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.ts_recv_ns})")
 
 
 cdef class OrderBookDelta(OrderBookData):
@@ -1137,9 +1137,9 @@ cdef class OrderBookDelta(OrderBookData):
         InstrumentId instrument_id,
         OrderBookLevel level,
         OrderBookDeltaType delta_type,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
-        Order order,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
+        Order order not None,
     ):
         """
         Initialize a new instance of the ``OrderBookDelta`` class.
@@ -1150,13 +1150,13 @@ cdef class OrderBookDelta(OrderBookData):
             The type of change (ADD, UPDATED, DELETE).
         order : Order
             The order to apply.
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
+        ts_recv_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_origin_ns, timestamp_ns)
+        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
 
         self.type = delta_type
         self.order = order
@@ -1167,4 +1167,4 @@ cdef class OrderBookDelta(OrderBookData):
                 f"level={OrderBookLevelParser.to_str(self.level)}, "
                 f"delta_type={OrderBookDeltaTypeParser.to_str(self.type)}, "
                 f"order={self.order}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.ts_recv_ns})")

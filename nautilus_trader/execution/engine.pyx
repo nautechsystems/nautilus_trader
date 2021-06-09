@@ -832,7 +832,7 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=Money(fill.commission * fill_percent1, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
-            execution_ns=fill.execution_ns,
+            ts_filled_ns=fill.ts_filled_ns,
             event_id=fill.id,
             timestamp_ns=fill.timestamp_ns,
         )
@@ -861,7 +861,7 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=Money(fill.commission * fill_percent2, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
-            execution_ns=fill.execution_ns,
+            ts_filled_ns=fill.ts_filled_ns,
             event_id=self._uuid_factory.generate(),  # New event identifier
             timestamp_ns=fill.timestamp_ns,
         )

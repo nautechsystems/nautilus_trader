@@ -52,8 +52,8 @@ cdef class Option(Instrument):
         str trading_hours not None,
         str liquid_hours not None,
         str last_trade_time not None,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``Option`` class.
@@ -70,7 +70,7 @@ cdef class Option(Instrument):
             The price decimal precision.
         price_increment : Price
             The minimum price increment (tick size).
-        timestamp_ns : int64
+        ts_recv_ns : int64
             The timestamp the instrument was created/updated at.
 
         Raises
@@ -108,8 +108,8 @@ cdef class Option(Instrument):
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),
-            timestamp_origin_ns=timestamp_origin_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
             info={},
         )
 

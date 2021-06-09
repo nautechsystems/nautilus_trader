@@ -179,7 +179,7 @@ def betfair_account_to_account_state(
     account_detail,
     account_funds,
     event_id,
-    updated_ns,
+    ts_updated_ns,
     timestamp_ns,
     account_id="001",
 ) -> AccountState:
@@ -202,12 +202,12 @@ def betfair_account_to_account_state(
         ],
         info={"funds": account_funds, "detail": account_detail},
         event_id=event_id,
-        updated_ns=updated_ns,
+        ts_updated_ns=ts_updated_ns,
         timestamp_ns=timestamp_ns,
     )
 
 
-def _handle_market_snapshot(selection, instrument, timestamp_origin_ns, timestamp_ns):
+def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
     bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
@@ -234,8 +234,8 @@ def _handle_market_snapshot(selection, instrument, timestamp_origin_ns, timestam
         instrument_id=instrument.id,
         bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
         asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
-        timestamp_origin_ns=timestamp_origin_ns,
-        timestamp_ns=timestamp_ns,
+        ts_event_ns=ts_event_ns,
+        ts_recv_ns=ts_recv_ns,
     )
     updates.append(snapshot)
     if "trd" in selection:
@@ -243,8 +243,8 @@ def _handle_market_snapshot(selection, instrument, timestamp_origin_ns, timestam
             _handle_market_trades(
                 runner=selection,
                 instrument=instrument,
-                timestamp_origin_ns=timestamp_origin_ns,
-                timestamp_ns=timestamp_ns,
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
             )
         )
 
@@ -254,8 +254,8 @@ def _handle_market_snapshot(selection, instrument, timestamp_origin_ns, timestam
 def _handle_market_trades(
     runner,
     instrument,
-    timestamp_origin_ns,
-    timestamp_ns,
+    ts_event_ns,
+    ts_recv_ns,
 ):
     trade_ticks = []
     for price, volume in runner.get("trd", []):
@@ -263,21 +263,21 @@ def _handle_market_trades(
             continue
         # Betfair doesn't publish trade ids, so we make our own
         # TODO - should we use clk here for ID instead of the hash?
-        trade_id = hash_json(data=(timestamp_ns, price, volume))
+        trade_id = hash_json(data=(ts_event_ns, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
             price=price_to_probability(price, force=True),  # Already wrapping in Price
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
             match_id=TradeMatchId(trade_id),
-            timestamp_origin_ns=timestamp_origin_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
         )
         trade_ticks.append(tick)
     return trade_ticks
 
 
-def _handle_book_updates(runner, instrument, timestamp_origin_ns, timestamp_ns):
+def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
     deltas = []
     for side in B_SIDE_KINDS:
         for upd in runner.get(side, []):
@@ -300,8 +300,8 @@ def _handle_book_updates(runner, instrument, timestamp_origin_ns, timestamp_ns):
                         volume=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
-                    timestamp_origin_ns=timestamp_origin_ns,
-                    timestamp_ns=timestamp_ns,
+                    ts_event_ns=ts_event_ns,
+                    ts_recv_ns=ts_recv_ns,
                 )
             )
     if deltas:
@@ -309,8 +309,8 @@ def _handle_book_updates(runner, instrument, timestamp_origin_ns, timestamp_ns):
             level=OrderBookLevel.L2,
             instrument_id=instrument.id,
             deltas=deltas,
-            timestamp_origin_ns=timestamp_origin_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
         )
         return [ob_update]
     else:
@@ -406,10 +406,8 @@ def build_market_snapshot_messages(
     instrument_provider, raw
 ) -> List[Union[OrderBookSnapshot, InstrumentStatusEvent]]:
     updates = []
-    timestamp_origin_ns = millis_to_nanos(raw["pt"])
-    timestamp_ns = millis_to_nanos(
-        raw["pt"]
-    )  # TODO(bm): Could call clock.timestamp_ns()
+    ts_event_ns = millis_to_nanos(raw["pt"])
+    timestamp_ns = millis_to_nanos(raw["pt"])  # TODO(bm): Could call clock.ts_recv_ns()
     for market in raw.get("mc", []):
         # Instrument Status
         updates.extend(
@@ -439,8 +437,8 @@ def build_market_snapshot_messages(
                         _handle_market_snapshot(
                             selection=selection,
                             instrument=instrument,
-                            timestamp_origin_ns=timestamp_origin_ns,
-                            timestamp_ns=timestamp_ns,
+                            ts_event_ns=ts_event_ns,
+                            ts_recv_ns=timestamp_ns,
                         )
                     )
     return updates
@@ -449,7 +447,8 @@ def build_market_snapshot_messages(
 def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
     per_instrument_deltas = defaultdict(list)
     level = one(set(deltas.level for deltas in all_deltas))
-    timestamp_ns = one(set(deltas.timestamp_ns for deltas in all_deltas))
+    ts_event_ns = one(set(deltas.ts_event_ns for deltas in all_deltas))
+    ts_recv_ns = one(set(deltas.ts_recv_ns for deltas in all_deltas))
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
@@ -458,8 +457,8 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
             instrument_id=instrument_id,
             deltas=deltas,
             level=level,
-            timestamp_origin_ns=timestamp_ns,
-            timestamp_ns=timestamp_ns,  # TODO(bm): Could call clock.timestamp_ns()
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
         )
         for instrument_id, deltas in per_instrument_deltas.items()
     ]
@@ -472,16 +471,16 @@ def build_market_update_messages(
 ]:
     updates = []
     book_updates = []
-    timestamp_origin_ns = millis_to_nanos(raw["pt"])
-    timestamp_ns = millis_to_nanos(
+    ts_event_ns = millis_to_nanos(raw["pt"])
+    ts_recv_ns = millis_to_nanos(
         raw["pt"]
-    )  # TODO(bm): Could call self._clock.timestamp_ns()
+    )  # TODO(bm): Could call self._clock.ts_recv_ns()
     for market in raw.get("mc", []):
         updates.extend(
             _handle_market_runners_status(
                 instrument_provider=instrument_provider,
                 market=market,
-                timestamp_ns=timestamp_ns,
+                timestamp_ns=ts_event_ns,
             )
         )
         for runner in market.get("rc", []):
@@ -498,8 +497,8 @@ def build_market_update_messages(
                 _handle_book_updates(
                     runner=runner,
                     instrument=instrument,
-                    timestamp_origin_ns=timestamp_origin_ns,
-                    timestamp_ns=timestamp_ns,
+                    ts_event_ns=ts_event_ns,
+                    ts_recv_ns=ts_recv_ns,
                 )
             )
             if "trd" in runner:
@@ -507,8 +506,8 @@ def build_market_update_messages(
                     _handle_market_trades(
                         runner=runner,
                         instrument=instrument,
-                        timestamp_origin_ns=timestamp_origin_ns,
-                        timestamp_ns=timestamp_ns,
+                        ts_event_ns=ts_event_ns,
+                        ts_recv_ns=ts_recv_ns,
                     )
                 )
     if book_updates:
@@ -566,7 +565,7 @@ async def generate_trades_list(
             ),  # TODO: Possibly incorrect precision
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NONE,
-            execution_ns=timestamp_ns,
+            ts_filled_ns=timestamp_ns,
             timestamp_ns=timestamp_ns,
         )
     ]

@@ -38,8 +38,8 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
-            timestamp_origin_ns=1,
-            timestamp_ns=1,
+            ts_event_ns=1,
+            ts_recv_ns=1,
         )
 
         tick2 = QuoteTick(
@@ -48,8 +48,8 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
-            timestamp_origin_ns=2,
-            timestamp_ns=2,
+            ts_event_ns=2,
+            ts_recv_ns=2,
         )
 
         tick3 = QuoteTick(
@@ -58,15 +58,15 @@ class QuoteTickTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(1),
             Quantity.from_int(1),
-            timestamp_origin_ns=3,
-            timestamp_ns=3,
+            ts_event_ns=3,
+            ts_recv_ns=3,
         )
 
         self.assertTrue(tick1 == tick1)
         self.assertTrue(tick1 != tick2)
         self.assertEqual(
             [tick1, tick2, tick3],
-            sorted([tick2, tick3, tick1], key=lambda x: x.timestamp_ns),
+            sorted([tick2, tick3, tick1], key=lambda x: x.ts_recv_ns),
         )
 
     def test_tick_str_and_repr(self):
@@ -255,7 +255,7 @@ class TradeTickTests(unittest.TestCase):
         self.assertTrue(tick1 == tick1)
         self.assertEqual(
             [tick1, tick2, tick3],
-            sorted([tick2, tick3, tick1], key=lambda x: x.timestamp_ns),
+            sorted([tick2, tick3, tick1], key=lambda x: x.ts_recv_ns),
         )
 
     def test_str_and_repr(self):

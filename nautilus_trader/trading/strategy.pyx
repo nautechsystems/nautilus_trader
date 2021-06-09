@@ -1879,7 +1879,7 @@ cdef class TradingStrategy(Component):
             self.log.error(f"Received <Bar[{length}]> data for unknown bar type.")
             return  # TODO: Strategy shouldn't receive zero bars
 
-        if length > 0 and first.timestamp_ns > last.timestamp_ns:
+        if length > 0 and first.ts_recv_ns > last.ts_recv_ns:
             raise RuntimeError(f"Cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):

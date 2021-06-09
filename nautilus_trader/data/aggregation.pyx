@@ -107,7 +107,7 @@ cdef class BarBuilder:
         self.volume += partial_bar.volume
 
         if self.last_timestamp_ns == 0:
-            self.last_timestamp_ns = partial_bar.timestamp_ns
+            self.last_timestamp_ns = partial_bar.ts_recv_ns
 
         self._partial_set = True
         self.initialized = True
@@ -206,8 +206,8 @@ cdef class BarBuilder:
             low_price=self._low,
             close_price=self._close,
             volume=Quantity.from_str_c(str(self.volume)),  # TODO: Refactor when precision available
-            timestamp_origin_ns=timestamp_ns,  # TODO: Hardcoded identical for now...
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,  # TODO: Hardcoded identical for now...
+            ts_recv_ns=timestamp_ns,
         )
 
         self._last_close = self._close
@@ -268,7 +268,7 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.extract_price(self.bar_type.spec.price_type),
             size=tick.extract_volume(self.bar_type.spec.price_type),
-            timestamp_ns=tick.timestamp_ns,
+            timestamp_ns=tick.ts_recv_ns,
         )
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
@@ -286,7 +286,7 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.price,
             size=tick.size,
-            timestamp_ns=tick.timestamp_ns,
+            timestamp_ns=tick.ts_recv_ns,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:

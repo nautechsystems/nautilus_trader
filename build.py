@@ -53,11 +53,9 @@ CYTHON_COMPILER_DIRECTIVES = {
     "embedsignature": True,  # If docstrings should be embedded into C signatures
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
-    # "always_allow_keywords": False,  TODO: Performance profiling needed (faster calling)
     "warn.maybe_uninitialized": True,  # Warns about use of variables that are uninitialized
-    # "warn.unused": True,  TODO: Determine fix for Unused entry 'genexpr'
-    # "warn.unused_arg": True,  TODO: Closer investigation required
-    # "warn.unused_result": True,  TODO: Closer investigation required
+    # "warn.unused_result": True,
+    # "warn.unused": True,  # TODO: Unused entry 'genexpr'
 }
 
 

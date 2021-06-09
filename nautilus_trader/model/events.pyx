@@ -63,7 +63,7 @@ cdef class AccountState(Event):
         list balances not None,
         dict info not None,
         UUID event_id not None,
-        int64_t updated_ns,
+        int64_t ts_updated_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -85,8 +85,8 @@ cdef class AccountState(Event):
             The additional implementation specific account information.
         event_id : UUID
             The event identifier.
-        updated_ns : int64
-            The UNIX timestamp (nanos) of the account update.
+        ts_updated_ns : int64
+            The UNIX timestamp (nanos) when the account was updated.
         timestamp_ns : int64
             The UNIX timestamp (nanos) of the event initialization.
 
@@ -99,7 +99,7 @@ cdef class AccountState(Event):
         self.balances = balances
         self.is_reported = reported
         self.info = info
-        self.updated_ns = updated_ns
+        self.ts_updated_ns = ts_updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -336,7 +336,7 @@ cdef class OrderSubmitted(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
-        int64_t submitted_ns,
+        int64_t ts_submitted_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -349,7 +349,7 @@ cdef class OrderSubmitted(OrderEvent):
             The account identifier.
         client_order_id : ClientOrderId
             The client order identifier.
-        submitted_ns : int64
+        ts_submitted_ns : int64
             The UNIX timestamp (nanos) when the order was submitted.
         event_id : UUID
             The event identifier.
@@ -365,7 +365,7 @@ cdef class OrderSubmitted(OrderEvent):
         )
 
         self.account_id = account_id
-        self.submitted_ns = submitted_ns
+        self.ts_submitted_ns = ts_submitted_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -384,7 +384,7 @@ cdef class OrderRejected(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         str reason not None,
-        int64_t rejected_ns,
+        int64_t ts_rejected_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -399,7 +399,7 @@ cdef class OrderRejected(OrderEvent):
             The client order identifier.
         reason : datetime
             The order rejected reason.
-        rejected_ns : int64
+        ts_rejected_ns : int64
             The UNIX timestamp (nanos) when the order was rejected.
         event_id : UUID
             The event identifier.
@@ -422,7 +422,7 @@ cdef class OrderRejected(OrderEvent):
 
         self.account_id = account_id
         self.reason = reason
-        self.rejected_ns = rejected_ns
+        self.ts_rejected_ns = ts_rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -450,7 +450,7 @@ cdef class OrderAccepted(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t accepted_ns,
+        int64_t ts_accepted_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -465,7 +465,7 @@ cdef class OrderAccepted(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        accepted_ns : int64
+        ts_accepted_ns : int64
             The UNIX timestamp (nanos) when the order was accepted.
         event_id : UUID
             The event identifier.
@@ -487,7 +487,7 @@ cdef class OrderAccepted(OrderEvent):
         )
 
         self.account_id = account_id
-        self.accepted_ns = accepted_ns
+        self.ts_accepted_ns = ts_accepted_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -508,7 +508,7 @@ cdef class OrderPendingReplace(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t pending_ns,
+        int64_t ts_pending_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -523,7 +523,7 @@ cdef class OrderPendingReplace(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        pending_ns : datetime
+        ts_pending_ns : datetime
             The UNIX timestamp (nanos) when the replace was pending.
         event_id : UUID
             The event identifier.
@@ -545,13 +545,13 @@ cdef class OrderPendingReplace(OrderEvent):
         )
 
         self.account_id = account_id
-        self.pending_ns = pending_ns
+        self.ts_pending_ns = ts_pending_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"client_order_id={self.client_order_id}, "
-                f"pending_ns={self.pending_ns}, "
+                f"ts_pending_ns={self.ts_pending_ns}, "
                 f"event_id={self.id})")
 
 
@@ -566,7 +566,7 @@ cdef class OrderPendingCancel(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t pending_ns,
+        int64_t ts_pending_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -581,7 +581,7 @@ cdef class OrderPendingCancel(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        pending_ns : datetime
+        ts_pending_ns : datetime
             The UNIX timestamp (nanos) when the cancel was pending.
         event_id : UUID
             The event identifier.
@@ -603,13 +603,13 @@ cdef class OrderPendingCancel(OrderEvent):
         )
 
         self.account_id = account_id
-        self.pending_ns = pending_ns
+        self.ts_pending_ns = ts_pending_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"client_order_id={self.client_order_id}, "
-                f"pending_ns={self.pending_ns}, "
+                f"ts_pending_ns={self.ts_pending_ns}, "
                 f"event_id={self.id})")
 
 
@@ -626,7 +626,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         VenueOrderId venue_order_id not None,
         str response_to not None,
         str reason not None,
-        int64_t rejected_ns,
+        int64_t ts_rejected_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -645,7 +645,7 @@ cdef class OrderUpdateRejected(OrderEvent):
             The order update rejected response.
         reason : str
             The order update rejected reason.
-        rejected_ns : datetime
+        ts_rejected_ns : datetime
             The UNIX timestamp (nanos) when the order update was rejected.
         event_id : UUID
             The event identifier.
@@ -672,7 +672,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         self.account_id = account_id
         self.response_to = response_to
         self.reason = reason
-        self.rejected_ns = rejected_ns
+        self.ts_rejected_ns = ts_rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -696,7 +696,7 @@ cdef class OrderCancelRejected(OrderEvent):
         VenueOrderId venue_order_id not None,
         str response_to not None,
         str reason not None,
-        int64_t rejected_ns,
+        int64_t ts_rejected_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -715,7 +715,7 @@ cdef class OrderCancelRejected(OrderEvent):
             The order cancel rejected response.
         reason : str
             The order cancel rejected reason.
-        rejected_ns : datetime
+        ts_rejected_ns : datetime
             The UNIX timestamp (nanos) when the order cancel was rejected.
         event_id : UUID
             The event identifier.
@@ -742,7 +742,7 @@ cdef class OrderCancelRejected(OrderEvent):
         self.account_id = account_id
         self.response_to = response_to
         self.reason = reason
-        self.rejected_ns = rejected_ns
+        self.ts_rejected_ns = ts_rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -765,7 +765,7 @@ cdef class OrderUpdated(OrderEvent):
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
         Price price not None,
-        int64_t updated_ns,
+        int64_t ts_updated_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -784,7 +784,7 @@ cdef class OrderUpdated(OrderEvent):
             The orders current quantity.
         price : Price
             The orders current price.
-        updated_ns : int64
+        ts_updated_ns : int64
             The UNIX timestamp (nanos) when the order was updated.
         event_id : UUID
             The event identifier.
@@ -808,7 +808,7 @@ cdef class OrderUpdated(OrderEvent):
         self.account_id = account_id
         self.quantity = quantity
         self.price = price
-        self.updated_ns = updated_ns
+        self.ts_updated_ns = ts_updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -830,7 +830,7 @@ cdef class OrderCanceled(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t canceled_ns,
+        int64_t ts_canceled_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -845,7 +845,7 @@ cdef class OrderCanceled(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        canceled_ns : int64
+        ts_canceled_ns : int64
             The UNIX timestamp (nanos) when order was canceled.
         event_id : UUID
             The event identifier.
@@ -867,7 +867,7 @@ cdef class OrderCanceled(OrderEvent):
         )
 
         self.account_id = account_id
-        self.canceled_ns = canceled_ns
+        self.ts_canceled_ns = ts_canceled_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -887,7 +887,7 @@ cdef class OrderTriggered(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t triggered_ns,
+        int64_t ts_triggered_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -902,7 +902,7 @@ cdef class OrderTriggered(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        triggered_ns : int64
+        ts_triggered_ns : int64
             The UNIX timestamp (nanos) when the order was triggered.
         event_id : UUID
             The event identifier.
@@ -924,7 +924,7 @@ cdef class OrderTriggered(OrderEvent):
         )
 
         self.account_id = account_id
-        self.triggered_ns = triggered_ns
+        self.ts_triggered_ns = ts_triggered_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -944,7 +944,7 @@ cdef class OrderExpired(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t expired_ns,
+        int64_t ts_expired_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -959,7 +959,7 @@ cdef class OrderExpired(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        expired_ns : int64
+        ts_expired_ns : int64
             The UNIX timestamp (nanos) when the order expired.
         event_id : UUID
             The event identifier.
@@ -981,7 +981,7 @@ cdef class OrderExpired(OrderEvent):
         )
 
         self.account_id = account_id
-        self.expired_ns = expired_ns
+        self.ts_expired_ns = ts_expired_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -1011,7 +1011,7 @@ cdef class OrderFilled(OrderEvent):
         Currency currency not None,
         Money commission not None,
         LiquiditySide liquidity_side,
-        int64_t execution_ns,
+        int64_t ts_filled_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
         dict info=None,
@@ -1047,7 +1047,7 @@ cdef class OrderFilled(OrderEvent):
             The fill commission.
         liquidity_side : LiquiditySide
             The execution liquidity side.
-        execution_ns : int64
+        ts_filled_ns : int64
             The UNIX timestamp (nanos) when the order was filled.
         event_id : UUID
             The event identifier.
@@ -1086,7 +1086,7 @@ cdef class OrderFilled(OrderEvent):
         self.currency = currency
         self.commission = commission
         self.liquidity_side = liquidity_side
-        self.execution_ns = execution_ns
+        self.ts_filled_ns = ts_filled_ns
         self.info = info
 
     def __repr__(self) -> str:
