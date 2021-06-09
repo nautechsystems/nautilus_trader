@@ -381,7 +381,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_account_state(
             balances=[balance],
             reported=True,
-            updated_ns=self._clock.timestamp_ns(),
+            ts_updated_ns=self._clock.timestamp_ns(),
         )
 
     cpdef void process_order_book(self, OrderBookData data) except *:
@@ -396,12 +396,12 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(data, "data")
 
-        self._clock.set_time(data.timestamp_ns)
+        self._clock.set_time(data.ts_recv_ns)
         self.get_book(data.instrument_id).apply(data)
 
         self._iterate_matching_engine(
             data.instrument_id,
-            data.timestamp_ns,
+            data.ts_recv_ns,
         )
 
     cpdef void process_tick(self, Tick tick) except *:
@@ -418,7 +418,7 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(tick, "tick")
 
-        self._clock.set_time(tick.timestamp_ns)
+        self._clock.set_time(tick.ts_recv_ns)
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
         if book.level == OrderBookLevel.L1:
@@ -426,7 +426,7 @@ cdef class SimulatedExchange:
 
         self._iterate_matching_engine(
             tick.instrument_id,
-            tick.timestamp_ns,
+            tick.ts_recv_ns,
         )
 
     cpdef void process_modules(self, int64_t now_ns) except *:
@@ -640,14 +640,14 @@ cdef class SimulatedExchange:
         self.exec_client.generate_account_state(
             balances=balances,
             reported=True,
-            updated_ns=self._clock.timestamp_ns(),
+            ts_updated_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_submitted(self, Order order) except *:
         # Generate event
         self.exec_client.generate_order_submitted(
             client_order_id=order.client_order_id,
-            submitted_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_rejected(self, Order order, str reason) except *:
@@ -655,7 +655,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_order_rejected(
             client_order_id=order.client_order_id,
             reason=reason,
-            rejected_ns=self._clock.timestamp_ns(),
+            ts_rejected_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_accepted(self, Order order) except *:
@@ -663,7 +663,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_order_accepted(
             client_order_id=order.client_order_id,
             venue_order_id=self._generate_venue_order_id(order.instrument_id),
-            accepted_ns=self._clock.timestamp_ns(),
+            ts_accepted_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_pending_replace(self, Order order) except *:
@@ -671,7 +671,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_order_pending_replace(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            pending_ns=self._clock.timestamp_ns(),
+            ts_pending_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_pending_cancel(self, Order order) except *:
@@ -679,7 +679,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_order_pending_cancel(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            pending_ns=self._clock.timestamp_ns(),
+            ts_pending_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_update_rejected(
@@ -693,7 +693,7 @@ cdef class SimulatedExchange:
             client_order_id=client_order_id,
             response_to=response,
             reason=reason,
-            rejected_ns=self._clock.timestamp_ns(),
+            ts_rejected_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_cancel_rejected(
@@ -707,7 +707,7 @@ cdef class SimulatedExchange:
             client_order_id=client_order_id,
             response_to=response,
             reason=reason,
-            rejected_ns=self._clock.timestamp_ns(),
+            ts_rejected_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_updated(
@@ -722,7 +722,7 @@ cdef class SimulatedExchange:
             venue_order_id=order.venue_order_id,
             quantity=qty,
             price=price,
-            updated_ns=self._clock.timestamp_ns(),
+            ts_updated_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_canceled(self, PassiveOrder order) except *:
@@ -730,7 +730,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_order_canceled(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            canceled_ns=self._clock.timestamp_ns(),
+            ts_canceled_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *:
@@ -738,7 +738,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_order_triggered(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            triggered_ns=self._clock.timestamp_ns(),
+            ts_triggered_ns=self._clock.timestamp_ns(),
         )
 
     cdef void _generate_order_expired(self, PassiveOrder order) except *:
@@ -746,7 +746,7 @@ cdef class SimulatedExchange:
         self.exec_client.generate_order_expired(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            expired_ns=order.expire_time_ns,
+            ts_expired_ns=order.expire_time_ns,
         )
 
     cdef void _process_order(self, Order order) except *:
@@ -1159,7 +1159,7 @@ cdef class SimulatedExchange:
             quote_currency=instrument.quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            execution_ns=self._clock.timestamp_ns(),
+            ts_filled_ns=self._clock.timestamp_ns(),
         )
 
         self._check_oco_order(order.client_order_id)

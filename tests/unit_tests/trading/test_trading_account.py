@@ -94,7 +94,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -130,7 +130,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -182,7 +182,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -251,7 +251,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -283,7 +283,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -324,7 +324,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -367,7 +367,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -406,7 +406,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -447,7 +447,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -480,7 +480,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -513,7 +513,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -552,7 +552,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -585,7 +585,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -630,7 +630,7 @@ class AccountTests(unittest.TestCase):
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 

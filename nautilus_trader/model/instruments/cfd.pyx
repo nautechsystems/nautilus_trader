@@ -52,8 +52,8 @@ cdef class CFDInstrument(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         dict info=None,
     ):
         """
@@ -97,9 +97,9 @@ cdef class CFDInstrument(Instrument):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        timestamp_origin_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
+        ts_event_ns : int64
+            The UNIX timestamp (nanos) when data event occurred.
+        ts_recv_ns : int64
             The UNIX timestamp (nanos) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
@@ -158,7 +158,7 @@ cdef class CFDInstrument(Instrument):
             margin_maint=margin_maint,
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            timestamp_origin_ns=timestamp_origin_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
             info=info,
         )

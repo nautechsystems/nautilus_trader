@@ -56,8 +56,8 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str selection_handicap not None,
         str currency not None,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
@@ -107,8 +107,8 @@ cdef class BettingInstrument(Instrument):
             margin_maint=Decimal(0),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
-            timestamp_origin_ns=timestamp_origin_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
             info=dict(),  # TODO - Add raw response?
         )
 

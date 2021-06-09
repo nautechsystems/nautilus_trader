@@ -261,8 +261,8 @@ cdef class QuoteTickDataWrangler:
             ask=Price(values[1], self.instrument.price_precision),
             bid_size=Quantity(values[2], self.instrument.size_precision),
             ask_size=Quantity(values[3], self.instrument.size_precision),
-            timestamp_origin_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            timestamp_ns=secs_to_nanos(timestamp),
+            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_recv_ns=secs_to_nanos(timestamp),
         )
 
 
@@ -344,8 +344,8 @@ cdef class TradeTickDataWrangler:
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
             match_id=TradeMatchId(values[3]),
-            timestamp_origin_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            timestamp_ns=secs_to_nanos(timestamp),
+            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_recv_ns=secs_to_nanos(timestamp),
         )
 
 
@@ -452,6 +452,6 @@ cdef class BarDataWrangler:
             low_price=Price(values[2], self._price_precision),
             close_price=Price(values[3], self._price_precision),
             volume=Quantity(values[4], self._size_precision),
-            timestamp_origin_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            timestamp_ns=secs_to_nanos(timestamp),
+            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_recv_ns=secs_to_nanos(timestamp),
         )

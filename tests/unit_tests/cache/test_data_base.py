@@ -78,8 +78,8 @@ class DataTypeTests(unittest.TestCase):
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
         generic_data = GenericData(data_type, data)
 

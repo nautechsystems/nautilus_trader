@@ -33,15 +33,15 @@ class TestOrderBookSnapshot:
             level=OrderBookLevel.L2,
             bids=[[1010, 2], [1009, 1]],
             asks=[[1020, 2], [1021, 1]],
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act
         # Assert
         assert (
             repr(snapshot)
-            == "OrderBookSnapshot('AUD/USD.SIM', level=L2, bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], timestamp_ns=0)"
+            == "OrderBookSnapshot('AUD/USD.SIM', level=L2, bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], ts_recv_ns=0)"
         )
 
 
@@ -54,8 +54,8 @@ class TestOrderBookOperation:
             level=OrderBookLevel.L2,
             delta_type=OrderBookDeltaType.ADD,
             order=order,
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         print(repr(op))
@@ -63,5 +63,5 @@ class TestOrderBookOperation:
         # Assert
         assert (
             repr(op)
-            == f"OrderBookDelta('AUD/USD.SIM', level=L2, delta_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), timestamp_ns=0)"
+            == f"OrderBookDelta('AUD/USD.SIM', level=L2, delta_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), ts_recv_ns=0)"
         )

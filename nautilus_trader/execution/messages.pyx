@@ -71,7 +71,7 @@ cdef class OrderStatusReport:
                 f"venue_order_id={self.venue_order_id}, "
                 f"order_state={OrderStateParser.to_str(self.order_state)}, "
                 f"filled_qty={self.filled_qty}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.timestamp_ns})")
 
 
 cdef class PositionStatusReport:
@@ -110,7 +110,7 @@ cdef class PositionStatusReport:
                 f"instrument_id={self.instrument_id}, "
                 f"side={PositionSideParser.to_str(self.side)}, "
                 f"qty={self.qty}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.timestamp_ns})")
 
 
 cdef class ExecutionReport:
@@ -127,7 +127,7 @@ cdef class ExecutionReport:
         Price last_px not None,
         Money commission,  # Can be None
         LiquiditySide liquidity_side,
-        int64_t execution_ns,
+        int64_t ts_filled_ns,
         int64_t timestamp_ns,
     ):
         """
@@ -149,7 +149,7 @@ cdef class ExecutionReport:
             The commission for the transaction (can be None).
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
-        execution_ns : int64
+        ts_filled_ns : int64
             The UNIX timestamp (nanos) of the execution.
 
         """
@@ -160,7 +160,7 @@ cdef class ExecutionReport:
         self.last_px = last_px
         self.commission = commission
         self.liquidity_side = liquidity_side
-        self.execution_ns = execution_ns
+        self.ts_filled_ns = ts_filled_ns
         self.timestamp_ns = timestamp_ns
 
     def __repr__(self) -> str:
@@ -172,8 +172,8 @@ cdef class ExecutionReport:
                 f"last_px={self.last_px}, "
                 f"commission={self.commission.to_str()}, "
                 f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
-                f"execution_ns={self.execution_ns}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_filled_ns={self.ts_filled_ns}, "
+                f"ts_recv_ns={self.timestamp_ns})")
 
 
 cdef class ExecutionMassStatus:
@@ -217,7 +217,7 @@ cdef class ExecutionMassStatus:
         return (f"{type(self).__name__}("
                 f"client_id={self.client_id}, "
                 f"account_id={self.account_id}, "
-                f"timestamp_ns={self.timestamp_ns}, "
+                f"ts_recv_ns={self.timestamp_ns}, "
                 f"order_reports={self._order_reports}, "
                 f"exec_reports={self._exec_reports}, "
                 f"position_reports={self._position_reports})")

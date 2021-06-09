@@ -240,7 +240,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_sell)
         self.assertFalse(order.is_passive)
         self.assertTrue(order.is_aggressive)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
         self.assertEqual(0, order.last_event.timestamp_ns)
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertTrue(order == order)
@@ -265,7 +265,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertFalse(order.is_buy)
         self.assertTrue(order.is_sell)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
         self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_order_equality(self):
@@ -795,7 +795,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange
@@ -826,7 +826,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(
         self,
@@ -872,7 +872,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(2, len(order.execution_ids))
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_filled_events_to_market_order_results_in_filled(self):
         # Arrange
@@ -927,7 +927,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(3, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -971,7 +971,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal("0.00001"), order.slippage)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -1015,4 +1015,4 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal("-0.000001"), order.slippage)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(1_000_000_000, order.execution_ns)
+        self.assertEqual(1_000_000_000, order.ts_filled_ns)

@@ -299,8 +299,8 @@ def test_orderbook_snapshot(empty_l2_book):
         level=OrderBookLevel.L2,
         bids=[[1550.15, 0.51], [1580.00, 1.20]],
         asks=[[1552.15, 1.51], [1582.00, 2.20]],
-        timestamp_origin_ns=0,
-        timestamp_ns=0,
+        ts_event_ns=0,
+        ts_recv_ns=0,
     )
     empty_l2_book.apply_snapshot(snapshot)
     assert empty_l2_book.best_bid_price() == 1580.0
@@ -318,8 +318,8 @@ def test_orderbook_operation_update(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        timestamp_origin_ns=clock.timestamp(),
-        timestamp_ns=clock.timestamp(),
+        ts_event_ns=clock.timestamp(),
+        ts_recv_ns=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
     assert empty_l2_book.best_ask_price() == 0.5814
@@ -336,8 +336,8 @@ def test_orderbook_operation_add(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        timestamp_origin_ns=clock.timestamp(),
-        timestamp_ns=clock.timestamp(),
+        ts_event_ns=clock.timestamp(),
+        ts_recv_ns=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
     assert empty_l2_book.best_ask_price() == 0.59
@@ -354,15 +354,15 @@ def test_orderbook_operations(empty_l2_book):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        timestamp_origin_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
-        timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_event_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_recv_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     deltas = OrderBookDeltas(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
         deltas=[delta],
-        timestamp_origin_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
-        timestamp_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_event_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_recv_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     empty_l2_book.apply_deltas(deltas)
     assert empty_l2_book.best_ask_price() == 0.5814
@@ -374,8 +374,8 @@ def test_apply(empty_l2_book, clock):
         level=OrderBookLevel.L2,
         bids=[[150.0, 0.51]],
         asks=[[160.0, 1.51]],
-        timestamp_origin_ns=0,
-        timestamp_ns=0,
+        ts_event_ns=0,
+        ts_recv_ns=0,
     )
     empty_l2_book.apply_snapshot(snapshot)
     assert empty_l2_book.best_ask_price() == 160
@@ -389,8 +389,8 @@ def test_apply(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        timestamp_origin_ns=clock.timestamp(),
-        timestamp_ns=clock.timestamp(),
+        ts_event_ns=clock.timestamp(),
+        ts_recv_ns=clock.timestamp(),
     )
     empty_l2_book.apply(delta)
     assert empty_l2_book.best_ask_price() == 155
@@ -415,11 +415,11 @@ def test_timestamp_ns(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        timestamp_origin_ns=clock.timestamp(),
-        timestamp_ns=clock.timestamp(),
+        ts_event_ns=clock.timestamp(),
+        ts_recv_ns=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
-    assert empty_l2_book.timestamp_ns == delta.timestamp_ns
+    assert empty_l2_book.timestamp_ns == delta.ts_recv_ns
 
 
 def test_trade_side(sample_book):

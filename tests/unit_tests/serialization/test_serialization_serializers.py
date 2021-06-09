@@ -59,7 +59,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
@@ -71,44 +70,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-
-class TestSerializerBase:
-    def setup(self):
-        # Fixture Setup
-        self.serializer = Serializer()
-
-    def test_py_convert_camel_to_snake(self):
-        # Arrange
-        value0 = "CamelCase"
-        value1 = "camelCase"
-        value2 = "camel"
-
-        # Act
-        result0 = self.serializer.py_convert_camel_to_snake(value0)
-        result1 = self.serializer.py_convert_camel_to_snake(value1)
-        result2 = self.serializer.py_convert_camel_to_snake(value2)
-
-        # Assert
-        assert result0 == "CAMEL_CASE"
-        assert result1 == "CAMEL_CASE"
-        assert result2 == "CAMEL"
-
-    def test_py_convert_snake_to_camel(self):
-        # Arrange
-        value0 = "SNAKE_CASE"
-        value1 = "snake_case"
-        value2 = "snake"
-
-        # Act
-        result0 = self.serializer.py_convert_snake_to_camel(value0)
-        result1 = self.serializer.py_convert_snake_to_camel(value1)
-        result2 = self.serializer.py_convert_snake_to_camel(value2)
-
-        # Assert
-        assert result0 == "SnakeCase"
-        assert result1 == "SnakeCase"
-        assert result2 == "Snake"
 
 
 class TestInstrumentSerializer:
@@ -458,7 +419,7 @@ class TestMsgPackEventSerializer:
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=1_000_000_000,
         )
 
