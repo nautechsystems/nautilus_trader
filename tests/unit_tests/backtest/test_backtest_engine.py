@@ -22,8 +22,8 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -142,7 +142,7 @@ class TestBacktestEngineData:
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
                 level=OrderBookLevel.L2,
-                delta_type=OrderBookDeltaType.ADD,
+                delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("13.0"),
                     volume=Quantity.from_str("40"),
@@ -154,7 +154,7 @@ class TestBacktestEngineData:
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
                 level=OrderBookLevel.L2,
-                delta_type=OrderBookDeltaType.ADD,
+                delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("12.0"),
                     volume=Quantity.from_str("30"),
@@ -166,7 +166,7 @@ class TestBacktestEngineData:
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
                 level=OrderBookLevel.L2,
-                delta_type=OrderBookDeltaType.ADD,
+                delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("11.0"),
                     volume=Quantity.from_str("20"),
@@ -178,7 +178,7 @@ class TestBacktestEngineData:
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
                 level=OrderBookLevel.L2,
-                delta_type=OrderBookDeltaType.ADD,
+                delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("10.0"),
                     volume=Quantity.from_str("20"),
@@ -190,7 +190,7 @@ class TestBacktestEngineData:
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
                 level=OrderBookLevel.L2,
-                delta_type=OrderBookDeltaType.ADD,
+                delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("9.0"),
                     volume=Quantity.from_str("30"),
@@ -202,7 +202,7 @@ class TestBacktestEngineData:
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
                 level=OrderBookLevel.L2,
-                delta_type=OrderBookDeltaType.ADD,
+                delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("0.0"),
                     volume=Quantity.from_str("40"),

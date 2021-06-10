@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.enums import OrderBookDeltaType
+from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.book import OrderBookDelta
@@ -52,7 +52,7 @@ class TestOrderBookOperation:
         op = OrderBookDelta(
             instrument_id=AUDUSD,
             level=OrderBookLevel.L2,
-            delta_type=OrderBookDeltaType.ADD,
+            delta_type=DeltaType.ADD,
             order=order,
             ts_event_ns=0,
             ts_recv_ns=0,
