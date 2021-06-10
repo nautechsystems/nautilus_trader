@@ -99,7 +99,7 @@ def _parse_instrument_status_event(event: InstrumentStatusEvent):
         "instrument_id": event.instrument_id.value,
         "status": InstrumentStatusParser.to_str_py(event.status),
         "event_id": event.id.value,
-        "ts_event_ns": event.timestamp_ns,
+        "timestamp_ns": event.timestamp_ns,
     }
 
 
@@ -199,8 +199,6 @@ def _unparse(cls, d):
             ts_recv_ns=d["ts_recv_ns"],
             ts_event_ns=d["ts_event_ns"],
         )
-    if cls == InstrumentStatusEvent:
-        d["timestamp_ns"] = d.pop("ts_event_ns")
     return cls(**d)
 
 

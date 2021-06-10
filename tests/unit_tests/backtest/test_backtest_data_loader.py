@@ -127,25 +127,25 @@ def test_data_catalogue_backtest_data(catalogue_dir, data_loader):
     catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
     data = catalogue.load_backtest_data()
-    assert len(data) == 2698
+    assert len(sum(data.values(), list())) == 2698
 
 
 def test_data_catalogue_backtest_run(catalogue_dir, data_loader):
     catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
-    instruments = catalogue.instruments()
+    instruments = catalogue.instruments(as_nautilus=True)
     engine = BacktestEngine()
-    engine = catalogue.setup_engine(engine=engine, instruments=instruments)
+    engine = catalogue.setup_engine(engine=engine, instruments=[instruments[1]])
     engine.add_venue(
         venue=BETFAIR_VENUE,
         venue_type=VenueType.EXCHANGE,
         account_type=AccountType.CASH,
         base_currency=GBP,
         oms_type=OMSType.NETTING,
-        starting_balances=[Money(1000, GBP)],
+        starting_balances=[Money(10000, GBP)],
         order_book_level=OrderBookLevel.L2,
     )
     strategy = OrderbookImbalance(
-        instrument=instruments[0], max_trade_size=Decimal("50"), order_id_tag="OI"
+        instrument=instruments[1], max_trade_size=Decimal("50"), order_id_tag="OI"
     )
     engine.run(strategies=[strategy])

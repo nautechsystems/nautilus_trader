@@ -32,8 +32,8 @@ betting_instrument_schema = {
     "selection_id": str,
     "selection_name": str,
     "selection_handicap": str,
-    "timestamp_ns": int,
     "ts_recv_ns": int,
+    "ts_event_ns": int,
 }
 
 order_book_schema = {

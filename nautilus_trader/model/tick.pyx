@@ -335,7 +335,7 @@ cdef class TradeTick(Tick):
                 f"{self.ts_recv_ns}")
 
     cpdef tuple _hash(self):
-        return self.instrument_id, self.price, self.size, self.aggressor_side, self.match_id, self.timestamp_origin_ns
+        return self.instrument_id, self.price, self.size, self.aggressor_side, self.match_id, self.ts_event_ns
 
     def __eq__(self, other: TradeTick):
         return isinstance(other, type(self)) and self._hash() == other._hash()

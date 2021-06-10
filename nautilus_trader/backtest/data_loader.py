@@ -291,12 +291,11 @@ class DataCatalog:
                         # Remove file, will be written again
                         self.fs.rm(fn, recursive=True)
 
-                sort_col = (
-                    "ts_event_ns" if "ts_event_ns" in df.columns else "ts_recv_ns"
-                )
-                df = df.astype(
-                    {k: "category" for k in dictionary_columns.get(cls, [])}
-                ).sort_values(sort_col)
+                df = df.astype({k: "category" for k in dictionary_columns.get(cls, [])})
+                for col in ("ts_event_ns", "ts_recv_ns", "timestamp_ns"):
+                    if col in df.columns:
+                        df = df.sort_values(col)
+                        break
                 table = pa.Table.from_pandas(df)
                 pq.write_to_dataset(
                     table=table,
@@ -448,12 +447,10 @@ class DataCatalog:
         ]
         return [_unparse(cls, r) for r in rows]
 
-    def instruments(self, filters=None):
-        """
-        :param filters: A list of tuple arrow filters, ie ["instrument_id", "=", "BTCUSD")]
-        :return:
-        """
+    def instruments(self, filters=None, as_nautilus=False):
         df = self._query("betting_instrument", filters=filters)
+        if not as_nautilus:
+            return df
         return self._make_objects(
             df=df, cls=BettingInstrument, ignore_keys=("instrument_id",)
         )
