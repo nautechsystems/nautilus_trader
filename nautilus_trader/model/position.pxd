@@ -94,6 +94,8 @@ cdef class Position:
     cdef readonly Money realized_pnl
     """The realized PnL of the position (including commission).\n\n:returns: `Money`"""
 
+    cpdef dict to_dict(self)
+
     cdef list client_order_ids_c(self)
     cdef list venue_order_ids_c(self)
     cdef list execution_ids_c(self)

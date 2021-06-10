@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.model.enums import OrderBookDeltaType
+from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
@@ -311,7 +311,7 @@ def test_orderbook_operation_update(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
-        delta_type=OrderBookDeltaType.UPDATE,
+        delta_type=DeltaType.UPDATE,
         order=Order(
             0.5814,
             672.45,
@@ -329,7 +329,7 @@ def test_orderbook_operation_add(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
-        delta_type=OrderBookDeltaType.ADD,
+        delta_type=DeltaType.ADD,
         order=Order(
             0.5900,
             672.45,
@@ -347,7 +347,7 @@ def test_orderbook_operations(empty_l2_book):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
-        delta_type=OrderBookDeltaType.UPDATE,
+        delta_type=DeltaType.UPDATE,
         order=Order(
             0.5814,
             672.45,
@@ -382,7 +382,7 @@ def test_apply(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
-        delta_type=OrderBookDeltaType.ADD,
+        delta_type=DeltaType.ADD,
         order=Order(
             155.0,
             672.45,
@@ -408,7 +408,7 @@ def test_timestamp_ns(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=OrderBookLevel.L2,
-        delta_type=OrderBookDeltaType.ADD,
+        delta_type=DeltaType.ADD,
         order=Order(
             0.5900,
             672.45,

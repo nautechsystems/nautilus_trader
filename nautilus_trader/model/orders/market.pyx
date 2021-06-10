@@ -110,6 +110,37 @@ cdef class MarketOrder(Order):
 
         super().__init__(init=init)
 
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "position_id": self.position_id.value,
+            "strategy_id": self.strategy_id.value,
+            "account_id": self.account_id.value if self.account_id else None,
+            "execution_id": self.execution_id.value if self.execution_id else None,
+            "instrument_id": self.instrument_id.value,
+            "order_side": OrderSideParser.to_str(self.side),
+            "order_type": OrderTypeParser.to_str(self.type),
+            "quantity": str(self.quantity),
+            "timestamp_ns": self.timestamp_ns,
+            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "filled_qty": str(self.filled_qty),
+            "ts_filled_ns": self.ts_filled_ns,
+            "avg_px": str(self.avg_px) if self.avg_px else None,
+            "slippage": str(self.slippage),
+            "init_id": str(self.init_id),
+            "state": self._fsm.state_string_c(),
+        }
+
     @staticmethod
     cdef MarketOrder create(OrderInitialized init):
         """

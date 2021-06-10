@@ -25,9 +25,9 @@ from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import InstrumentId
@@ -125,7 +125,7 @@ def test_market_update(betfair_data_client, data_engine):
     expected = ["OrderBookDeltas"] * 1
     assert result == expected
     result = [op.type for op in data_engine.events[0].deltas]
-    expected = [OrderBookDeltaType.UPDATE, OrderBookDeltaType.DELETE]
+    expected = [DeltaType.UPDATE, DeltaType.DELETE]
     assert result == expected
     # Ensure order prices are coming through as probability
     update_op = data_engine.events[0].deltas[0]
