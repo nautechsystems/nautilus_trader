@@ -53,9 +53,9 @@ CYTHON_COMPILER_DIRECTIVES = {
     "embedsignature": True,  # If docstrings should be embedded into C signatures
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
-    "warn.maybe_uninitialized": True,  # Warns about use of variables that are uninitialized
-    # "warn.unused_result": True,
-    # "warn.unused": True,  # TODO: Unused entry 'genexpr'
+    "warn.maybe_uninitialized": True,
+    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused
+    # "warn.unused": True,  # TODO(cs): Unused entry 'genexpr'
 }
 
 
@@ -66,7 +66,7 @@ def _build_extensions() -> List[Extension]:
     if PROFILING_MODE or ANNOTATION_MODE:
         define_macros.append(("CYTHON_TRACE", "1"))
 
-    if LooseVersion("3.0a6") <= LooseVersion(cython_compiler_version):
+    if LooseVersion("3.0a7") <= LooseVersion(cython_compiler_version):
         # https://github.com/nautechsystems/nautilus_trader/issues/303
         define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
 
