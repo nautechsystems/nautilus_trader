@@ -219,26 +219,6 @@ cdef class QuoteTick(Tick):
         """
         return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{self.ts_event_ns},{self.ts_recv_ns}"
 
-    cpdef dict to_dict(self):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "bid": str(self.bid),
-            "ask": str(self.ask),
-            "bid_size": str(self.bid_size),
-            "ask_size": str(self.ask_size),
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
-
 
 cdef class TradeTick(Tick):
     """
@@ -293,26 +273,6 @@ cdef class TradeTick(Tick):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
-
-    cpdef dict to_dict(self):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "price": str(self.price),
-            "size": str(self.size),
-            "aggressor_side": AggressorSideParser.to_str(self.aggressor_side),
-            "match_id": str(self.match_id),
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
 
     @staticmethod
     cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values):

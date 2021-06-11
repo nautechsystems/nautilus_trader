@@ -45,17 +45,6 @@ cdef class Data:
                 f"ts_event_ns={self.ts_event_ns}, "
                 f"ts_recv_ns{self.ts_recv_ns})")
 
-    cpdef dict to_dict(self):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")
-
 
 cdef class DataType:
     """
