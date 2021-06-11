@@ -231,6 +231,73 @@ cdef class Instrument(Data):
                 f"taker_fee={self.taker_fee}, "
                 f"info={self.info})")
 
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "id": self.id.value,
+            "asset_class": AssetClassParser.to_str(self.asset_class),
+            "asset_type": AssetTypeParser.to_str(self.asset_type),
+            "quote_currency": self.quote_currency.code,
+            "is_inverse": self.is_inverse,
+            "price_precision": self.price_precision,
+            "price_increment": str(self.price_increment),
+            "size_precision": self.size_precision,
+            "size_increment": str(self.size_increment),
+            "multiplier": str(self.multiplier),
+            "lot_size": str(self.lot_size),
+            "margin_init": str(self.margin_init),
+            "margin_maint": str(self.margin_maint),
+            "maker_fee": str(self.maker_fee),
+            "taker_fee": str(self.taker_fee),
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+            "info": self.info,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> Instrument:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        Instrument
+
+        """
+        return Instrument(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            asset_class=AssetClassParser.from_str(values["asset_class"]),
+            asset_type=AssetTypeParser.from_str(values["asset_type"]),
+            quote_currency=Currency.from_str_c(values["quote_currency"]),
+            is_inverse=values["is_inverse"],
+            price_precision=values["price_precision"],
+            size_precision=values["size_precision"],
+            price_increment=Price.from_str_c(values["price_increment"]),
+            size_increment=Quantity.from_str_c(values["size_increment"]),
+            multiplier=Quantity.from_str_c(values["multiplier"]),
+            lot_size=Quantity.from_str_c(values["lot_size"]),
+            margin_init=Decimal(values["margin_init"]),
+            margin_maint=Decimal(values["margin_maint"]),
+            maker_fee=Decimal(values["maker_fee"]),
+            taker_fee=Decimal(values["taker_fee"]),
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
+            info=values["info"],
+        )
+
     @property
     def symbol(self):
         """
