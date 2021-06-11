@@ -112,6 +112,55 @@ cdef class BettingInstrument(Instrument):
             info=dict(),  # TODO - Add raw response?
         )
 
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "venue_name": self.id.venue.value,
+            "event_type_id": self.event_type_id,
+            "event_type_name": self.event_type_name,
+            "competition_id": self.competition_id,
+            "competition_name": self.competition_name,
+            "event_id": self.event_id,
+            "event_name": self.event_name,
+            "event_country_code": self.event_country_code,
+            "event_open_date": self.event_open_date,
+            "betting_type": self.betting_type,
+            "market_id": self.market_id,
+            "market_name": self.market_name,
+            "market_start_time": self.market_start_time,
+            "market_type": self.market_type,
+            "selection_id": self.selection_id,
+            "selection_name": self.selection_name,
+            "selection_handicap": self.selection_handicap,
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> BettingInstrument:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        BettingInstrument
+
+        """
+        return BettingInstrument(**values)
+
     def make_symbol(self):
         cdef tuple keys = (
             "event_type_name",
