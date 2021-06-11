@@ -74,13 +74,13 @@ cdef class Order:
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanos) of order initialization.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) of order initialization.\n\n:returns: `int64`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t ts_filled_ns
-    """The UNIX timestamp (nanos) of the last execution (0 for no execution).\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) of the last execution (0 for no execution).\n\n:returns: `int64`"""
     cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage

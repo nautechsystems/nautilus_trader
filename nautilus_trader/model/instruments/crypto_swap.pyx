@@ -101,9 +101,9 @@ cdef class CryptoSwap(Instrument):
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
+            The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
 

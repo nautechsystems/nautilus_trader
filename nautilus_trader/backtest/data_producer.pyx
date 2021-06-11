@@ -332,9 +332,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
         Parameters
         ----------
         start_ns : int64
-            The UNIX timestamp (nanos) for the run start.
+            The UNIX timestamp (nanoseconds) for the run start.
         stop_ns : int64
-            The UNIX timestamp (nanos) for the run stop.
+            The UNIX timestamp (nanoseconds) for the run stop.
 
         """
         self._log.info(f"Pre-processing data stream...")
@@ -595,9 +595,9 @@ cdef class CachedProducer(DataProducerFacade):
         Parameters
         ----------
         start_ns : int64
-            The UNIX timestamp (nanos) for the run start.
+            The UNIX timestamp (nanoseconds) for the run start.
         stop_ns : int64
-            The UNIX timestamp (nanos) for the run stop.
+            The UNIX timestamp (nanoseconds) for the run stop.
 
         """
         self._producer.setup(start_ns, stop_ns)

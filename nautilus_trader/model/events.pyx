@@ -86,9 +86,9 @@ cdef class AccountState(Event):
         event_id : UUID
             The event identifier.
         ts_updated_ns : int64
-            The UNIX timestamp (nanos) when the account was updated.
+            The UNIX timestamp (nanoseconds) when the account was updated.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -137,7 +137,7 @@ cdef class OrderEvent(Event):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -191,7 +191,7 @@ cdef class OrderInitialized(OrderEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) when the order was initialized.
+            The UNIX timestamp (nanoseconds) when the order was initialized.
         options : dict[str, str]
             The order initialization options. Contains mappings for specific
             order parameters.
@@ -249,7 +249,7 @@ cdef class OrderInvalid(OrderEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -301,7 +301,7 @@ cdef class OrderDenied(OrderEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -350,11 +350,11 @@ cdef class OrderSubmitted(OrderEvent):
         client_order_id : ClientOrderId
             The client order identifier.
         ts_submitted_ns : int64
-            The UNIX timestamp (nanos) when the order was submitted.
+            The UNIX timestamp (nanoseconds) when the order was submitted.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(
@@ -400,11 +400,11 @@ cdef class OrderRejected(OrderEvent):
         reason : datetime
             The order rejected reason.
         ts_rejected_ns : int64
-            The UNIX timestamp (nanos) when the order was rejected.
+            The UNIX timestamp (nanoseconds) when the order was rejected.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -466,11 +466,11 @@ cdef class OrderAccepted(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         ts_accepted_ns : int64
-            The UNIX timestamp (nanos) when the order was accepted.
+            The UNIX timestamp (nanoseconds) when the order was accepted.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -524,11 +524,11 @@ cdef class OrderPendingReplace(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         ts_pending_ns : datetime
-            The UNIX timestamp (nanos) when the replace was pending.
+            The UNIX timestamp (nanoseconds) when the replace was pending.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -582,11 +582,11 @@ cdef class OrderPendingCancel(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         ts_pending_ns : datetime
-            The UNIX timestamp (nanos) when the cancel was pending.
+            The UNIX timestamp (nanoseconds) when the cancel was pending.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -646,11 +646,11 @@ cdef class OrderUpdateRejected(OrderEvent):
         reason : str
             The order update rejected reason.
         ts_rejected_ns : datetime
-            The UNIX timestamp (nanos) when the order update was rejected.
+            The UNIX timestamp (nanoseconds) when the order update was rejected.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -716,11 +716,11 @@ cdef class OrderCancelRejected(OrderEvent):
         reason : str
             The order cancel rejected reason.
         ts_rejected_ns : datetime
-            The UNIX timestamp (nanos) when the order cancel was rejected.
+            The UNIX timestamp (nanoseconds) when the order cancel was rejected.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -785,11 +785,11 @@ cdef class OrderUpdated(OrderEvent):
         price : Price
             The orders current price.
         ts_updated_ns : int64
-            The UNIX timestamp (nanos) when the order was updated.
+            The UNIX timestamp (nanoseconds) when the order was updated.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -846,11 +846,11 @@ cdef class OrderCanceled(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         ts_canceled_ns : int64
-            The UNIX timestamp (nanos) when order was canceled.
+            The UNIX timestamp (nanoseconds) when order was canceled.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -903,11 +903,11 @@ cdef class OrderTriggered(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         ts_triggered_ns : int64
-            The UNIX timestamp (nanos) when the order was triggered.
+            The UNIX timestamp (nanoseconds) when the order was triggered.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -960,11 +960,11 @@ cdef class OrderExpired(OrderEvent):
         venue_order_id : VenueOrderId
             The venue order identifier.
         ts_expired_ns : int64
-            The UNIX timestamp (nanos) when the order expired.
+            The UNIX timestamp (nanoseconds) when the order expired.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -1048,11 +1048,11 @@ cdef class OrderFilled(OrderEvent):
         liquidity_side : LiquiditySide
             The execution liquidity side.
         ts_filled_ns : int64
-            The UNIX timestamp (nanos) when the order was filled.
+            The UNIX timestamp (nanoseconds) when the order was filled.
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
         info : dict[str, object], optional
             The additional fill information.
 
@@ -1163,7 +1163,7 @@ cdef class PositionEvent(Event):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1196,7 +1196,7 @@ cdef class PositionOpened(PositionEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         assert position.is_open_c()  # Design-time check
@@ -1243,7 +1243,7 @@ cdef class PositionChanged(PositionEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         assert position.is_open_c()  # Design-time check
@@ -1293,7 +1293,7 @@ cdef class PositionClosed(PositionEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         assert position.is_closed_c()  # Design-time check
@@ -1339,7 +1339,7 @@ cdef class StatusEvent(Event):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1366,7 +1366,7 @@ cdef class VenueStatusEvent(StatusEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1401,7 +1401,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1440,7 +1440,7 @@ cdef class InstrumentClosePrice(Event):
         event_id : UUID
             The event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)

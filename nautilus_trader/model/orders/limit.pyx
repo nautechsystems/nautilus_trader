@@ -83,7 +83,7 @@ cdef class LimitOrder(PassiveOrder):
         init_id : UUID
             The order initialization event identifier.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the order initialization.
+            The UNIX timestamp (nanoseconds) of the order initialization.
         post_only : bool, optional
             If the order will only make a market.
         reduce_only : bool, optional

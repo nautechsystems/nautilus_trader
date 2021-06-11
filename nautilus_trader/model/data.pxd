@@ -18,9 +18,9 @@ from libc.stdint cimport int64_t
 
 cdef class Data:
     cdef readonly int64_t ts_event_ns
-    """The UNIX timestamp (nanos) when data event occurred.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when data event occurred.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_recv_ns
-    """The UNIX timestamp (nanos) when received by the Nautilus system.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when received by the Nautilus system.\n\n:returns: `int64`"""
 
 
 cdef class DataType:

@@ -30,9 +30,9 @@ cdef class Data:
         Parameters
         ----------
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
+            The UNIX timestamp (nanoseconds) when data event occurred.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         # Design-time invariant: correct ordering of timestamps
