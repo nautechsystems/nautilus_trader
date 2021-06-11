@@ -353,9 +353,9 @@ cdef class NewsEvent(Data):
         currency : Currency
             The currency the economic news event is expected to affect.
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when originally occurred.
+            The UNIX timestamp (nanoseconds) when originally occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         super().__init__(ts_event_ns, ts_recv_ns)

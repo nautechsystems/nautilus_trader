@@ -56,7 +56,7 @@ cdef class OrderStatusReport:
         filled_qty : Quantity
             The reported filled quantity at the exchange.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the report.
+            The UNIX timestamp (nanoseconds) of the report.
 
         """
         self.client_order_id = client_order_id
@@ -97,7 +97,7 @@ cdef class PositionStatusReport:
         qty : Quantity
             The reported position quantity at the exchange.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the report.
+            The UNIX timestamp (nanoseconds) of the report.
 
         """
         self.instrument_id = instrument_id
@@ -150,7 +150,7 @@ cdef class ExecutionReport:
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
         ts_filled_ns : int64
-            The UNIX timestamp (nanos) of the execution.
+            The UNIX timestamp (nanoseconds) of the execution.
 
         """
         self.client_order_id = client_order_id
@@ -197,7 +197,7 @@ cdef class ExecutionMassStatus:
         account_id : AccountId
             The account identifier for the report.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the report.
+            The UNIX timestamp (nanoseconds) of the report.
 
         Raises
         ------

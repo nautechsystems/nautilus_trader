@@ -367,7 +367,7 @@ cdef class OrderBook:
     @property
     def timestamp_ns(self):
         """
-        The UNIX timestamp (nanos) of the last update.
+        The UNIX timestamp (nanoseconds) of the last update.
 
         Returns
         -------
@@ -1027,9 +1027,9 @@ cdef class OrderBookData(Data):
         level : OrderBookLevel
             The order book level (L1, L2, L3).
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
+            The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         super().__init__(ts_event_ns, ts_recv_ns)
@@ -1066,9 +1066,9 @@ cdef class OrderBookSnapshot(OrderBookData):
         asks : list
             The asks for the snapshot.
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
+            The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
@@ -1110,9 +1110,9 @@ cdef class OrderBookDeltas(OrderBookData):
         deltas : list[OrderBookDelta]
             The list of order book changes.
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
+            The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
@@ -1151,9 +1151,9 @@ cdef class OrderBookDelta(OrderBookData):
         order : Order
             The order to apply.
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
+            The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)

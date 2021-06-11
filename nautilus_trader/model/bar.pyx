@@ -330,9 +330,9 @@ cdef class Bar(Data):
         volume : Quantity
             The bars volume.
         ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
+            The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
         check : bool
             If bar parameters should be checked valid.
 

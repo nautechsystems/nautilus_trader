@@ -53,9 +53,9 @@ cdef class TimeEvent(Event):
         event_timestamp : datetime
             The event timestamp (UTC).
         event_timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event.
+            The UNIX timestamp (nanoseconds) of the event.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         Condition.valid_string(name, "name")
@@ -194,7 +194,7 @@ cdef class Timer:
         event_id : UUID
             The identifier for the time event.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) for time event initialization.
+            The UNIX timestamp (nanoseconds) for time event initialization.
 
         Returns
         -------

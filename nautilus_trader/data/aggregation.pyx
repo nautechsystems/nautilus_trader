@@ -123,7 +123,7 @@ cdef class BarBuilder:
         size : Decimal
             The update size.
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the update.
+            The UNIX timestamp (nanoseconds) of the update.
 
         """
         Condition.not_none(price, "price")
@@ -186,7 +186,7 @@ cdef class BarBuilder:
         Parameters
         ----------
         timestamp_ns : int64
-            The UNIX timestamp (nanos) of the bar close.
+            The UNIX timestamp (nanoseconds) of the bar close.
 
         Returns
         -------
