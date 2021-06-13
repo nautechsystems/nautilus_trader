@@ -56,6 +56,8 @@ cdef class TradeTick(Tick):
     """The tick trade match identifier.\n\n:returns: `TradeMatchId`"""
 
     @staticmethod
+    cdef TradeTick from_dict(dict data)
+
+    @staticmethod
     cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values)
     cpdef str to_serializable_str(self)
-    cpdef tuple _hash(self)

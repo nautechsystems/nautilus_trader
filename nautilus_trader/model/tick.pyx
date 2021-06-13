@@ -229,7 +229,6 @@ cdef class QuoteTick(Tick):
 
         """
         return {
-            "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
             "bid": str(self.bid),
             "ask": str(self.ask),
@@ -304,7 +303,6 @@ cdef class TradeTick(Tick):
 
         """
         return {
-            "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
             "price": str(self.price),
             "size": str(self.size),
@@ -313,6 +311,22 @@ cdef class TradeTick(Tick):
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }
+
+    @staticmethod
+    cdef TradeTick from_dict_c(dict data):
+        return TradeTick(
+            instrument_id=InstrumentId.from_str_c(data['instrument_id']),
+            price=Price.from_str_c(data['price']),
+            size=Quantity.from_str_c(data['size']),
+            aggressor_side=AggressorSideParser.from_str(data['aggressor_side']),
+            match_id=TradeMatchId(data['match_id']),
+            ts_event_ns=data['ts_event_ns'],
+            ts_recv_ns=data['ts_recv_ns'],
+        )
+
+    @staticmethod
+    def from_dict(data):
+        return TradeTick.from_dict_c(data)
 
     @staticmethod
     cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values):
@@ -373,12 +387,3 @@ cdef class TradeTick(Tick):
                 f"{self.match_id},"
                 f"{self.ts_event_ns},"
                 f"{self.ts_recv_ns}")
-
-    cpdef tuple _hash(self):
-        return self.instrument_id, self.price, self.size, self.aggressor_side, self.match_id, self.ts_event_ns
-
-    def __eq__(self, other: TradeTick):
-        return isinstance(other, type(self)) and self._hash() == other._hash()
-
-    def __hash__(self):
-        return hash(self._hash())

@@ -7,10 +7,9 @@ trade_tick_schema = {
     "size": float,
     "aggressor_side": str,
     "match_id": str,
-    "ts_event_ns": datetime,
-    "ts_recv_ns": datetime,
+    "ts_event_ns": int,
+    "ts_recv_ns": int,
 }
-
 
 betting_instrument_schema = {
     "venue": str,
@@ -48,7 +47,7 @@ order_book_schema = {
 
 order_book_updates_schema = {
     "instrument_id": str,
-    "ts_event_ns": datetime,
+    "ts_event_ns": int,
     "ts_recv_ns": datetime,
     "type": str,
     "side": str,

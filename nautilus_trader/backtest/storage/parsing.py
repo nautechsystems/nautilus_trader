@@ -8,7 +8,7 @@ from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusPars
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaType
 from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevelParser
-from nautilus_trader.model.enums import OrderBookDeltaTypeParser
+from nautilus_trader.model.enums import DeltaTypeParser
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.events import InstrumentClosePrice
 from nautilus_trader.model.events import InstrumentStatusEvent
@@ -37,7 +37,7 @@ def _parse_delta(msg, delta):
         "instrument_id": msg.instrument_id.value,
         "ts_recv_ns": msg.ts_recv_ns,
         "ts_event_ns": msg.ts_event_ns,
-        "type": OrderBookDeltaTypeParser.to_str_py(delta.type),
+        "type": DeltaTypeParser.to_str_py(delta.type),
         "level": OrderBookLevelParser.to_str_py(delta.level),
         "id": delta.order.id if delta.order else None,
         "price": delta.order.price if delta.order else None,
@@ -162,7 +162,7 @@ def _unparse_value(cls, k, v):  # noqa: C901
     # Class specific parsing
     if cls == OrderBookDelta:
         if k == "type":
-            return OrderBookDeltaTypeParser.from_str_py(v)
+            return DeltaTypeParser.from_str_py(v)
         elif k == "level":
             return OrderBookLevelParser.from_str_py(v)
     elif cls == TradeTick:
