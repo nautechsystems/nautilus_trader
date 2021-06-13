@@ -22,6 +22,8 @@ cdef class Data:
     cdef readonly int64_t ts_recv_ns
     """The UNIX timestamp (nanos) when received by the Nautilus system.\n\n:returns: `int64`"""
 
+    cpdef dict to_dict(self)
+
 
 cdef class DataType:
     cdef frozenset _key

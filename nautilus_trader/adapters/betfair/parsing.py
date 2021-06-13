@@ -47,10 +47,10 @@ from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OrderBookDeltaType
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -290,9 +290,7 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
                 OrderBookDelta(
                     instrument_id=instrument.id,
                     level=OrderBookLevel.L2,
-                    delta_type=OrderBookDeltaType.DELETE
-                    if volume == 0
-                    else OrderBookDeltaType.UPDATE,
+                    delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
                     order=Order(
                         price=price_to_probability(
                             price, side=B2N_MARKET_STREAM_SIDE[side]

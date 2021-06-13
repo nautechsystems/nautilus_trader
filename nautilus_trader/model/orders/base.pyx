@@ -169,6 +169,17 @@ cdef class Order:
                 f"client_order_id={self.client_order_id.value}"
                 f"{id_string})")
 
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cdef OrderState state_c(self) except *:
         return <OrderState>self._fsm.state
 

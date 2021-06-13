@@ -20,10 +20,10 @@ from tabulate import tabulate
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
+from nautilus_trader.model.c_enums.delta_type cimport DeltaType
+from nautilus_trader.model.c_enums.delta_type cimport DeltaTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaType
-from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaTypeParser
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevelParser
 from nautilus_trader.model.data cimport Data
@@ -325,11 +325,11 @@ cdef class OrderBook:
         self.clear_asks()
 
     cdef void _apply_delta(self, OrderBookDelta delta) except *:
-        if delta.type == OrderBookDeltaType.ADD:
+        if delta.type == DeltaType.ADD:
             self.add(order=delta.order)
-        elif delta.type == OrderBookDeltaType.UPDATE:
+        elif delta.type == DeltaType.UPDATE:
             self.update(order=delta.order)
-        elif delta.type == OrderBookDeltaType.DELETE:
+        elif delta.type == DeltaType.DELETE:
             self.delete(order=delta.order)
 
         self.last_update_timestamp_ns = delta.ts_recv_ns
@@ -1136,7 +1136,7 @@ cdef class OrderBookDelta(OrderBookData):
         self,
         InstrumentId instrument_id,
         OrderBookLevel level,
-        OrderBookDeltaType delta_type,
+        DeltaType delta_type,
         int64_t ts_event_ns,
         int64_t ts_recv_ns,
         Order order,
@@ -1146,8 +1146,8 @@ cdef class OrderBookDelta(OrderBookData):
 
         Parameters
         ----------
-        delta_type : OrderBookDeltaType
-            The type of change (ADD, UPDATED, DELETE).
+        delta_type : DeltaType
+            The type of change (ADD, UPDATED, DELETE, CLEAR).
         order : Order
             The order to apply.
         ts_event_ns : int64
@@ -1165,6 +1165,6 @@ cdef class OrderBookDelta(OrderBookData):
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
                 f"level={OrderBookLevelParser.to_str(self.level)}, "
-                f"delta_type={OrderBookDeltaTypeParser.to_str(self.type)}, "
+                f"delta_type={DeltaTypeParser.to_str(self.type)}, "
                 f"order={self.order}, "
                 f"ts_recv_ns={self.ts_recv_ns})")
