@@ -38,7 +38,6 @@ from cpython.object cimport Py_GE
 from cpython.object cimport Py_GT
 from cpython.object cimport Py_LE
 from cpython.object cimport Py_LT
-from cpython.object cimport Py_NE
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -83,9 +82,6 @@ cdef class BaseDecimal:
 
     def __eq__(self, other) -> bool:
         return BaseDecimal._compare(self, other, Py_EQ)
-
-    def __ne__(self, other) -> bool:
-        return BaseDecimal._compare(self, other, Py_NE)
 
     def __lt__(self, other) -> bool:
         return BaseDecimal._compare(self, other, Py_LT)
@@ -479,9 +475,6 @@ cdef class Money(BaseDecimal):
 
     def __eq__(self, Money other) -> bool:
         return self.currency == other.currency and self._value == other.as_decimal()
-
-    def __ne__(self, Money other) -> bool:
-        return not self == other
 
     def __lt__(self, Money other) -> bool:
         return self.currency == other.currency and self._value < other.as_decimal()

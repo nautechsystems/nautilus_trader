@@ -26,7 +26,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -372,7 +372,7 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event_ns=0,
@@ -389,7 +389,7 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             deltas=[],
             ts_event_ns=0,
             ts_recv_ns=0,

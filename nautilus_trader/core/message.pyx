@@ -107,9 +107,6 @@ cdef class Message:
     def __eq__(self, Message other) -> bool:
         return self.type == other.type and self.id == other.id
 
-    def __ne__(self, Message other) -> bool:
-        return self.type != other.type or self.id != other.id
-
     def __hash__(self) -> int:
         return hash((self.type, self.id))
 

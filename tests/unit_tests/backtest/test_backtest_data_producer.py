@@ -21,7 +21,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -58,7 +58,7 @@ class TestBacktestDataProducer:
         # Assert
         snapshot1 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
             ts_event_ns=0,
@@ -87,7 +87,7 @@ class TestBacktestDataProducer:
 
         snapshot2 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
             ts_event_ns=1_000_000,

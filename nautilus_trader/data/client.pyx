@@ -31,7 +31,7 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -237,11 +237,11 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

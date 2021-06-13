@@ -281,16 +281,16 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order == order)
         self.assertFalse(order != order)
 
-    def test_order_str_and_repr(self):
+    def test_order_hash_str_and_repr(self):
         # Arrange
-        # Act
         order = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
         )
 
-        # Assert
+        # Act, Assert
+        self.assertTrue(isinstance(hash(order), int))
         self.assertEqual(
             "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
             "client_order_id=O-19700101-000000-000-001-1)",
@@ -301,6 +301,40 @@ class OrderTests(unittest.TestCase):
             "client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
+
+    def test_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "type": "MarketOrder",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": "NULL",
+            "position_id": "NULL",
+            "strategy_id": "S-001",
+            "account_id": None,
+            "execution_id": None,
+            "instrument_id": "AUD/USD.SIM",
+            "order_side": "BUY",
+            "order_type": "MARKET",
+            "quantity": "100000",
+            "timestamp_ns": 0,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "ts_filled_ns": 0,
+            "avg_px": None,
+            "slippage": "0",
+            "init_id": order.init_id.value,
+            "state": "INITIALIZED",
+        }
 
     def test_initialize_limit_order(self):
         # Arrange

@@ -95,9 +95,6 @@ cdef class DataType:
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self.metadata == other.metadata
 
-    def __ne__(self, DataType other) -> bool:
-        return self.type != other.type or self.metadata != other.metadata
-
     def __hash__(self) -> int:
         return self._hash
 
@@ -132,3 +129,14 @@ cdef class GenericData(Data):
         super().__init__(data.ts_event_ns, data.ts_recv_ns)
         self.data_type = data_type
         self.data = data
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of the internal data object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return self.data.to_dict()

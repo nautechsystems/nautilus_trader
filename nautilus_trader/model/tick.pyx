@@ -103,9 +103,6 @@ cdef class QuoteTick(Tick):
     def __eq__(self, QuoteTick other) -> bool:
         return self.to_dict() == other.to_dict()
 
-    def __ne__(self, QuoteTick other) -> bool:
-        return not self == other
-
     def __hash__(self) -> int:
         return hash(frozenset(self.to_dict()))
 
@@ -267,9 +264,6 @@ cdef class TradeTick(Tick):
 
     def __eq__(self, TradeTick other) -> bool:
         return self.to_dict() == other.to_dict()
-
-    def __ne__(self, TradeTick other) -> bool:
-        return not self == other
 
     def __hash__(self) -> int:
         return hash(frozenset(self.to_dict()))

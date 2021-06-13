@@ -47,9 +47,6 @@ cdef class Identifier:
     def __eq__(self, Identifier other) -> bool:
         return isinstance(other, type(self)) and self.value == other.value
 
-    def __ne__(self, Identifier other) -> bool:
-        return not self == other
-
     def __lt__(self, Identifier other) -> bool:
         return self.value < other.value
 

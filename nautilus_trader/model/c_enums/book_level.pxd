@@ -14,16 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum OrderBookLevel:
+cpdef enum BookLevel:
     L1 = 1,
     L2 = 2,
     L3 = 3,
 
 
-cdef class OrderBookLevelParser:
+cdef class BookLevelParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderBookLevel from_str(str value) except *
+    cdef BookLevel from_str(str value) except *

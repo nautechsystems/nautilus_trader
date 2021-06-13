@@ -19,15 +19,19 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 cdef class Order:
     cdef readonly double price
     """The orders price.\n\n:returns: `double`"""
-    cdef readonly double volume
-    """The orders volume.\n\n:returns: `double`"""
+    cdef readonly double size
+    """The orders size.\n\n:returns: `double`"""
     cdef readonly OrderSide side
     """The orders side.\n\n:returns: `OrderSide`"""
     cdef readonly str id
     """The orders identifier.\n\n:returns: `str`"""
 
     cpdef void update_price(self, double price) except *
-    cpdef void update_volume(self, double volume) except *
+    cpdef void update_size(self, double size) except *
     cpdef void update_id(self, str value) except *
     cpdef double exposure(self)
-    cpdef double signed_volume(self)
+    cpdef double signed_size(self)
+
+    @staticmethod
+    cdef Order from_dict_c(dict values)
+    cpdef dict to_dict(self)

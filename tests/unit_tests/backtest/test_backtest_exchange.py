@@ -34,9 +34,9 @@ from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
@@ -2129,7 +2129,7 @@ class OrderBookExchangeTests(unittest.TestCase):
             cache=self.exec_engine.cache,
             clock=self.clock,
             logger=self.logger,
-            exchange_order_book_level=OrderBookLevel.L2,
+            exchange_order_book_level=BookLevel.L2,
         )
 
         self.exec_client = BacktestExecClient(
@@ -2150,7 +2150,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.data_engine.cache.add_order_book(
             OrderBook.create(
                 instrument=USDJPY_SIM,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
             )
         )
         self.exec_engine.register_risk_engine(self.risk_engine)

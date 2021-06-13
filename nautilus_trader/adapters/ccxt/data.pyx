@@ -37,7 +37,7 @@ from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport ClientId
@@ -274,7 +274,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level,
+        BookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -285,7 +285,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -654,7 +654,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
-    async def _watch_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth, dict kwargs):
+    async def _watch_order_book(self, InstrumentId instrument_id, BookLevel level, int depth, dict kwargs):
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to order book (no instrument for {instrument_id.symbol}).")
