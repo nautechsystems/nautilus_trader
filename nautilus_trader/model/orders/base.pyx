@@ -155,9 +155,6 @@ cdef class Order:
     def __eq__(self, Order other) -> bool:
         return self.client_order_id.value == other.client_order_id.value
 
-    def __ne__(self, Order other) -> bool:
-        return self.client_order_id.value != other.client_order_id.value
-
     def __hash__(self) -> int:
         return hash(self.client_order_id.value)
 

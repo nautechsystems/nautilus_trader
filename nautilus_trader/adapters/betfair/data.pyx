@@ -27,7 +27,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -235,7 +235,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_order_book(
         self, InstrumentId instrument_id,
-        OrderBookLevel level,
+        BookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -246,7 +246,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -288,7 +288,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
         self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         self.subscribe_order_book(instrument_id=instrument_id, level=level, kwargs=kwargs)
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:

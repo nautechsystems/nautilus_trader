@@ -17,6 +17,8 @@ with `_ns` accordingly.
 - Renamed `triggered_ns` to `ts_triggered_ns`.
 - Renamed `expired_ns` to `ts_expired_ns`.
 - Renamed `execution_ns` to `ts_filled_ns`.
+- Renamed `OrderBookLevel` to `BookLevel`.
+- Renamed `Order.volume` to `Order.size`.
 
 ## Enhancements
 - Adapters dependencies are now optional extras at installation.
@@ -27,6 +29,7 @@ with `_ns` accordingly.
 - Removed redundant conversion to `pd.Timestamp` when checking timestamps.
 - Removed redundant data `to_serializable_str` methods.
 - Removed redundant data `from_serializable_str` methods.
+- Removed redundant `__ne__` implementations.
 
 ## Fixes
 None
@@ -229,7 +232,7 @@ tick data a L1 order book is used as a proxy. A future release will include
 improved fill modelling assumptions and customizations.
 
 ## Breaking Changes
-- `OrderBook.create` now takes `Instrument` and `OrderBookLevel`.
+- `OrderBook.create` now takes `Instrument` and `BookLevel`.
 
 ## Enhancements
 - `SimulatedExchange` now maintains order books internally.
@@ -258,7 +261,7 @@ None
 - Builds for 32-bit platforms.
 
 ## Fixes
-- `OrderBook.create` for `OrderBookLevel.L3` now returns correct book.
+- `OrderBook.create` for `BookLevel.L3` now returns correct book.
 - Betfair handling of execution IDs.
 
 ---

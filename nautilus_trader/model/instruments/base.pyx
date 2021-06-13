@@ -205,9 +205,6 @@ cdef class Instrument(Data):
     def __eq__(self, Instrument other) -> bool:
         return self.id.value == other.id.value
 
-    def __ne__(self, Instrument other) -> bool:
-        return self.id.value != other.id.value
-
     def __hash__(self) -> int:
         return hash(self.id.value)
 

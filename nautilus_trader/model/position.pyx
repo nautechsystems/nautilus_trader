@@ -103,9 +103,6 @@ cdef class Position:
     def __eq__(self, Position other) -> bool:
         return self.id.value == other.id.value
 
-    def __ne__(self, Position other) -> bool:
-        return self.id.value != other.id.value
-
     def __hash__(self) -> int:
         return hash(self.id.value)
 
@@ -128,7 +125,6 @@ cdef class Position:
             "from_order": self.from_order.value,
             "strategy_id": self.strategy_id.value,
             "instrument_id": self.instrument_id.value,
-            "entry": OrderSideParser.to_str(self.entry),
             "side": PositionSideParser.to_str(self.side),
             "net_qty": str(self.net_qty),
             "quantity": str(self.quantity),
@@ -148,8 +144,8 @@ cdef class Position:
             "cost_currency": self.cost_currency.code,
             "realized_points": str(self.realized_points),
             "realized_return": str(self.realized_return),
-            "realized_pnl": str(self.realized_pnl),
-            "commissions": str(self.commissions()),
+            "realized_pnl": str(self.realized_pnl.to_str()),
+            "commissions": str([c.to_str() for c in self.commissions()]),
         }
 
     cdef list client_order_ids_c(self):

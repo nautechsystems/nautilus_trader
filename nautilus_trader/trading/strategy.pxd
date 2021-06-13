@@ -28,7 +28,7 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
@@ -129,7 +129,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level=*,
+        BookLevel level=*,
         int depth=*,
         int interval=*,
         dict kwargs=*,
@@ -137,7 +137,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level=*,
+        BookLevel level=*,
         dict kwargs=*,
     ) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *

@@ -65,9 +65,6 @@ cdef class BarSpecification:
             and self.aggregation == other.aggregation\
             and self.price_type == other.price_type
 
-    def __ne__(self, BarSpecification other) -> bool:
-        return not self == other
-
     def __hash__(self) -> int:
         return hash((self.step, self.aggregation, self.price_type))
 
@@ -229,9 +226,6 @@ cdef class BarType:
             and self.is_internal_aggregation == other.is_internal_aggregation
         )
 
-    def __ne__(self, BarType other) -> bool:
-        return not self == other
-
     def __hash__(self) -> int:
         return hash((self.instrument_id, self.spec))
 
@@ -351,9 +345,6 @@ cdef class Bar(Data):
 
     def __eq__(self, Bar other) -> bool:
         return self.to_dict() == other.to_dict()
-
-    def __ne__(self, Bar other) -> bool:
-        return not self == other
 
     def __hash__(self) -> int:
         return hash(frozenset(self.to_dict()))

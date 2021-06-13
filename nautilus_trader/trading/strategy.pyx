@@ -51,8 +51,8 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -152,9 +152,6 @@ cdef class TradingStrategy(Component):
 
     def __eq__(self, TradingStrategy other) -> bool:
         return self.id.value == other.id.value
-
-    def __ne__(self, TradingStrategy other) -> bool:
-        return self.id.value != other.id.value
 
     cdef void _check_trader_registered(self) except *:
         if self.trader_id is None:
@@ -787,7 +784,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level=OrderBookLevel.L2,
+        BookLevel level=BookLevel.L2,
         int depth=0,
         int interval=0,
         dict kwargs=None,
@@ -807,7 +804,7 @@ cdef class TradingStrategy(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument identifier to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -847,7 +844,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level=OrderBookLevel.L2,
+        BookLevel level=BookLevel.L2,
         dict kwargs=None,
     ) except *:
         """
@@ -858,7 +855,7 @@ cdef class TradingStrategy(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument identifier to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.

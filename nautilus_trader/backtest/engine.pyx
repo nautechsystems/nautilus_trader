@@ -50,8 +50,8 @@ from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
@@ -572,7 +572,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
-        OrderBookLevel order_book_level=OrderBookLevel.L1
+        BookLevel order_book_level=BookLevel.L1
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -598,7 +598,7 @@ cdef class BacktestEngine:
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange (if None then no probabilistic fills).
-        order_book_level : OrderBookLevel
+        order_book_level : BookLevel
             The default order book level for fill modelling.
 
         Raises

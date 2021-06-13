@@ -122,7 +122,7 @@ class TestDataProvider:
                         "op": "update",
                         "order": Order(
                             price=Price(row[side], precision=6),
-                            volume=Quantity(1e9, precision=2),
+                            size=Quantity(1e9, precision=2),
                             side=order_side,
                         ),
                     }
@@ -167,7 +167,7 @@ class TestDataProvider:
                 "op": op,
                 "order": Order(
                     price=Price(order_like["price"], precision=6),
-                    volume=Quantity(abs(order_like["volume"]), precision=4),
+                    size=Quantity(abs(order_like["volume"]), precision=4),
                     # Betting sides are reversed
                     side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
                     id=str(order_like["order_id"]),
@@ -196,15 +196,15 @@ class TestDataProvider:
                 print("Err", updates)
                 return
             for values in updates:
-                keys = ("order_id", "price", "volume")
+                keys = ("order_id", "price", "size")
                 data = dict(zip(keys, values))
-                side = OrderSide.BUY if data["volume"] >= 0 else OrderSide.SELL
+                side = OrderSide.BUY if data["size"] >= 0 else OrderSide.SELL
                 if data["price"] == 0:
                     yield dict(
                         op="delete",
                         order=Order(
                             price=Price(data["price"], precision=10),
-                            volume=Quantity(abs(data["volume"]), precision=10),
+                            size=Quantity(abs(data["size"]), precision=10),
                             side=side,
                             id=str(data["order_id"]),
                         ),
@@ -214,7 +214,7 @@ class TestDataProvider:
                         op="update",
                         order=Order(
                             price=Price(data["price"], precision=10),
-                            volume=Quantity(abs(data["volume"]), precision=10),
+                            size=Quantity(abs(data["size"]), precision=10),
                             side=side,
                             id=str(data["order_id"]),
                         ),

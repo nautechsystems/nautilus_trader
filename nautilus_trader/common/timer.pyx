@@ -68,9 +68,6 @@ cdef class TimeEvent(Event):
     def __eq__(self, TimeEvent other) -> bool:
         return self.name == other.name
 
-    def __ne__(self, TimeEvent other) -> bool:
-        return self.name != other.name
-
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"name={self.name}, "
@@ -98,9 +95,6 @@ cdef class TimeEventHandler:
 
     def __eq__(self, TimeEventHandler other) -> bool:
         return self.event.event_timestamp_ns == other.event.event_timestamp_ns
-
-    def __ne__(self, TimeEventHandler other) -> bool:
-        return self.event.event_timestamp_ns != other.event.event_timestamp_ns
 
     def __lt__(self, TimeEventHandler other) -> bool:
         return self.event.event_timestamp_ns < other.event.event_timestamp_ns
@@ -168,9 +162,6 @@ cdef class Timer:
 
     def __eq__(self, Timer other) -> bool:
         return self.name == other.name
-
-    def __ne__(self, Timer other) -> bool:
-        return self.name != other.name
 
     def __hash__(self) -> int:
         return hash(self.name)
