@@ -1014,8 +1014,8 @@ cdef class OrderBookData(Data):
         self,
         InstrumentId instrument_id not None,
         OrderBookLevel level,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``OrderBookData`` class.
@@ -1026,9 +1026,9 @@ cdef class OrderBookData(Data):
             The instrument identifier for the book.
         level : OrderBookLevel
             The order book level (L1, L2, L3).
-        ts_event_ns : int64
+        ts_event_ns: uint64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
+        ts_recv_ns: uint64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
@@ -1049,8 +1049,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         OrderBookLevel level,
         list bids not None,
         list asks not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``OrderBookSnapshot`` class.
@@ -1065,9 +1065,9 @@ cdef class OrderBookSnapshot(OrderBookData):
             The bids for the snapshot.
         asks : list
             The asks for the snapshot.
-        ts_event_ns : int64
+        ts_event_ns: uint64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
+        ts_recv_ns: uint64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
@@ -1095,8 +1095,8 @@ cdef class OrderBookDeltas(OrderBookData):
         InstrumentId instrument_id not None,
         OrderBookLevel level,
         list deltas not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``OrderBookDeltas`` class.
@@ -1109,9 +1109,9 @@ cdef class OrderBookDeltas(OrderBookData):
             The order book level (L1, L2, L3).
         deltas : list[OrderBookDelta]
             The list of order book changes.
-        ts_event_ns : int64
+        ts_event_ns: uint64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
+        ts_recv_ns: uint64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
@@ -1138,8 +1138,8 @@ cdef class OrderBookDelta(OrderBookData):
         OrderBookLevel level,
         DeltaType delta_type,
         Order order not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``OrderBookDelta`` class.
@@ -1150,9 +1150,9 @@ cdef class OrderBookDelta(OrderBookData):
             The type of change (ADD, UPDATED, DELETE, CLEAR).
         order : Order
             The order to apply.
-        ts_event_ns : int64
+        ts_event_ns: uint64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
+        ts_recv_ns: uint64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """

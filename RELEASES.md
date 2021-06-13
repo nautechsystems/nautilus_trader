@@ -2,7 +2,7 @@
 
 In the interests of explicitness there is now a convention that timestamps are 
 named either `timestamp_ns`, or prepended with `ts`. Timestamps which are 
-represented with an `int64` are always in nanosecond resolution, and appended 
+represented with an `uint64` are always in nanosecond resolution, and appended 
 with `_ns` accordingly.
 
 ## Breaking Changes
@@ -20,6 +20,13 @@ with `_ns` accordingly.
 
 ## Enhancements
 - Adapters dependencies are now optional extras at installation.
+- Add some general `to_dict` and `from_dict` methods to objects.
+- Changed nanosecond timestamps type to `uint64_t`.
+- Changed nanosecond durations type to `uint64_t`.
+- Removed `TradeMatchId` in favour of bare string.
+- Removed redundant conversion to `pd.Timestamp` when checking timestamps.
+- Removed redundant data `to_serializable_str` methods.
+- Removed redundant data `from_serializable_str` methods.
 
 ## Fixes
 None

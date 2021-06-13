@@ -17,7 +17,7 @@ import pandas as pd
 import pytz
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
@@ -780,8 +780,8 @@ cdef class BacktestEngine:
         else:
             stop = min(as_utc_timestamp(stop), self._data_producer.max_timestamp)
 
-        Condition.equal(start.tz, pytz.utc, "start.tz", "UTC")
-        Condition.equal(stop.tz, pytz.utc, "stop.tz", "UTC")
+        Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
+        Condition.equal(stop.tzinfo, pytz.utc, "stop.tzinfo", "UTC")
         Condition.true(start >= self._data_producer.min_timestamp, "start was < data_client.min_timestamp")
         Condition.true(start <= self._data_producer.max_timestamp, "stop was > data_client.max_timestamp")
         Condition.true(start < stop, "start was >= stop")
@@ -797,8 +797,8 @@ cdef class BacktestEngine:
         # Reset engine to fresh state (in case already run)
         self.reset()
 
-        cdef int64_t start_ns = dt_to_unix_nanos(start)
-        cdef int64_t stop_ns = dt_to_unix_nanos(stop)
+        cdef uint64_t start_ns = dt_to_unix_nanos(start)
+        cdef uint64_t stop_ns = dt_to_unix_nanos(stop)
 
         # Setup clocks
         self._test_clock.set_time(start_ns)
@@ -844,7 +844,7 @@ cdef class BacktestEngine:
 
         self._log_footer(run_started, self._clock.utc_now(), start, stop)
 
-    cdef void _advance_time(self, int64_t now_ns) except *:
+    cdef void _advance_time(self, uint64_t now_ns) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
@@ -855,7 +855,7 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    cdef void _process_modules(self, int64_t now_ns) except *:
+    cdef void _process_modules(self, uint64_t now_ns) except *:
         cdef SimulatedExchange exchange
         for exchange in self._exchanges.values():
             exchange.process_modules(now_ns)

@@ -61,7 +61,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import AccountBalance
@@ -269,7 +268,7 @@ def _handle_market_trades(
             price=price_to_probability(price, force=True),  # Already wrapping in Price
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
-            match_id=TradeMatchId(trade_id),
+            match_id=trade_id,
             ts_event_ns=ts_event_ns,
             ts_recv_ns=ts_recv_ns,
         )

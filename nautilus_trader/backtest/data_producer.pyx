@@ -39,10 +39,12 @@ from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
+
+
+UINT64_MAX = 18446744073709551615
 
 
 cdef class DataProducerFacade:
@@ -182,8 +184,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 quote_tick_frames.append(quote_wrangler.processed_data)
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
-                self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
-                               f"{unix_timestamp() - ts:.3f}s.")
+                self._log.info(
+                    f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
+                    f"{unix_timestamp() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
@@ -201,8 +204,9 @@ cdef class BacktestDataProducer(DataProducerFacade):
                     trade_tick_frames.append(trade_wrangler.processed_data)
 
                     execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
-                    self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
-                                   f"{unix_timestamp() - ts:.3f}s.")
+                    self._log.info(
+                        f"Prepared {len(trade_wrangler.processed_data):,} {instrument_id} trade tick rows in "
+                        f"{unix_timestamp() - ts:.3f}s.")
                     del trade_wrangler  # Dump processing artifact
                 elif isinstance(trade_ticks[instrument_id], list):
                     # We have a list of TradeTick objects
@@ -257,7 +261,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             min_timestamp = as_utc_timestamp(pd.Timestamp.max)
 
         if max_timestamp is None:
-            max_timestamp = as_utc_timestamp(pd.Timestamp.min)
+            max_timestamp = as_utc_timestamp(pd.Timestamp(0))
 
         self.min_timestamp_ns = dt_to_unix_nanos(min_timestamp)
         self.max_timestamp_ns = dt_to_unix_nanos(max_timestamp)
@@ -325,15 +329,15 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         return self._instruments.copy()
 
-    def setup(self, int64_t start_ns, int64_t stop_ns):
+    def setup(self, uint64_t start_ns, uint64_t stop_ns):
         """
         Setup tick data for a backtest run.
 
         Parameters
         ----------
-        start_ns : int64
+        start_ns : uint64
             The UNIX timestamp (nanoseconds) for the run start.
-        stop_ns : int64
+        stop_ns : uint64
             The UNIX timestamp (nanoseconds) for the run stop.
 
         """
@@ -372,7 +376,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_ask_sizes = quote_ticks_slice["ask_size"].values
             self._quote_timestamps = np.asarray(
                 [dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index],
-                dtype=np.int64,
+                dtype=np.uint64,
             )
 
             # Set indexing
@@ -394,7 +398,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_sides = trade_ticks_slice["aggressor_side"].values
             self._trade_timestamps = np.asarray(
                 [dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index],
-                dtype=np.int64,
+                dtype=np.uint64,
             )
 
             # Set indexing
@@ -467,7 +471,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         """
         # Determine next data element
-        cdef int64_t next_timestamp_ns = 9223372036854775807  # int64 max
+        cdef uint64_t next_timestamp_ns = UINT64_MAX
         cdef int choice = 0
 
         if self._next_quote_tick is not None:
@@ -538,7 +542,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             price=Price.from_str_c(self._trade_prices[index]),
             size=Quantity.from_str_c(self._trade_sizes[index]),
             aggressor_side=AggressorSideParser.from_str(self._trade_sides[index]),
-            match_id=TradeMatchId(self._trade_match_ids[index]),
+            match_id=self._trade_match_ids[index],
             ts_event_ns=self._trade_timestamps[index],  # TODO(cs): Hardcoded identical for now
             ts_recv_ns=self._trade_timestamps[index],
         )
@@ -588,15 +592,15 @@ cdef class CachedProducer(DataProducerFacade):
         """
         return self._producer.instruments()
 
-    def setup(self, int64_t start_ns, int64_t stop_ns):
+    def setup(self, uint64_t start_ns, uint64_t stop_ns):
         """
         Setup tick data for a backtest run.
 
         Parameters
         ----------
-        start_ns : int64
+        start_ns : uint64
             The UNIX timestamp (nanoseconds) for the run start.
-        stop_ns : int64
+        stop_ns : uint64
             The UNIX timestamp (nanoseconds) for the run stop.
 
         """

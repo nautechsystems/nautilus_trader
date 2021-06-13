@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport AccountId
@@ -40,7 +40,7 @@ cdef class TradingCommand(Command):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``TradingCommand`` class.
@@ -55,7 +55,7 @@ cdef class TradingCommand(Command):
             The instrument identifier for the command.
         command_id : UUID
             The commands identifier.
-        timestamp_ns : int64
+        timestamp_ns : uint64
             The UNIX timestamp (nanoseconds) of the command.
 
         """
@@ -83,7 +83,7 @@ cdef class SubmitOrder(TradingCommand):
         PositionId position_id not None,
         Order order not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``SubmitOrder`` class.
@@ -100,7 +100,7 @@ cdef class SubmitOrder(TradingCommand):
             The order to submit.
         command_id : UUID
             The commands identifier.
-        timestamp_ns : int64
+        timestamp_ns : uint64
             The UNIX timestamp (nanoseconds) of the command.
 
         """
@@ -144,7 +144,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         StrategyId strategy_id not None,
         BracketOrder bracket_order not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``SubmitBracketOrder`` class.
@@ -159,7 +159,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             The bracket order to submit.
         command_id : UUID
             The command identifier.
-        timestamp_ns : int64
+        timestamp_ns : uint64
             The UNIX timestamp (nanoseconds) of the command.
 
         """
@@ -202,7 +202,7 @@ cdef class UpdateOrder(TradingCommand):
         Quantity quantity not None,
         Price price not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``UpdateOrder`` class.
@@ -225,7 +225,7 @@ cdef class UpdateOrder(TradingCommand):
             The price for the order (update optional).
         command_id : UUID
             The command identifier.
-        timestamp_ns : int64
+        timestamp_ns : uint64
             The UNIX timestamp (nanoseconds) of the command.
 
         """
@@ -272,7 +272,7 @@ cdef class CancelOrder(TradingCommand):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``CancelOrder`` class.
@@ -291,7 +291,7 @@ cdef class CancelOrder(TradingCommand):
             The venue order identifier to cancel.
         command_id : UUID
             The command identifier.
-        timestamp_ns : int64
+        timestamp_ns : uint64
             The UNIX timestamp (nanoseconds) of the command.
 
         """

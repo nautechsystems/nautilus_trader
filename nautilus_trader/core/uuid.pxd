@@ -16,7 +16,7 @@
 
 cdef class UUID:
     cdef readonly object int_val
-    """The UUID integer value.\n\n:returns: `int64`"""
+    """The UUID integer value.\n\n:returns: `uint64`"""
     cdef readonly str value
     """The UUID string value.\n\n:returns: `str`"""
 

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -67,7 +67,7 @@ cdef class SimulationModule:
 
         self._exchange = exchange
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -105,13 +105,13 @@ cdef class FXRolloverInterestModule(SimulationModule):
         self._rollover_totals = {}
         self._day_number = 0
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns) except *:
         """
         Process the given tick through the module.
 
         Parameters
         ----------
-        now_ns : int64
+        now_ns : uint64
             The current time in the simulated exchange.
 
         """

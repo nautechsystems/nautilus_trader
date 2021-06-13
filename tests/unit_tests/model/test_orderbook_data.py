@@ -37,15 +37,14 @@ class TestOrderBookSnapshot:
             ts_recv_ns=0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert (
             repr(snapshot)
             == "OrderBookSnapshot('AUD/USD.SIM', level=L2, bids=[[1010, 2], [1009, 1]], asks=[[1020, 2], [1021, 1]], ts_recv_ns=0)"
         )
 
 
-class TestOrderBookOperation:
+class TestOrderBookDelta:
     def test_repr(self):
         # Arrange
         order = Order(price=10, volume=5, side=OrderSide.BUY)
@@ -58,9 +57,7 @@ class TestOrderBookOperation:
             ts_recv_ns=0,
         )
 
-        print(repr(op))
-        # Act
-        # Assert
+        # Act, Assert
         assert (
             repr(op)
             == f"OrderBookDelta('AUD/USD.SIM', level=L2, delta_type=ADD, order=Order(10.0, 5.0, BUY, {order.id}), ts_recv_ns=0)"

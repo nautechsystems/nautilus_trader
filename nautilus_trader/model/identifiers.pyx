@@ -558,26 +558,3 @@ cdef class ExecutionId(Identifier):
 
         """
         super().__init__(value)
-
-
-cdef class TradeMatchId(Identifier):
-    """
-    Represents a valid and unique trade match identifier.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the ``TradeMatchId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The trade match identifier value.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
-        super().__init__(value)

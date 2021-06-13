@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
@@ -36,7 +36,6 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -63,7 +62,6 @@ from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.account cimport Account
-from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
 cdef class SimulatedExchange:
@@ -429,13 +427,13 @@ cdef class SimulatedExchange:
             tick.ts_recv_ns,
         )
 
-    cpdef void process_modules(self, int64_t now_ns) except *:
+    cpdef void process_modules(self, uint64_t now_ns) except *:
         """
         Process the simulation modules by advancing their time.
 
         Parameters
         ----------
-        now_ns : int64
+        now_ns : uint64
             The UNIX timestamp (nanoseconds) now.
 
         """
@@ -924,7 +922,7 @@ cdef class SimulatedExchange:
 
     cdef void _iterate_matching_engine(
         self, InstrumentId instrument_id,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ) except *:
         cdef dict working_orders = self._instrument_orders.get(instrument_id)
         if working_orders is None:
