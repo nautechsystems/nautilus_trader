@@ -16,7 +16,7 @@
 import asyncio
 from decimal import Decimal
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
@@ -663,11 +663,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             self._cache_order(venue_order_id, order)
 
-        cdef int64_t timestamp_ns = 0
+        cdef uint64_t timestamp_ns = 0
         if event['timestamp'] is not None:
-            timestamp_ns = <int64_t>(event["timestamp"])
+            timestamp_ns = <uint64_t>(event["timestamp"])
         else:
-            timestamp_ns = <int64_t>(event["lastTradeTimestamp"])
+            timestamp_ns = <uint64_t>(event["lastTradeTimestamp"])
 
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`

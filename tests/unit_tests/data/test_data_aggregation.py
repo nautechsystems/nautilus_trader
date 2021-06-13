@@ -32,7 +32,6 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
@@ -165,16 +164,14 @@ class BarBuilderTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(bar_type, use_previous_close=True)
-        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 1_000)
 
         # Act
-        builder.update(
-            Price.from_str("1.00001"), Quantity.from_str("1"), -1_000_000_000
-        )
+        builder.update(Price.from_str("1.00001"), Quantity.from_str("1"), 500)
 
         # Assert
         self.assertTrue(builder.initialized)
-        self.assertEqual(0, builder.last_timestamp_ns)
+        self.assertEqual(1_000, builder.last_timestamp_ns)
         self.assertEqual(1, builder.count)
 
     def test_multiple_updates_correctly_increments_count(self):
@@ -183,11 +180,11 @@ class BarBuilderTests(unittest.TestCase):
         builder = BarBuilder(bar_type, use_previous_close=True)
 
         # Act
-        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
-        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 0)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 1_000)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 1_000)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 1_000)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 1_000)
+        builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 1_000)
 
         # Assert
         self.assertEqual(5, builder.count)
@@ -289,7 +286,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -366,7 +363,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -376,7 +373,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123457"),
+            match_id="123457",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -386,7 +383,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123458"),
+            match_id="123458",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -504,7 +501,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -581,7 +578,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -591,7 +588,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(4000),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123457"),
+            match_id="123457",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -601,7 +598,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123458"),
+            match_id="123458",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -695,7 +692,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00001"),
             size=Quantity.from_int(2000),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -705,7 +702,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00002"),
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123457"),
+            match_id="123457",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -715,7 +712,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("1.00000"),
             size=Quantity.from_int(25000),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123458"),
+            match_id="123458",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -844,7 +841,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("15000.00"),
             size=Quantity.from_str("3.5"),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -923,7 +920,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("20.00001"),
             size=Quantity.from_str("3000.00"),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -933,7 +930,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("20.00002"),
             size=Quantity.from_str("4000.00"),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123457"),
+            match_id="123457",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -943,7 +940,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             price=Price.from_str("20.00000"),
             size=Quantity.from_str("5000.00"),
             aggressor_side=AggressorSide.BUY,
-            match_id=TradeMatchId("123458"),
+            match_id="123458",
             ts_event_ns=0,
             ts_recv_ns=0,
         )

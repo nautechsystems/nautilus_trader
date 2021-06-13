@@ -38,7 +38,6 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
@@ -1282,7 +1281,7 @@ class DataEngineTests(unittest.TestCase):
             Price.from_str("1050.00000"),
             Quantity.from_int(100),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -1330,7 +1329,7 @@ class DataEngineTests(unittest.TestCase):
             Price.from_str("1050.00000"),
             Quantity.from_int(100),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )

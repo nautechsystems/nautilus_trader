@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 
 cdef class Data:
@@ -23,27 +23,38 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t ts_event_ns, int64_t timestamp_ns):
+    def __init__(self, uint64_t ts_event_ns, uint64_t ts_recv_ns):
         """
         Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
-        ts_event_ns : int64
+        ts_event_ns : uint64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        timestamp_ns : int64
+        ts_recv_ns : uint64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         # Design-time invariant: correct ordering of timestamps
-        assert timestamp_ns >= ts_event_ns
+        assert ts_recv_ns >= ts_event_ns
         self.ts_event_ns = ts_event_ns
-        self.ts_recv_ns = timestamp_ns
+        self.ts_recv_ns = ts_recv_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"ts_event_ns={self.ts_event_ns}, "
                 f"ts_recv_ns{self.ts_recv_ns})")
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class DataType:

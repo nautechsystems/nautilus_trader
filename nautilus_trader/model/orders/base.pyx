@@ -20,7 +20,7 @@ Defines various order types used for trading.
 from decimal import Decimal
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
@@ -631,7 +631,7 @@ cdef class PassiveOrder(Order):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
         dict options not None,
     ):
         """
@@ -659,7 +659,7 @@ cdef class PassiveOrder(Order):
             The order expiry time - applicable to GTD orders only.
         init_id : UUID
             The order initialization event identifier.
-        timestamp_ns : int64
+        timestamp_ns : uint64
             The order initialization timestamp.
         options : dict
             The order options.

@@ -630,35 +630,6 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void positive_int64(int64_t value, str param, ex_type=None) except *:
-        """
-        Check the integer value is a positive integer (> 0).
-
-        Parameters
-        ----------
-        value : int64
-            The value to check.
-        param : str
-            The name of the values parameter.
-        ex_type : Exception, optional
-            The custom exception type to be raised on a failed check.
-
-        Raises
-        -------
-        ValueError
-             If value is not positive (> 0).
-
-        """
-        if value > 0:
-            return  # Check passed
-
-        raise make_exception(
-            ex_default=ValueError,
-            ex_type=ex_type,
-            msg=f"The \'{param}\' was not a positive integer, was {value}",
-        )
-
-    @staticmethod
     cdef void not_negative(double value, str param, ex_type=None) except *:
         """
         Check the real number value is not negative (< 0).

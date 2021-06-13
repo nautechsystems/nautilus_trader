@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.identifiers cimport ClientOrderLinkId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -33,5 +33,5 @@ cdef class BracketOrder:
     """The stop-loss order.\n\n:returns: `StopMarketOrder`"""
     cdef readonly LimitOrder take_profit
     """The take-profit order.\n\n:returns: `LimitOrder`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the bracket order.\n\n:returns: `int64`"""
+    cdef readonly uint64_t timestamp_ns
+    """The UNIX timestamp (nanoseconds) of the bracket order.\n\n:returns: `uint64`"""

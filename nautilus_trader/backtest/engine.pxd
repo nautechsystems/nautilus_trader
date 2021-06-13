@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_producer cimport DataProducerFacade
@@ -69,8 +69,8 @@ cdef class BacktestEngine:
     cdef readonly PerformanceAnalyzer analyzer
     """The performance analyzer for the backtest.\n\n:returns: `PerformanceAnalyzer`"""
 
-    cdef void _advance_time(self, int64_t now_ns) except *
-    cdef void _process_modules(self, int64_t now_ns) except *
+    cdef void _advance_time(self, uint64_t now_ns) except *
+    cdef void _process_modules(self, uint64_t now_ns) except *
     cdef void _log_header(
         self,
         datetime run_started,

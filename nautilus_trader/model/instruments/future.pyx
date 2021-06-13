@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -52,8 +52,8 @@ cdef class Future(Instrument):
         str trading_hours not None,
         str liquid_hours not None,
         str last_trade_time not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``Future`` class.
@@ -70,9 +70,9 @@ cdef class Future(Instrument):
             The price decimal precision.
         price_increment : Decimal
             The minimum price increment (tick size).
-        ts_event_ns : int64
+        ts_event_ns: uint64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
+        ts_recv_ns: uint64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         Raises

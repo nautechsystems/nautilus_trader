@@ -25,7 +25,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -275,7 +274,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -295,7 +294,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -431,7 +430,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -451,7 +450,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -553,7 +552,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -574,7 +573,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -584,7 +583,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(20000),
             AggressorSide.SELL,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )

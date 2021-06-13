@@ -28,7 +28,6 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -427,7 +426,7 @@ class MarketDataClientTests(unittest.TestCase):
             Price.from_str("1.00050"),
             Quantity.from_int(1),
             AggressorSide.BUY,
-            TradeMatchId("123456"),
+            "123456",
             0,
             0,
         )

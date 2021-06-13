@@ -42,7 +42,6 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -649,7 +648,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-    cdef int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *:
+    cdef uint64_t _ccxt_to_timestamp_ns(self, uint64_t millis) except *:
         return millis_to_nanos(millis)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
@@ -789,8 +788,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -855,9 +854,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double price,
         double amount,
         str aggressor_side,
-        str trade_match_id,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        str match_id,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -866,7 +865,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(price, price_precision),
             Quantity(amount, size_precision),
             AggressorSideParser.from_str(aggressor_side.upper()) ,
-            TradeMatchId(trade_match_id),
+            match_id,
             ts_event_ns,
             ts_recv_ns,
         )
@@ -892,8 +891,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
-        cdef int64_t last_timestamp = 0
-        cdef int64_t this_timestamp = 0
+        cdef uint64_t last_timestamp = 0
+        cdef uint64_t this_timestamp = 0
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
@@ -948,8 +947,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -1166,7 +1165,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(trade['price'], price_precision),
             Quantity(trade['amount'], size_precision),
             AggressorSide.BUY if trade["side"] == "buy" else AggressorSide.SELL,
-            TradeMatchId(trade["id"]),
+            trade["id"],
             self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
             self._clock.timestamp_ns(),
         )

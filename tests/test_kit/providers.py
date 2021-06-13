@@ -37,7 +37,6 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.instruments.currency import CurrencySpot
@@ -147,7 +146,7 @@ class TestDataProvider:
                         price=Price(d["trade"]["price"], 4),
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
-                        match_id=TradeMatchId(d["trade"]["trade_id"]),
+                        match_id=(d["trade"]["trade_id"]),
                         ts_event_ns=millis_to_nanos(
                             pd.Timestamp(d["remote_timestamp"]).timestamp()
                         ),

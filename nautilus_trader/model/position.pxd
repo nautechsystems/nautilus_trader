@@ -15,8 +15,8 @@
 
 from decimal import Decimal
 
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -75,14 +75,14 @@ cdef class Position:
     """The position base currency (if applicable).\n\n:returns: `Currency` or None"""
     cdef readonly Currency cost_currency
     """The position cost currency (for PnL).\n\n:returns: `Currency`"""
-    cdef readonly int64_t timestamp_ns
-    """The position initialization UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
-    cdef readonly int64_t opened_timestamp_ns
-    """The opened time UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
-    cdef readonly int64_t closed_timestamp_ns
-    """The closed time UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
-    cdef readonly int64_t open_duration_ns
-    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly uint64_t timestamp_ns
+    """The position initialization UNIX timestamp (nanoseconds).\n\n:returns: `uint64`"""
+    cdef readonly uint64_t opened_timestamp_ns
+    """The opened time UNIX timestamp (nanoseconds).\n\n:returns: `uint64`"""
+    cdef readonly uint64_t closed_timestamp_ns
+    """The closed time UNIX timestamp (nanoseconds).\n\n:returns: `uint64`"""
+    cdef readonly uint64_t open_duration_ns
+    """The total open duration (nanoseconds).\n\n:returns: `uint64`"""
     cdef readonly object avg_px_open
     """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_px_close

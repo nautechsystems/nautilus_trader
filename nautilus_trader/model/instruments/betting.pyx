@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -56,8 +56,8 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str selection_handicap not None,
         str currency not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
