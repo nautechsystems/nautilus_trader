@@ -88,6 +88,8 @@ cdef class Order:
     cdef readonly UUID init_id
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
 
+    cpdef dict to_dict(self)
+
     cdef OrderState state_c(self) except *
     cdef OrderInitialized init_event_c(self)
     cdef OrderEvent last_event_c(self)

@@ -383,6 +383,27 @@ cdef class Bar(Data):
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "bar_type": self.type.to_serializable_str(),
+            "open": str(self.open),
+            "high": str(self.high),
+            "low": str(self.low),
+            "close": str(self.close),
+            "volume": str(self.volume),
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }
+
     @staticmethod
     cdef Bar from_serializable_str_c(BarType bar_type, str values):
         Condition.valid_string(values, "values")
