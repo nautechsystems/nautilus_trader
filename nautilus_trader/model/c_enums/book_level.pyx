@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class OrderBookLevelParser:
+cdef class BookLevelParser:
 
     @staticmethod
     cdef str to_str(int value):
@@ -28,20 +28,20 @@ cdef class OrderBookLevelParser:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderBookLevel from_str(str value) except *:
+    cdef BookLevel from_str(str value) except *:
         if value == "L1":
-            return OrderBookLevel.L1
+            return BookLevel.L1
         elif value == "L2":
-            return OrderBookLevel.L2
+            return BookLevel.L2
         elif value == "L3":
-            return OrderBookLevel.L3
+            return BookLevel.L3
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return OrderBookLevelParser.to_str(value)
+        return BookLevelParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return OrderBookLevelParser.from_str(value)
+        return BookLevelParser.from_str(value)

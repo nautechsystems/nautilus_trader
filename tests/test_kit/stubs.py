@@ -28,7 +28,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
+from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Data
 from nautilus_trader.model.enums import AggressorSide
@@ -54,7 +54,6 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -243,14 +242,14 @@ class TestStubs:
             price=price or Price.from_str("1.00001"),
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id=TradeMatchId("123456"),
+            match_id="123456",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
 
     @staticmethod
     def order(price: float, side: OrderSide, size=10):
-        return Order(price=price, side=side, volume=size)
+        return Order(price=price, size=size, side=side)
 
     @staticmethod
     def ladder(reverse: bool, orders: List[Order]):
@@ -262,7 +261,7 @@ class TestStubs:
     @staticmethod
     def order_book(
         instrument=None,
-        level=OrderBookLevel.L2,
+        level=BookLevel.L2,
         bid_price=10,
         ask_price=15,
         bid_levels=3,
@@ -296,7 +295,7 @@ class TestStubs:
         ask_levels=3,
         bid_volume=10,
         ask_volume=10,
-        level=OrderBookLevel.L2,
+        level=BookLevel.L2,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err

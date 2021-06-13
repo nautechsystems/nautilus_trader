@@ -33,12 +33,11 @@ from nautilus_trader.model.data import Data
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
@@ -922,7 +921,7 @@ class DataEngineTests(unittest.TestCase):
                 OrderBook,
                 {
                     "InstrumentId": ETHUSDT_BINANCE.id,
-                    "Level": OrderBookLevel.L2,
+                    "Level": BookLevel.L2,
                     "Depth": 25,
                     "Interval": 0,  # Streaming
                 },
@@ -936,7 +935,7 @@ class DataEngineTests(unittest.TestCase):
 
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event_ns=0,
@@ -967,7 +966,7 @@ class DataEngineTests(unittest.TestCase):
                 OrderBook,
                 {
                     "InstrumentId": ETHUSDT_BINANCE.id,
-                    "Level": OrderBookLevel.L2,
+                    "Level": BookLevel.L2,
                     "Depth": 25,
                     "Interval": 0,  # Streaming
                 },
@@ -981,7 +980,7 @@ class DataEngineTests(unittest.TestCase):
 
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             deltas=[],
             ts_event_ns=0,
             ts_recv_ns=0,
@@ -1013,7 +1012,7 @@ class DataEngineTests(unittest.TestCase):
                 OrderBook,
                 {
                     "InstrumentId": ETHUSDT_BINANCE.id,
-                    "Level": OrderBookLevel.L2,
+                    "Level": BookLevel.L2,
                     "Depth": 25,
                     "Interval": 0,  # Streaming
                 },
@@ -1030,7 +1029,7 @@ class DataEngineTests(unittest.TestCase):
                 OrderBook,
                 {
                     "InstrumentId": ETHUSDT_BINANCE.id,
-                    "Level": OrderBookLevel.L2,
+                    "Level": BookLevel.L2,
                     "Depth": 25,
                     "Interval": 0,  # Streaming
                 },
@@ -1045,7 +1044,7 @@ class DataEngineTests(unittest.TestCase):
 
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event_ns=0,
@@ -1282,7 +1281,7 @@ class DataEngineTests(unittest.TestCase):
             Price.from_str("1050.00000"),
             Quantity.from_int(100),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -1330,7 +1329,7 @@ class DataEngineTests(unittest.TestCase):
             Price.from_str("1050.00000"),
             Quantity.from_int(100),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )

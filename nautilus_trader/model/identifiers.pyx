@@ -47,9 +47,6 @@ cdef class Identifier:
     def __eq__(self, Identifier other) -> bool:
         return isinstance(other, type(self)) and self.value == other.value
 
-    def __ne__(self, Identifier other) -> bool:
-        return not self == other
-
     def __lt__(self, Identifier other) -> bool:
         return self.value < other.value
 
@@ -550,29 +547,6 @@ cdef class ExecutionId(Identifier):
         ----------
         value : str
             The execution identifier value.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
-        super().__init__(value)
-
-
-cdef class TradeMatchId(Identifier):
-    """
-    Represents a valid and unique trade match identifier.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the ``TradeMatchId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The trade match identifier value.
 
         Raises
         ------

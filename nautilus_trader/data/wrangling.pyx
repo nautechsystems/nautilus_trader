@@ -25,7 +25,6 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -343,7 +342,7 @@ cdef class TradeTickDataWrangler:
             price=Price(values[0], self.instrument.price_precision),
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
-            match_id=TradeMatchId(values[3]),
+            match_id=values[3],
             ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
             ts_recv_ns=secs_to_nanos(timestamp),
         )

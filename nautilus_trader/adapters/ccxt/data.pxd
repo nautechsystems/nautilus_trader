@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
@@ -37,7 +37,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef object _update_instruments_task
 
     cdef void _log_ccxt_error(self, ex, str method_name) except *
-    cdef int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *
+    cdef uint64_t _ccxt_to_timestamp_ns(self, uint64_t millis) except *
     cdef void _on_quote_tick(
         self,
         InstrumentId instrument_id,
@@ -45,8 +45,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *
@@ -57,8 +57,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double amount,
         str aggressor_side,
         str trade_match_id,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *
@@ -70,8 +70,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *

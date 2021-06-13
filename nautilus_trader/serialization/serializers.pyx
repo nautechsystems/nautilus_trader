@@ -15,8 +15,8 @@
 
 import decimal
 
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
 
 import msgpack
 
@@ -286,8 +286,8 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         cdef object margin_maint = decimal.Decimal(unpacked[MARGIN_MAINT])
         cdef object maker_fee = decimal.Decimal(unpacked[MAKER_FEE])
         cdef object taker_fee = decimal.Decimal(unpacked[TAKER_FEE])
-        cdef int64_t ts_event_ns = int(unpacked[TS_EVENT])
-        cdef int64_t ts_recv_ns = int(unpacked[TS_RECV])
+        cdef uint64_t ts_event_ns = int(unpacked[TS_EVENT])
+        cdef uint64_t ts_recv_ns = int(unpacked[TS_RECV])
 
         if instrument_type == Instrument.__name__:
             return Instrument(
@@ -485,7 +485,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef Quantity quantity = Quantity.from_str_c(unpacked[QUANTITY])
         cdef TimeInForce time_in_force = TimeInForceParser.from_str(unpacked[TIME_IN_FORCE])
         cdef UUID init_id = UUID.from_str_c(unpacked[INIT_ID])
-        cdef int64_t timestamp_ns = int(unpacked[TIMESTAMP])
+        cdef uint64_t timestamp_ns = int(unpacked[TIMESTAMP])
 
         if order_type == OrderType.MARKET:
             return MarketOrder(
@@ -647,7 +647,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         cdef str command_type = unpacked[TYPE]
         cdef UUID command_id = UUID.from_str_c(unpacked[ID])
-        cdef int64_t timestamp_ns = int(unpacked[TIMESTAMP])
+        cdef uint64_t timestamp_ns = int(unpacked[TIMESTAMP])
 
         if command_type == SubmitOrder.__name__:
             return SubmitOrder(
@@ -885,7 +885,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef str event_type = unpacked[TYPE]
         cdef UUID event_id = UUID.from_str_c(unpacked[ID])
-        cdef int64_t timestamp_ns = int(unpacked[TIMESTAMP])
+        cdef uint64_t timestamp_ns = int(unpacked[TIMESTAMP])
 
         cdef dict options          # typing for OrderInitialized
         cdef OrderType order_type  # typing for OrderInitialized

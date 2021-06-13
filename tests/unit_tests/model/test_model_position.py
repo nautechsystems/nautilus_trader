@@ -81,6 +81,81 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(expected, position_side)
 
+    def test_position_hash_str_repr(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        # Act, Assert
+        assert isinstance(hash(position), int)
+        assert str(position) == "Position(LONG 100_000 AUD/USD.SIM, id=P-123456)"
+        assert repr(position) == "Position(LONG 100_000 AUD/USD.SIM, id=P-123456)"
+
+    def test_position_to_dict(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        # Act
+        result = position.to_dict()
+
+        # Assert
+        assert result == {
+            "type": "Position",
+            "id": "P-123456",
+            "account_id": "SIM-000",
+            "from_order": "O-19700101-000000-000-001-1",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
+            "side": "LONG",
+            "net_qty": "100000",
+            "quantity": "100000",
+            "peak_qty": "100000",
+            "timestamp_ns": 0,
+            "opened_timestamp_ns": 0,
+            "closed_timestamp_ns": 0,
+            "open_duration_ns": 0,
+            "avg_px_open": "1.00001",
+            "avg_px_close": "None",
+            "price_precision": 5,
+            "size_precision": 0,
+            "multiplier": "1",
+            "is_inverse": False,
+            "quote_currency": "USD",
+            "base_currency": "AUD",
+            "cost_currency": "USD",
+            "realized_points": "0",
+            "realized_return": "0",
+            "realized_pnl": "-2.00 USD",
+            "commissions": "['2.00 USD']",
+        }
+
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(

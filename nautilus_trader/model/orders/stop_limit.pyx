@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
@@ -61,7 +61,7 @@ cdef class StopLimitOrder(PassiveOrder):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
         bint post_only=True,
         bint reduce_only=False,
         bint hidden=False,
@@ -91,8 +91,8 @@ cdef class StopLimitOrder(PassiveOrder):
             The order expiry time.
         init_id : UUID
             The order initialization event identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanos) of the order initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the order initialization.
         post_only : bool, optional
             If the order will only make a market (once triggered).
         reduce_only : bool, optional

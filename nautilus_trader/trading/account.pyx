@@ -62,9 +62,6 @@ cdef class Account:
     def __eq__(self, Account other) -> bool:
         return self.id.value == other.id.value
 
-    def __ne__(self, Account other) -> bool:
-        return self.id.value != other.id.value
-
     def __hash__(self) -> int:
         return hash(self.id.value)
 

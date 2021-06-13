@@ -73,6 +73,8 @@ cdef class Instrument(Data):
     cdef readonly dict info
     """The raw info for the instrument.\n\n:returns: `dict[str, object]`"""
 
+    cpdef dict to_dict(self)
+
     cpdef Currency get_base_currency(self)
     cpdef Currency get_cost_currency(self)
     cpdef Price make_price(self, value)
