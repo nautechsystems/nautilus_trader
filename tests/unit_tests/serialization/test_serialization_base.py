@@ -40,7 +40,7 @@ class TestObject:
         self.value = value
 
     @staticmethod
-    def from_dict(values: dict[str, object]):
+    def from_dict(values: dict):
         return TestObject(values["value"])
 
     def to_dict(self):
