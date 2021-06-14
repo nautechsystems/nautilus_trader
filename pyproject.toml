@@ -62,12 +62,12 @@ oandapyV20 = { version = "^0.6.3", optional = true }
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
-black = "^21.5.b2"
+black = "^21.6b0"
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0a7
 flake8 = "^3.9.2"
 isort = "^5.8.0"
-mypy = "^0.812"
-nox = "^2021.6.6"
+mypy = "^0.902"
+nox = "^2021.6.12"
 parameterized = "^0.8.1"
 pre-commit = "^2.13.0"
 pytest = "^6.2.4"
