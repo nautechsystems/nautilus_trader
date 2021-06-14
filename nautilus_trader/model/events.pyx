@@ -118,10 +118,11 @@ cdef class AccountState(Event):
 
     @staticmethod
     cdef AccountState from_dict_c(dict values):
+        cdef str base_str = values["base_currency"]
         return AccountState(
             account_id=AccountId.from_str_c(values["account_id"]),
             account_type=AccountTypeParser.from_str(values["account_type"]),
-            base_currency=Currency.from_str_c(values["base_currency"]),
+            base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
             reported=values["reported"],
             balances=[AccountBalance.from_dict(b) for b in json.loads(values["balances"])],
             info=json.loads(values["info"]),
@@ -160,7 +161,7 @@ cdef class AccountState(Event):
             "type": type(self).__name__,
             "account_id": self.account_id.value,
             "account_type": AccountTypeParser.to_str(self.account_type),
-            "base_currency": self.base_currency.code,
+            "base_currency": self.base_currency.code if self.base_currency else None,
             "balances": json.dumps([b.to_dict() for b in self.balances]),
             "reported": self.is_reported,
             "info": json.dumps(self.info),

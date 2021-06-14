@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 from libc.stdint cimport uint64_t
 
 from decimal import Decimal
@@ -172,6 +173,7 @@ cdef class CFDInstrument(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+        cdef str info = values["info"]
         return CFDInstrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),
@@ -194,7 +196,7 @@ cdef class CFDInstrument(Instrument):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
-            info=values["info"],
+            info=json.loads(info) if info is not None else None,
         )
 
     @staticmethod
@@ -245,5 +247,5 @@ cdef class CFDInstrument(Instrument):
             "taker_fee": str(self.taker_fee),
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
-            "info": self.info,
+            "info": json.dumps(self.info) if self.info is not None else None,
         }
