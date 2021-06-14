@@ -41,7 +41,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         PriceType price_type=PriceType.LAST,
     ):
         """
-        Initialize a new instance of the `AdaptiveMovingAverage` class.
+        Initialize a new instance of the ``AdaptiveMovingAverage`` class.
 
         Parameters
         ----------
@@ -51,7 +51,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
             The period for the fast smoothing constant (> 0).
         period_alpha_slow : int
             The period for the slow smoothing constant (> 0 < alpha_fast).
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The specified price type for extracting values from quote ticks.
 
         """

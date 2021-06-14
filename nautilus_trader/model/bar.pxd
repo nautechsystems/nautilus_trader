@@ -25,9 +25,9 @@ cdef class BarSpecification:
     cdef readonly int step
     """The specified step size for bar aggregation.\n\n:returns: `int`"""
     cdef readonly BarAggregation aggregation
-    """The specified aggregation method for bars.\n\n:returns: `BarAggregation` (Enum)"""
+    """The specified aggregation method for bars.\n\n:returns: `BarAggregation`"""
     cdef readonly PriceType price_type
-    """The specified price type for bar aggregation.\n\n:returns: `PriceType` (Enum)"""
+    """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
 
     @staticmethod
     cdef BarSpecification from_str_c(str value)
@@ -45,8 +45,7 @@ cdef class BarType:
     """If bar aggregation is internal to the platform.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef BarType from_serializable_str_c(str value, bint internal_aggregation=*)
-    cpdef str to_serializable_str(self)
+    cdef BarType from_str_c(str value, bint internal_aggregation=*)
 
 
 cdef class Bar(Data):
@@ -66,5 +65,4 @@ cdef class Bar(Data):
     """If the input values were integrity checked.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef Bar from_serializable_str_c(BarType bar_type, str values)
-    cpdef str to_serializable_str(self)
+    cdef Bar from_dict_c(dict values)

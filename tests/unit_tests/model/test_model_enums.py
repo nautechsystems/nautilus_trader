@@ -15,48 +15,94 @@
 
 import pytest
 
-from nautilus_trader.model.c_enums.aggressor_side import AggressorSide
-from nautilus_trader.model.c_enums.aggressor_side import AggressorSideParser
-from nautilus_trader.model.c_enums.asset_class import AssetClass
-from nautilus_trader.model.c_enums.asset_class import AssetClassParser
-from nautilus_trader.model.c_enums.asset_type import AssetType
-from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
-from nautilus_trader.model.c_enums.currency_type import CurrencyType
-from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser
-from nautilus_trader.model.c_enums.instrument_close_type import (
-    InstrumentCloseTypeParser,
-)
-from nautilus_trader.model.c_enums.instrument_close_type import InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
-from nautilus_trader.model.c_enums.instrument_status import InstrumentStatusParser
-from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side import LiquiditySideParser
-from nautilus_trader.model.c_enums.oms_type import OMSType
-from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
-from nautilus_trader.model.c_enums.order_side import OrderSide
-from nautilus_trader.model.c_enums.order_side import OrderSideParser
-from nautilus_trader.model.c_enums.order_state import OrderState
-from nautilus_trader.model.c_enums.order_state import OrderStateParser
-from nautilus_trader.model.c_enums.order_type import OrderType
-from nautilus_trader.model.c_enums.order_type import OrderTypeParser
-from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaType
-from nautilus_trader.model.c_enums.orderbook_delta import OrderBookDeltaTypeParser
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevelParser
-from nautilus_trader.model.c_enums.position_side import PositionSide
-from nautilus_trader.model.c_enums.position_side import PositionSideParser
-from nautilus_trader.model.c_enums.price_type import PriceType
-from nautilus_trader.model.c_enums.price_type import PriceTypeParser
-from nautilus_trader.model.c_enums.time_in_force import TimeInForce
-from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
-from nautilus_trader.model.c_enums.venue_status import VenueStatus
-from nautilus_trader.model.c_enums.venue_status import VenueStatusParser
+from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AccountTypeParser
+from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import AggressorSideParser
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetClassParser
+from nautilus_trader.model.enums import AssetType
+from nautilus_trader.model.enums import AssetTypeParser
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BarAggregationParser
+from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookLevelParser
+from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import CurrencyTypeParser
+from nautilus_trader.model.enums import DeltaType
+from nautilus_trader.model.enums import DeltaTypeParser
+from nautilus_trader.model.enums import DepthType
+from nautilus_trader.model.enums import DepthTypeParser
+from nautilus_trader.model.enums import InstrumentCloseType
+from nautilus_trader.model.enums import InstrumentCloseTypeParser
+from nautilus_trader.model.enums import InstrumentStatus
+from nautilus_trader.model.enums import InstrumentStatusParser
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import LiquiditySideParser
+from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.enums import OMSTypeParser
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSideParser
+from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStateParser
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import OrderTypeParser
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import PositionSideParser
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import PriceTypeParser
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TimeInForceParser
+from nautilus_trader.model.enums import VenueStatus
+from nautilus_trader.model.enums import VenueStatusParser
+from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.enums import VenueTypeParser
+
+
+class TestAccountType:
+    def test_account_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            AccountTypeParser.to_str_py(-1)
+
+        with pytest.raises(ValueError):
+            AccountTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [AccountType.CASH, "CASH"],
+            [AccountType.MARGIN, "MARGIN"],
+        ],
+    )
+    def test_account_type_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = AccountTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CASH", AccountType.CASH],
+            ["MARGIN", AccountType.MARGIN],
+        ],
+    )
+    def test_account_type_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = AccountTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
 
 
 class TestAggressorSide:
-    def test_aggressor_side_parser_given_invalid_value_raises_value_error(self):
+    def test_account_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
@@ -313,6 +359,138 @@ class TestCurrencyType:
         assert expected == result
 
 
+class TestDepthType:
+    def test_depth_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            DepthTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            DepthTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [DepthType.VOLUME, "VOLUME"],
+            [DepthType.EXPOSURE, "EXPOSURE"],
+        ],
+    )
+    def test_depth_type_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = DepthTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["VOLUME", DepthType.VOLUME],
+            ["EXPOSURE", DepthType.EXPOSURE],
+        ],
+    )
+    def test_depth_type_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = DepthTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestInstrumentCloseType:
+    def test_instrument_close_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            InstrumentCloseTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            InstrumentCloseTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
+            [InstrumentCloseType.EXPIRED, "EXPIRED"],
+        ],
+    )
+    def test_instrument_close_type_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = InstrumentCloseTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
+            ["EXPIRED", InstrumentCloseType.EXPIRED],
+        ],
+    )
+    def test_instrument_close_type_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = InstrumentCloseTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestInstrumentStatus:
+    def test_instrument_status_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            InstrumentStatusParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            InstrumentStatusParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [InstrumentStatus.CLOSED, "CLOSED"],
+            [InstrumentStatus.PRE_OPEN, "PRE_OPEN"],
+            [InstrumentStatus.OPEN, "OPEN"],
+            [InstrumentStatus.PAUSE, "PAUSE"],
+            [InstrumentStatus.PRE_CLOSE, "PRE_CLOSE"],
+        ],
+    )
+    def test_instrument_status_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = InstrumentStatusParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["CLOSED", InstrumentStatus.CLOSED],
+            ["PRE_OPEN", InstrumentStatus.PRE_OPEN],
+            ["OPEN", InstrumentStatus.OPEN],
+            ["PAUSE", InstrumentStatus.PAUSE],
+            ["PRE_CLOSE", InstrumentStatus.PRE_CLOSE],
+        ],
+    )
+    def test_instrument_status_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = InstrumentStatusParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
 class TestLiquiditySide:
     def test_liquidity_side_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange
@@ -461,9 +639,11 @@ class TestOrderState:
             [OrderState.SUBMITTED, "SUBMITTED"],
             [OrderState.ACCEPTED, "ACCEPTED"],
             [OrderState.REJECTED, "REJECTED"],
-            [OrderState.CANCELLED, "CANCELLED"],
+            [OrderState.CANCELED, "CANCELED"],
             [OrderState.EXPIRED, "EXPIRED"],
             [OrderState.TRIGGERED, "TRIGGERED"],
+            [OrderState.PENDING_CANCEL, "PENDING_CANCEL"],
+            [OrderState.PENDING_REPLACE, "PENDING_REPLACE"],
             [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
             [OrderState.FILLED, "FILLED"],
         ],
@@ -485,9 +665,11 @@ class TestOrderState:
             ["SUBMITTED", OrderState.SUBMITTED],
             ["ACCEPTED", OrderState.ACCEPTED],
             ["REJECTED", OrderState.REJECTED],
-            ["CANCELLED", OrderState.CANCELLED],
+            ["CANCELED", OrderState.CANCELED],
             ["EXPIRED", OrderState.EXPIRED],
             ["TRIGGERED", OrderState.TRIGGERED],
+            ["PENDING_CANCEL", OrderState.PENDING_CANCEL],
+            ["PENDING_REPLACE", OrderState.PENDING_REPLACE],
             ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
             ["FILLED", OrderState.FILLED],
         ],
@@ -547,29 +729,29 @@ class TestOrderType:
         assert expected == result
 
 
-class TestOrderBookLevel:
+class TestBookLevel:
     def test_orderbook_level_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            OrderBookLevelParser.to_str_py(0)
+            BookLevelParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            OrderBookLevelParser.from_str_py("")
+            BookLevelParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderBookLevel.L1, "L1"],
-            [OrderBookLevel.L2, "L2"],
-            [OrderBookLevel.L3, "L3"],
+            [BookLevel.L1, "L1"],
+            [BookLevel.L2, "L2"],
+            [BookLevel.L3, "L3"],
         ],
     )
     def test_orderbook_level_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderBookLevelParser.to_str_py(enum)
+        result = BookLevelParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -578,9 +760,9 @@ class TestOrderBookLevel:
         "string, expected",
         [
             ["", None],
-            ["L1", OrderBookLevel.L1],
-            ["L2", OrderBookLevel.L2],
-            ["L3", OrderBookLevel.L3],
+            ["L1", BookLevel.L1],
+            ["L2", BookLevel.L2],
+            ["L3", BookLevel.L3],
         ],
     )
     def test_orderbook_level_from_str(self, string, expected):
@@ -589,35 +771,36 @@ class TestOrderBookLevel:
         if expected is None:
             return
 
-        result = OrderBookLevelParser.from_str_py(string)
+        result = BookLevelParser.from_str_py(string)
 
         # Assert
         assert expected == result
 
 
-class TestOrderBookOperationType:
-    def test_orderbook_op_parser_given_invalid_value_raises_value_error(self):
+class TestDeltaType:
+    def test_delta_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            OrderBookDeltaTypeParser.to_str_py(0)
+            DeltaTypeParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            OrderBookDeltaTypeParser.from_str_py("")
+            DeltaTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderBookDeltaType.ADD, "ADD"],
-            [OrderBookDeltaType.UPDATE, "UPDATE"],
-            [OrderBookDeltaType.DELETE, "DELETE"],
+            [DeltaType.ADD, "ADD"],
+            [DeltaType.UPDATE, "UPDATE"],
+            [DeltaType.DELETE, "DELETE"],
+            [DeltaType.CLEAR, "CLEAR"],
         ],
     )
-    def test_orderbook_op_to_str(self, enum, expected):
+    def test_delta_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderBookDeltaTypeParser.to_str_py(enum)
+        result = DeltaTypeParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -626,18 +809,19 @@ class TestOrderBookOperationType:
         "string, expected",
         [
             ["", None],
-            ["ADD", OrderBookDeltaType.ADD],
-            ["UPDATE", OrderBookDeltaType.UPDATE],
-            ["DELETE", OrderBookDeltaType.DELETE],
+            ["ADD", DeltaType.ADD],
+            ["UPDATE", DeltaType.UPDATE],
+            ["DELETE", DeltaType.DELETE],
+            ["CLEAR", DeltaType.CLEAR],
         ],
     )
-    def test_orderbook_op_from_str(self, string, expected):
+    def test_delta_type_from_str(self, string, expected):
         # Arrange
         # Act
         if expected is None:
             return
 
-        result = OrderBookDeltaTypeParser.from_str_py(string)
+        result = DeltaTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result
@@ -830,31 +1014,30 @@ class TestVenueStatus:
         assert expected == result
 
 
-class TestInstrumentStatus:
-    def test_venue_status_parser_given_invalid_value_raises_value_error(self):
+class TestVenueType:
+    def test_venue_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            InstrumentStatusParser.to_str_py(0)
+            VenueTypeParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            InstrumentStatusParser.from_str_py("")
+            VenueTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [InstrumentStatus.CLOSED, "CLOSED"],
-            [InstrumentStatus.PRE_OPEN, "PRE_OPEN"],
-            [InstrumentStatus.OPEN, "OPEN"],
-            [InstrumentStatus.PAUSE, "PAUSE"],
-            [InstrumentStatus.PRE_CLOSE, "PRE_CLOSE"],
+            [VenueType.EXCHANGE, "EXCHANGE"],
+            [VenueType.ECN, "ECN"],
+            [VenueType.BROKERAGE, "BROKERAGE"],
+            [VenueType.BROKERAGE_MULTI_VENUE, "BROKERAGE_MULTI_VENUE"],
         ],
     )
-    def test_venue_status_to_str(self, enum, expected):
+    def test_venue_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = InstrumentStatusParser.to_str_py(enum)
+        result = VenueTypeParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -862,59 +1045,16 @@ class TestInstrumentStatus:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["CLOSED", InstrumentStatus.CLOSED],
-            ["PRE_OPEN", InstrumentStatus.PRE_OPEN],
-            ["OPEN", InstrumentStatus.OPEN],
-            ["PAUSE", InstrumentStatus.PAUSE],
-            ["PRE_CLOSE", InstrumentStatus.PRE_CLOSE],
+            ["EXCHANGE", VenueType.EXCHANGE],
+            ["ECN", VenueType.ECN],
+            ["BROKERAGE", VenueType.BROKERAGE],
+            ["BROKERAGE_MULTI_VENUE", VenueType.BROKERAGE_MULTI_VENUE],
         ],
     )
-    def test_venue_status_from_str(self, string, expected):
+    def test_venue_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = InstrumentStatusParser.from_str_py(string)
-
-        # Assert
-        assert expected == result
-
-
-class TestInstrumentCloseType:
-    def test_venue_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(ValueError):
-            InstrumentCloseTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
-            InstrumentCloseTypeParser.from_str_py("")
-
-    @pytest.mark.parametrize(
-        "enum, expected",
-        [
-            [InstrumentCloseType.END_OF_SESSION, "END_OF_SESSION"],
-            [InstrumentCloseType.EXPIRED, "EXPIRED"],
-        ],
-    )
-    def test_venue_status_to_str(self, enum, expected):
-        # Arrange
-        # Act
-        result = InstrumentCloseTypeParser.to_str_py(enum)
-
-        # Assert
-        assert expected == result
-
-    @pytest.mark.parametrize(
-        "string, expected",
-        [
-            ["END_OF_SESSION", InstrumentCloseType.END_OF_SESSION],
-            ["EXPIRED", InstrumentCloseType.EXPIRED],
-        ],
-    )
-    def test_venue_status_from_str(self, string, expected):
-        # Arrange
-        # Act
-        result = InstrumentCloseTypeParser.from_str_py(string)
+        result = VenueTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result

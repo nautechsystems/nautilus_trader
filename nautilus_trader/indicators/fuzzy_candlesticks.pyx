@@ -45,7 +45,7 @@ cdef class FuzzyCandle:
         CandleWickSize lower_wick_size,
     ):
         """
-        Initialize a new instance of the `FuzzyCandle` class.
+        Initialize a new instance of the ``FuzzyCandle`` class.
 
         Parameters
         ----------
@@ -73,9 +73,6 @@ cdef class FuzzyCandle:
             and self.upper_wick_size == other.upper_wick_size \
             and self.lower_wick_size == other.lower_wick_size
 
-    def __ne__(self, FuzzyCandle other) -> bool:
-        return not self == other
-
     def __str__(self) -> str:
         return f"({self.direction}, {self.size}, {self.body_size}, {self.lower_wick_size}, {self.upper_wick_size})"
 
@@ -98,7 +95,7 @@ cdef class FuzzyCandlesticks(Indicator):
         double threshold4=3.0,
     ):
         """
-        Initialize a new instance of the `FuzzyCandlesticks` class.
+        Initialize a new instance of the ``FuzzyCandlesticks`` class.
 
         Parameters
         ----------

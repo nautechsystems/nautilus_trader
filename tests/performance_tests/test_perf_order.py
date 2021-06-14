@@ -20,7 +20,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.generators import ClientOrderIdGenerator
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
@@ -36,14 +35,14 @@ class TestOrderPerformance(PerformanceHarness):
     def setup(self):
         # Fixture Setup
         self.generator = ClientOrderIdGenerator(
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
             clock=LiveClock(),
         )
 
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -65,7 +64,7 @@ class TestOrderPerformance(PerformanceHarness):
             args=(
                 AUDUSD_SIM,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             ),
             iterations=10_000,
             rounds=1,
@@ -78,8 +77,8 @@ class TestOrderPerformance(PerformanceHarness):
             args=(
                 AUDUSD_SIM,
                 OrderSide.BUY,
-                Quantity(100000),
-                Price("0.80010"),
+                Quantity.from_int(100000),
+                Price.from_str("0.80010"),
             ),
             iterations=10_000,
             rounds=1,

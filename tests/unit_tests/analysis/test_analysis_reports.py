@@ -20,6 +20,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -27,6 +28,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -47,8 +49,8 @@ class ReportProviderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -56,11 +58,20 @@ class ReportProviderTests(unittest.TestCase):
         # Arrange
         state = AccountState(
             account_id=AccountId("BITMEX", "1513111"),
-            balances=[Money("10.00000000", BTC)],
-            balances_free=[Money("10.00000000", BTC)],
-            balances_locked=[Money("0.00000000", BTC)],
+            account_type=AccountType.MARGIN,
+            base_currency=BTC,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    currency=BTC,
+                    total=Money(10.00000000, BTC),
+                    free=Money(10.00000000, BTC),
+                    locked=Money(0.00000000, BTC),
+                )
+            ],
             info={},
             event_id=uuid4(),
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -111,8 +122,8 @@ class ReportProviderTests(unittest.TestCase):
         order1 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(1500000),
-            Price("0.80010"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80010"),
         )
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -121,8 +132,8 @@ class ReportProviderTests(unittest.TestCase):
         order2 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(1500000),
-            Price("0.80000"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80000"),
         )
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -132,7 +143,7 @@ class ReportProviderTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            last_px=Price("0.80011"),
+            last_px=Price.from_str("0.80011"),
         )
 
         order1.apply(event)
@@ -161,8 +172,8 @@ class ReportProviderTests(unittest.TestCase):
         order1 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(1500000),
-            Price("0.80010"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80010"),
         )
 
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -171,8 +182,8 @@ class ReportProviderTests(unittest.TestCase):
         order2 = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(1500000),
-            Price("0.80000"),
+            Quantity.from_int(1500000),
+            Price.from_str("0.80000"),
         )
 
         order2.apply(TestStubs.event_order_submitted(order2))
@@ -182,8 +193,8 @@ class ReportProviderTests(unittest.TestCase):
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S", "1"),
-            last_px=Price("0.80011"),
+            strategy_id=StrategyId("S-1"),
+            last_px=Price.from_str("0.80011"),
         )
 
         order1.apply(filled)
@@ -211,35 +222,35 @@ class ReportProviderTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00010"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00010"),
         )
 
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-123457"),
-            strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00010"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00010"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(fill=fill1)
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill1)
         position2.apply(fill2)
 
         positions = [position1, position2]

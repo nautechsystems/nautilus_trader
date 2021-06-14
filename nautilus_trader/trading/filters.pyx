@@ -15,11 +15,15 @@
 
 from datetime import datetime
 
+from libc.stdint cimport uint64_t
+
 import pandas as pd
 import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 
 from enum import Enum
 from enum import unique
@@ -325,32 +329,37 @@ class NewsImpact(Enum):
     HIGH = 4
 
 
-cdef class NewsEvent:
+cdef class NewsEvent(Data):
     """
     Represents an economic news event.
     """
 
     def __init__(
         self,
-        datetime timestamp,
-        impact,
-        name,
-        currency,
+        impact: NewsImpact,
+        str name,
+        Currency currency,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
 
         Parameters
         ----------
-        timestamp : datetime
-            The timestamp for the start of the economic news event.
         impact : NewsImpact
             The expected impact for the economic news event.
         name : str
             The name of the economic news event.
-        currency : str
+        currency : Currency
             The currency the economic news event is expected to affect.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when originally occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+
         """
-        self.timestamp = timestamp
+        super().__init__(ts_event_ns, ts_recv_ns)
+
         self.impact = impact
         self.name = name
         self.currency = currency
@@ -368,7 +377,7 @@ cdef class EconomicNewsEventFilter:
         news_data not None: pd.DataFrame,
     ):
         """
-        Initialize a new instance of the `EconomicNewsEventFilter` class.
+        Initialize a new instance of the ``EconomicNewsEventFilter`` class.
 
         Parameters
         ----------
@@ -479,7 +488,14 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = 0
         row = events.iloc[index]
-        return NewsEvent(events.index[index], row["Impact"], row["Name"], row["Currency"])
+        cdef uint64_t ts_event = dt_to_unix_nanos(events.index[index])
+        return NewsEvent(
+            NewsImpact[row["Impact"]],
+            row["Name"],
+            Currency.from_str_c(row["Currency"]),
+            ts_event,
+            ts_event,
+        )
 
     cpdef NewsEvent prev_event(self, datetime time_now):
         """
@@ -521,4 +537,11 @@ cdef class EconomicNewsEventFilter:
 
         cdef int index = -1
         row = events.iloc[index]
-        return NewsEvent(events.index[index], row["Impact"], row["Name"], row["Currency"])
+        cdef uint64_t ts_event = dt_to_unix_nanos(events.index[index])
+        return NewsEvent(
+            NewsImpact[row["Impact"]],
+            row["Name"],
+            Currency.from_str_c(row["Currency"]),
+            ts_event,
+            ts_event,
+        )

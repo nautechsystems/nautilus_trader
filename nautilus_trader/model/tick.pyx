@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
@@ -22,7 +22,6 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -31,34 +30,31 @@ cdef class Tick(Data):
     """
     The abstract base class for all ticks.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int64_t timestamp_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the `QuoteTick` class.
+        Initialize a new instance of the ``Tick`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The ticks instrument identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the tick.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns : uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        super().__init__(timestamp_ns)
+        super().__init__(ts_event_ns, ts_recv_ns)
 
         self.instrument_id = instrument_id
-
-    def __eq__(self, Tick other) -> bool:
-        return self.instrument_id == other.instrument_id and self.timestamp_ns == other.timestamp_ns
-
-    def __ne__(self, Tick other) -> bool:
-        return not self == other
 
 
 cdef class QuoteTick(Tick):
@@ -73,15 +69,16 @@ cdef class QuoteTick(Tick):
         Price ask not None,
         Quantity bid_size not None,
         Quantity ask_size not None,
-        int64_t timestamp_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the `QuoteTick` class.
+        Initialize a new instance of the ``QuoteTick`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier.
+            The quotes instrument identifier.
         bid : Price
             The best bid price.
         ask : Price
@@ -90,16 +87,24 @@ cdef class QuoteTick(Tick):
             The size at the best bid.
         ask_size : Quantity
             The size at the best ask.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the tick.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, timestamp_ns)
+        super().__init__(instrument_id, ts_event_ns, ts_recv_ns)
 
         self.bid = bid
         self.ask = ask
         self.bid_size = bid_size
         self.ask_size = ask_size
+
+    def __eq__(self, QuoteTick other) -> bool:
+        return self.to_dict() == other.to_dict()
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.to_dict()))
 
     def __str__(self) -> str:
         return (f"{self.instrument_id},"
@@ -107,10 +112,59 @@ cdef class QuoteTick(Tick):
                 f"{self.ask},"
                 f"{self.bid_size},"
                 f"{self.ask_size},"
-                f"{self.timestamp_ns}")
+                f"{self.ts_event_ns}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    @staticmethod
+    cdef QuoteTick from_dict_c(dict values):
+        return QuoteTick(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            bid=Price.from_str_c(values["bid"]),
+            ask=Price.from_str_c(values["ask"]),
+            bid_size=Quantity.from_str_c(values["bid_size"]),
+            ask_size=Quantity.from_str_c(values["ask_size"]),
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values) -> QuoteTick:
+        """
+        Return a quote tick parsed from the given values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        QuoteTick
+
+        """
+        return QuoteTick.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "bid": str(self.bid),
+            "ask": str(self.ask),
+            "bid_size": str(self.bid_size),
+            "ask_size": str(self.ask_size),
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }
 
     cpdef Price extract_price(self, PriceType price_type):
         """
@@ -118,7 +172,7 @@ cdef class QuoteTick(Tick):
 
         Parameters
         ----------
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type to extraction.
 
         Returns
@@ -127,7 +181,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Price((self.bid + self.ask) / 2)
+            return Price(((self.bid + self.ask) / 2), self.bid.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid
         elif price_type == PriceType.ASK:
@@ -141,7 +195,7 @@ cdef class QuoteTick(Tick):
 
         Parameters
         ----------
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type for extraction.
 
         Returns
@@ -150,67 +204,13 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Quantity((self.bid_size + self.ask_size) / 2, self.bid_size.precision_c())
+            return Quantity((self.bid_size + self.ask_size) / 2, self.bid_size.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid_size
         elif price_type == PriceType.ASK:
             return self.ask_size
         else:
             raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
-
-    @staticmethod
-    cdef QuoteTick from_serializable_str_c(InstrumentId instrument_id, str values):
-        Condition.not_none(instrument_id, 'instrument_id')
-        Condition.valid_string(values, 'values')
-
-        cdef list pieces = values.split(',', maxsplit=4)
-
-        if len(pieces) != 5:
-            raise ValueError(f"The QuoteTick string value was malformed, was {values}")
-
-        return QuoteTick(
-            instrument_id,
-            Price(pieces[0]),
-            Price(pieces[1]),
-            Quantity(pieces[2]),
-            Quantity(pieces[3]),
-            int(pieces[4]),
-        )
-
-    @staticmethod
-    def from_serializable_str(InstrumentId instrument_id, str values):
-        """
-        Parse a tick from the given instrument identifier and values string.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The tick instrument_id.
-        values : str
-            The tick values string.
-
-        Returns
-        -------
-        Tick
-
-        Raises
-        ------
-        ValueError
-            If values is not a valid string.
-
-        """
-        return QuoteTick.from_serializable_str_c(instrument_id, values)
-
-    cpdef str to_serializable_str(self):
-        """
-        Return a serializable string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{self.timestamp_ns}"
 
 
 cdef class TradeTick(Tick):
@@ -224,34 +224,49 @@ cdef class TradeTick(Tick):
         Price price not None,
         Quantity size not None,
         AggressorSide aggressor_side,
-        TradeMatchId match_id not None,
-        int64_t timestamp_ns,
+        str match_id not None,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the `TradeTick` class.
+        Initialize a new instance of the ``TradeTick`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier.
+            The trade instrument identifier.
         price : Price
             The price of the trade.
         size : Quantity
             The size of the trade.
-        aggressor_side : AggressorSide (Enum)
+        aggressor_side : AggressorSide
             The aggressor side of the trade.
-        match_id : TradeMatchId
+        match_id : str
             The trade match identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the tick.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+
+        Raises
+        ------
+        ValueError
+            If match_id is not a valid string.
 
         """
-        super().__init__(instrument_id, timestamp_ns)
+        Condition.valid_string(match_id, "match_id")
+        super().__init__(instrument_id, ts_event_ns, ts_recv_ns)
 
         self.price = price
         self.size = size
         self.aggressor_side = aggressor_side
         self.match_id = match_id
+
+    def __eq__(self, TradeTick other) -> bool:
+        return self.to_dict() == other.to_dict()
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.to_dict()))
 
     def __str__(self) -> str:
         return (f"{self.instrument_id},"
@@ -259,65 +274,56 @@ cdef class TradeTick(Tick):
                 f"{self.size},"
                 f"{AggressorSideParser.to_str(self.aggressor_side)},"
                 f"{self.match_id},"
-                f"{self.timestamp_ns}")
+                f"{self.ts_event_ns}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values):
-        Condition.not_none(instrument_id, 'instrument_id')
-        Condition.valid_string(values, 'values')
-
-        cdef list pieces = values.split(',', maxsplit=4)
-
-        if len(pieces) != 5:
-            raise ValueError(f"The TradeTick string value was malformed, was {values}")
-
+    cdef TradeTick from_dict_c(dict values):
         return TradeTick(
-            instrument_id,
-            Price(pieces[0]),
-            Quantity(pieces[1]),
-            AggressorSideParser.from_str(pieces[2]),
-            TradeMatchId(pieces[3]),
-            int(pieces[4]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            price=Price.from_str_c(values["price"]),
+            size=Quantity.from_str_c(values["size"]),
+            aggressor_side=AggressorSideParser.from_str(values["aggressor_side"]),
+            match_id=values["match_id"],
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
         )
 
     @staticmethod
-    def from_serializable_str(InstrumentId instrument_id, str values):
+    def from_dict(dict values):
         """
-        Parse a tick from the given instrument identifier and values string.
+        Return a trade tick from the given dict values.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The tick instrument_id.
-        values : str
-            The tick values string.
+        values : dict[str, object]
+            The values for initialization.
 
         Returns
         -------
         TradeTick
 
-        Raises
-        ------
-        ValueError
-            If values is not a valid string.
-
         """
-        return TradeTick.from_serializable_str_c(instrument_id, values)
+        return TradeTick.from_dict_c(values)
 
-    cpdef str to_serializable_str(self):
+    cpdef dict to_dict(self):
         """
-        Return a serializable string representation of this object.
+        Return a dictionary representation of this object.
 
         Returns
         -------
-        str
+        dict[str, object]
 
         """
-        return (f"{self.price},"
-                f"{self.size},"
-                f"{AggressorSideParser.to_str(self.aggressor_side)},"
-                f"{self.match_id},"
-                f"{self.timestamp_ns}")
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "price": str(self.price),
+            "size": str(self.size),
+            "aggressor_side": AggressorSideParser.to_str(self.aggressor_side),
+            "match_id": self.match_id,
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }

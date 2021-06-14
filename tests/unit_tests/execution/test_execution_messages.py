@@ -29,7 +29,7 @@ AUDUSD_SIM = TestStubs.audusd_id()
 
 
 class TestExecutionStateReport:
-    def test_instantiate_report(self):
+    def test_instantiate_execution_mass_status_report(self):
         # Arrange
         client_id = ClientId("IB")
         account_id = TestStubs.account_id()
@@ -47,6 +47,10 @@ class TestExecutionStateReport:
         assert report.timestamp_ns == 0
         assert report.order_reports() == {}
         assert report.position_reports() == {}
+        assert (
+            repr(report)
+            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, ts_recv_ns=0, order_reports={}, exec_reports={}, position_reports={})"  # noqa
+        )  # noqa
 
     def test_add_order_state_report(self):
         # Arrange
@@ -61,7 +65,7 @@ class TestExecutionStateReport:
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=venue_order_id,
             order_state=OrderState.REJECTED,
-            filled_qty=Quantity(0),
+            filled_qty=Quantity.zero(),
             timestamp_ns=0,
         )
 
@@ -70,6 +74,14 @@ class TestExecutionStateReport:
 
         # Assert
         assert report.order_reports()[venue_order_id] == order_report
+        assert (
+            repr(report)
+            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, ts_recv_ns=0, order_reports={VenueOrderId('1'): OrderStatusReport(client_order_id=O-123456, venue_order_id=1, order_state=REJECTED, filled_qty=0, ts_recv_ns=0)}, exec_reports={}, position_reports={})"  # noqa
+        )
+        assert (
+            repr(order_report)
+            == "OrderStatusReport(client_order_id=O-123456, venue_order_id=1, order_state=REJECTED, filled_qty=0, ts_recv_ns=0)"  # noqa
+        )
 
     def test_add_position_state_report(self):
         report = ExecutionMassStatus(
@@ -81,7 +93,7 @@ class TestExecutionStateReport:
         position_report = PositionStatusReport(
             instrument_id=AUDUSD_SIM,
             position_side=PositionSide.FLAT,
-            qty=Quantity(0),
+            qty=Quantity.zero(),
             timestamp_ns=0,
         )
 
@@ -90,3 +102,11 @@ class TestExecutionStateReport:
 
         # Assert
         assert report.position_reports()[AUDUSD_SIM] == position_report
+        assert (
+            repr(report)
+            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, ts_recv_ns=0, order_reports={}, exec_reports={}, position_reports={InstrumentId('AUD/USD.SIM'): PositionStatusReport(instrument_id=AUD/USD.SIM, side=FLAT, qty=0, ts_recv_ns=0)})"  # noqa
+        )  # noqa
+        assert (
+            repr(position_report)
+            == "PositionStatusReport(instrument_id=AUD/USD.SIM, side=FLAT, qty=0, ts_recv_ns=0)"  # noqa
+        )  # noqa

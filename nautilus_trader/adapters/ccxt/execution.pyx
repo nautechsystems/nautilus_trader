@@ -16,7 +16,7 @@
 import asyncio
 from decimal import Decimal
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
@@ -35,6 +35,7 @@ from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -43,23 +44,27 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport Order
-from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -74,12 +79,14 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self,
         client not None: ccxt.Exchange,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `CCXTExecutionClient` class.
+        Initialize a new instance of the ``CCXTExecutionClient`` class.
 
         Parameters
         ----------
@@ -87,6 +94,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             The unified CCXT client.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -100,15 +111,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             load_all=False,
         )
 
+        cdef str exchange_name = client.name.upper()
         super().__init__(
-            ClientId(client.name.upper()),
-            account_id,
-            engine,
-            instrument_provider,
-            clock,
-            logger,
+            client_id=ClientId(exchange_name),
+            venue_type=VenueType.EXCHANGE,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            instrument_provider=instrument_provider,
+            clock=clock,
+            logger=logger,
             config={
-                "name": f"CCXTExecClient-{client.name.upper()}",
+                "name": f"CCXTExecClient-{exchange_name}",
             }
         )
 
@@ -127,10 +142,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._cached_orders = {}  # type: {VenueOrderId: Order}
         self._cached_filled = {}  # type: {VenueOrderId: Decimal}
 
-    cdef void _on_reset(self) except *:
-        self._cached_orders.clear()
-        self._cached_filled.clear()
-
     cpdef void connect(self) except *:
         """
         Connect the client.
@@ -143,12 +154,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for order in orders_all:
             if order.is_completed_c():
                 continue
-            if order.instrument_id.venue.client_id == self.id:
+            if order.instrument_id.venue == self.venue:
                 self._cached_orders[order.venue_order_id] = order
                 self._cached_filled[order.venue_order_id] = order.filled_qty.as_decimal()
 
         if self._client.check_required_credentials():
-            self._log.info("API credentials validated.", color=LogColor.GREEN)
+            self._log.info("API key authenticated.", color=LogColor.GREEN)
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
@@ -168,6 +179,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._connect.__name__)
             return
+
+        # Add currencies to cache
+        for currency in self._instrument_provider.currencies().values():
+            self._engine.cache.add_currency(currency)
 
         # Start streams
         self._watch_balances_task = self._loop.create_task(self._watch_balances())
@@ -211,16 +226,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 id=order.venue_order_id.value,
                 symbol=order.instrument_id.symbol.value,
             )
-            # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self._update_balances.__name__)
+            self._log_ccxt_error(ex, self.generate_order_status_report.__name__)
             return None
 
         if response is None:
             self._log.error(f"No order found for {order.venue_order_id.value}.")
             return None
 
-        filled_qty = Decimal(f"{response['filled']:.{instrument.price_precision}f}")
+        filled_qty = instrument.make_qty(response.get('filled', 0))
 
         # Determine state
         status = response["status"]
@@ -229,7 +243,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         elif status == "closed":
             state = OrderState.FILLED
         elif status == "canceled":
-            state = OrderState.CANCELLED
+            state = OrderState.CANCELED
         elif status == "expired":
             state = OrderState.EXPIRED
         else:
@@ -239,11 +253,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             order_state=state,
-            filled_qty=Quantity(filled_qty),
+            filled_qty=filled_qty,
             timestamp_ns=millis_to_nanos(millis=response["timestamp"]),
         )
 
-    async def generate_exec_reports(self, VenueOrderId venue_order_id, Symbol symbol, datetime since=None):
+    async def generate_exec_reports(
+        self,
+        VenueOrderId venue_order_id,
+        Symbol symbol,
+        datetime since=None,
+    ):
         """
         Generate a list of execution reports.
 
@@ -266,7 +285,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         Condition.not_none(venue_order_id, "venue_order_id")
         Condition.not_none(symbol, "symbol")
 
-        self._log.info(f"Generating list[ExecutionReport] for {repr(venue_order_id)}...")
+        self._log.info(f"Generating List[ExecutionReport] for {repr(venue_order_id)}...")
 
         cdef list reports = []  # Output
         cdef list response
@@ -276,37 +295,46 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 since=dt_to_unix_millis(since),
             )
         except CCXTError as ex:
-            self._log_ccxt_error(ex, self.generate_trades.__name__)
+            self._log_ccxt_error(ex, self.generate_exec_reports.__name__)
             return reports
 
         if response is None:
-            return reports  # TODO: Is this necessary??
+            return reports
 
         cdef list fills = [fill for fill in response if fill["order"] == venue_order_id.value]
-        self._log.info(str(fills), color=LogColor.GREEN)  # TODO: Development
 
         if not fills:
             return reports
 
         cdef ClientOrderId client_order_id = self._engine.cache.client_order_id(venue_order_id)
         if client_order_id is None:
-            self._log.error(f"Cannot generate trades list: "
-                            f"no ClientOrderId found for {repr(venue_order_id)}.")
+            self._log.error(
+                f"Cannot generate trades list: "
+                f"no ClientOrderId found for {repr(venue_order_id)}."
+            )
             return reports
+
+        cdef InstrumentId instrument_id = InstrumentId(symbol, self.venue)
+        cdef Instrument instrument = self._instrument_provider.find(instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot reconcile state for {repr(client_order_id)}, "
+                f"instrument for {instrument_id} not found."
+            )
+            return  # Cannot generate state report
 
         cdef dict fill
         cdef ExecutionReport report
         for fill in fills:
             report = ExecutionReport(
-                execution_id=ExecutionId(str(fill["id"])),
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
-                last_qty=Decimal(fill["amount"]),
-                last_px=Decimal(fill["price"]),
-                commission_amount=Decimal(fill["fee"]["cost"]),
-                commission_currency=fill["fee"]["currency"],
+                execution_id=ExecutionId(str(fill["id"])),
+                last_qty=Quantity(fill["amount"], instrument.size_precision),
+                last_px=Price(fill["price"], instrument.price_precision),
+                commission=self._parse_commission(fill),
                 liquidity_side=LiquiditySide.TAKER if fill["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-                execution_is=millis_to_nanos(millis=fill["timestamp"]),
+                ts_filled_ns=millis_to_nanos(millis=fill["timestamp"]),
                 timestamp_ns=self._clock.timestamp_ns(),
             )
             reports.append(report)
@@ -412,7 +440,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
+    cdef void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
     async def _run_after_delay(self, double delay, coro):
@@ -423,6 +451,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     async def _load_instruments(self):
         await self._instrument_provider.load_all_async()
+
+        cdef Instrument instrument
+        for instrument in self._instrument_provider.get_all().values():
+            self._engine.cache.add_instrument(instrument)
+
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
     async def _update_instruments(self, delay):
@@ -433,10 +466,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._update_instruments_task = self._loop.create_task(update)
 
     async def _update_balances(self):
-        cdef dict params = {'type': 'spot'}  # TODO: Hard coded to spot account for now
         cdef dict response
         try:
-            response = await self._client.fetch_balance(params)
+            response = await self._client.fetch_balance()
         except TypeError:
             # Temporary workaround for testing
             response = self._client.fetch_balance
@@ -444,18 +476,18 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log_ccxt_error(ex, self._update_balances.__name__)
             return
 
-        self._on_account_state(response)
+        self._on_account_state(response, initial=True)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     async def _watch_balances(self):
-        cdef dict params = {'type': 'spot'}  # TODO: Hard coded to spot account for now
         cdef dict event
         try:
             while True:
                 try:
-                    event = await self._client.watch_balance(params)
-                    self._on_account_state(event)
+                    event = await self._client.watch_balance()
+                    # self._log.info(str(event), LogColor.GREEN)  # TODO: Development
+                    self._on_account_state(event)  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_balances.__name__)
                     continue
@@ -470,6 +502,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 try:
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_orders()
+                    # self._log.info(str(events[0]), LogColor.GREEN)  # TODO: Development
                     self._on_order_status(events[0])  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
@@ -485,12 +518,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 try:
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_my_trades()
+                    # self._log.info(str(events[0]), LogColor.GREEN)  # TODO: Development
                     self._on_exec_report(events[0])  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_balances.__name__)
                     continue
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled `_watch_my_trades` for {self.account_id}.")
+            self._log.debug(f"Cancelled `_watch_exec_reports` for {self.account_id}.")
         except Exception as ex:
             self._log.exception(ex)
 
@@ -500,9 +534,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.debug(f"Submitted {order}.")
 
         # Generate event here to ensure it is processed before OrderAccepted
-        self._generate_order_submitted(
+        self.generate_order_submitted(
             client_order_id=order.client_order_id,
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
 
         try:
@@ -516,10 +550,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 params={'clientOrderId': order.client_order_id.value},
             )
         except CCXTError as ex:
-            self._generate_order_rejected(
+            self.generate_order_rejected(
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                timestamp_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )
 
     async def _cancel_order(self, ClientOrderId client_order_id):
@@ -532,6 +566,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.error(f"Cannot cancel order, state=OrderState.{order.state_string_c()}.")
             return  # Cannot cancel
 
+        self.generate_order_pending_cancel(
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            ts_pending_ns=self._clock.timestamp_ns(),
+        )
+
         try:
             await self._client.cancel_order(
                 id=order.venue_order_id.value,
@@ -543,70 +583,77 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event) except *:
+    cdef void _on_account_state(self, dict event, bint initial=False) except *:
+        del event["info"]
+        del event["free"]
+        del event["used"]
+        del event["total"]
+
         cdef list balances = []
-        cdef list balances_free = []
-        cdef list balances_locked = []
-
-        cdef dict event_free = event["free"]
-        cdef dict event_used = event["used"]
-        cdef dict event_total = event["total"]
-
-        if event_free == self._account_last_free \
-                and event_used == self._account_last_used \
-                and event_total == self._account_last_used:
-            return  # No updates
-
-        self._account_last_free = event_free
-        self._account_last_used = event_used
-        self._account_last_total = event_total
 
         cdef str code
-        cdef Currency currency
+        for code, amounts in event.items():
+            if not isinstance(amounts, dict):
+                continue
+            currency = self._instrument_provider.currency(code)
+            if currency is None:
+                self._log.error(f"Cannot update total balance for {code} "
+                                f"(no currency loaded).")
 
-        # Update total balances
-        for code, amount in event_total.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances.append(Money(amount, currency))
+            used_value = amounts["used"]
+            if used_value is None:
+                locked = Money(0, currency)
+            else:
+                locked = Money(used_value, currency)
 
-        # Update free balances
-        for code, amount in event_free.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances_free.append(Money(amount, currency))
+            free_value = amounts["free"]
+            if free_value is None:
+                free = Money(0, currency)
+            else:
+                free = Money(free_value, currency)
 
-        # Update locked balances
-        for code, amount in event_used.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances_locked.append(Money(amount, currency))
+            total = Money(free + locked, currency)
+
+            if (
+                initial
+                and total.as_decimal() == 0
+                and locked.as_decimal() == 0
+                and free.as_decimal() == 0
+            ):
+                # Skip initial account state with all zero balances
+                continue
+
+            balances.append(
+                AccountBalance(
+                    currency=currency,
+                    total=total,
+                    locked=locked,
+                    free=free,
+                ),
+            )
+
+        timestamp = event.get("timestamp")
+        if timestamp is None:
+            update_ns = self._clock.timestamp_ns()
+        else:
+            update_ns = millis_to_nanos(timestamp)
 
         # Generate event
-        cdef AccountState account_state = AccountState(
-            self.account_id,
-            balances,
-            balances_free,
-            balances_locked,
-            {},
-            self._uuid_factory.generate(),
-            self._clock.timestamp_ns(),
+        self.generate_account_state(
+            balances=balances,
+            reported=True,
+            ts_updated_ns=update_ns,
         )
 
-        self._handle_event(account_state)
-
-    cdef inline void _on_order_status(self, dict event) except *:
+    cdef void _on_order_status(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["id"])
-        cdef ClientOrderId client_order_id = ClientOrderId(event["clientOrderId"])
+
+        # Attempt to parse ClientOrderId
+        client_order_id_str = event.get("clientOrderId")
+        if client_order_id_str is None:
+            self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
+            return
+        cdef ClientOrderId client_order_id = ClientOrderId(client_order_id_str)
 
         if venue_order_id not in self._cached_orders:
             order = self._engine.cache.order(client_order_id)
@@ -616,19 +663,22 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             self._cache_order(venue_order_id, order)
 
-        cdef int64_t timestamp_ns = <int64_t>(event["timestamp"])
+        cdef uint64_t timestamp_ns = 0
+        if event['timestamp'] is not None:
+            timestamp_ns = <uint64_t>(millis_to_nanos(event["timestamp"]))
+        else:
+            timestamp_ns = <uint64_t>(millis_to_nanos(event["lastTradeTimestamp"]))
+
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`
         if status == "open" and event["filled"] == 0:
-            self._generate_order_accepted(client_order_id, venue_order_id, timestamp_ns)
+            self.generate_order_accepted(client_order_id, venue_order_id, timestamp_ns)
         elif status == "canceled":
-            self._generate_order_cancelled(client_order_id, venue_order_id, timestamp_ns)
-            self._decache_order(venue_order_id)
+            self.generate_order_canceled(client_order_id, venue_order_id, timestamp_ns)
         elif status == "expired":
-            self._generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
-            self._decache_order(venue_order_id)
+            self.generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
 
-    cdef inline void _on_exec_report(self, dict event) except *:
+    cdef void _on_exec_report(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["order"])
         cdef Order order = self._cached_orders.get(venue_order_id)
 
@@ -644,36 +694,48 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             self._cache_order(venue_order_id, order)
 
-        prev_cum_qty: Decimal = self._cached_filled.get(venue_order_id, Decimal())
-        last_qty: Decimal = Decimal(f"{event['amount']:.{order.quantity.precision_c()}f}")
-        cum_qty: Decimal = prev_cum_qty + last_qty
-        self._cached_filled[order.venue_order_id] = cum_qty
-        leaves_qty: Decimal = order.quantity - cum_qty
-        if leaves_qty == 0:
-            self._decache_order(venue_order_id)
+        cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                            f"instrument for {order.instrument_id} not found.")
+            return  # Cannot generate state report
 
-        self._generate_order_filled(
+        self.generate_order_filled(
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             execution_id=ExecutionId(event["id"]),
+            position_id=None,  # Assigned in engine
             instrument_id=order.instrument_id,
             order_side=order.side,
-            last_qty=last_qty,
-            last_px=event["price"],
-            cum_qty=cum_qty,
-            leaves_qty=order.quantity - cum_qty,
-            commission_amount=event.get("fee", {}).get("cost", 0),
-            commission_currency=event.get("fee", {}).get("currency"),
+            last_qty=Quantity(event["amount"], instrument.size_precision),
+            last_px=Price(event["price"], instrument.price_precision),
+            quote_currency=instrument.quote_currency,
+            commission=self._parse_commission(event),
             liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-            timestamp_ns=(millis_to_nanos(millis=event["timestamp"])),
+            ts_filled_ns=(millis_to_nanos(millis=event["timestamp"])),
         )
 
-    cdef inline void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
+    cdef Money _parse_commission(self, dict event):
+        cdef dict commission = event.get("fee", {})
+        cdef str commission_currency = commission.get("currency")
+        if commission_currency is None:
+            return None
+
+        cdef Currency currency = self._instrument_provider.currency(commission_currency)
+        if currency is None:
+            self._log.error(
+                f"Cannot determine commission: currency {commission_currency} not found.",
+            )
+            return None
+
+        return Money(commission.get("cost", 0), currency)
+
+    cdef void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
         self._cached_orders[venue_order_id] = order
         self._cached_filled[venue_order_id] = order.filled_qty
         self._log.debug(f"Cached {repr(venue_order_id)} {order}.")
 
-    cdef inline void _decache_order(self, VenueOrderId venue_order_id) except *:
+    cdef void _decache_order(self, VenueOrderId venue_order_id) except *:
         self._cached_orders.pop(venue_order_id, None)
         self._cached_filled.pop(venue_order_id, None)
         self._log.debug(f"De-cached {repr(venue_order_id)}.")
@@ -685,15 +747,16 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
     """
 
     def __init__(
-            self,
-            client not None: ccxt.Exchange,
-            AccountId account_id not None,
-            LiveExecutionEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
+        self,
+        client not None: ccxt.Exchange,
+        AccountId account_id not None,
+        AccountType account_type,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BinanceCCXTExecutionClient` class.
+        Initialize a new instance of the ``BinanceCCXTExecutionClient`` class.
 
         Parameters
         ----------
@@ -701,6 +764,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             The unified CCXT client.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -709,15 +774,19 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             The logger for the client.
 
         """
-        Condition.true(client.name.upper() == "BINANCE", "client.name != BINANCE")
-
+        cdef str exchange_name = client.name.upper()
+        Condition.true(exchange_name == "BINANCE", "client.name != BINANCE")
         super().__init__(
-            client,
-            account_id,
-            engine,
-            clock,
-            logger,
+            client=client,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=None,  # Multi-currency accounts
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
+
+        self.venue = Venue(exchange_name)
 
 # -- COMMANDS ----------------------------------------------------------------------------------
 
@@ -758,9 +827,9 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
 
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
-        self._generate_order_submitted(
+        self.generate_order_submitted(
             client_order_id=order.client_order_id,
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
 
         try:
@@ -774,10 +843,10 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
                 params=params,
             )
         except CCXTError as ex:
-            self._generate_order_rejected(
+            self.generate_order_rejected(
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                timestamp_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )
 
 
@@ -787,15 +856,15 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
     """
 
     def __init__(
-            self,
-            client not None: ccxt.Exchange,
-            AccountId account_id not None,
-            LiveExecutionEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
+        self,
+        client not None: ccxt.Exchange,
+        AccountId account_id not None,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BitmexCCXTExecutionClient` class.
+        Initialize a new instance of the ``BitmexCCXTExecutionClient`` class.
 
         Parameters
         ----------
@@ -811,15 +880,19 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             The logger for the client.
 
         """
-        Condition.true(client.name.upper() == "BITMEX", "client.name != BITMEX")
-
+        cdef str exchange_name = client.name.upper()
+        Condition.true(exchange_name == "BITMEX", "client.name != BITMEX")
         super().__init__(
-            client,
-            account_id,
-            engine,
-            clock,
-            logger,
+            client=client,
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=Currency.from_str_c("BTC"),
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
+
+        self.venue = Venue(exchange_name)
 
 # -- COMMANDS ----------------------------------------------------------------------------------
 
@@ -863,9 +936,9 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
 
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
-        self._generate_order_submitted(
+        self.generate_order_submitted(
             client_order_id=order.client_order_id,
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
 
         try:
@@ -879,8 +952,8 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
                 params=params,
             )
         except CCXTError as ex:
-            self._generate_order_rejected(
+            self.generate_order_rejected(
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                timestamp_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )

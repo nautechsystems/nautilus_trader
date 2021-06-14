@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -37,15 +37,15 @@ cdef class BarSpecification:
         PriceType price_type,
     ):
         """
-        Initialize a new instance of the `BarSpecification` class.
+        Initialize a new instance of the ``BarSpecification`` class.
 
         Parameters
         ----------
         step : int
             The step for binning samples for bar aggregation (> 0).
-        aggregation : BarAggregation (Enum)
+        aggregation : BarAggregation
             The type of bar aggregation.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type to use for aggregation.
 
         Raises
@@ -64,9 +64,6 @@ cdef class BarSpecification:
         return self.step == other.step\
             and self.aggregation == other.aggregation\
             and self.price_type == other.price_type
-
-    def __ne__(self, BarSpecification other) -> bool:
-        return not self == other
 
     def __hash__(self) -> int:
         return hash((self.step, self.aggregation, self.price_type))
@@ -132,10 +129,12 @@ cdef class BarSpecification:
         bool
 
         """
-        return self.aggregation == BarAggregation.SECOND\
-            or self.aggregation == BarAggregation.MINUTE\
-            or self.aggregation == BarAggregation.HOUR\
+        return (
+            self.aggregation == BarAggregation.SECOND
+            or self.aggregation == BarAggregation.MINUTE
+            or self.aggregation == BarAggregation.HOUR
             or self.aggregation == BarAggregation.DAY
+        )
 
     cpdef bint is_threshold_aggregated(self) except *:
         """
@@ -154,12 +153,14 @@ cdef class BarSpecification:
         bool
 
         """
-        return self.aggregation == BarAggregation.TICK\
-            or self.aggregation == BarAggregation.TICK_IMBALANCE\
-            or self.aggregation == BarAggregation.VOLUME\
-            or self.aggregation == BarAggregation.VOLUME_IMBALANCE\
-            or self.aggregation == BarAggregation.VALUE\
+        return (
+            self.aggregation == BarAggregation.TICK
+            or self.aggregation == BarAggregation.TICK_IMBALANCE
+            or self.aggregation == BarAggregation.VOLUME
+            or self.aggregation == BarAggregation.VOLUME_IMBALANCE
+            or self.aggregation == BarAggregation.VALUE
             or self.aggregation == BarAggregation.VALUE_IMBALANCE
+        )
 
     cpdef bint is_information_aggregated(self) except *:
         """
@@ -175,9 +176,11 @@ cdef class BarSpecification:
         bool
 
         """
-        return self.aggregation == BarAggregation.TICK_RUNS\
-            or self.aggregation == BarAggregation.VOLUME_RUNS\
+        return (
+            self.aggregation == BarAggregation.TICK_RUNS
+            or self.aggregation == BarAggregation.VOLUME_RUNS
             or self.aggregation == BarAggregation.VALUE_RUNS
+        )
 
 
 cdef class BarType:
@@ -192,7 +195,7 @@ cdef class BarType:
         internal_aggregation=True,
     ):
         """
-        Initialize a new instance of the `BarType` class.
+        Initialize a new instance of the ``BarType`` class.
 
         Parameters
         ----------
@@ -217,12 +220,11 @@ cdef class BarType:
         self.is_internal_aggregation = internal_aggregation
 
     def __eq__(self, BarType other) -> bool:
-        return self.instrument_id == other.instrument_id \
-            and self.spec == other.spec \
+        return (
+            self.instrument_id == other.instrument_id
+            and self.spec == other.spec
             and self.is_internal_aggregation == other.is_internal_aggregation
-
-    def __ne__(self, BarType other) -> bool:
-        return not self == other
+        )
 
     def __hash__(self) -> int:
         return hash((self.instrument_id, self.spec))
@@ -234,7 +236,7 @@ cdef class BarType:
         return f"{type(self).__name__}({self}, internal_aggregation={self.is_internal_aggregation})"
 
     @staticmethod
-    cdef BarType from_serializable_str_c(str value, bint internal_aggregation=True):
+    cdef BarType from_str_c(str value, bint internal_aggregation=True):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=3)
@@ -252,7 +254,7 @@ cdef class BarType:
         return BarType(instrument_id, bar_spec, internal_aggregation)
 
     @staticmethod
-    def from_serializable_str(str value, bint internal_aggregation=False) -> BarType:
+    def from_str(str value, bint internal_aggregation=False) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -273,18 +275,7 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_serializable_str_c(value, internal_aggregation)
-
-    cpdef str to_serializable_str(self):
-        """
-        The serializable string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.instrument_id}-{self.spec}"
+        return BarType.from_str_c(value, internal_aggregation)
 
 
 cdef class Bar(Data):
@@ -300,11 +291,12 @@ cdef class Bar(Data):
         Price low_price not None,
         Price close_price not None,
         Quantity volume not None,
-        int64_t timestamp_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         bint check=False,
     ):
         """
-        Initialize a new instance of the `Bar` class.
+        Initialize a new instance of the ``Bar`` class.
 
         Parameters
         ----------
@@ -320,8 +312,10 @@ cdef class Bar(Data):
             The bars close price.
         volume : Quantity
             The bars volume.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the bar close.
+        ts_event_ns : uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
         check : bool
             If bar parameters should be checked valid.
 
@@ -339,7 +333,7 @@ cdef class Bar(Data):
             Condition.true(high_price >= low_price, 'high_price was < low_price')
             Condition.true(high_price >= close_price, 'high_price was < close_price')
             Condition.true(low_price <= close_price, 'low_price was > close_price')
-        super().__init__(timestamp_ns)
+        super().__init__(ts_event_ns, ts_recv_ns)
 
         self.type = bar_type
         self.open = open_price
@@ -350,71 +344,64 @@ cdef class Bar(Data):
         self.checked = check
 
     def __eq__(self, Bar other) -> bool:
-        return self.type == other.type \
-            and self.open == other.open \
-            and self.high == other.high \
-            and self.low == other.low \
-            and self.close == other.close \
-            and self.volume == other.volume \
-            and self.timestamp_ns == other.timestamp_ns
-
-    def __ne__(self, Bar other) -> bool:
-        return not self == other
+        return self.to_dict() == other.to_dict()
 
     def __hash__(self) -> int:
-        return hash((self.type, self.open, self.high, self.low, self.close, self.volume, self.timestamp_ns))
+        return hash(frozenset(self.to_dict()))
 
     def __str__(self) -> str:
-        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_ns}"
+        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event_ns}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef Bar from_serializable_str_c(BarType bar_type, str values):
-        Condition.valid_string(values, 'values')
-
-        cdef list pieces = values.split(',', maxsplit=5)
-
-        if len(pieces) != 6:
-            raise ValueError(f"The Bar string value was malformed, was {values}")
-
+    cdef Bar from_dict_c(dict values):
         return Bar(
-            bar_type=bar_type,
-            open_price=Price(pieces[0]),
-            high_price=Price(pieces[1]),
-            low_price=Price(pieces[2]),
-            close_price=Price(pieces[3]),
-            volume=Quantity(pieces[4]),
-            timestamp_ns=int(pieces[5]),
+            bar_type=BarType.from_str_c(values["bar_type"]),
+            open_price=Price.from_str_c(values["open"]),
+            high_price=Price.from_str_c(values["high"]),
+            low_price=Price.from_str_c(values["low"]),
+            close_price=Price.from_str_c(values["close"]),
+            volume=Quantity.from_str_c(values["volume"]),
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
         )
 
     @staticmethod
-    def from_serializable_str(BarType bar_type, str values) -> Bar:
+    def from_dict(dict values) -> Bar:
         """
-        Parse a bar parsed from the given string.
+        Return a bar parsed from the given values.
 
         Parameters
         ----------
-        bar_type : BarType
-            The bar type for the bar.
-        values : str
-            The bar values string to parse.
+        values : dict[str, object]
+            The values for initialization.
 
         Returns
         -------
         Bar
 
         """
-        return Bar.from_serializable_str_c(bar_type, values)
+        return Bar.from_dict_c(values)
 
-    cpdef str to_serializable_str(self):
+    cpdef dict to_dict(self):
         """
-        The serializable string representation of this object.
+        Return a dictionary representation of this object.
 
         Returns
         -------
-        str
+        dict[str, object]
 
         """
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{self.timestamp_ns}"
+        return {
+            "type": type(self).__name__,
+            "bar_type": str(self.type),
+            "open": str(self.open),
+            "high": str(self.high),
+            "low": str(self.low),
+            "close": str(self.close),
+            "volume": str(self.volume),
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }

@@ -17,21 +17,23 @@ from datetime import datetime
 import inspect
 from typing import List, Optional
 
+from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
-from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -42,7 +44,8 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.order.base import Order
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -55,7 +58,7 @@ class ObjectStorer:
 
     def __init__(self):
         """
-        Initialize a new instance of the `ObjectStorer` class.
+        Initialize a new instance of the ``ObjectStorer`` class.
         """
         self.count = 0
         self._store = []
@@ -104,7 +107,7 @@ class MockStrategy(TradingStrategy):
 
     def __init__(self, bar_type: BarType):
         """
-        Initialize a new instance of the `MockStrategy` class.
+        Initialize a new instance of the ``MockStrategy`` class.
 
         Parameters
         ----------
@@ -203,7 +206,7 @@ class KaboomStrategy(TradingStrategy):
 
     def __init__(self):
         """
-        Initialize a new instance of the `KaboomStrategy` class.
+        Initialize a new instance of the ``KaboomStrategy`` class.
         """
         super().__init__(order_id_tag="000")
 
@@ -273,7 +276,7 @@ class MockMarketDataClient(MarketDataClient):
         logger: Logger,
     ):
         """
-        Initialize a new instance of the `DataClient` class.
+        Initialize a new instance of the ``DataClient`` class.
 
         Parameters
         ----------
@@ -288,10 +291,10 @@ class MockMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self.calls = []
@@ -402,20 +405,29 @@ class MockExecutionClient(ExecutionClient):
     def __init__(
         self,
         client_id,
+        venue_type,
         account_id,
+        account_type,
+        base_currency,
         engine,
         clock,
         logger,
     ):
         """
-        Initialize a new instance of the `MockExecutionClient` class.
+        Initialize a new instance of the ``MockExecutionClient`` class.
 
         Parameters
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account_id for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : ExecutionEngine
             The execution engine for the component.
         clock : Clock
@@ -425,11 +437,14 @@ class MockExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            client_id,
-            account_id,
-            engine,
-            clock,
-            logger,
+            client_id=client_id,
+            venue_type=venue_type,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
 
         self.calls = []
@@ -482,21 +497,30 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         client_id,
+        venue_type,
         account_id,
+        account_type,
+        base_currency,
         engine,
         instrument_provider,
         clock,
         logger,
     ):
         """
-        Initialize a new instance of the `MockExecutionClient` class.
+        Initialize a new instance of the ``MockExecutionClient`` class.
 
         Parameters
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account_id for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : ExecutionEngine
             The execution engine for the component.
         instrument_provider : InstrumentProvider
@@ -508,12 +532,15 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
         """
         super().__init__(
-            client_id,
-            account_id,
-            engine,
-            instrument_provider,
-            clock,
-            logger,
+            client_id=client_id,
+            venue_type=venue_type,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            instrument_provider=instrument_provider,
+            clock=clock,
+            logger=logger,
         )
 
         self._order_status_reports = {}  # type: dict[VenueOrderId, OrderStatusReport]
@@ -582,15 +609,15 @@ class MockLiveExecutionClient(LiveExecutionClient):
         return self._trades_lists[venue_order_id]
 
 
-class MockExecutionDatabase(ExecutionDatabase):
+class MockCacheDatabase(CacheDatabase):
     """
-    Provides a mock execution database for testing.
+    Provides a mock cache database for testing.
 
     """
 
     def __init__(self, trader_id: TraderId, logger: Logger):
         """
-        Initialize a new instance of the `BypassExecutionDatabase` class.
+        Initialize a new instance of the ``MockCacheDatabase`` class.
 
         Parameters
         ----------
@@ -602,14 +629,22 @@ class MockExecutionDatabase(ExecutionDatabase):
         """
         super().__init__(trader_id, logger)
 
+        self.currencies = {}
+        self.instruments = {}
         self.accounts = {}
         self.orders = {}
         self.positions = {}
 
     def flush(self) -> None:
-        self.accounts = {}
-        self.orders = {}
-        self.positions = {}
+        self.accounts.clear()
+        self.orders.clear()
+        self.positions.clear()
+
+    def load_currencies(self) -> dict:
+        return self.currencies.copy()
+
+    def load_instruments(self) -> dict:
+        return self.instruments.copy()
 
     def load_accounts(self) -> dict:
         return self.accounts.copy()
@@ -619,6 +654,12 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def load_positions(self) -> dict:
         return self.positions.copy()
+
+    def load_currency(self, code: str) -> Currency:
+        return self.currencies.get(code)
+
+    def load_instrument(self, instrument_id: InstrumentId) -> InstrumentId:
+        return self.instruments.get(instrument_id)
 
     def load_account(self, account_id: AccountId) -> Account:
         return self.accounts.get(account_id)
@@ -634,6 +675,12 @@ class MockExecutionDatabase(ExecutionDatabase):
 
     def delete_strategy(self, strategy_id: StrategyId) -> None:
         pass
+
+    def add_currency(self, currency: Currency) -> None:
+        self.currencies[currency.code] = currency
+
+    def add_instrument(self, instrument: Instrument) -> None:
+        self.instruments[instrument.id] = instrument
 
     def add_account(self, account: Account) -> None:
         self.accounts[account.id] = account
@@ -657,39 +704,27 @@ class MockExecutionDatabase(ExecutionDatabase):
         pass  # Would persist the user state dict
 
 
-class MockLiveExecutionEngine(LiveExecutionEngine):
-    def __init__(
-        self,
-        loop,
-        database,
-        portfolio,
-        clock,
-        logger,
-        config=None,
-    ):
-        super().__init__(loop, database, portfolio, clock, logger, config)
-        self.commands = []
-        self.events = []
-
-    def execute(self, command):
-        self.commands.append(command)
-
-    def process(self, event):
-        self.events.append(event)
-
-
 class MockLiveDataEngine(LiveDataEngine):
+    """Provides a mock live data engine for testing."""
+
     def __init__(
         self,
         loop,
         portfolio,
+        cache,
         clock,
         logger,
         config=None,
     ):
         super().__init__(
-            loop=loop, portfolio=portfolio, clock=clock, logger=logger, config=config
+            loop=loop,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
+
         self.commands = []
         self.events = []
         self.responses = []
@@ -702,3 +737,67 @@ class MockLiveDataEngine(LiveDataEngine):
 
     def receive(self, response):
         self.responses.append(response)
+
+
+class MockLiveExecutionEngine(LiveExecutionEngine):
+    """Provides a mock live execution engine for testing."""
+
+    def __init__(
+        self,
+        loop,
+        portfolio,
+        cache,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(
+            loop=loop,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
+        )
+
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)
+
+
+class MockLiveRiskEngine(LiveRiskEngine):
+    """Provides a mock live risk engine for testing."""
+
+    def __init__(
+        self,
+        loop,
+        exec_engine,
+        portfolio,
+        cache,
+        clock,
+        logger,
+        config=None,
+    ):
+        super().__init__(
+            loop=loop,
+            exec_engine=exec_engine,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
+        )
+
+        self.commands = []
+        self.events = []
+
+    def execute(self, command):
+        self.commands.append(command)
+
+    def process(self, event):
+        self.events.append(event)

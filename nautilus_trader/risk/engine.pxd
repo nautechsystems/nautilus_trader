@@ -13,35 +13,38 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class RiskEngine(Component):
-    cdef dict _clients
     cdef Portfolio _portfolio
     cdef ExecutionEngine _exec_engine
 
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
+    cdef readonly CacheFacade cache
+    """The engines cache.\n\n:returns: `CacheFacade`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
     cdef readonly bint block_all_orders
     """If all orders are blocked from being sent.\n\n:returns: `bool`"""
-
-# -- REGISTRATION ----------------------------------------------------------------------------------
-
-    cpdef void register_client(self, ExecutionClient client) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -52,26 +55,33 @@ cdef class RiskEngine(Component):
 
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
+    cpdef void set_block_all_orders(self, bint value=*) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, Command command) except *
-    cdef inline void _handle_trading_command(self, TradingCommand command) except *
-    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
-    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
-    cdef inline void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *
-    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
+    cdef void _execute_command(self, Command command) except *
+    cdef void _handle_trading_command(self, TradingCommand command) except *
+    cdef void _handle_submit_order(self, SubmitOrder command) except *
+    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cdef void _handle_update_order(self, UpdateOrder command) except *
+    cdef void _handle_cancel_order(self, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef inline void _handle_event(self, Event event) except *
+    cdef void _handle_event(self, Event event) except *
 
-# -- RISK MANAGEMENT -------------------------------------------------------------------------------
+# -- PRE-TRADE VALIDATION --------------------------------------------------------------------------
 
-    cdef list _check_submit_order_risk(self, SubmitOrder command)
-    cdef list _check_submit_bracket_order_risk(self, SubmitBracketOrder command)
-    cdef void _deny_order(self, Order order, str reason) except *
+    cdef void _check_duplicate_ids(self, BracketOrder bracket_order)
+    cdef list _check_order_values(self, Instrument instrument, Order order, list msgs)
 
-# -- TEMP ------------------------------------------------------------------------------------------
+# -- PRE-TRADE RISK --------------------------------------------------------------------------------
 
-    cpdef void set_block_all_orders(self, bint value=*) except *
+    cdef list _check_order_risk(self, Instrument instrument, Order order)
+    cdef list _check_bracket_order_risk(self, Instrument instrument, BracketOrder bracket_order)
+
+# -- EVENT GENERATION ------------------------------------------------------------------------------
+
+    cdef void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
+    cdef void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *
+    cdef void _deny_order(self, ClientOrderId client_order_id, str reason) except *

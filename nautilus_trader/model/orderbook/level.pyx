@@ -30,7 +30,7 @@ cdef class Level:
 
     def __init__(self, double price):
         """
-        Initialize a new instance of the `Level` class.
+        Initialize a new instance of the ``Level`` class.
 
         Parameters
         ----------
@@ -113,13 +113,13 @@ cdef class Level:
         Condition.equal(order.price, self.price, "order.price", "self.price")
 
         cdef Order existing
-        if order.volume == 0:
+        if order.size == 0:
             self.delete(order=order)
         else:
             existing = self.orders[self.orders.index(order)]
             if existing is None:
                 raise KeyError("Cannot update order: order not found")
-            existing.update_volume(volume=order.volume)
+            existing.update_size(size=order.size)
 
     cpdef void delete(self, Order order) except *:
         """
@@ -144,7 +144,7 @@ cdef class Level:
         double
 
         """
-        return sum([order.volume for order in self.orders])
+        return sum([order.size for order in self.orders])
 
     cpdef double exposure(self):
         """

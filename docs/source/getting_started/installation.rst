@@ -21,7 +21,7 @@ and virtual environments.
 
 > https://github.com/pyenv/pyenv
 
-Installation for Unix-like systems can be achieved through `one` of the
+Installation for UNIX-like systems can be achieved through `one` of the
 following options;
 
 From PyPI

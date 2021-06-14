@@ -15,18 +15,18 @@
 
 from decimal import Decimal
 
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
+from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -67,7 +67,7 @@ cdef class EMACross(TradingStrategy):
         str order_id_tag,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------
@@ -90,6 +90,7 @@ cdef class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialize in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
@@ -99,6 +100,12 @@ cdef class EMACross(TradingStrategy):
 
     cpdef void on_start(self) except *:
         """Actions to be performed on strategy start."""
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
@@ -175,8 +182,11 @@ cdef class EMACross(TradingStrategy):
 
         # Check if indicators ready
         if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
+            self.log.info(
+                f"Waiting for indicators to warm up "
+                f"[{self.cache.bar_count(self.bar_type)}]...",
+                color=LogColor.BLUE,
+            )
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC
@@ -202,7 +212,7 @@ cdef class EMACross(TradingStrategy):
         cdef MarketOrder order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
@@ -214,18 +224,18 @@ cdef class EMACross(TradingStrategy):
         cdef MarketOrder order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
+            quantity=self.instrument.make_qty(self.trade_size),
         )
 
         self.submit_order(order)
 
-    cpdef void on_data(self, GenericData data) except *:
+    cpdef void on_data(self, Data data) except *:
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The data received.
 
         """

@@ -22,7 +22,8 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
@@ -34,7 +35,7 @@ cdef class ReportProvider:
 
     def __init__(self):
         """
-        Initialize a new instance of the `ReportProvider` class.
+        Initialize a new instance of the ``ReportProvider`` class.
         """
 
     cpdef object generate_orders_report(self, list orders):
@@ -161,7 +162,7 @@ cdef class ReportProvider:
         return {
             "position_id": position.id.value,
             "instrument_id": position.instrument_id.value,
-            "strategy_id": position.strategy_id.tag.value,
+            "strategy_id": position.strategy_id.value,
             "entry": OrderSideParser.to_str(position.entry),
             "peak_qty": position.peak_qty,
             "opened_time": nanos_to_unix_dt(position.opened_timestamp_ns),
@@ -177,7 +178,8 @@ cdef class ReportProvider:
 
     cdef dict _account_state_to_dict(self, AccountState event):
         cdef dict data = {"timestamp": nanos_to_unix_dt(event.timestamp_ns)}
+        cdef AccountBalance balance
         for balance in event.balances:
-            data[f"balance_{balance.currency}"] = balance
+            data[f"balance_{balance.currency}"] = balance.total
 
         return data

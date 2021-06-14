@@ -15,18 +15,18 @@
 
 import asyncio
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -52,62 +52,63 @@ class TestLiveRiskEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=self.clock,
         )
 
         self.random_order_factory = OrderFactory(
-            trader_id=TraderId("RANDOM", "042"),
-            strategy_id=StrategyId("S", "042"),
+            trader_id=TraderId("RANDOM-042"),
+            strategy_id=StrategyId("S-042"),
             clock=self.clock,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
-        self.portfolio.register_cache(DataCache(self.logger))
-
-        self.analyzer = PerformanceAnalyzer()
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
-        self.database = BypassExecutionDatabase(
-            trader_id=self.trader_id, logger=self.logger
-        )
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            database=self.database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-        )
-
-        self.venue = Venue("SIM")
-        self.exec_client = MockExecutionClient(
-            ClientId(self.venue.value),
-            self.account_id,
-            self.exec_engine,
-            self.clock,
-            self.logger,
         )
 
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={},
         )
 
+        self.exec_client = MockExecutionClient(
+            client_id=ClientId("SIM"),
+            venue_type=VenueType.ECN,
+            account_id=TestStubs.account_id(),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Wire up components
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.register_risk_engine(self.risk_engine)
 
@@ -134,6 +135,7 @@ class TestLiveRiskEngine:
             loop=self.loop,
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -141,7 +143,7 @@ class TestLiveRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -151,13 +153,11 @@ class TestLiveRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -179,6 +179,7 @@ class TestLiveRiskEngine:
             loop=self.loop,
             exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -186,7 +187,7 @@ class TestLiveRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             self.clock,
             self.logger,
         )
@@ -196,13 +197,11 @@ class TestLiveRiskEngine:
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         submit_order = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -266,7 +265,7 @@ class TestLiveRiskEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -276,13 +275,11 @@ class TestLiveRiskEngine:
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             )
 
             submit_order = SubmitOrder(
-                order.instrument_id.venue.client_id,
                 self.trader_id,
-                self.account_id,
                 strategy.id,
                 PositionId.null(),
                 order,
@@ -310,7 +307,7 @@ class TestLiveRiskEngine:
 
             strategy = TradingStrategy(order_id_tag="001")
             strategy.register_trader(
-                TraderId("TESTER", "000"),
+                TraderId("TESTER-000"),
                 self.clock,
                 self.logger,
             )
@@ -320,7 +317,7 @@ class TestLiveRiskEngine:
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
                 OrderSide.BUY,
-                Quantity(100000),
+                Quantity.from_int(100000),
             )
 
             event = TestStubs.event_order_submitted(order)

@@ -1,10 +1,6 @@
-[build-system]
-requires = ["poetry-core>=1.0.2", "cython", "numpy", "setuptools"]
-build-backend = "poetry.core.masonry.api"
-
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.116.1"
+version = "1.123.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -25,7 +21,17 @@ packages = [
 include = [
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
+    { path = "nautilus_trader/**/*.pyd", format = "wheel" },
 ]
+
+[build-system]
+requires = [
+    "setuptools",
+    "poetry-core>=1.0.3",
+    "numpy>=1.20.3",
+    "Cython>=3.0a7",
+]
+build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.build]
 script = "build.py"
@@ -33,48 +39,53 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-betfairlightweight = {extras = ["speed"], version = "^2.12.1"}
-ccxt = "^1.49.4"
-cython = "^3.0a6"
+cython = "^3.0a7"
 empyrical = "^0.5.5"
-ib_insync = "^0.9.66"
+fsspec = "^2021.6.0"
 msgpack = "^1.0.2"
-numpy = "^1.20.2"
-numpydoc = { version = "^1.1.0", optional = true }
-oandapyV20 = "^0.6.3"
+numpy = "^1.20.3"
+orjson = "3.5.1"  # Pinned at 3.5.1 due betfairlightweight
 pandas = "^1.2.4"
 psutil = "^5.8.0"
-pyarrow = { version = "^3.0.0", markers = "sys_platform != 'win32'" }
-pytz = "^2020.5"
+pyarrow = { version = "^4.0.1", markers = "sys_platform != 'win32'" }
+pytz = "^2021.1"
 redis = "3.5.3"
-scipy = "^1.6.1"
+scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9
 tabulate = "^0.8.9"
 uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
+betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
+ccxt = { version = "^1.51.40", optional = true }
+ib_insync = { version = "^0.9.66", optional = true }
+numpydoc = { version = "^1.1.0", optional = true }
+oandapyV20 = { version = "^0.6.3", optional = true }
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
-# A commit was pushed on 7/1/21 to fix the above,
-# possibly fixed in the next version of Cython.
-black = "^20.8.b1"
-coverage = "^4.5.4"
-flake8 = "^3.9.1"
+black = "^21.6b0"
+coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0a7
+flake8 = "^3.9.2"
 isort = "^5.8.0"
-mypy = "^0.812"
-nox = "^2020.12.31"
+mypy = "^0.902"
+nox = "^2021.6.12"
 parameterized = "^0.8.1"
-pre-commit = "^2.12.1"
-pytest = "^6.2.3"
-pytest-asyncio = "^0.14.0"
+pre-commit = "^2.13.0"
+pytest = "^6.2.4"
+pytest-asyncio = "^0.15.1"
 pytest-benchmark = "^3.4.1"
-pytest-cov = "^2.10.1"
-pytest-mock = "^3.6.0"
+pytest-cov = "2.10.1"  # Pinned at 2.10.1 due coverage 4.5.4
+pytest-mock = "^3.6.1"
 pytest-xdist = { version = "^2.2.0", extras = ["psutil"] }
-sphinx = { version = "^3.4.3", optional = true }
+sphinx = { version = "^4.0.2", optional = true }
 sphinx-rtd-theme = { version = "^0.5.1", optional = true }
 
 [tool.poetry.extras]
+betfair = ["betfairlightweight"]
+ccxt = ["ccxt"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
+ib = ["ib_insync"]
+oanda = ["oandapyV20"]
+
 
 #################
 # Test configs #
@@ -88,29 +99,3 @@ filterwarnings = [
 ]
 
 # TODO (move .coveragerc here once we're on coverage 5.x)
-
-#################
-# Style configs #
-#################
-#[tool.isort]
-#src_paths = ["examples", "nautilus_trader", "scripts", "tests", "tools", "build.py", "noxfile.py"]
-#atomic = true
-#combine_as_imports = true
-#ensure_newline_before_comments = true
-#force_grid_wrap = false
-#force_single_line = true
-#force_sort_within_sections = true
-#include_trailing_comma = true
-#known_first_party = ["examples", "nautilus_trader", "tests"]
-#known_third_party = ["redis"]
-#lexicographical = true
-#line_length = 88
-#lines_after_imports = 2
-#lines_between_types = 1
-#multi_line_output = 3
-#single_line_exclusions = "typing"
-#use_parentheses = true
-
-[tool.black]
-target-version = ["py37", "py38"]
-include = '\.pyi?$'

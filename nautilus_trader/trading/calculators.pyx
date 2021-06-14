@@ -50,7 +50,7 @@ cdef class ExchangeRateCalculator:
             The currency to convert from.
         to_currency : Currency
             The currency to convert to.
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The price type for conversion.
         bid_quotes : dict
             The dictionary of currency pair bid quotes dict[Symbol, Decimal].
@@ -143,7 +143,7 @@ cdef class ExchangeRateCalculator:
                     exchange_rates_perm0[perm[1]] = Decimal(1) / exchange_rates_perm1[perm[0]]
 
         cdef dict quotes = exchange_rates.get(from_currency.code)
-        if quotes is not None:
+        if quotes:
             xrate = quotes.get(to_currency.code)
             if xrate is not None:
                 return xrate
@@ -194,7 +194,7 @@ cdef class RolloverInterestCalculator:
 
     def __init__(self, data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `RolloverInterestCalculator` class.
+        Initialize a new instance of the ``RolloverInterestCalculator`` class.
 
         Parameters
         ----------

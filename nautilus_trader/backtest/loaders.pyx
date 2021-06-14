@@ -143,6 +143,7 @@ cdef class TardisQuoteDataLoader:
 
         return df
 
+
 cdef class ParquetTickDataLoader:
     """
     Provides a means of loading tick data pandas DataFrames from Parquet files.

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import pickle
 from unittest.mock import MagicMock
 
@@ -21,6 +20,7 @@ from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -60,6 +60,6 @@ class TestIBInstrumentProvider:
         # Assert
         assert instrument_id == future.id
         assert 1000, future.multiplier
-        assert Decimal("0.01") == future.tick_size
+        assert Price.from_str("0.01") == future.price_increment
         assert 2, future.price_precision
         # TODO: Test all properties

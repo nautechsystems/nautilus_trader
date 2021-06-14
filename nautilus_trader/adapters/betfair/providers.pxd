@@ -15,8 +15,7 @@
 
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport BettingInstrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 
 cdef class BetfairInstrumentProvider(InstrumentProvider):
@@ -31,7 +30,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
     cdef void _load_instruments(self, market_filter=*) except *
     cpdef void _assert_loaded_instruments(self) except *
-    cpdef instrument(self, InstrumentId instrument_id)
     cpdef list search_markets(self, dict market_filter=*)
     cpdef list search_instruments(self, dict instrument_filter=*, bint load=*)
     cpdef list list_instruments(self)

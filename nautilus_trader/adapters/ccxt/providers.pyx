@@ -15,19 +15,20 @@
 
 from decimal import Decimal
 
+from libc.stdint cimport uint64_t
+
 import ccxt
 
 from nautilus_trader.common.providers cimport InstrumentProvider
+from nautilus_trader.core.functions cimport precision_from_str
 from nautilus_trader.core.time cimport unix_timestamp_ns
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
-from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -40,7 +41,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
     def __init__(self, client not None: ccxt.Exchange, bint load_all=False):
         """
-        Initialize a new instance of the `CCXTInstrumentProvider` class.
+        Initialize a new instance of the ``CCXTInstrumentProvider`` class.
 
         Parameters
         ----------
@@ -53,7 +54,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         super().__init__()
 
         self._client = client
-        self._currencies = {}  # type: dict[str, Currency]
 
         self.venue = Venue(client.name.upper())
 
@@ -82,7 +82,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         cdef InstrumentId instrument_id
         cdef Instrument instrument
         for k, v in self._client.markets.items():
-            instrument_id = InstrumentId(Symbol(k), self.venue)
+            instrument_id = InstrumentId(Symbol(k.replace(".", "")), self.venue)
             instrument = self._parse_instrument(instrument_id, v)
             if instrument is None:
                 continue  # Something went wrong in parsing
@@ -104,7 +104,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                     continue
                 currency = Currency(
                     code=code,
-                    precision=self._get_precision(precision, precision_mode),
+                    precision=self._get_currency_precision(precision, precision_mode),
                     iso4217=0,
                     name=code,
                     currency_type=currency_type,
@@ -112,43 +112,41 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
             self._currencies[code] = currency
 
-    cdef inline int _tick_size_to_precision(self, double tick_size) except *:
-        cdef tick_size_str = f"{tick_size:f}"
-        return len(tick_size_str.partition('.')[2].rstrip('0'))
-
-    cdef inline int _get_precision(self, double value, int mode) except *:
+    cdef int _get_currency_precision(self, double value, int mode) except *:
         if mode == 2:  # DECIMAL_PLACE
             return int(value)
         elif mode == 4:  # TICK_SIZE
-            return self._tick_size_to_precision(value)
+            return precision_from_str(str(value))
 
-    cdef inline CurrencyType _parse_currency_type(self, str code):
+    cdef CurrencyType _parse_currency_type(self, str code):
         return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
 
     cdef Instrument _parse_instrument(self, InstrumentId instrument_id, dict values):
-        # Precisions
+        cdef bint is_spot = values.get("spot", False)
+        cdef bint is_swap = values.get("swap", False)
+        cdef bint is_future = values.get("future", False)
+        cdef bint is_option = values.get("option", False)
+        cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
+
         cdef dict precisions = values["precision"]
         if self._client.precisionMode == 2:  # DECIMAL_PLACES
-            price_precision = precisions.get("price")
-            size_precision = precisions.get("amount", 8)
-            tick_size = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
+            price_precision = int(precisions.get("price"))
+            price_increment = Price(1.0 / 10 ** price_precision, precision=price_precision)
+            size_precision = int(precisions.get("amount", 8))
+            size_increment = Quantity(1.0 / 10 ** size_precision, precision=size_precision)
         elif self._client.precisionMode == 4:  # TICK_SIZE
-            tick_size = Decimal(precisions.get("price"))
-            price_precision = self._tick_size_to_precision(tick_size)
-            size_precision = precisions.get("amount")
-            if size_precision is None:
-                size_precision = 0
-            size_precision = self._tick_size_to_precision(size_precision)
+            price_precision = precision_from_str(str(precisions.get("price")))
+            price_increment = Price(precisions.get("price"), precision=price_precision)
+            size_precision = precision_from_str(str(precisions.get("amount")).rstrip(".0"))
+            amount_prec = precisions.get("amount", 1)
+            if amount_prec is None:
+                amount_prec = 1
+            size_increment = Quantity(float(amount_prec) / 10 ** size_precision, size_precision)
         else:
-            raise RuntimeError(f"The {self._client.name} exchange is using "
-                               f"SIGNIFICANT_DIGITS precision which is not "
-                               f"currently supported in this version.")
-
-        cdef str asset_type_str = values.get("type")
-        if asset_type_str is not None:
-            asset_type = AssetTypeParser.from_str(asset_type_str.upper())
-        else:
-            asset_type = AssetType.SPOT
+            raise RuntimeError(
+                f"The {self._client.name} exchange is using SIGNIFICANT_DIGITS "
+                f"precision which is not currently supported in this version."
+            )
 
         base_currency = values.get("base")
         if base_currency is not None:
@@ -162,6 +160,18 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         if quote_currency is None:
             quote_currency = self._currencies[values["quote"]]
 
+        settlement_currency = values["info"].get("settlCurrency")
+        if settlement_currency is not None and settlement_currency != "":
+            if settlement_currency.upper() == "XBT":
+                settlement_currency = "BTC"
+            settlement_currency = self._currencies[settlement_currency]
+
+        lot_size = values["info"].get("lotSize")
+        if lot_size is not None and Decimal(lot_size) > 0:
+            lot_size = Quantity(lot_size, precision=size_precision)
+        else:
+            lot_size = None
+
         max_quantity = values["limits"].get("amount").get("max")
         if max_quantity is not None:
             max_quantity = Quantity(max_quantity, precision=size_precision)
@@ -169,14 +179,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         min_quantity = values["limits"].get("amount").get("min")
         if min_quantity is not None:
             min_quantity = Quantity(min_quantity, precision=size_precision)
-
-        lot_size = values["info"].get("lotSize")
-        if lot_size is not None:
-            lot_size = Quantity(lot_size)
-        elif min_quantity is not None:
-            lot_size = Quantity(min_quantity, precision=size_precision)
-        else:
-            lot_size = Quantity(1)
 
         max_notional = values["limits"].get("cost").get("max")
         if max_notional is not None:
@@ -186,11 +188,11 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         if min_notional is not None:
             min_notional = Money(min_notional, currency=quote_currency)
 
-        max_price = values["limits"].get("cost").get("max")
+        max_price = values["limits"].get("price").get("max")
         if max_price is not None:
             max_price = Price(max_price, precision=price_precision)
 
-        min_price = values["limits"].get("cost").get("min")
+        min_price = values["limits"].get("price").get("min")
         if min_price is not None:
             min_price = Price(min_price, precision=price_precision)
 
@@ -198,39 +200,64 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         if maker_fee is None:
             maker_fee = Decimal()
         else:
-            maker_fee = Decimal(maker_fee)
+            maker_fee = Decimal(f"{maker_fee:.4f}")
 
         taker_fee = values.get("taker")
         if taker_fee is None:
             taker_fee = Decimal()
         else:
-            taker_fee = Decimal(taker_fee)
+            taker_fee = Decimal(f"{taker_fee:.4f}")
 
-        cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
+        cdef uint64_t timestamp = unix_timestamp_ns()
 
-        return Instrument(
-            instrument_id=instrument_id,
-            asset_class=AssetClass.CRYPTO,
-            asset_type=asset_type,
-            base_currency=base_currency,
-            quote_currency=quote_currency,
-            settlement_currency=quote_currency,
-            is_inverse=is_inverse,
-            price_precision=price_precision,
-            size_precision=size_precision,
-            tick_size=tick_size,
-            multiplier=Decimal(1),
-            lot_size=lot_size,
-            max_quantity=max_quantity,
-            min_quantity=min_quantity,
-            max_notional=max_notional,
-            min_notional=min_notional,
-            max_price=max_price,
-            min_price=min_price,
-            margin_init=Decimal(),         # Margin trading not implemented
-            margin_maint=Decimal(),        # Margin trading not implemented
-            maker_fee=maker_fee,
-            taker_fee=taker_fee,
-            timestamp_ns=unix_timestamp_ns(),
-            info=values,
-        )
+        if is_spot or is_future:  # TODO(cs): Use CurrencySpot for futures for now
+            return CurrencySpot(
+                instrument_id=instrument_id,
+                base_currency=base_currency,
+                quote_currency=quote_currency,
+                price_precision=price_precision,
+                size_precision=size_precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                lot_size=lot_size,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=max_notional,
+                min_notional=min_notional,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=Decimal(),   # Margin trading not implemented
+                margin_maint=Decimal(),  # Margin trading not implemented
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
+                ts_event_ns=timestamp,
+                ts_recv_ns=timestamp,
+                info=values,
+            )
+        elif is_swap:
+            return CryptoSwap(
+                instrument_id=instrument_id,
+                base_currency=base_currency,
+                quote_currency=quote_currency,
+                settlement_currency=settlement_currency,
+                is_inverse=is_inverse,
+                price_precision=price_precision,
+                size_precision=size_precision,
+                price_increment=price_increment,
+                size_increment=size_increment,
+                max_quantity=max_quantity,
+                min_quantity=min_quantity,
+                max_notional=max_notional,
+                min_notional=min_notional,
+                max_price=max_price,
+                min_price=min_price,
+                margin_init=Decimal(),   # Margin trading not implemented
+                margin_maint=Decimal(),  # Margin trading not implemented
+                maker_fee=maker_fee,
+                taker_fee=taker_fee,
+                ts_event_ns=timestamp,
+                ts_recv_ns=timestamp,
+                info=values,
+            )
+        elif is_option:
+            raise RuntimeError("crypto options not supported in this version")

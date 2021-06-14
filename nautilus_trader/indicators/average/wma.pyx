@@ -37,7 +37,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         PriceType price_type=PriceType.LAST,
     ):
         """
-        Initialize a new instance of the `SimpleMovingAverage` class.
+        Initialize a new instance of the ``SimpleMovingAverage`` class.
 
         Parameters
         ----------
@@ -45,7 +45,7 @@ cdef class WeightedMovingAverage(MovingAverage):
             The rolling window period for the indicator (> 0).
         weights : iterable
             The weights for the moving average calculation (if not None then = period).
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The specified price type for extracting values from quote ticks.
 
         Raises

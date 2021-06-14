@@ -13,11 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+import json
+
+import pandas as pd
+
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -25,7 +31,9 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatusParser
 from nautilus_trader.model.currency cimport Currency
@@ -36,11 +44,13 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
 
+# These imports are currently being skipped from sorting as isort 5.8 was breaking on them
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType  # isort:skip
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser  # isort:skip
 
@@ -53,55 +63,119 @@ cdef class AccountState(Event):
     def __init__(
         self,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,
+        bint reported,
         list balances not None,
-        list balances_free not None,
-        list balances_locked not None,
         dict info not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t ts_updated_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `AccountState` class.
+        Initialize a new instance of the ``AccountState`` class.
 
         Parameters
         ----------
         account_id : AccountId
             The account identifier.
-        balances : list[Money]
-            The current account balances.
-        balances_free : list[Money]
-            The account balances free for trading.
-        balances_locked : list[Money]
-            The account balances locked (assigned as margin collateral).
+        account_type : AccountId
+            The account type for the event.
+        base_currency : Currency, optional
+            The account base currency. Use None for multi-currency accounts.
+        reported : bool
+            If the state is reported from the exchange (otherwise system calculated).
+        balances : list[AccountBalance]
+            The account balances
         info : dict [str, object]
             The additional implementation specific account information.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        ts_updated_ns : uint64
+            The UNIX timestamp (nanoseconds) when the account was updated.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
 
         self.account_id = account_id
+        self.account_type = account_type
+        self.base_currency = base_currency
         self.balances = balances
-        self.balances_free = balances_free
-        self.balances_locked = balances_locked
+        self.is_reported = reported
         self.info = info
+        self.ts_updated_ns = ts_updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"free=[{', '.join([b.to_str() for b in self.balances_free])}], "
-                f"locked=[{', '.join([b.to_str() for b in self.balances_locked])}], "
+                f"account_type={AccountTypeParser.to_str(self.account_type)}, "
+                f"base_currency={self.base_currency}, "
+                f"is_reported={self.is_reported}, "
+                f"balances=[{', '.join([str(b) for b in self.balances])}], "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef AccountState from_dict_c(dict values):
+        cdef str base_str = values["base_currency"]
+        return AccountState(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            account_type=AccountTypeParser.from_str(values["account_type"]),
+            base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
+            reported=values["reported"],
+            balances=[AccountBalance.from_dict(b) for b in json.loads(values["balances"])],
+            info=json.loads(values["info"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            ts_updated_ns=values["ts_updated_ns"],
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an account state event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        AccountState
+
+        """
+        return AccountState.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "account_type": AccountTypeParser.to_str(self.account_type),
+            "base_currency": self.base_currency.code if self.base_currency else None,
+            "balances": json.dumps([b.to_dict() for b in self.balances]),
+            "reported": self.is_reported,
+            "info": json.dumps(self.info),
+            "event_id": self.id.value,
+            "ts_updated_ns": self.ts_updated_ns,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderEvent(Event):
     """
     The abstract base class for all order events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -109,10 +183,10 @@ cdef class OrderEvent(Event):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderEvent` base class.
+        Initialize a new instance of the ``OrderEvent` base class.
 
         Parameters
         ----------
@@ -122,8 +196,8 @@ cdef class OrderEvent(Event):
             The venue order identifier.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -152,11 +226,11 @@ cdef class OrderInitialized(OrderEvent):
         Quantity quantity not None,
         TimeInForce time_in_force,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
         dict options not None,
     ):
         """
-        Initialize a new instance of the `OrderInitialized` class.
+        Initialize a new instance of the ``OrderInitialized`` class.
 
         Parameters
         ----------
@@ -166,18 +240,18 @@ cdef class OrderInitialized(OrderEvent):
             The strategy identifier associated with the order.
         instrument_id : InstrumentId
             The order instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The order side.
-        order_type : OrderType (Enum)
+        order_type : OrderType
             The order type.
         quantity : Quantity
             The order quantity.
-        time_in_force : TimeInForce (Enum)
+        time_in_force : TimeInForce
             The order time-in-force.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order was initialized.
         options : dict[str, str]
             The order initialization options. Contains mappings for specific
             order parameters.
@@ -205,6 +279,61 @@ cdef class OrderInitialized(OrderEvent):
                 f"strategy_id={self.strategy_id}, "
                 f"event_id={self.id})")
 
+    @staticmethod
+    cdef OrderInitialized from_dict_c(dict values):
+        return OrderInitialized(
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            order_side=OrderSideParser.from_str(values["order_side"]),
+            order_type=OrderTypeParser.from_str(values["order_type"]),
+            quantity=Quantity.from_str_c(values["quantity"]),
+            time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+            options=json.loads(values["options"]),
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order initialized event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderInitialized
+
+        """
+        return OrderInitialized.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "client_order_id": self.client_order_id.value,
+            "strategy_id": self.strategy_id.value,
+            "instrument_id": self.instrument_id.value,
+            "order_side": OrderSideParser.to_str(self.order_side),
+            "order_type": OrderTypeParser.to_str(self.order_type),
+            "quantity": str(self.quantity),
+            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+            "options": json.dumps(self.options),
+        }
+
 
 cdef class OrderInvalid(OrderEvent):
     """
@@ -221,10 +350,10 @@ cdef class OrderInvalid(OrderEvent):
         ClientOrderId client_order_id not None,
         str reason not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderInvalid` class.
+        Initialize a new instance of the ``OrderInvalid`` class.
 
         Parameters
         ----------
@@ -234,8 +363,8 @@ cdef class OrderInvalid(OrderEvent):
             The order invalid reason.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -256,8 +385,51 @@ cdef class OrderInvalid(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"client_order_id={self.client_order_id}, "
-                f"reason='{self.reason}', "
+                f"reason={self.reason}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderInvalid from_dict_c(dict values):
+        return OrderInvalid(
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            reason=values["reason"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order invalid event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderInvalid
+
+        """
+        return OrderInvalid.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "client_order_id": self.client_order_id.value,
+            "reason": self.reason,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderDenied(OrderEvent):
@@ -273,10 +445,10 @@ cdef class OrderDenied(OrderEvent):
         ClientOrderId client_order_id not None,
         str reason not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderDenied` class.
+        Initialize a new instance of the ``OrderDenied`` class.
 
         Parameters
         ----------
@@ -286,8 +458,8 @@ cdef class OrderDenied(OrderEvent):
             The order denied reason.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -308,8 +480,51 @@ cdef class OrderDenied(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"client_order_id={self.client_order_id}, "
-                f"reason='{self.reason}', "
+                f"reason={self.reason}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderDenied from_dict_c(dict values):
+        return OrderDenied(
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            reason=values["reason"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order denied event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderDenied
+
+        """
+        return OrderDenied.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "client_order_id": self.client_order_id.value,
+            "reason": self.reason,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -322,12 +537,12 @@ cdef class OrderSubmitted(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
-        int64_t submitted_ns,
+        uint64_t ts_submitted_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderSubmitted` class.
+        Initialize a new instance of the ``OrderSubmitted`` class.
 
         Parameters
         ----------
@@ -335,12 +550,12 @@ cdef class OrderSubmitted(OrderEvent):
             The account identifier.
         client_order_id : ClientOrderId
             The client order identifier.
-        submitted_ns : int64
-            The Unix timestamp (nanos) when the order was submitted.
+        ts_submitted_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order was submitted.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(
@@ -351,13 +566,58 @@ cdef class OrderSubmitted(OrderEvent):
         )
 
         self.account_id = account_id
-        self.submitted_ns = submitted_ns
+        self.ts_submitted_ns = ts_submitted_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"client_order_id={self.client_order_id}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderSubmitted from_dict_c(dict values):
+        return OrderSubmitted(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            ts_submitted_ns=values["ts_submitted_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order submitted event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderSubmitted
+
+        """
+        return OrderSubmitted.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "ts_submitted_ns": self.ts_submitted_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderRejected(OrderEvent):
@@ -369,13 +629,13 @@ cdef class OrderRejected(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
-        int64_t rejected_ns,
         str reason not None,
+        uint64_t ts_rejected_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderRejected` class.
+        Initialize a new instance of the ``OrderRejected`` class.
 
         Parameters
         ----------
@@ -383,14 +643,14 @@ cdef class OrderRejected(OrderEvent):
             The account identifier.
         client_order_id : ClientOrderId
             The client order identifier.
-        rejected_ns : int64
-            The order rejected time.
         reason : datetime
             The order rejected reason.
+        ts_rejected_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order was rejected.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
@@ -407,8 +667,8 @@ cdef class OrderRejected(OrderEvent):
         )
 
         self.account_id = account_id
-        self.rejected_ns = rejected_ns
         self.reason = reason
+        self.ts_rejected_ns = ts_rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -416,6 +676,53 @@ cdef class OrderRejected(OrderEvent):
                 f"client_order_id={self.client_order_id}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderRejected from_dict_c(dict values):
+        return OrderRejected(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            reason=values["reason"],
+            ts_rejected_ns=values["ts_rejected_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order rejected event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderRejected
+
+        """
+        return OrderRejected.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "reason": self.reason,
+            "ts_rejected_ns": self.ts_rejected_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -427,7 +734,7 @@ cdef class OrderAccepted(OrderEvent):
 
     References
     ----------
-    https://www.onixs.biz/fix-dictionary/4.4/tagNum_39.html
+    https://www.onixs.biz/fix-dictionary/5.0.SP2/tagNum_39.html
 
     """
 
@@ -436,12 +743,12 @@ cdef class OrderAccepted(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t accepted_ns,
+        uint64_t ts_accepted_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderAccepted` class.
+        Initialize a new instance of the ``OrderAccepted`` class.
 
         Parameters
         ----------
@@ -451,17 +758,17 @@ cdef class OrderAccepted(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        accepted_ns : int64
-            The order accepted time.
+        ts_accepted_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order was accepted.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -473,7 +780,7 @@ cdef class OrderAccepted(OrderEvent):
         )
 
         self.account_id = account_id
-        self.accepted_ns = accepted_ns
+        self.ts_accepted_ns = ts_accepted_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -481,6 +788,264 @@ cdef class OrderAccepted(OrderEvent):
                 f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderAccepted from_dict_c(dict values):
+        return OrderAccepted(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            ts_accepted_ns=values["ts_accepted_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order accepted event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderAccepted
+
+        """
+        return OrderAccepted.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "ts_accepted_ns": self.ts_accepted_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
+
+
+cdef class OrderPendingReplace(OrderEvent):
+    """
+    Represents an event where a `UpdateOrder` command has been sent to the
+    trading venue.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
+        uint64_t ts_pending_ns,
+        UUID event_id not None,
+        uint64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the ``OrderPendingReplace`` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        client_order_id : ClientOrderId
+            The client order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
+        ts_pending_ns : datetime
+            The UNIX timestamp (nanoseconds) when the replace was pending.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
+
+        Raises
+        ------
+        ValueError
+            If venue_order_id has a 'NULL' value.
+
+        """
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
+        super().__init__(
+            client_order_id,
+            venue_order_id,
+            event_id,
+            timestamp_ns,
+        )
+
+        self.account_id = account_id
+        self.ts_pending_ns = ts_pending_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"client_order_id={self.client_order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
+                f"ts_pending_ns={self.ts_pending_ns}, "
+                f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderPendingReplace from_dict_c(dict values):
+        return OrderPendingReplace(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            ts_pending_ns=values["ts_pending_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order pending replace event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderPendingReplace
+
+        """
+        return OrderPendingReplace.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "ts_pending_ns": self.ts_pending_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
+
+
+cdef class OrderPendingCancel(OrderEvent):
+    """
+    Represents an event where a `CancelOrder` command has been sent to the
+    trading venue.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
+        uint64_t ts_pending_ns,
+        UUID event_id not None,
+        uint64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the ``OrderPendingCancel`` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        client_order_id : ClientOrderId
+            The client order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
+        ts_pending_ns : datetime
+            The UNIX timestamp (nanoseconds) when the cancel was pending.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
+
+        Raises
+        ------
+        ValueError
+            If venue_order_id has a 'NULL' value.
+
+        """
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
+        super().__init__(
+            client_order_id,
+            venue_order_id,
+            event_id,
+            timestamp_ns,
+        )
+
+        self.account_id = account_id
+        self.ts_pending_ns = ts_pending_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"client_order_id={self.client_order_id}, "
+                f"ts_pending_ns={self.ts_pending_ns}, "
+                f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderPendingCancel from_dict_c(dict values):
+        return OrderPendingCancel(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            ts_pending_ns=values["ts_pending_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order pending cancel event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderPendingCancel
+
+        """
+        return OrderPendingCancel.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "ts_pending_ns": self.ts_pending_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderUpdateRejected(OrderEvent):
@@ -494,14 +1059,14 @@ cdef class OrderUpdateRejected(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t rejected_ns,
         str response_to not None,
         str reason not None,
+        uint64_t ts_rejected_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderUpdateRejected` class.
+        Initialize a new instance of the ``OrderUpdateRejected`` class.
 
         Parameters
         ----------
@@ -511,21 +1076,19 @@ cdef class OrderUpdateRejected(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        rejected_ns : datetime
-            The order update rejected time.
         response_to : str
             The order update rejected response.
         reason : str
             The order update rejected reason.
+        ts_rejected_ns : datetime
+            The UNIX timestamp (nanoseconds) when the order update was rejected.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
-        ValueError
-            If order_id has a 'NULL' value.
         ValueError
             If rejected_response_to is not a valid string.
         ValueError
@@ -542,9 +1105,9 @@ cdef class OrderUpdateRejected(OrderEvent):
         )
 
         self.account_id = account_id
-        self.rejected_ns = rejected_ns
         self.response_to = response_to
         self.reason = reason
+        self.ts_rejected_ns = ts_rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -553,6 +1116,57 @@ cdef class OrderUpdateRejected(OrderEvent):
                 f"response_to={self.response_to}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderUpdateRejected from_dict_c(dict values):
+        return OrderUpdateRejected(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            response_to=values["response_to"],
+            reason=values["reason"],
+            ts_rejected_ns=values["ts_rejected_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order update rejected event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderUpdateRejected
+
+        """
+        return OrderUpdateRejected.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "response_to": self.response_to,
+            "reason": self.reason,
+            "ts_rejected_ns": self.ts_rejected_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderCancelRejected(OrderEvent):
@@ -566,14 +1180,14 @@ cdef class OrderCancelRejected(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t rejected_ns,
         str response_to not None,
         str reason not None,
+        uint64_t ts_rejected_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderCancelRejected` class.
+        Initialize a new instance of the ``OrderCancelRejected`` class.
 
         Parameters
         ----------
@@ -583,21 +1197,19 @@ cdef class OrderCancelRejected(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        rejected_ns : datetime
-            The order cancel rejected time.
         response_to : str
             The order cancel rejected response.
         reason : str
             The order cancel rejected reason.
+        ts_rejected_ns : datetime
+            The UNIX timestamp (nanoseconds) when the order cancel was rejected.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
-        ValueError
-            If order_id has a 'NULL' value.
         ValueError
             If rejected_response_to is not a valid string.
         ValueError
@@ -614,9 +1226,9 @@ cdef class OrderCancelRejected(OrderEvent):
         )
 
         self.account_id = account_id
-        self.rejected_ns = rejected_ns
         self.response_to = response_to
         self.reason = reason
+        self.ts_rejected_ns = ts_rejected_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -626,62 +1238,56 @@ cdef class OrderCancelRejected(OrderEvent):
                 f"reason='{self.reason}', "
                 f"event_id={self.id})")
 
+    @staticmethod
+    cdef OrderCancelRejected from_dict_c(dict values):
+        return OrderCancelRejected(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            response_to=values["response_to"],
+            reason=values["reason"],
+            ts_rejected_ns=values["ts_rejected_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
 
-cdef class OrderCancelled(OrderEvent):
-    """
-    Represents an event where an order has been cancelled at the trading venue.
-    """
-
-    def __init__(
-        self,
-        AccountId account_id not None,
-        ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
-        int64_t cancelled_ns,
-        UUID event_id not None,
-        int64_t timestamp_ns,
-    ):
+    @staticmethod
+    def from_dict(dict values):
         """
-        Initialize a new instance of the `OrderCancelled` class.
+        Return an order cancel rejected event from the given dict values.
 
         Parameters
         ----------
-        account_id : AccountId
-            The account identifier.
-        client_order_id : ClientOrderId
-            The client order identifier.
-        venue_order_id : VenueOrderId
-            The venue order identifier.
-        cancelled_ns : int64
-            The event order cancelled time.
-        event_id : UUID
-            The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        values : dict[str, object]
+            The values for initialization.
 
-        Raises
-        ------
-        ValueError
-            If order_id has a 'NULL' value.
+        Returns
+        -------
+        OrderCancelRejected
 
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
-        super().__init__(
-            client_order_id,
-            venue_order_id,
-            event_id,
-            timestamp_ns,
-        )
+        return OrderCancelRejected.from_dict_c(values)
 
-        self.account_id = account_id
-        self.cancelled_ns = cancelled_ns
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
 
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"event_id={self.id})")
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "response_to": self.response_to,
+            "reason": self.reason,
+            "ts_rejected_ns": self.ts_rejected_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderUpdated(OrderEvent):
@@ -696,12 +1302,13 @@ cdef class OrderUpdated(OrderEvent):
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
         Price price not None,
-        int64_t updated_ns,
+        Price trigger,  # Can be None
+        uint64_t ts_updated_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderUpdated` class.
+        Initialize a new instance of the ``OrderUpdated`` class.
 
         Parameters
         ----------
@@ -715,17 +1322,19 @@ cdef class OrderUpdated(OrderEvent):
             The orders current quantity.
         price : Price
             The orders current price.
-        updated_ns : int64
-            The updated time.
+        trigger : Price, optional
+            The orders current trigger.
+        ts_updated_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order was updated.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -739,7 +1348,8 @@ cdef class OrderUpdated(OrderEvent):
         self.account_id = account_id
         self.quantity = quantity
         self.price = price
-        self.updated_ns = updated_ns
+        self.trigger = trigger
+        self.ts_updated_ns = ts_updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -748,12 +1358,67 @@ cdef class OrderUpdated(OrderEvent):
                 f"venue_order_id={self.venue_order_id}, "
                 f"qty={self.quantity.to_str()}, "
                 f"price={self.price}, "
+                f"trigger={self.trigger}, "
                 f"event_id={self.id})")
 
+    @staticmethod
+    cdef OrderUpdated from_dict_c(dict values):
+        cdef str t = values["trigger"]
+        return OrderUpdated(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            quantity=Quantity.from_str_c(values["quantity"]),
+            price=Price.from_str_c(values["price"]),
+            trigger=Price.from_str_c(t) if t is not None else None,
+            ts_updated_ns=values["ts_updated_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
 
-cdef class OrderExpired(OrderEvent):
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order updated event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderUpdated
+
+        """
+        return OrderUpdated.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "quantity": str(self.quantity),
+            "price": str(self.price),
+            "trigger": str(self.trigger) if self.trigger is not None else None,
+            "ts_updated_ns": self.ts_updated_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
+
+
+cdef class OrderCanceled(OrderEvent):
     """
-    Represents an event where an order has expired at the trading venue.
+    Represents an event where an order has been canceled at the trading venue.
     """
 
     def __init__(
@@ -761,12 +1426,12 @@ cdef class OrderExpired(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t expired_ns,
+        uint64_t ts_canceled_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderExpired` class.
+        Initialize a new instance of the ``OrderCanceled`` class.
 
         Parameters
         ----------
@@ -776,17 +1441,17 @@ cdef class OrderExpired(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        expired_ns : int64
-            The order expired time.
+        ts_canceled_ns : uint64
+            The UNIX timestamp (nanoseconds) when order was canceled.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -798,7 +1463,7 @@ cdef class OrderExpired(OrderEvent):
         )
 
         self.account_id = account_id
-        self.expired_ns = expired_ns
+        self.ts_canceled_ns = ts_canceled_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -806,6 +1471,53 @@ cdef class OrderExpired(OrderEvent):
                 f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderCanceled from_dict_c(dict values):
+        return OrderCanceled(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            ts_canceled_ns=values["ts_canceled_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order canceled event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderCanceled
+
+        """
+        return OrderCanceled.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "ts_canceled_ns": self.ts_canceled_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderTriggered(OrderEvent):
@@ -818,12 +1530,12 @@ cdef class OrderTriggered(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        int64_t triggered_ns,
+        uint64_t ts_triggered_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `OrderTriggered` class.
+        Initialize a new instance of the ``OrderTriggered`` class.
 
         Parameters
         ----------
@@ -833,17 +1545,17 @@ cdef class OrderTriggered(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        triggered_ns : int64
-            The order triggered time.
+        ts_triggered_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order was triggered.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
@@ -855,7 +1567,7 @@ cdef class OrderTriggered(OrderEvent):
         )
 
         self.account_id = account_id
-        self.triggered_ns = triggered_ns
+        self.ts_triggered_ns = ts_triggered_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -863,6 +1575,157 @@ cdef class OrderTriggered(OrderEvent):
                 f"client_order_id={self.client_order_id}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderTriggered from_dict_c(dict values):
+        return OrderTriggered(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            ts_triggered_ns=values["ts_triggered_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order triggered event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderTriggered
+
+        """
+        return OrderTriggered.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "ts_triggered_ns": self.ts_triggered_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
+
+
+cdef class OrderExpired(OrderEvent):
+    """
+    Represents an event where an order has expired at the trading venue.
+    """
+
+    def __init__(
+        self,
+        AccountId account_id not None,
+        ClientOrderId client_order_id not None,
+        VenueOrderId venue_order_id not None,
+        uint64_t ts_expired_ns,
+        UUID event_id not None,
+        uint64_t timestamp_ns,
+    ):
+        """
+        Initialize a new instance of the ``OrderExpired`` class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        client_order_id : ClientOrderId
+            The client order identifier.
+        venue_order_id : VenueOrderId
+            The venue order identifier.
+        ts_expired_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order expired.
+        event_id : UUID
+            The event identifier.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
+
+        Raises
+        ------
+        ValueError
+            If venue_order_id has a 'NULL' value.
+
+        """
+        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
+        super().__init__(
+            client_order_id,
+            venue_order_id,
+            event_id,
+            timestamp_ns,
+        )
+
+        self.account_id = account_id
+        self.ts_expired_ns = ts_expired_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self.account_id}, "
+                f"client_order_id={self.client_order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
+                f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderExpired from_dict_c(dict values):
+        return OrderExpired(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            ts_expired_ns=values["ts_expired_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order expired event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderExpired
+
+        """
+        return OrderExpired.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "ts_expired_ns": self.ts_expired_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class OrderFilled(OrderEvent):
@@ -882,19 +1745,16 @@ cdef class OrderFilled(OrderEvent):
         OrderSide order_side,
         Quantity last_qty not None,
         Price last_px not None,
-        Quantity cum_qty not None,
-        Quantity leaves_qty not None,
         Currency currency not None,
-        bint is_inverse,
         Money commission not None,
         LiquiditySide liquidity_side,
-        int64_t execution_ns,
+        uint64_t ts_filled_ns,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
         dict info=None,
     ):
         """
-        Initialize a new instance of the `OrderFilled` class.
+        Initialize a new instance of the ``OrderFilled`` class.
 
         Parameters
         ----------
@@ -912,40 +1772,37 @@ cdef class OrderFilled(OrderEvent):
             The strategy identifier associated with the order.
         instrument_id : InstrumentId
             The instrument identifier.
-        order_side : OrderSide (Enum)
+        order_side : OrderSide
             The execution order side.
         last_qty : Quantity
             The fill quantity for this execution.
         last_px : Price
             The fill price for this execution (not average price).
-        cum_qty : Quantity
-            The cumulative filled quantity for the order.
-        leaves_qty : Quantity
-            The order quantity open for further execution.
         currency : Currency
             The currency of the price.
-        is_inverse : bool
-            If quantity is expressed in quote currency.
         commission : Money
             The fill commission.
-        liquidity_side : LiquiditySide (Enum)
+        liquidity_side : LiquiditySide
             The execution liquidity side.
-        execution_ns : int64
-            The Unix timestamp (nanos) of the execution.
+        ts_filled_ns : uint64
+            The UNIX timestamp (nanoseconds) when the order was filled.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
         info : dict[str, object], optional
             The additional fill information.
 
         Raises
         ------
         ValueError
-            If order_id has a 'NULL' value.
+            If venue_order_id has a 'NULL' value.
+        ValueError
+            If last_qty is not positive (> 0).
 
         """
         Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
+        Condition.positive(last_qty, "last_qty")
         if info is None:
             info = {}
         super().__init__(
@@ -963,13 +1820,10 @@ cdef class OrderFilled(OrderEvent):
         self.order_side = order_side
         self.last_qty = last_qty
         self.last_px = last_px
-        self.cum_qty = cum_qty
-        self.leaves_qty = leaves_qty
         self.currency = currency
-        self.is_inverse = is_inverse
         self.commission = commission
         self.liquidity_side = liquidity_side
-        self.execution_ns = execution_ns
+        self.ts_filled_ns = ts_filled_ns
         self.info = info
 
     def __repr__(self) -> str:
@@ -984,17 +1838,116 @@ cdef class OrderFilled(OrderEvent):
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"last_qty={self.last_qty.to_str()}, "
                 f"last_px={self.last_px} {self.currency.code}, "
-                f"cum_qty={self.cum_qty.to_str()}, "
-                f"leaves_qty={self.leaves_qty.to_str()}, "
                 f"commission={self.commission.to_str()}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef OrderFilled from_dict_c(dict values):
+        return OrderFilled(
+            account_id=AccountId.from_str_c(values["account_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            venue_order_id=VenueOrderId(values["venue_order_id"]),
+            execution_id=ExecutionId(values["execution_id"]),
+            position_id=PositionId(values["position_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            order_side=OrderSideParser.from_str(values["order_side"]),
+            last_qty=Quantity.from_str_c(values["last_qty"]),
+            last_px=Price.from_str_c(values["last_px"]),
+            currency=Currency.from_str_c(values["currency"]),
+            commission=Money.from_str_c(values["commission"]),
+            liquidity_side=LiquiditySideParser.from_str(values["liquidity_side"]),
+            ts_filled_ns=values["ts_filled_ns"],
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+            info=json.loads(values["info"])
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order filled event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderFilled
+
+        """
+        return OrderFilled.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "account_id": self.account_id.value,
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "execution_id": self.execution_id.value,
+            "position_id": self.position_id.value,
+            "strategy_id": self.strategy_id.value,
+            "instrument_id": self.instrument_id.value,
+            "order_side": OrderSideParser.to_str(self.order_side),
+            "last_qty": str(self.last_qty),
+            "last_px": str(self.last_px),
+            "currency": self.currency.code,
+            "commission": self.commission.to_str(),
+            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
+            "ts_filled_ns": self.ts_filled_ns,
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+            "info": json.dumps(self.info),
+        }
+
+    cdef bint is_buy_c(self) except *:
+        return self.order_side == OrderSide.BUY
+
+    cdef bint is_sell_c(self) except *:
+        return self.order_side == OrderSide.SELL
+
+    @property
+    def is_buy(self):
+        """
+        If the fill order side is BUY.
+
+        Returns
+        -------
+        bool
+            True if BUY, else False.
+
+        """
+        return self.is_buy_c()
+
+    @property
+    def is_sell(self):
+        """
+        If the fill order side is SELL.
+
+        Returns
+        -------
+        bool
+            True if SELL, else False.
+
+        """
+        return self.is_sell_c()
 
 
 cdef class PositionEvent(Event):
     """
     The abstract base class for all position events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -1002,10 +1955,10 @@ cdef class PositionEvent(Event):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionEvent` class.
+        Initialize a new instance of the ``PositionEvent`` class.
 
         Parameters
         ----------
@@ -1015,8 +1968,8 @@ cdef class PositionEvent(Event):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1035,10 +1988,10 @@ cdef class PositionOpened(PositionEvent):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionOpened` class.
+        Initialize a new instance of the ``PositionOpened`` class.
 
         Parameters
         ----------
@@ -1048,8 +2001,8 @@ cdef class PositionOpened(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         assert position.is_open_c()  # Design-time check
@@ -1062,6 +2015,7 @@ cdef class PositionOpened(PositionEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
+                f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
@@ -1069,6 +2023,49 @@ cdef class PositionOpened(PositionEvent):
                 f"avg_px_open={round(self.position.avg_px_open, 5)}, "
                 f"{self.position.status_string_c()}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef PositionOpened from_dict_c(dict values):
+        return PositionOpened(
+            position=json.loads(values["position"]),
+            order_fill=OrderFilled.from_dict_c(values["order_fill"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return a position opened event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        PositionOpened
+
+        """
+        return PositionOpened.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "position": json.dumps(self.position.to_dict()),
+            "order_fill": json.dumps(self.order_fill.to_dict()),
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class PositionChanged(PositionEvent):
@@ -1081,10 +2078,10 @@ cdef class PositionChanged(PositionEvent):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionChanged` class.
+        Initialize a new instance of the ``PositionChanged`` class.
 
         Parameters
         ----------
@@ -1094,8 +2091,8 @@ cdef class PositionChanged(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         assert position.is_open_c()  # Design-time check
@@ -1108,6 +2105,7 @@ cdef class PositionChanged(PositionEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
+                f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
@@ -1118,6 +2116,49 @@ cdef class PositionChanged(PositionEvent):
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
                 f"{self.position.status_string_c()}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef PositionChanged from_dict_c(dict values):
+        return PositionChanged(
+            position=json.loads(values["position"]),
+            order_fill=OrderFilled.from_dict_c(values["order_fill"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return a position changed event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        PositionChanged
+
+        """
+        return PositionChanged.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "position": json.dumps(self.position.to_dict()),
+            "order_fill": json.dumps(self.order_fill.to_dict()),
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class PositionClosed(PositionEvent):
@@ -1130,10 +2171,10 @@ cdef class PositionClosed(PositionEvent):
         Position position not None,
         OrderEvent order_fill not None,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `PositionClosed` class.
+        Initialize a new instance of the ``PositionClosed`` class.
 
         Parameters
         ----------
@@ -1143,8 +2184,8 @@ cdef class PositionClosed(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         assert position.is_closed_c()  # Design-time check
@@ -1156,13 +2197,13 @@ cdef class PositionClosed(PositionEvent):
         )
 
     def __repr__(self) -> str:
-        cdef str duration = str(self.position.open_duration_ns).replace("0 days ", "", 1)
         return (f"{type(self).__name__}("
+                f"{self.position.status_string_c()}, "
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"duration={duration}, "
+                f"duration={pd.Timedelta(self.position.open_duration_ns, unit='ns')}, "
                 f"avg_px_open={self.position.avg_px_open}, "
                 f"avg_px_close={self.position.avg_px_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
@@ -1170,27 +2211,70 @@ cdef class PositionClosed(PositionEvent):
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
                 f"event_id={self.id})")
 
+    @staticmethod
+    cdef PositionClosed from_dict_c(dict values):
+        return PositionClosed(
+            position=json.loads(values["position"]),
+            order_fill=OrderFilled.from_dict_c(values["order_fill"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return a position closed event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        PositionClosed
+
+        """
+        return PositionClosed.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "position": json.dumps(self.position.to_dict()),
+            "order_fill": json.dumps(self.order_fill.to_dict()),
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
+
 
 cdef class StatusEvent(Event):
     """
     The abstract base class for all status events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
     def __init__(
         self,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `StatusEvent` base class.
+        Initialize a new instance of the ``StatusEvent` base class.
 
         Parameters
         ----------
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1205,10 +2289,10 @@ cdef class VenueStatusEvent(StatusEvent):
         Venue venue,
         VenueStatus status,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `VenueStatusEvent` base class.
+        Initialize a new instance of the ``VenueStatusEvent` base class.
 
         Parameters
         ----------
@@ -1216,8 +2300,8 @@ cdef class VenueStatusEvent(StatusEvent):
             The venue status.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1230,6 +2314,49 @@ cdef class VenueStatusEvent(StatusEvent):
                 f"status={VenueStatusParser.to_str(self.status)}, "
                 f"event_id={self.id})")
 
+    @staticmethod
+    cdef VenueStatusEvent from_dict_c(dict values):
+        return VenueStatusEvent(
+            venue=Venue(values["venue"]),
+            status=VenueStatusParser.from_str(values["status"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return a venue status event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        VenueStatusEvent
+
+        """
+        return VenueStatusEvent.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "venue": self.venue.value,
+            "status": VenueStatusParser.to_str(self.status),
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
+
 
 cdef class InstrumentStatusEvent(StatusEvent):
     """
@@ -1240,10 +2367,10 @@ cdef class InstrumentStatusEvent(StatusEvent):
         InstrumentId instrument_id,
         InstrumentStatus status,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `InstrumentStatusEvent` base class.
+        Initialize a new instance of the ``InstrumentStatusEvent` base class.
 
         Parameters
         ----------
@@ -1251,8 +2378,8 @@ cdef class InstrumentStatusEvent(StatusEvent):
             The instrument status.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1264,6 +2391,49 @@ cdef class InstrumentStatusEvent(StatusEvent):
                 f"instrument_id={self.instrument_id}, "
                 f"status={InstrumentStatusParser.to_str(self.status)}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef InstrumentStatusEvent from_dict_c(dict values):
+        return InstrumentStatusEvent(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            status=InstrumentStatusParser.from_str(values["status"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return a instrument status event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        InstrumentStatusEvent
+
+        """
+        return InstrumentStatusEvent.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "status": InstrumentStatusParser.to_str(self.status),
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }
 
 
 cdef class InstrumentClosePrice(Event):
@@ -1277,10 +2447,10 @@ cdef class InstrumentClosePrice(Event):
         Price close_price not None,
         InstrumentCloseType close_type,
         UUID event_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `InstrumentClosePrice` base class.
+        Initialize a new instance of the ``InstrumentClosePrice` base class.
 
         Parameters
         ----------
@@ -1290,8 +2460,8 @@ cdef class InstrumentClosePrice(Event):
             The type of closing price.
         event_id : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(event_id, timestamp_ns)
@@ -1305,3 +2475,48 @@ cdef class InstrumentClosePrice(Event):
                 f"close_price={self.close_price}, "
                 f"close_type={InstrumentCloseTypeParser.to_str(self.close_type)}, "
                 f"event_id={self.id})")
+
+    @staticmethod
+    cdef InstrumentClosePrice from_dict_c(dict values):
+        return InstrumentClosePrice(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            close_price=Price.from_str_c(values["close_price"]),
+            close_type=InstrumentCloseTypeParser.from_str(values["close_type"]),
+            event_id=UUID.from_str_c(values["event_id"]),
+            timestamp_ns=values["timestamp_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an instrument close price event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        InstrumentClosePrice
+
+        """
+        return InstrumentClosePrice.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "close_price": str(self.close_price),
+            "close_type": InstrumentCloseTypeParser.to_str(self.close_type),
+            "event_id": self.id.value,
+            "timestamp_ns": self.timestamp_ns,
+        }

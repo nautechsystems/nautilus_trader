@@ -1,13 +1,30 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.tick import TradeTick
@@ -22,7 +39,7 @@ def test_order_submit_to_betfair(betting_instrument):
         "customer_strategy_ref": "Test-1",
         "instructions": [
             {
-                "customerOrderRef": "O-20210410-022422-001-001",
+                "customerOrderRef": "O-20210410-022422-001-001-Test",
                 "handicap": "0",
                 "limitOrder": {
                     "minFillSize": 0,
@@ -75,20 +92,28 @@ def test_order_cancel_to_betfair(betting_instrument):
 def test_account_statement(betfair_client, uuid, clock):
     detail = betfair_client.account.get_account_details()
     funds = betfair_client.account.get_account_funds()
+    timestamp_ns = clock.timestamp_ns()
     result = betfair_account_to_account_state(
         account_detail=detail,
         account_funds=funds,
         event_id=uuid,
-        timestamp_ns=clock.timestamp_ns(),
+        ts_updated_ns=timestamp_ns,
+        timestamp_ns=timestamp_ns,
     )
     expected = AccountState(
-        AccountId(issuer="betfair", identifier="Testy-McTest"),
-        [Money(1000.0, Currency.from_str("AUD"))],
-        [Money(1000.0, Currency.from_str("AUD"))],
-        [Money(-0.00, Currency.from_str("AUD"))],
-        {"funds": funds, "detail": detail},
-        uuid,
-        result.timestamp_ns,
+        account_id=AccountId(issuer="BETFAIR", number="Testy-McTest"),
+        account_type=AccountType.CASH,
+        base_currency=AUD,
+        reported=True,  # reported
+        balances=[
+            AccountBalance(
+                AUD, Money(1000.0, AUD), Money(0.00, AUD), Money(1000.0, AUD)
+            )
+        ],
+        info={"funds": funds, "detail": detail},
+        event_id=uuid,
+        ts_updated_ns=result.timestamp_ns,
+        timestamp_ns=result.timestamp_ns,
     )
     assert result == expected
 

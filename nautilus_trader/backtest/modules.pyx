@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -29,7 +29,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
@@ -41,12 +41,12 @@ cdef class SimulationModule:
     """
     The abstract base class for all simulation modules.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
         """
-        Initialize a new instance of the `SimulationModule` class.
+        Initialize a new instance of the ``SimulationModule`` class.
         """
         self._exchange = None  # Must be registered
 
@@ -67,7 +67,7 @@ cdef class SimulationModule:
 
         self._exchange = exchange
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -89,7 +89,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
     def __init__(self, rate_data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `FXRolloverInterestModule` class.
+        Initialize a new instance of the ``FXRolloverInterestModule`` class.
 
         Parameters
         ----------
@@ -105,13 +105,13 @@ cdef class FXRolloverInterestModule(SimulationModule):
         self._rollover_totals = {}
         self._day_number = 0
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, uint64_t now_ns) except *:
         """
         Process the given tick through the module.
 
         Parameters
         ----------
-        now_ns : int64
+        now_ns : uint64
             The current time in the simulated exchange.
 
         """
@@ -136,7 +136,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             self._rollover_applied = True
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        cdef list open_positions = self._exchange.exec_cache.positions_open()
+        cdef list open_positions = self._exchange.cache.positions_open()
 
         cdef Position position
         cdef Instrument instrument
@@ -165,23 +165,24 @@ cdef class FXRolloverInterestModule(SimulationModule):
                 timestamp,
             )
 
-            rollover = instrument.notional_value(position.quantity, mid_prices[instrument.id]) * interest_rate
+            rollover: Decimal = position.quantity * mid_prices[instrument.id] * interest_rate
 
             if iso_week_day == 3:  # Book triple for Wednesdays
                 rollover *= 3
             elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
                 rollover *= 3
 
-            if self._exchange.default_currency is not None:
-                currency = self._exchange.default_currency
-                xrate = self._exchange.get_xrate(
-                    from_currency=instrument.settlement_currency,
+            if self._exchange.base_currency is not None:
+                currency = self._exchange.base_currency
+                xrate: Decimal = self._exchange.cache.get_xrate(
+                    venue=instrument.id.venue,
+                    from_currency=instrument.quote_currency,
                     to_currency=currency,
                     price_type=PriceType.MID,
                 )
                 rollover *= xrate
             else:
-                currency = instrument.settlement_currency
+                currency = instrument.quote_currency
 
             rollover_total = self._rollover_totals.get(currency, Decimal())
             rollover_total = Money(rollover_total + rollover, currency)

@@ -14,11 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import unittest
 
-from parameterized import parameterized
+import pytest
 
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -28,20 +29,25 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
+ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 
 
-class InstrumentTests(unittest.TestCase):
-    @parameterized.expand(
+class TestInstrument:
+    @pytest.mark.parametrize(
+        "instrument1, instrument2, expected1, expected2",
         [
             [AUDUSD_SIM, AUDUSD_SIM, True, False],
             [AUDUSD_SIM, USDJPY_SIM, False, True],
-        ]
+        ],
     )
     def test_equality(self, instrument1, instrument2, expected1, expected2):
         # Arrange
@@ -50,122 +56,245 @@ class InstrumentTests(unittest.TestCase):
         result2 = instrument1 != instrument2
 
         # Assert
-        self.assertEqual(expected1, result1)
-        self.assertEqual(expected2, result2)
+        assert result1 == expected1
+        assert result2 == expected2
 
-    def test_str_repr_returns_expected(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertEqual("Instrument('BTC/USDT.BINANCE')", str(BTCUSDT_BINANCE))
-        self.assertEqual("Instrument('BTC/USDT.BINANCE')", repr(BTCUSDT_BINANCE))
+    # TODO: WIP - TBC
+    # def test_str_repr_returns_expected(self):
+    #     # Arrange
+    #     # Act
+    #     # Assert
+    #     assert str(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
+    #     assert repr(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
 
     def test_hash(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(int, type(hash(BTCUSDT_BINANCE)))
-        self.assertEqual(hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE))
+        assert isinstance(hash(BTCUSDT_BINANCE), int)
+        assert hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE)
 
-    def test_calculate_order_margin_with_no_leverage_returns_zero(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        margin = instrument.calculate_initial_margin(
-            Quantity(100000),
-            Price("11493.60"),
-        )
-
-        # Assert
-        self.assertEqual(Money("0.00000000", BTC), margin)
-
-    def test_calculate_position_margin_with_no_leverage_returns_zero(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        margin = instrument.calculate_maint_margin(
-            PositionSide.LONG,
-            Quantity(100000),
-            Price("11493.60"),
-        )
+    @pytest.mark.parametrize(
+        "value, expected_str",
+        [
+            [0, "0.00000"],
+            [1, "1.00000"],
+            [1.23456, "1.23456"],
+            [1.234567, "1.23457"],  # <-- rounds to precision
+            ["0", "0.00000"],
+            ["1.00", "1.00000"],
+            [Decimal(), "0.00000"],
+            [Decimal(1), "1.00000"],
+            [Decimal("0.85"), "0.85000"],
+        ],
+    )
+    def test_make_price_with_various_values_returns_expected(
+        self,
+        value,
+        expected_str,
+    ):
+        # Arrange, Act
+        price = AUDUSD_SIM.make_price(value)
 
         # Assert
-        self.assertEqual(Money("0.00000000", BTC), margin)
+        assert str(price) == expected_str
+
+    @pytest.mark.parametrize(
+        "value, expected_str",
+        [
+            [0, "0.000000"],
+            [1, "1.000000"],
+            [1.23456, "1.234560"],
+            [1.2345678, "1.234568"],  # <-- rounds to precision
+            ["0", "0.000000"],
+            ["1.00", "1.000000"],
+            [Decimal(), "0.000000"],
+            [Decimal(1), "1.000000"],
+            [Decimal("0.85"), "0.850000"],
+        ],
+    )
+    def test_make_qty_with_various_values_returns_expected(
+        self,
+        value,
+        expected_str,
+    ):
+        # Arrange, Act
+        qty = BTCUSDT_BINANCE.make_qty(value)
+
+        # Assert
+        assert str(qty) == expected_str
+
+    @pytest.mark.parametrize(
+        "instrument, expected",
+        [
+            [AUDUSD_SIM, AUD],
+            [BTCUSDT_BINANCE, BTC],
+            [XBTUSD_BITMEX, BTC],
+            [ETHUSD_BITMEX, ETH],
+        ],
+    )
+    def test_base_currency_for_various_instruments(self, instrument, expected):
+        # Arrange, Act, Asset
+        assert instrument.get_base_currency() == expected
+
+    @pytest.mark.parametrize(
+        "instrument, expected",
+        [
+            [AUDUSD_SIM, USD],
+            [BTCUSDT_BINANCE, USDT],
+            [XBTUSD_BITMEX, BTC],
+            [ETHUSD_BITMEX, ETH],
+        ],
+    )
+    def test_cost_currency_for_various_instruments(self, instrument, expected):
+        # Arrange, Act, Asset
+        assert instrument.get_cost_currency() == expected
 
     def test_calculate_notional_value(self):
         # Arrange
         instrument = TestInstrumentProvider.btcusdt_binance()
 
         # Act
-        value = instrument.notional_value(Quantity(10), Price("11493.60"))
-
-        # Assert
-        self.assertEqual(Money("114936.00000000", USDT), value)
-
-    def test_calculate_notional_value_for_inverse(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        value = instrument.notional_value(Quantity(100000), Price("11493.60"))
-
-        # Assert
-        self.assertEqual(Money("8.70049419", BTC), value)
-
-    def test_calculate_commission_for_maker_crypto(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        commission = instrument.calculate_commission(
-            Quantity(100000),
-            Decimal("11450.50"),
-            LiquiditySide.MAKER,
+        result = instrument.notional_value(
+            Quantity.from_int(10),
+            Price.from_str("11493.60"),
         )
 
         # Assert
-        self.assertEqual(Money("-0.00218331", BTC), commission)
+        assert result == Money(114936.00000000, USDT)
+
+    @pytest.mark.parametrize(
+        "inverse_as_quote, expected",
+        [
+            [False, Money(8.70049419, BTC)],
+            [True, Money(100000.00, USD)],
+        ],
+    )
+    def test_calculate_notional_value_for_inverse(self, inverse_as_quote, expected):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        result = instrument.notional_value(
+            Quantity.from_int(100000),
+            Price.from_str("11493.60"),
+            inverse_as_quote=inverse_as_quote,
+        )
+
+        # Assert
+        assert result == expected
+
+    def test_calculate_initial_margin_with_leverage(self):
+        # Arrange
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+
+        result = instrument.calculate_initial_margin(
+            Quantity.from_int(100000),
+            Price.from_str("0.80000"),
+            leverage=Decimal(50),
+        )
+
+        # Assert
+        assert result == Money(48.06, USD)
+
+    @pytest.mark.parametrize(
+        "inverse_as_quote, expected",
+        [
+            [False, Money(0.10005568, BTC)],
+            [True, Money(1150.00, USD)],
+        ],
+    )
+    def test_calculate_initial_margin_with_no_leverage_for_inverse(
+        self, inverse_as_quote, expected
+    ):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        result = instrument.calculate_initial_margin(
+            Quantity.from_int(100000),
+            Price.from_str("11493.60"),
+            inverse_as_quote=inverse_as_quote,
+        )
+
+        # Assert
+        assert result == expected
+
+    def test_calculate_position_maint_with_no_leverage(self):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        result = instrument.calculate_maint_margin(
+            PositionSide.LONG,
+            Quantity.from_int(100000),
+            Price.from_str("11493.60"),
+        )
+
+        # Assert
+        assert result == Money(0.03697710, BTC)
+
+    @pytest.mark.parametrize(
+        "inverse_as_quote, expected",
+        [
+            [False, Money(-0.00218331, BTC)],  # Negative commission = credit
+            [True, Money(-25.00, USD)],  # Negative commission = credit
+        ],
+    )
+    def test_calculate_commission_for_inverse_maker_crypto(
+        self, inverse_as_quote, expected
+    ):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        result = instrument.calculate_commission(
+            Quantity.from_int(100000),
+            Decimal("11450.50"),
+            LiquiditySide.MAKER,
+            inverse_as_quote=inverse_as_quote,
+        )
+
+        # Assert
+        assert result == expected
 
     def test_calculate_commission_for_taker_fx(self):
         # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", Venue("IDEALPRO"))
+        instrument = AUDUSD_SIM
 
         # Act
-        commission = instrument.calculate_commission(
-            Quantity(1500000),
+        result = instrument.calculate_commission(
+            Quantity.from_int(1500000),
             Decimal("0.80050"),
             LiquiditySide.TAKER,
         )
 
         # Assert
-        self.assertEqual(Money(24.02, USD), commission)
+        assert result == Money(24.02, USD)
 
     def test_calculate_commission_crypto_taker(self):
         # Arrange
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
-        commission = instrument.calculate_commission(
-            Quantity(100000),
+        result = instrument.calculate_commission(
+            Quantity.from_int(100000),
             Decimal("11450.50"),
             LiquiditySide.TAKER,
         )
 
         # Assert
-        self.assertEqual(Money("0.00654993", BTC), commission)
+        assert result == Money(0.00654993, BTC)
 
     def test_calculate_commission_fx_taker(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY", Venue("IDEALPRO"))
 
         # Act
-        commission = instrument.calculate_commission(
-            Quantity(2200000),
+        result = instrument.calculate_commission(
+            Quantity.from_int(2200000),
             Decimal("120.310"),
             LiquiditySide.TAKER,
         )
 
         # Assert
-        self.assertEqual(Money(5293.64, JPY), commission)
+        assert result == Money(5294, JPY)

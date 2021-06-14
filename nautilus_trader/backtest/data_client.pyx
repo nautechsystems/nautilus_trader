@@ -27,11 +27,12 @@ from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class BacktestDataClient(DataClient):
@@ -48,7 +49,7 @@ cdef class BacktestDataClient(DataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `BacktestDataClient` class.
+        Initialize a new instance of the ``BacktestDataClient`` class.
 
         Parameters
         ----------
@@ -70,11 +71,11 @@ cdef class BacktestDataClient(DataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self.is_connected = False
@@ -186,19 +187,16 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     def __init__(
         self,
-        list instruments not None,
         ClientId client_id not None,
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BacktestDataProducer` class.
+        Initialize a new instance of the ``BacktestDataProducer`` class.
 
         Parameters
         ----------
-        instruments : list[Instrument]
-            The instruments for the data client.
         client_id : ClientId
             The data client identifier.
         engine : DataEngine
@@ -210,22 +208,11 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
         )
-
-        self._instruments = {}
-        for instrument in instruments:
-            # Check the instrument is for the correct client
-            Condition.equal(
-                instrument.venue.value,
-                self.id.value,
-                "instrument.venue.value",
-                "self.name",
-            )
-            self._instruments[instrument.id] = instrument
 
         self.is_connected = False
 
@@ -293,7 +280,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level,
+        BookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -304,7 +291,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel (Enum)
+        level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -323,7 +310,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level,
+        BookLevel level,
         dict kwargs=None,
     ) except *:
         """
@@ -333,7 +320,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel (Enum)
+        level : BookLevel
             The order book level (L1, L2, L3).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
@@ -516,7 +503,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             self._log.error(f"Cannot request instrument for {instrument_id} (not connected).")
             return
 
-        cdef Instrument instrument = self._instruments.get(instrument_id)
+        cdef Instrument instrument = self._engine.cache.instrument(instrument_id)
 
         if instrument is None:
             self._log.warning(f"No instrument found for {instrument_id}.")
@@ -536,7 +523,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         """
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._handle_instruments(list(self._instruments.values()), correlation_id)
+        # Just return all instruments in the cache for this venue
+        cdef list instruments = self._engine.cache.instruments(Venue(self.id.value))
+
+        self._handle_instruments(instruments, correlation_id)
 
     cpdef void request_quote_ticks(
         self,

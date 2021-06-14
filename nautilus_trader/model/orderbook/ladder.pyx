@@ -35,7 +35,7 @@ cdef class Ladder:
         int size_precision,
     ):
         """
-        Initialize a new instance of the `Ladder` class.
+        Initialize a new instance of the ``Ladder`` class.
 
         Parameters
         ----------
@@ -232,12 +232,12 @@ cdef class Ladder:
         ----------
         order : Order
             The order to simulate.
-        depth_type : DepthType (Enum)
+        depth_type : DepthType
             The depth type to simulate.
 
         Returns
         -------
-        (Price, Quantity)
+        list[(Price, Quantity)]
 
         """
         Condition.not_none(order, "order")
@@ -245,7 +245,7 @@ cdef class Ladder:
         cdef list fills = []
         cdef double cumulative_denominator = 0.0
         cdef double current = 0.0
-        cdef double target = order.volume if depth_type == DepthType.VOLUME else order.price * order.volume
+        cdef double target = order.size if depth_type == DepthType.VOLUME else order.price * order.size
         cdef Level level
         cdef Order book_order
 
@@ -255,7 +255,7 @@ cdef class Ladder:
             elif not self.reverse and level.price > order.price:
                 break
             for book_order in level.orders:
-                current = book_order.volume if depth_type == DepthType.VOLUME else book_order.exposure()
+                current = book_order.size if depth_type == DepthType.VOLUME else book_order.exposure()
                 if (cumulative_denominator + current) >= target:
                     # This order has filled us, calc and return
                     remainder = target - cumulative_denominator

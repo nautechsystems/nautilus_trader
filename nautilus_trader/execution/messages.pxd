@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -24,6 +24,8 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -36,8 +38,8 @@ cdef class OrderStatusReport:
     """The reported order state at the exchange.\n\n:returns: `OrderState`"""
     cdef readonly Quantity filled_qty
     """The reported filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
+    cdef readonly uint64_t timestamp_ns
+    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `uint64`"""
 
 
 cdef class PositionStatusReport:
@@ -47,8 +49,8 @@ cdef class PositionStatusReport:
     """The reported position side at the exchange.\n\n:returns: `PositionSide`"""
     cdef readonly Quantity qty
     """The reported position quantity at the exchange.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
+    cdef readonly uint64_t timestamp_ns
+    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `uint64`"""
 
 
 cdef class ExecutionReport:
@@ -58,20 +60,18 @@ cdef class ExecutionReport:
     """The reported venue order identifier.\n\n:returns: `VenueOrderId`"""
     cdef readonly ExecutionId id
     """The reported execution identifier.\n\n:returns: `ExecutionId`"""
-    cdef readonly object last_qty
-    """The reported quantity of the last fill.\n\n:returns: `Decimal`"""
-    cdef readonly object last_px
-    """The reported price of the last fill.\n\n:returns: `Decimal`"""
-    cdef readonly object commission_amount
-    """The reported commission amount.\n\n:returns: `Decimal`"""
-    cdef readonly str commission_currency
-    """The reported commission currency.\n\n:returns: `Decimal`"""
+    cdef readonly Quantity last_qty
+    """The reported quantity of the last fill.\n\n:returns: `Quantity`"""
+    cdef readonly Price last_px
+    """The reported price of the last fill.\n\n:returns: `Price`"""
+    cdef readonly Money commission
+    """The reported commission.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The reported liquidity side.\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t execution_ns
-    """The Unix timestamp (nanos) of the execution.\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_filled_ns
+    """The UNIX timestamp (nanoseconds) of the execution.\n\n:returns: `LiquiditySide`"""
+    cdef readonly uint64_t timestamp_ns
+    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `uint64`"""
 
 
 cdef class ExecutionMassStatus:
@@ -83,8 +83,8 @@ cdef class ExecutionMassStatus:
     """The client identifier for the report.\n\n:returns: `ClientId`"""
     cdef readonly AccountId account_id
     """The account identifier for the report.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the report.\n\n:returns: `int64`"""
+    cdef readonly uint64_t timestamp_ns
+    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `uint64`"""
 
     cpdef dict order_reports(self)
     cpdef dict exec_reports(self)

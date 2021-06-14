@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import asyncio
 import bz2
 import pathlib
@@ -9,32 +24,33 @@ import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
+from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instrument import BettingInstrument
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.limit import LimitOrder
+from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
+from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.stubs import TestStubs
 
 
@@ -109,11 +125,20 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
-        database = BypassExecutionDatabase(trader_id=trader_id, logger=live_logger)
+    def exec_engine(event_loop, clock, live_logger, portfolio):
         return MockLiveExecutionEngine(
             loop=event_loop,
-            database=database,
+            portfolio=portfolio,
+            cache=TestStubs.cache,
+            clock=clock,
+            logger=live_logger,
+        )
+
+    @staticmethod
+    def risk_engine(event_loop, clock, live_logger, portfolio, exec_engine):
+        return MockLiveRiskEngine(
+            loop=event_loop,
+            exec_engine=exec_engine,
             portfolio=portfolio,
             clock=clock,
             logger=live_logger,
@@ -140,7 +165,8 @@ class BetfairTestStubs(TestStubs):
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
-            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+            ts_event_ns=BetfairTestStubs.clock().timestamp_ns(),
+            ts_recv_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
 
     @staticmethod
@@ -404,17 +430,35 @@ class BetfairTestStubs(TestStubs):
         return [orjson.loads(_fix_ids(line.strip())) for line in lines]
 
     @staticmethod
-    def raw_market_updates_instruments():
-        updates = BetfairTestStubs.raw_market_updates()
+    def raw_market_updates_instruments(
+        market="1.166811431", runner1="60424", runner2="237478", currency="GBP"
+    ):
+        updates = BetfairTestStubs.raw_market_updates(
+            market=market, runner1=runner1, runner2=runner2
+        )
         market_def = updates[0]["mc"][0]
-        instruments = make_instruments(market_def, "AUD")
+        instruments = make_instruments(market_def, currency)
         return instruments
+
+    @staticmethod
+    def parsed_market_updates(
+        instrument_provider, market="1.166811431", runner1="60424", runner2="237478"
+    ):
+        updates = []
+        for raw in BetfairTestStubs.raw_market_updates(
+            market=market, runner1=runner1, runner2=runner2
+        ):
+            for message in on_market_update(
+                instrument_provider=instrument_provider, update=raw
+            ):
+                updates.append(message)
+        return updates
 
     @staticmethod
     def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            TraderId("TESTER-000"),
             BetfairTestStubs.clock(),
             BetfairTestStubs.logger(),
         )
@@ -424,17 +468,15 @@ class BetfairTestStubs(TestStubs):
         order = strategy.order_factory.limit(
             BetfairTestStubs.instrument_id(),
             OrderSide.BUY,
-            Quantity(10),
-            Price("0.50"),
+            Quantity.from_int(10),
+            Price.from_str("0.50"),
         )
         return order
 
     @staticmethod
     def submit_order_command():
         return SubmitOrder(
-            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
-            account_id=BetfairTestStubs.account_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
@@ -444,8 +486,8 @@ class BetfairTestStubs(TestStubs):
                 strategy_id=BetfairTestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,
-                quantity=Quantity(10),
-                price=Price(0.33, 5),
+                quantity=Quantity.from_int(10),
+                price=Price(0.33, precision=5),
                 time_in_force=TimeInForce.GTC,
                 expire_time=None,
                 init_id=BetfairTestStubs.uuid(),
@@ -460,14 +502,15 @@ class BetfairTestStubs(TestStubs):
         if instrument_id is None:
             instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
-            client_id=instrument_id.venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
-            account_id=BetfairTestStubs.account_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
             instrument_id=instrument_id,
             client_order_id=client_order_id
             or ClientOrderId("O-20210410-022422-001-001-1"),
-            quantity=Quantity(50),
+            venue_order_id=VenueOrderId("001"),
+            quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
+            trigger=None,
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
@@ -475,9 +518,8 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def cancel_order_command():
         return CancelOrder(
-            client_id=BetfairTestStubs.instrument_id().venue.client_id,
             trader_id=BetfairTestStubs.trader_id(),
-            account_id=BetfairTestStubs.account_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("229597791245"),

@@ -15,18 +15,20 @@
 
 from operator import itemgetter
 
+import orjson
 import pandas as pd
 from tabulate import tabulate
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevelParser
+from nautilus_trader.model.c_enums.delta_type cimport DeltaType
+from nautilus_trader.model.c_enums.delta_type cimport DeltaTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaType
-from nautilus_trader.model.c_enums.orderbook_delta cimport OrderBookDeltaTypeParser
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevelParser
 from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
@@ -46,18 +48,18 @@ cdef class OrderBook:
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        OrderBookLevel level,
+        BookLevel level,
         int price_precision,
         int size_precision,
     ):
         """
-        Initialize a new instance of the `OrderBook` class.
+        Initialize a new instance of the ``OrderBook`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : BookLevel
             The order book level (L1, L2, L3).
         price_precision : int
             The price precision for the book.
@@ -94,63 +96,47 @@ cdef class OrderBook:
             size_precision=size_precision,
         )
         self.last_update_timestamp_ns = 0
-        self.last_update_id = 0
-
-        # TODO: Id updates
 
     @staticmethod
     def create(
-        InstrumentId instrument_id,
-        OrderBookLevel level,
-        int price_precision,
-        int size_precision,
+        Instrument instrument,
+        BookLevel level,
     ):
         """
         Create a new order book with the given parameters.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        instrument : Instrument
+            The instrument for the book.
+        level : BookLevel
             The order book level (L1, L2, L3).
-        price_precision : int
-            The price precision for the book.
-        size_precision : int
-            The size precision for the book.
 
         Returns
         -------
         OrderBook
 
-        Raises
-        ------
-        ValueError
-            If price_precision is negative (< 0).
-        ValueError
-            If size_precision is negative (< 0).
-
         """
-        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(instrument, "instrument")
         Condition.in_range_int(level, 1, 3, "level")
 
-        if level == OrderBookLevel.L1:
+        if level == BookLevel.L1:
             return L1OrderBook(
-                instrument_id=instrument_id,
-                price_precision=price_precision,
-                size_precision=size_precision,
+                instrument_id=instrument.id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
-        elif level == OrderBookLevel.L2:
+        elif level == BookLevel.L2:
             return L2OrderBook(
-                instrument_id=instrument_id,
-                price_precision=price_precision,
-                size_precision=size_precision,
+                instrument_id=instrument.id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
-        elif level == OrderBookLevel.L3:
+        elif level == BookLevel.L3:
             return L3OrderBook(
-                instrument_id=instrument_id,
-                price_precision=price_precision,
-                size_precision=size_precision,
+                instrument_id=instrument.id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
             )
 
     cpdef void add(self, Order order) except *:
@@ -262,19 +248,19 @@ cdef class OrderBook:
         for bid in snapshot.bids:
             order = Order(
                 price=bid[0],
-                volume=bid[1],
+                size=bid[1],
                 side=OrderSide.BUY
             )
             self.update(order=order)
         for ask in snapshot.asks:
             order = Order(
                 price=ask[0],
-                volume=ask[1],
+                size=ask[1],
                 side=OrderSide.SELL
             )
             self.update(order=order)
 
-        self.last_update_timestamp_ns = snapshot.timestamp_ns
+        self.last_update_timestamp_ns = snapshot.ts_recv_ns
 
     cpdef void apply(self, OrderBookData data) except *:
         """
@@ -339,35 +325,35 @@ cdef class OrderBook:
         self.clear_bids()
         self.clear_asks()
 
-    cdef inline void _apply_delta(self, OrderBookDelta delta) except *:
-        if delta.type == OrderBookDeltaType.ADD:
+    cdef void _apply_delta(self, OrderBookDelta delta) except *:
+        if delta.type == DeltaType.ADD:
             self.add(order=delta.order)
-        elif delta.type == OrderBookDeltaType.UPDATE:
+        elif delta.type == DeltaType.UPDATE:
             self.update(order=delta.order)
-        elif delta.type == OrderBookDeltaType.DELETE:
+        elif delta.type == DeltaType.DELETE:
             self.delete(order=delta.order)
 
-        self.last_update_timestamp_ns = delta.timestamp_ns
+        self.last_update_timestamp_ns = delta.ts_recv_ns
 
-    cdef inline void _add(self, Order order) except *:
+    cdef void _add(self, Order order) except *:
         if order.side == OrderSide.BUY:
             self.bids.add(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.add(order=order)
 
-    cdef inline void _update(self, Order order) except *:
+    cdef void _update(self, Order order) except *:
         if order.side == OrderSide.BUY:
             self.bids.update(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.update(order=order)
 
-    cdef inline void _delete(self, Order order) except *:
+    cdef void _delete(self, Order order) except *:
         if order.side == OrderSide.BUY:
             self.bids.delete(order=order)
         elif order.side == OrderSide.SELL:
             self.asks.delete(order=order)
 
-    cdef inline void _check_integrity(self) except *:
+    cdef void _check_integrity(self) except *:
         cdef Level top_bid_level = self.bids.top()
         cdef Level top_ask_level = self.asks.top()
         if top_bid_level is None or top_ask_level is None:
@@ -382,7 +368,7 @@ cdef class OrderBook:
     @property
     def timestamp_ns(self):
         """
-        The Unix timestamp (nanos) of the last update.
+        The UNIX timestamp (nanoseconds) of the last update.
 
         Returns
         -------
@@ -533,7 +519,7 @@ cdef class OrderBook:
         else:
             return None
 
-    cpdef str pprint(self, int num_levels=3, show="volume"):
+    cpdef str pprint(self, int num_levels=3, show="size"):
         """
         Print the order book in a clear format.
 
@@ -580,6 +566,122 @@ cdef class OrderBook:
             tablefmt="fancy",
         )
 
+    cdef double get_price_for_volume_c(self, bint is_buy, double volume):
+        cdef:
+            Level level
+            list levels = self.asks.levels \
+                if is_buy else self.bids.levels
+            double cumulative_volume = 0.0
+            double target_price = 0.0
+
+        for level in levels:
+            cumulative_volume += level.volume()
+            if cumulative_volume >= volume:
+                target_price = level.price
+                break
+        return target_price
+
+    cdef double get_price_for_quote_volume_c(self, bint is_buy, double quote_volume):
+        cdef:
+            Level level
+            list levels = self.asks.levels \
+                if is_buy else self.bids.levels
+            double cumulative_volume = 0.0
+            double target_price = 0.0
+
+        for level in levels:
+            cumulative_volume += level.volume() * level.price
+            if cumulative_volume >= quote_volume:
+                target_price = level.price
+                break
+        return target_price
+
+    cdef double get_volume_for_price_c(self, bint is_buy, double price):
+        cdef:
+            Ladder book = self.bids if is_buy else self.asks
+            Level top_of_book = book.top()
+            double cumulative_volume = 0.0
+            Level level
+
+        if is_buy and top_of_book.price > price:
+            # Buy price cannot be below best ask price
+            return 0.0
+        elif not is_buy and top_of_book.price < price:
+            # Sell price cannot be above best bid price
+            return 0.0
+
+        if is_buy:
+            for level in self.asks.levels:
+                if level.price > price:
+                    break
+                cumulative_volume += level.volume()
+        else:
+            for level in self.bids.levels:
+                if level.price < price:
+                    break
+                cumulative_volume += level.volume()
+        return cumulative_volume
+
+    cdef double get_quote_volume_for_price_c(self, bint is_buy, double price):
+        cdef:
+            Ladder book = self.bids if is_buy else self.asks
+            Level top_of_book = book.top()
+            double cumulative_quote_volume = 0.0
+            Level level
+
+        if is_buy and top_of_book.price > price:
+            # Buy price cannot be below best ask price
+            return 0.0
+        elif not is_buy and top_of_book.price < price:
+            # Sell price cannot be above best bid price
+            return 0.0
+
+        if is_buy:
+            for level in self.asks.levels:
+                if level.price > price:
+                    break
+                cumulative_quote_volume += level.volume() * level.price
+        else:
+            for level in self.bids.levels:
+                if level.price < price:
+                    break
+                cumulative_quote_volume += level.volume() * level.price
+        return cumulative_quote_volume
+
+    cdef double get_vwap_for_volume_c(self, bint is_buy, double volume):
+        cdef:
+            Level level
+            list levels = self.asks.levels \
+                if is_buy else self.bids.levels
+            double total_cost = 0.0
+            double cumulative_volume = 0.0
+            double target_vwap = 0.0
+
+        for level in levels:
+            cumulative_volume += level.volume()
+            total_cost += level.price * level.volume()
+            if cumulative_volume >= volume:
+                # Subtract exceed volume
+                total_cost -= level.price * level.volume()
+                cumulative_volume -= level.volume()
+                remaining_volume = volume - cumulative_volume
+                total_cost += remaining_volume * level.price
+                cumulative_volume += remaining_volume
+                target_vwap = total_cost / cumulative_volume
+                break
+        return target_vwap
+
+    cpdef double get_price_for_volume(self, bint is_buy, double volume):
+        return self.get_price_for_volume_c(is_buy, volume)
+    cpdef double get_price_for_quote_volume(self, bint is_buy, double quote_volume):
+        return self.get_price_for_quote_volume_c(is_buy, quote_volume)
+    cpdef double get_volume_for_price(self, bint is_buy, double price):
+        return self.get_volume_for_price_c(is_buy, price)
+    cpdef double get_quote_volume_for_price(self, bint is_buy, double price):
+        return self.get_quote_volume_for_price_c(is_buy, price)
+    cpdef double get_vwap_for_volume(self, bint is_buy, double volume):
+        return self.get_vwap_for_volume_c(is_buy, volume)
+
 
 cdef class L3OrderBook(OrderBook):
 
@@ -597,7 +699,7 @@ cdef class L3OrderBook(OrderBook):
         int size_precision,
     ):
         """
-        Initialize a new instance of the `L3OrderBook` class.
+        Initialize a new instance of the ``L3OrderBook`` class.
 
         Parameters
         ----------
@@ -618,7 +720,7 @@ cdef class L3OrderBook(OrderBook):
         """
         super().__init__(
             instrument_id=instrument_id,
-            level=OrderBookLevel.L3,
+            level=BookLevel.L3,
             price_precision=price_precision,
             size_precision=size_precision,
         )
@@ -638,7 +740,7 @@ cdef class L2OrderBook(OrderBook):
         int size_precision,
     ):
         """
-        Initialize a new instance of the `L2OrderBook` class.
+        Initialize a new instance of the ``L2OrderBook`` class.
 
         Parameters
         ----------
@@ -652,7 +754,7 @@ cdef class L2OrderBook(OrderBook):
         """
         super().__init__(
             instrument_id=instrument_id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             price_precision=price_precision,
             size_precision=size_precision,
         )
@@ -721,20 +823,19 @@ cdef class L2OrderBook(OrderBook):
         for level in self.bids.levels + self.asks.levels:
             assert len(level.orders) == 1, f"Number of orders on {level} > 1"
 
-    cdef inline Order _process_order(self, Order order):
+    cdef void _process_order(self, Order order):
         # Because a L2OrderBook only has one order per level, we replace the
         # order.id with a price level, which will let us easily process the
         # order in the base class.
         order.id = f"{order.price:.{self.price_precision}f}"
-        return order
 
-    cdef inline void _remove_if_exists(self, Order order) except *:
+    cdef void _remove_if_exists(self, Order order) except *:
         # For a L2OrderBook, an order update means a whole level update. If this
         # level exists, remove it so we can insert the new level.
         if order.side == OrderSide.BUY and order.price in self.bids.prices():
-            self.delete(order)
+            self._delete(order)
         elif order.side == OrderSide.SELL and order.price in self.asks.prices():
-            self.delete(order)
+            self._delete(order)
 
 
 cdef class L1OrderBook(OrderBook):
@@ -751,7 +852,7 @@ cdef class L1OrderBook(OrderBook):
         int size_precision,
     ):
         """
-        Initialize a new instance of the `L1OrderBook` class.
+        Initialize a new instance of the ``L1OrderBook`` class.
 
         Parameters
         ----------
@@ -765,7 +866,7 @@ cdef class L1OrderBook(OrderBook):
         """
         super().__init__(
             instrument_id=instrument_id,
-            level=OrderBookLevel.L1,
+            level=BookLevel.L1,
             price_precision=price_precision,
             size_precision=size_precision,
         )
@@ -827,11 +928,11 @@ cdef class L1OrderBook(OrderBook):
         elif isinstance(tick, TradeTick):
             self._update_trade_tick(tick)
 
-    cdef inline void _update_quote_tick(self, QuoteTick tick):
+    cdef void _update_quote_tick(self, QuoteTick tick):
         self._update_bid(tick.bid, tick.bid_size)
         self._update_ask(tick.ask, tick.ask_size)
 
-    cdef inline void _update_trade_tick(self, TradeTick tick):
+    cdef void _update_trade_tick(self, TradeTick tick):
         if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
             if self._top_ask and self._top_bid.price >= self._top_ask.price:
@@ -843,7 +944,7 @@ cdef class L1OrderBook(OrderBook):
                 self._top_bid.price == self._top_ask.price
                 self._top_bid_level.price == self._top_ask.price
 
-    cdef inline void _update_bid(self, double price, double size):
+    cdef void _update_bid(self, double price, double size):
         if self._top_bid is None:
             bid = self._process_order(Order(price, size, OrderSide.BUY))
             self._add(bid)
@@ -852,9 +953,9 @@ cdef class L1OrderBook(OrderBook):
         else:
             self._top_bid_level.price = price
             self._top_bid.update_price(price)
-            self._top_bid.update_volume(size)
+            self._top_bid.update_size(size)
 
-    cdef inline void _update_ask(self, double price, double size):
+    cdef void _update_ask(self, double price, double size):
         if self._top_ask is None:
             ask = self._process_order(Order(price, size, OrderSide.SELL))
             self._add(ask)
@@ -863,7 +964,7 @@ cdef class L1OrderBook(OrderBook):
         else:
             self._top_ask_level.price = price
             self._top_ask.update_price(price)
-            self._top_ask.update_volume(size)
+            self._top_ask.update_size(size)
 
     cpdef void delete(self, Order order) except *:
         """
@@ -895,7 +996,7 @@ cdef class L1OrderBook(OrderBook):
         assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
         assert len(self.asks.levels) <= 1, "Number of ask levels > 1"
 
-    cdef inline Order _process_order(self, Order order):
+    cdef Order _process_order(self, Order order):
         # Because a L1OrderBook only has one level per side, we replace the
         # order.id with the name of the side, which will let us easily process
         # the order.
@@ -907,29 +1008,32 @@ cdef class OrderBookData(Data):
     """
     The abstract base class for all `OrderBook` data.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        OrderBookLevel level,
-        int64_t timestamp_ns,
+        BookLevel level,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookData` class.
+        Initialize a new instance of the ``OrderBookData`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : BookLevel
             The order book level (L1, L2, L3).
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the snapshot.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        super().__init__(timestamp_ns)
+        super().__init__(ts_event_ns, ts_recv_ns)
 
         self.instrument_id = instrument_id
         self.level = level
@@ -943,40 +1047,96 @@ cdef class OrderBookSnapshot(OrderBookData):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        OrderBookLevel level,
+        BookLevel level,
         list bids not None,
         list asks not None,
-        int64_t timestamp_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookSnapshot` class.
+        Initialize a new instance of the ``OrderBookSnapshot`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : BookLevel
             The order book level (L1, L2, L3).
         bids : list
             The bids for the snapshot.
         asks : list
             The asks for the snapshot.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the snapshot.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_ns)
+        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
 
         self.bids = bids
         self.asks = asks
 
+    def __eq__(self, OrderBookSnapshot other) -> bool:
+        return self.to_dict() == other.to_dict()
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.to_dict()))
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
-                f"level={OrderBookLevelParser.to_str(self.level)}, "
+                f"level={BookLevelParser.to_str(self.level)}, "
                 f"bids={self.bids}, "
                 f"asks={self.asks}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.ts_recv_ns})")
+
+    @staticmethod
+    cdef OrderBookSnapshot from_dict_c(dict values):
+        return OrderBookSnapshot(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            level=BookLevelParser.from_str(values["level"]),
+            bids=orjson.loads(values["bids"]),
+            asks=orjson.loads(values["asks"]),
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order book snapshot from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderBookSnapshot
+
+        """
+        return OrderBookSnapshot.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "level": BookLevelParser.to_str(self.level),
+            "bids": orjson.dumps(self.bids),
+            "asks": orjson.dumps(self.asks),
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }
 
 
 cdef class OrderBookDeltas(OrderBookData):
@@ -987,35 +1147,89 @@ cdef class OrderBookDeltas(OrderBookData):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        OrderBookLevel level,
+        BookLevel level,
         list deltas not None,
-        int64_t timestamp_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookDeltas` class.
+        Initialize a new instance of the ``OrderBookDeltas`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
             The instrument identifier for the book.
-        level : OrderBookLevel (Enum)
+        level : BookLevel
             The order book level (L1, L2, L3).
         deltas : list[OrderBookDelta]
             The list of order book changes.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the deltas.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_ns)
+        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
 
         self.deltas = deltas
+
+    def __eq__(self, OrderBookDeltas other) -> bool:
+        return self.to_dict() == other.to_dict()
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.to_dict()))
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
-                f"level={OrderBookLevelParser.to_str(self.level)}, "
+                f"level={BookLevelParser.to_str(self.level)}, "
                 f"{self.deltas}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.ts_recv_ns})")
+
+    @staticmethod
+    cdef OrderBookDeltas from_dict_c(dict values):
+        return OrderBookDeltas(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            level=BookLevelParser.from_str(values["level"]),
+            deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return order book deltas from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderBookDeltas
+
+        """
+        return OrderBookDeltas.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "level": BookLevelParser.to_str(self.level),
+            "deltas": orjson.dumps([d.to_dict() for d in self.deltas]),
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }
 
 
 cdef class OrderBookDelta(OrderBookData):
@@ -1025,34 +1239,104 @@ cdef class OrderBookDelta(OrderBookData):
 
     def __init__(
         self,
-        InstrumentId instrument_id,
-        OrderBookLevel level,
-        OrderBookDeltaType delta_type,
-        Order order not None,
-        int64_t timestamp_ns,
+        InstrumentId instrument_id not None,
+        BookLevel level,
+        DeltaType delta_type,
+        Order order,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the `OrderBookDelta` class.
+        Initialize a new instance of the ``OrderBookDelta`` class.
 
         Parameters
         ----------
-        delta_type : OrderBookDeltaType
-            The type of change (ADD, UPDATED, DELETE).
+        instrument_id : InstrumentId
+            The instrument identifier.
+        level : BookLevel
+            The book level for the delta.
+        delta_type : DeltaType
+            The type of change (ADD, UPDATED, DELETE, CLEAR).
         order : Order
             The order to apply.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the delta.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        super().__init__(instrument_id, level, timestamp_ns)
+        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
 
         self.type = delta_type
         self.order = order
 
+    def __eq__(self, OrderBookDelta other) -> bool:
+        return self.to_dict() == other.to_dict()
+
+    def __hash__(self) -> int:
+        return hash(frozenset(self.to_dict()))
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
-                f"level={OrderBookLevelParser.to_str(self.level)}, "
-                f"delta_type={OrderBookDeltaTypeParser.to_str(self.type)}, "
+                f"level={BookLevelParser.to_str(self.level)}, "
+                f"delta_type={DeltaTypeParser.to_str(self.type)}, "
                 f"order={self.order}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_recv_ns={self.ts_recv_ns})")
+
+    @staticmethod
+    cdef OrderBookDelta from_dict_c(dict values):
+        order = Order.from_dict_c({
+            "price": values["order_price"],
+            "size": values["order_size"],
+            "side": values["order_side"],
+            "id": values["order_id"],
+
+        })
+        return OrderBookDelta(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            level=BookLevelParser.from_str(values["level"]),
+            delta_type=DeltaTypeParser.from_str(values["delta_type"]),
+            order=order,
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order book delta from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderBookDelta
+
+        """
+        return OrderBookDelta.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "instrument_id": self.instrument_id.value,
+            "level": BookLevelParser.to_str(self.level),
+            "delta_type": DeltaTypeParser.to_str(self.type),
+            "order_price": self.order.price if self.order else None,
+            "order_size": self.order.size if self.order else None,
+            "order_side": OrderSideParser.to_str(self.order.side) if self.order else None,
+            "order_id": self.order.id if self.order else None,
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+        }

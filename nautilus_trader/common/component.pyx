@@ -84,7 +84,7 @@ cdef class Component:
     """
     The abstract base class for all system components.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -95,7 +95,7 @@ cdef class Component:
         bint log_initialized=True,
     ):
         """
-        Initialize a new instance of the `Component` class.
+        Initialize a new instance of the ``Component`` class.
 
         Parameters
         ----------
@@ -125,6 +125,12 @@ cdef class Component:
         if log_initialized:
             self._log.info(f"state={self._fsm.state_string_c()}...")
 
+    def __str__(self) -> str:
+        return self.name
+
+    def __repr__(self) -> str:
+        return self.name
+
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
 
@@ -138,7 +144,7 @@ cdef class Component:
 
         Returns
         -------
-        ComponentState (Enum)
+        ComponentState
 
         """
         return self.state_c()
@@ -294,7 +300,7 @@ cdef class Component:
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef inline void _trigger_fsm(
+    cdef void _trigger_fsm(
         self,
         ComponentTrigger trigger1,
         ComponentTrigger trigger2,

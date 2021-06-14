@@ -35,19 +35,23 @@ class TestBacktestDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
+        self.data_engine.process(USDJPY_SIM)
 
         self.client = BacktestMarketDataClient(
-            instruments=[USDJPY_SIM],
             client_id=ClientId("SIM"),
             engine=self.data_engine,
             clock=TestClock(),

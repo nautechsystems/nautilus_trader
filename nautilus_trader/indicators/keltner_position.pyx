@@ -39,7 +39,7 @@ cdef class KeltnerPosition(Indicator):
         double atr_floor=0,
     ):
         """
-        Initialize a new instance of the `KeltnerChannel` class.
+        Initialize a new instance of the ``KeltnerChannel`` class.
 
         Parameters
         ----------

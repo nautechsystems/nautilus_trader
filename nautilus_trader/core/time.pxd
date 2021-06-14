@@ -18,6 +18,7 @@ Cython implementation of (parts of) the standard library time module.
 """
 
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 
 cdef extern from "pytime.h":
@@ -34,17 +35,17 @@ cdef inline double unix_timestamp() nogil:
     return _PyTime_AsSecondsDouble(tic)
 
 
-cdef inline int64_t unix_timestamp_ms() nogil:
+cdef inline uint64_t unix_timestamp_ms() nogil:
     cdef _PyTime_t tic = _PyTime_GetSystemClock()
     # _PyTime_ROUND_UP=3 should be used for timeouts
     return _PyTime_AsMilliseconds(tic, 3)
 
 
-cdef inline int64_t unix_timestamp_us() nogil:
+cdef inline uint64_t unix_timestamp_us() nogil:
     cdef _PyTime_t tic = _PyTime_GetSystemClock()
     # _PyTime_ROUND_UP=3 should be used for timeouts
     return _PyTime_AsMicroseconds(tic, 3)
 
 
-cdef inline int64_t unix_timestamp_ns() nogil:
+cdef inline uint64_t unix_timestamp_ns() nogil:
     return _PyTime_GetSystemClock()

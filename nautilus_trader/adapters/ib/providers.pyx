@@ -25,7 +25,8 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Future
+from nautilus_trader.model.instruments.future cimport Future
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -42,7 +43,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         int client_id=1,
     ):
         """
-        Initialize a new instance of the `IBInstrumentProvider` class.
+        Initialize a new instance of the ``IBInstrumentProvider`` class.
 
         Parameters
         ----------
@@ -105,12 +106,13 @@ cdef class IBInstrumentProvider(InstrumentProvider):
 
         self._instruments[instrument_id] = future
 
-    cdef inline int _tick_size_to_precision(self, double tick_size) except *:
+    cdef int _tick_size_to_precision(self, double tick_size) except *:
         cdef tick_size_str = f"{tick_size:f}"
         return len(tick_size_str.partition('.')[2].rstrip('0'))
 
     cdef Future _parse_futures_contract(
-        self, InstrumentId instrument_id,
+        self,
+        InstrumentId instrument_id,
         AssetClass asset_class,
         list details_list,
     ):
@@ -123,10 +125,15 @@ cdef class IBInstrumentProvider(InstrumentProvider):
 
         cdef int price_precision = self._tick_size_to_precision(details.minTick)
 
+        timestamp = unix_timestamp_ns()
         cdef Future future = Future(
             instrument_id=instrument_id,
             asset_class=asset_class,
             currency=Currency.from_str_c(details.contract.currency),
+            price_precision=price_precision,
+            price_increment=Price(details.minTick, price_precision),
+            multiplier=Quantity.from_int_c(int(details.contract.multiplier)),
+            lot_size=Quantity.from_int_c(1),
             expiry=details.contract.lastTradeDateOrContractMonth,
             contract_id=details.contract.conId,
             local_symbol=details.contract.localSymbol,
@@ -138,11 +145,8 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             trading_hours=details.tradingHours,
             liquid_hours=details.liquidHours,
             last_trade_time=details.lastTradeTime,
-            multiplier=int(details.contract.multiplier),
-            price_precision=price_precision,
-            tick_size=Decimal(f"{details.minTick:.{price_precision}f}"),
-            lot_size=Quantity(1),
-            timestamp_ns=unix_timestamp_ns(),
+            ts_event_ns=timestamp,
+            ts_recv_ns=timestamp,
         )
 
         return future

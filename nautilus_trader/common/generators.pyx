@@ -20,9 +20,9 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef class IdentifierGenerator:
@@ -30,20 +30,20 @@ cdef class IdentifierGenerator:
     Provides a generator for unique identifier strings.
     """
 
-    def __init__(self, IdTag id_tag_trader not None, Clock clock not None):
+    def __init__(self, TraderId trader_id not None, Clock clock not None):
         """
-        Initialize a new instance of the `IdentifierGenerator` class.
+        Initialize a new instance of the ``IdentifierGenerator`` class.
 
         Parameters
         ----------
-        id_tag_trader : IdTag
+        trader_id : TraderId
             The identifier tag for the trader.
         clock : Clock
             The internal clock.
 
         """
         self._clock = clock
-        self._id_tag_trader = id_tag_trader.value
+        self._id_tag_trader = trader_id.get_tag()
 
     cdef str _get_datetime_tag(self):
         """
@@ -71,20 +71,20 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
     def __init__(
         self,
-        IdTag id_tag_trader not None,
-        IdTag id_tag_strategy not None,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
         Clock clock not None,
         int initial_count=0,
     ):
         """
-        Initialize a new instance of the `ClientOrderIdGenerator` class.
+        Initialize a new instance of the ``ClientOrderIdGenerator`` class.
 
         Parameters
         ----------
-        id_tag_trader : IdTag
-            The order identifier tag for the trader.
-        id_tag_strategy : IdTag
-            The order identifier tag for the strategy.
+        trader_id : TraderId
+            The trader identifier for the generator.
+        strategy_id : StrategyId
+            The strategy identifier for the generator.
         clock : Clock
             The clock for the component.
         initial_count : int
@@ -97,9 +97,9 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
         """
         Condition.not_negative_int(initial_count, "initial_count")
-        super().__init__(id_tag_trader, clock)
+        super().__init__(trader_id, clock)
 
-        self._id_tag_strategy = id_tag_strategy.value
+        self._id_tag_strategy = strategy_id.get_tag()
         self.count = initial_count
 
     cpdef void set_count(self, int count) except *:
@@ -147,19 +147,18 @@ cdef class PositionIdGenerator(IdentifierGenerator):
     Provides a generator for unique PositionId(s).
     """
 
-    def __init__(self, IdTag id_tag_trader not None, Clock clock not None):
+    def __init__(self, TraderId trader_id not None, Clock clock not None):
         """
-        Initialize a new instance of the `PositionIdGenerator` class.
+        Initialize a new instance of the ``PositionIdGenerator`` class.
 
         Parameters
         ----------
-        id_tag_trader : IdTag
-            The position identifier tag for the trader.
+        trader_id : TraderId
+            The trader identifier tag for the generator.
 
         """
-        super().__init__(id_tag_trader, clock)
+        super().__init__(trader_id, clock)
 
-        self._id_tag_trader = id_tag_trader.value
         self._counts = {}  # type: dict[StrategyId, int]
 
     cpdef void set_count(self, StrategyId strategy_id, int count) except *:
@@ -229,7 +228,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
             f"P-"
             f"{self._get_datetime_tag()}-"
             f"{self._id_tag_trader}-"
-            f"{strategy_id.tag.value}-"
+            f"{strategy_id.get_tag()}-"
             f"{count}{'F' if flipped else ''}",
         )
 

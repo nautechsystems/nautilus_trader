@@ -13,12 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 
 cdef class Data:
-    cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of the data.\n\n:returns: `int64`"""
+    cdef readonly uint64_t ts_event_ns
+    """The UNIX timestamp (nanoseconds) when data event occurred.\n\n:returns: `uint64`"""
+    cdef readonly uint64_t ts_recv_ns
+    """The UNIX timestamp (nanoseconds) when received by the Nautilus system.\n\n:returns: `uint64`"""
+
+    cpdef dict to_dict(self)
 
 
 cdef class DataType:
@@ -26,13 +30,13 @@ cdef class DataType:
     cdef int _hash
 
     cdef readonly type type
-    """The `PyObject` type of the data.\n\n:returns: `type`"""
+    """The `Data` type of the data.\n\n:returns: `type`"""
     cdef readonly dict metadata
     """The data types metadata.\n\n:returns: `dict[str, object]`"""
 
 
 cdef class GenericData(Data):
     cdef readonly DataType data_type
-    """The data type for the data.\n\n:returns: `DataType`"""
-    cdef readonly object data
-    """The data.\n\n:returns: `object`"""
+    """The data type.\n\n:returns: `DataType`"""
+    cdef readonly Data data
+    """The data.\n\n:returns: `Data`"""

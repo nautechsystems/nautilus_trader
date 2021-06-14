@@ -37,7 +37,7 @@ cdef class MovingAverage(Indicator):
     """
     The abstract base class for all moving average type indicators.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -47,7 +47,7 @@ cdef class MovingAverage(Indicator):
         PriceType price_type,
     ):
         """
-        Initialize a new instance of the `MovingAverage` class.
+        Initialize a new instance of the ``MovingAverage`` class.
 
         Parameters
         ----------
@@ -55,7 +55,7 @@ cdef class MovingAverage(Indicator):
             The rolling window period for the indicator (> 0).
         params : list
             The initialization parameters for the indicator.
-        price_type : PriceType (Enum), optional
+        price_type : PriceType, optional
             The specified price type for extracting values from quote ticks.
 
         """

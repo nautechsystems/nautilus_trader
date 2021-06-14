@@ -41,21 +41,19 @@ class TestSerializationPerformance(PerformanceHarness):
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
         self.order = self.order_factory.market(
             AUDUSD,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         self.command = SubmitOrder(
-            AUDUSD.venue.client_id,
             self.trader_id,
-            self.account_id,
-            StrategyId("SCALPER", "01"),
+            StrategyId("SCALPER-001"),
             PositionId("P-123456"),
             self.order,
             uuid4(),

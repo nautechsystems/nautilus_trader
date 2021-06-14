@@ -51,7 +51,10 @@ class LiveDataEngineTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -63,6 +66,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -86,6 +90,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -112,6 +117,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -123,10 +129,10 @@ class LiveDataEngineTests(unittest.TestCase):
             data_type=DataType(
                 QuoteTick,
                 metadata={
-                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
+                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "from_datetime": None,
+                    "to_datetime": None,
+                    "limit": 1000,
                 },
             ),
             callback=handler.append,
@@ -147,6 +153,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
@@ -174,12 +181,13 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
         )
 
-        data = Data(1_000_000_000)
+        data = Data(1_000_000_000, 1_000_000_000)
 
         # Act
         self.engine.process(data)
@@ -273,12 +281,12 @@ class LiveDataEngineTests(unittest.TestCase):
                 data_type=DataType(
                     QuoteTick,
                     metadata={
-                        "InstrumentId": InstrumentId(
+                        "instrument_id": InstrumentId(
                             Symbol("SOMETHING"), Venue("RANDOM")
                         ),
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 1000,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 1000,
                     },
                 ),
                 callback=handler.append,

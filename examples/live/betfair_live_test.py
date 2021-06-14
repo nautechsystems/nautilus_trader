@@ -15,12 +15,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import pathlib
+import os
 import sys
 
 
 sys.path.insert(
-    0, str(pathlib.Path(__file__).parents[2])
+    0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
 from examples.strategies.betfair_test_strategy import BetfairTestStrategy
@@ -38,18 +38,26 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
-        "connection_timeout": 30.0,  # Timeout for successful connections for all engine clients
-        "disconnection_timeout": 30.0,  # Timeout for successful disconnection for all engine clients
-        "check_residuals_delay": 15.0,  # How long to wait after stopping for residual events (secs)
+        "loop_debug": False,  # If event loop debug mode
+        "timeout_connection": 30.0,  # Timeout for all engines client to connect and initialize
+        "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
+        "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
+        "timeout_disconnection": 30.0,  # Timeout for all engine clients to disconnect
+        "check_residuals_delay": 15.0,  # Delay to await residual events after stopping engines
     },
     "logging": {
         "level_stdout": "DBG",
     },
-    "exec_database": {
+    "cache_database": {
         "type": "memory",
     },
-    "risk": {},
-    "strategy": {},
+    "data_engine": {},
+    "risk_engine": {},
+    "exec_engine": {},
+    "strategy": {
+        "load_state": True,  # Strategy state is loaded from the database on start
+        "save_state": True,  # Strategy state is saved to the database on shutdown
+    },
     "data_clients": {
         "BETFAIR": {
             "username": "BETFAIR_USERNAME",  # value is the environment variable key
@@ -65,8 +73,8 @@ config = {
             "password": "BETFAIR_PW",  # value is the environment variable key
             "app_key": "BETFAIR_APP_KEY",  # value is the environment variable key
             "cert_dir": "BETFAIR_CERT_DIR",  # value is the environment variable key
+            "base_currency": "AUD",
             "market_filter": {"market_id": market_id},
-            "sandbox_mode": False,  # If clients use the testnet
         },
     },
 }

@@ -28,7 +28,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
     def __init__(self):
         """
-        Initialize a new instance of the `VolumeWeightedAveragePrice` class.
+        Initialize a new instance of the ``VolumeWeightedAveragePrice`` class.
         """
         super().__init__(params=[])
 
@@ -52,7 +52,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self.update_raw(
             bar.close.as_double(),
             bar.volume.as_double(),
-            nanos_to_unix_dt(nanos=bar.timestamp_ns),
+            nanos_to_unix_dt(nanos=bar.ts_recv_ns),
         )
 
     cpdef void update_raw(

@@ -19,9 +19,9 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 
 cdef class MovingAverage(Indicator):
     cdef readonly int period
-    """The moving average period.\n\n:returns: `PriceType` (Enum)"""
+    """The moving average period.\n\n:returns: `PriceType`"""
     cdef readonly PriceType price_type
-    """The specified price type for extracting values from quote ticks.\n\n:returns: `PriceType` (Enum)"""
+    """The specified price type for extracting values from quote ticks.\n\n:returns: `PriceType`"""
     cdef readonly int count
     """The count of inputs received by the indicator.\n\n:returns: `int`"""
     cdef readonly double value

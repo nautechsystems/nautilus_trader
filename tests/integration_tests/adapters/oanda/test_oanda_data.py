@@ -41,6 +41,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
@@ -54,7 +55,7 @@ class OandaDataClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "001")
+        self.trader_id = TraderId("TESTER-001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -76,7 +77,10 @@ class OandaDataClientTests(unittest.TestCase):
             clock=self.clock,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -84,6 +88,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -297,10 +302,10 @@ class OandaDataClientTests(unittest.TestCase):
                 data_type=DataType(
                     Bar,
                     metadata={
-                        "BarType": bar_type,
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 1000,
+                        "bar_type": bar_type,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 1000,
                     },
                 ),
                 callback=handler.store,

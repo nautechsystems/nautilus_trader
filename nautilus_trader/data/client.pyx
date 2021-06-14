@@ -26,16 +26,15 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
-from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -44,7 +43,7 @@ cdef class DataClient:
     """
     The abstract base class for all data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -56,7 +55,7 @@ cdef class DataClient:
         dict config=None,
     ):
         """
-        Initialize a new instance of the `DataClient` class.
+        Initialize a new instance of the ``DataClient`` class.
 
         Parameters
         ----------
@@ -134,18 +133,18 @@ cdef class DataClient:
     def _handle_data_py(self, Data data):
         self._handle_data(data)
 
-    def _handle_data_response_py(self, GenericData data, UUID correlation_id):
-        self._handle_data_response(data, correlation_id)
+    def _handle_data_response_py(self, DataType data_type, Data data, UUID correlation_id):
+        self._handle_data_response(data_type, data, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *:
         self._engine.process(data)
 
-    cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *:
+    cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=data.data_type,
+            data_type=data_type,
             data=data,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -159,7 +158,7 @@ cdef class MarketDataClient(DataClient):
     """
     The abstract base class for all market data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -171,7 +170,7 @@ cdef class MarketDataClient(DataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `MarketDataClient` class.
+        Initialize a new instance of the ``MarketDataClient`` class.
 
         Parameters
         ----------
@@ -237,11 +236,11 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -330,7 +329,8 @@ cdef class MarketDataClient(DataClient):
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    # TODO: Comment why these aren't cpdef
+    # Convenient pure Python wrappers for the data handlers. Often Python methods
+    # involving threads or the event loop don't work with cpdef methods.
     def _handle_instruments_py(self, list instruments, UUID correlation_id):
         self._handle_instruments(instruments, correlation_id)
 
@@ -360,7 +360,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -372,7 +372,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -384,7 +384,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type, "Partial": partial}),
+            data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

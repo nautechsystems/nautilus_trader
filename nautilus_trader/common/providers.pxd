@@ -15,7 +15,7 @@
 
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class InstrumentProvider:
@@ -26,5 +26,6 @@ cdef class InstrumentProvider:
     cpdef void load(self, InstrumentId instrument_id, dict details) except *
     cpdef void add(self, Instrument instrument) except *
     cpdef dict get_all(self)
+    cpdef dict currencies(self)
     cpdef Currency currency(self, str code)
     cpdef Instrument find(self, InstrumentId instrument_id)

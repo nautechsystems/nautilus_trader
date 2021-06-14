@@ -19,11 +19,64 @@ import sys
 import cython
 
 cimport numpy as np
+from libc.math cimport llround as llround_func
+from libc.math cimport lround as lround_func
 from libc.math cimport pow
 from libc.math cimport sqrt
-from libc.stdint cimport uint64_t
+from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
+
+
+# Determine correct C lround function
+cdef round_func_type _get_round_func() except *:
+    if sizeof(long) == 8:
+        return <round_func_type>lround_func
+    elif sizeof(long long) == 8:
+        return <round_func_type>llround_func
+    else:
+        raise TypeError(f"Can't support 'C' lround function.")
+
+lround = _get_round_func()
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef inline uint8_t precision_from_str(str value) except *:
+    """
+    Return the decimal precision inferred from the given string.
+
+    Can accept scientific notation strings including an 'e' character.
+
+    Parameters
+    ----------
+    value : str
+        The string value to parse.
+
+    Returns
+    -------
+    uint8
+
+    Raises
+    ------
+    ValueError
+        If value is not a valid string.
+
+    Notes
+    -----
+    If not scientific notation and no decimal point '.', then precision will be
+    inferred as zero.
+
+    """
+    Condition.valid_string(value, "value")
+
+    value = value.lower()
+    if value.find("e-") > -1:
+        # Scientific notation string
+        return int(value.partition('e-')[2])
+    else:
+        # If does not contain "." then partition[2] will be ""
+        return len(value.partition('.')[2])
 
 
 @cython.boundscheck(False)
@@ -272,7 +325,6 @@ cpdef inline double basis_points_as_percentage(double basis_points) except *:
     return basis_points * 0.0001
 
 
-# Closures in cpdef functions not yet supported (10/02/20)
 def get_size_of(obj):
     """
     Return the bytes size in memory of the given object.
@@ -291,14 +343,14 @@ def get_size_of(obj):
 
     cdef set marked = {id(obj)}
     obj_q = [obj]
-    cdef uint64_t size = 0
+    size = 0
 
     while obj_q:
         size += sum(map(sys.getsizeof, obj_q))
 
         # Lookup all the object referred to by the object in obj_q.
         # See: https://docs.python.org/3.7/library/gc.html#gc.get_referents
-        all_refs = ((id(o), o) for o in gc.get_referents(*obj_q))
+        all_refs = [(id(o), o) for o in gc.get_referents(*obj_q)]
 
         # Filter object that are already marked.
         # Using dict notation will prevent repeated objects.

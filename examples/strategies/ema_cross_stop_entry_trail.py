@@ -15,21 +15,20 @@
 
 from decimal import Decimal
 
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order.stop_market import StopMarketOrder
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -66,7 +65,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `EMACrossStopEntryWithTrailingStop` class.
+        Initialize a new instance of the ``EMACrossStopEntryTrail`` class.
 
         Parameters
         ----------
@@ -93,12 +92,11 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
-        self.instrument = None  # Initialize in on_start
-        self.tick_size = None  # Initialize in on_start
-        self.price_precision = None  # Initialize in on_start
+        self.tick_size = None  # Initialized in on_start
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema_period)
@@ -111,14 +109,13 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.instrument_id)
+        self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
             self.stop()
             return
 
-        self.tick_size = self.instrument.tick_size
-        self.price_precision = self.instrument.price_precision
+        self.tick_size = self.instrument.price_increment
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
@@ -196,7 +193,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]..."
+                f"[{self.cache.bar_count(self.bar_type)}]...",
+                color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 
@@ -218,8 +216,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            price=Price(last_bar.high + (self.tick_size * 2)),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(last_bar.low + (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -238,8 +236,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            price=Price(last_bar.low - (self.tick_size * 2)),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(last_bar.low - (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -262,8 +260,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             reduce_only=True,
         )
 
@@ -281,8 +279,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             reduce_only=True,
         )
 
@@ -324,13 +322,13 @@ class EMACrossStopEntryTrail(TradingStrategy):
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_buy(last_bar)
 
-    def on_data(self, data: GenericData):
+    def on_data(self, data: Data):
         """
         Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The data received.
 
         """
@@ -349,7 +347,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         if isinstance(event, OrderFilled):
             if self.entry:
                 if event.client_order_id == self.entry.client_order_id:
-                    last_bar = self.data.bar(self.bar_type)
+                    last_bar = self.cache.bar(self.bar_type)
                     if event.order_side == OrderSide.BUY:
                         self.trailing_stop_sell(last_bar)
                     elif event.order_side == OrderSide.SELL:

@@ -30,4 +30,4 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cpdef void kill(self) except *
 
-    cdef inline void _enqueue_sentinel(self)
+    cdef void _enqueue_sentinel(self)

@@ -15,19 +15,19 @@
 
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class InstrumentProvider:
     """
     The abstract base class for all instrument providers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
         """
-        Initialize a new instance of the `InstrumentProvider` class.
+        Initialize a new instance of the ``InstrumentProvider`` class.
 
         """
         self._instruments = {}  # type: dict[InstrumentId, Instrument]
@@ -81,6 +81,17 @@ cdef class InstrumentProvider:
 
         """
         return self._instruments.copy()
+
+    cpdef dict currencies(self):
+        """
+        Return all currencies held by the instrument provider.
+
+        Returns
+        -------
+        dict[str, Currency]
+
+        """
+        return self._currencies.copy()
 
     cpdef Currency currency(self, str code):
         """

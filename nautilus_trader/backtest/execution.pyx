@@ -16,13 +16,14 @@
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 
@@ -36,12 +37,15 @@ cdef class BacktestExecClient(ExecutionClient):
         self,
         SimulatedExchange exchange not None,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         ExecutionEngine engine not None,
         TestClock clock not None,
         Logger logger not None,
+        bint is_frozen_account=False,
     ):
         """
-        Initialize a new instance of the `BacktestExecClient` class.
+        Initialize a new instance of the ``BacktestExecClient`` class.
 
         Parameters
         ----------
@@ -49,20 +53,30 @@ cdef class BacktestExecClient(ExecutionClient):
             The simulated exchange for the backtest.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : ExecutionEngine
             The execution engine for the client.
         clock : TestClock
             The clock for the component.
         logger : Logger
             The logger for the component.
+        is_frozen_account : bool
+            If the backtest run account is frozen.
 
         """
         super().__init__(
-            ClientId(exchange.id.value),
-            account_id,
-            engine,
-            clock,
-            logger,
+            client_id=ClientId(exchange.id.value),
+            venue_type=exchange.venue_type,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config={"calculate_account_state": False if is_frozen_account else True},
         )
 
         self._exchange = exchange
@@ -174,17 +188,3 @@ cdef class BacktestExecClient(ExecutionClient):
             return
 
         self._exchange.handle_cancel_order(command)
-
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    cdef void handle_event(self, Event event) except *:
-        """
-        Handle the given event by sending it to the `ExecutionEngine`.
-
-        Parameters
-        ----------
-        event : Event
-            The event to handle.
-
-        """
-        self._handle_event(event)

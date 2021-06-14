@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.core.uuid import uuid4
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -24,22 +23,23 @@ cdef class Order:
     """
     Represents an order in a book.
     """
+
     def __init__(
         self,
         double price,
-        double volume,
+        double size,
         OrderSide side,
-        str id=None,
+        str id=None,  # noqa (shadows built-in name)
     ):
         """
-        Initialize a new instance of the `Order` class.
+        Initialize a new instance of the ``Order`` class.
 
         Parameters
         ----------
         price : double
             The order price.
-        volume : double
-            The order volume.
+        size : double
+            The order size.
         side : OrderSide
             The order side.
         id : str
@@ -47,19 +47,22 @@ cdef class Order:
 
         """
         self.price = price
-        self.volume = volume
+        self.size = size
         self.side = side
         self.id = id or str(uuid4())
 
     def __eq__(self, Order other) -> bool:
         return self.id == other.id
 
+    def __hash__(self) -> int:
+        return hash(frozenset(self.to_dict()))
+
     def __repr__(self) -> str:
-        return f"{Order.__name__}({self.price}, {self.volume}, {OrderSideParser.to_str(self.side)}, {self.id})"
+        return f"{Order.__name__}({self.price}, {self.size}, {OrderSideParser.to_str(self.side)}, {self.id})"
 
     cpdef void update_price(self, double price) except *:
         """
-        Update the orders price to the given price.
+        Update the orders price.
 
         Parameters
         ----------
@@ -69,21 +72,21 @@ cdef class Order:
         """
         self.price = price
 
-    cpdef void update_volume(self, double volume) except *:
+    cpdef void update_size(self, double size) except *:
         """
-        Update the orders volume to the given volume.
+        Update the orders size.
 
         Parameters
         ----------
-        volume : double
-            The updated volume.
+        size : double
+            The updated size.
 
         """
-        self.volume = volume
+        self.size = size
 
     cpdef void update_id(self, str value) except *:
         """
-        Update the orders identifier to the given value.
+        Update the orders identifier.
 
         Parameters
         ----------
@@ -95,18 +98,18 @@ cdef class Order:
 
     cpdef double exposure(self):
         """
-        Return the total exposure for this order (price * volume).
+        Return the total exposure for this order (price * size).
 
         Returns
         -------
         double
 
         """
-        return self.price * self.volume
+        return self.price * self.size
 
-    cpdef double signed_volume(self):
+    cpdef double signed_size(self):
         """
-        Return the signed volume of the order (negative for SELL).
+        Return the signed size of the order (negative for SELL).
 
         Returns
         -------
@@ -114,6 +117,49 @@ cdef class Order:
 
         """
         if self.side == OrderSide.BUY:
-            return self.volume * 1.0
+            return self.size * 1.0
         else:
-            return self.volume * -1.0
+            return self.size * -1.0
+
+    @staticmethod
+    cdef Order from_dict_c(dict values):
+        return Order(
+            price=values["price"],
+            size=values["size"],
+            side=OrderSideParser.from_str(values["side"]),
+            id=values["id"],
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an order from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        Order
+
+        """
+        return Order.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "price": self.price,
+            "size": self.size,
+            "side": OrderSideParser.to_str(self.side),
+            "id": self.id,
+        }

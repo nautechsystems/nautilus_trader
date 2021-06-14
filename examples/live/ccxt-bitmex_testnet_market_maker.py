@@ -15,12 +15,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import pathlib
+import os
 import sys
 
 
 sys.path.insert(
-    0, str(pathlib.Path(__file__).parents[2])
+    0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
@@ -43,20 +43,24 @@ config = {
         "id_tag": "001",  # Used to ensure orders are unique for this trader
     },
     "system": {
-        "loop_debug": False,  # The event loop debug mode
-        "connection_timeout": 5.0,  # Timeout for successful connections for all engine clients
-        "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
-        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
+        "loop_debug": False,  # If event loop debug mode
+        "timeout_connection": 10.0,  # Timeout for all engines client to connect and initialize
+        "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
+        "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
+        "timeout_disconnection": 5.0,  # Timeout for all engine clients to disconnect
+        "check_residuals_delay": 5.0,  # Delay to await residual events after stopping engines
     },
     "logging": {
         "level_stdout": "INF",
     },
-    "exec_database": {
+    "cache_database": {
         "type": "redis",
         "host": "localhost",
         "port": 6379,
     },
-    "risk": {},
+    "data_engine": {},
+    "risk_engine": {},
+    "exec_engine": {},
     "strategy": {
         "load_state": True,  # Strategy state is loaded from the database on start
         "save_state": True,  # Strategy state is saved to the database on shutdown
@@ -66,6 +70,7 @@ config = {
             "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BITMEX_API_KEY",  # value is the environment variable key
             "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
+            "sandbox_mode": False,  # If client uses the testnet
         },
     },
     "exec_clients": {
@@ -73,7 +78,7 @@ config = {
             "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BITMEX_API_KEY",  # value is the environment variable key
             "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
-            "sandbox_mode": False,  # If clients use the testnet
+            "sandbox_mode": False,  # If client uses the testnet
         },
     },
 }

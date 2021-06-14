@@ -65,11 +65,12 @@ class SwingsTests(unittest.TestCase):
         # Arrange
         bar = Bar(
             AUDUSD_1_MIN_BID,
-            Price("1.00000"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
+            0,
             0,
         )
 

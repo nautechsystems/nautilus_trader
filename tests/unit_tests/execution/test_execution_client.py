@@ -19,15 +19,17 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.client import ExecutionClient
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -53,19 +55,20 @@ class ExecutionClientTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
 
-        portfolio = Portfolio(
+        self.cache = TestStubs.cache()
+
+        self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
-        portfolio.register_cache(DataCache(self.logger))
 
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
-            database=database,
-            portfolio=portfolio,
+            portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -74,17 +77,39 @@ class ExecutionClientTests(unittest.TestCase):
 
         self.client = ExecutionClient(
             client_id=ClientId(self.venue.value),
-            account_id=self.account_id,
+            venue_type=VenueType.ECN,
+            account_id=TestStubs.account_id(),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
+
+    def test_venue_when_brokerage_returns_client_id_value_as_venue(self):
+        assert self.client.venue == self.venue
+
+    def test_venue_when_brokerage_multi_venue_returns_none(self):
+        # Arrange
+        client = ExecutionClient(
+            client_id=ClientId("IB"),
+            venue_type=VenueType.BROKERAGE_MULTI_VENUE,
+            account_id=AccountId("IB", "U1258001"),
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act, Assert
+        assert client.venue is None
 
     def test_connect_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.client.connect)
@@ -102,15 +127,13 @@ class ExecutionClientTests(unittest.TestCase):
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
-            StrategyId("SCALPER", "001"),
+            order.strategy_id,
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
@@ -123,22 +146,20 @@ class ExecutionClientTests(unittest.TestCase):
         entry_order = self.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
-            Price("0.99995"),
+            Quantity.from_int(100000),
+            Price.from_str("0.99995"),
         )
 
         # Act
         bracket_order = self.order_factory.bracket(
             entry_order,
-            Price("0.99990"),
-            Price("1.00010"),
+            Price.from_str("0.99990"),
+            Price.from_str("1.00010"),
         )
 
         command = SubmitBracketOrder(
-            entry_order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
-            StrategyId("SCALPER", "001"),
+            entry_order.strategy_id,
             bracket_order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -152,13 +173,14 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = UpdateOrder(
-            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
-            Quantity(120000),
-            Price("1.00000"),
+            VenueOrderId("001"),
+            Quantity.from_int(120000),
+            Price.from_str("1.00000"),
+            None,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -170,9 +192,8 @@ class ExecutionClientTests(unittest.TestCase):
         # Arrange
         # Act
         command = CancelOrder(
-            AUDUSD_SIM.id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
             ClientOrderId("O-123456789"),
             VenueOrderId("001"),
@@ -183,24 +204,25 @@ class ExecutionClientTests(unittest.TestCase):
         # Assert
         self.assertRaises(NotImplementedError, self.client.cancel_order, command)
 
-    def test_handle_event_sends_to_execution_engine(self):
-        # Arrange
-        order = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        fill = TestStubs.event_order_filled(
-            order,
-            AUDUSD_SIM,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00001"),
-        )
-
-        # Act
-        self.client._handle_event_py(fill)  # Accessing protected method
-
-        # Assert
-        self.assertEqual(1, self.exec_engine.event_count)
+    # TODO: WIP
+    # def test_handle_event_sends_to_execution_engine(self):
+    #     # Arrange
+    #     order = self.order_factory.market(
+    #         AUDUSD_SIM.id,
+    #         OrderSide.BUY,
+    #         Quantity.from_int(100000),
+    #     )
+    #
+    #     fill = TestStubs.event_order_filled(
+    #         order,
+    #         AUDUSD_SIM,
+    #         position_id=PositionId("P-123456"),
+    #         strategy_id=StrategyId("S-001"),
+    #         last_px=Price.from_str("1.00001"),
+    #     )
+    #
+    #     # Act
+    #     self.client._handle_event_py(fill)  # Accessing protected method
+    #
+    #     # Assert
+    #     self.assertEqual(1, self.exec_engine.event_count)

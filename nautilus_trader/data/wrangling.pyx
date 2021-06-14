@@ -25,8 +25,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -46,7 +45,7 @@ cdef class QuoteTickDataWrangler:
         dict data_bars_ask=None,
     ):
         """
-        Initialize a new instance of the `QuoteTickDataWrangler` class.
+        Initialize a new instance of the ``QuoteTickDataWrangler`` class.
 
         Parameters
         ----------
@@ -261,7 +260,8 @@ cdef class QuoteTickDataWrangler:
             ask=Price(values[1], self.instrument.price_precision),
             bid_size=Quantity(values[2], self.instrument.size_precision),
             ask_size=Quantity(values[3], self.instrument.size_precision),
-            timestamp_ns=secs_to_nanos(timestamp),
+            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_recv_ns=secs_to_nanos(timestamp),
         )
 
 
@@ -273,7 +273,7 @@ cdef class TradeTickDataWrangler:
 
     def __init__(self, Instrument instrument not None, data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `TradeTickDataWrangler` class.
+        Initialize a new instance of the ``TradeTickDataWrangler`` class.
 
         Parameters
         ----------
@@ -339,11 +339,12 @@ cdef class TradeTickDataWrangler:
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick(
             instrument_id=self.instrument.id,
-            price=Price(values[0]),
-            size=Quantity(values[1]),
+            price=Price(values[0], self.instrument.price_precision),
+            size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
-            match_id=TradeMatchId(values[3]),
-            timestamp_ns=secs_to_nanos(timestamp),
+            match_id=values[3],
+            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_recv_ns=secs_to_nanos(timestamp),
         )
 
 
@@ -361,7 +362,7 @@ cdef class BarDataWrangler:
         data: pd.DataFrame=None,
     ):
         """
-        Initialize a new instance of the `BarDataWrangler` class.
+        Initialize a new instance of the ``BarDataWrangler`` class.
 
         Parameters
         ----------
@@ -450,5 +451,6 @@ cdef class BarDataWrangler:
             low_price=Price(values[2], self._price_precision),
             close_price=Price(values[3], self._price_precision),
             volume=Quantity(values[4], self._size_precision),
-            timestamp_ns=secs_to_nanos(timestamp),
+            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_recv_ns=secs_to_nanos(timestamp),
         )

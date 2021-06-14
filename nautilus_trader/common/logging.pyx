@@ -110,7 +110,7 @@ cdef class Logger:
         bint bypass_logging=False,
     ):
         """
-        Initialize a new instance of the `Logger` class.
+        Initialize a new instance of the ``Logger`` class.
 
         Parameters
         ----------
@@ -120,9 +120,9 @@ cdef class Logger:
             The trader identifier for the logger.
         system_id : UUID, optional
             The systems unique instantiation identifier.
-        level_stdout : LogLevel (Enum)
+        level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel (Enum)
+        level_raw : LogLevel
             The minimum log level for the raw log record sink.
         bypass_logging : bool
             If the logger should be bypassed.
@@ -151,7 +151,7 @@ cdef class Logger:
         """
         self._log(record)
 
-    cdef inline dict create_record(
+    cdef dict create_record(
         self,
         LogLevel level,
         LogColor color,
@@ -174,7 +174,7 @@ cdef class Logger:
 
         return record
 
-    cdef inline void _log(self, dict record) except *:
+    cdef void _log(self, dict record) except *:
         cdef LogLevel level = LogLevelParser.from_str(record["level"])
         cdef LogColor color = record.get("color", 0)
 
@@ -186,7 +186,7 @@ cdef class Logger:
         if level >= self._log_level_raw:
             pass  # TODO: Raw sink out - str(record)
 
-    cdef inline str _format_record(
+    cdef str _format_record(
         self,
         LogLevel level,
         LogColor color,
@@ -223,7 +223,7 @@ cdef class LoggerAdapter:
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `LoggerAdapter` class.
+        Initialize a new instance of the ``LoggerAdapter`` class.
 
         Parameters
         ----------
@@ -263,7 +263,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -296,7 +296,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -330,7 +330,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -364,7 +364,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -398,7 +398,7 @@ cdef class LoggerAdapter:
         ----------
         msg : str
             The message to log.
-        color : LogColor (Enum), optional
+        color : LogColor, optional
             The color for the log record.
         annotations : dict[str, object], optional
             The annotations for the log record.
@@ -542,9 +542,9 @@ cdef class LiveLogger(Logger):
             The trader identifier for the logger.
         system_id : UUID, optional
             The systems unique instantiation identifier.
-        level_stdout : LogLevel (Enum)
+        level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel (Enum)
+        level_raw : LogLevel
             The minimum log level for the raw log record sink.
         bypass_logging : bool
             If the logger should be bypassed.

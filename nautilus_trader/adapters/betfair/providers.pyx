@@ -26,13 +26,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.time cimport unix_timestamp_ns
-from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
-from nautilus_trader.model.instrument import BettingInstrument
 
 
 logger = logging.getLogger(__name__)
@@ -43,9 +42,14 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     Provides a means of loading `BettingInstruments` from the Betfair APIClient.
     """
 
-    def __init__(self, client not None: APIClient, logger: Logger, bint load_all=True, dict market_filter=None):
+    def __init__(
+        self, client not None: APIClient,
+        logger: Logger,
+        bint load_all=True,
+        dict market_filter=None,
+    ):
         """
-        Initialize a new instance of the `BetfairInstrumentProvider` class.
+        Initialize a new instance of the ``BetfairInstrumentProvider`` class.
 
         Parameters
         ----------
@@ -58,12 +62,14 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         super().__init__()
 
         self._client = client
-        self.market_filter = market_filter or {}
         self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
-        self.venue = BETFAIR_VENUE
         self._instruments = {}
         self._cache = {}
         self._searched_filters = set()
+        self._account_currency = None
+
+        self.market_filter = market_filter or {}
+        self.venue = BETFAIR_VENUE
 
         if load_all:
             self._load_instruments()
@@ -101,11 +107,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
     cpdef void _assert_loaded_instruments(self) except *:
         assert self._instruments, "Instruments empty, has `load_all()` been called?"
-
-    cpdef instrument(self, InstrumentId instrument_id):
-        """ get an instrument by id """
-        if instrument_id in self._instruments:
-            return self._instruments[instrument_id]
 
     cpdef list search_markets(self, dict market_filter=None):
         """ Search for betfair markets. Useful for debugging / interactive use """
@@ -254,7 +255,8 @@ def make_instruments(market_definition, currency):
             selection_handicap=str(runner.get("hc", runner.get("handicap")) or "0.0"),
             currency=currency,
             # TODO - Add the provider, use clock
-            timestamp_ns=unix_timestamp_ns()
+            ts_event_ns=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
+            ts_recv_ns=unix_timestamp_ns(),
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
         instruments.append(instrument)

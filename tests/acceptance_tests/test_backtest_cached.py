@@ -19,20 +19,21 @@ import unittest
 
 import pandas as pd
 
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -42,38 +43,39 @@ from tests.test_kit.strategies import EMACross
 class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            use_data_cache=True,
+        )
+
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        data = BacktestDataContainer()
-        data.add_instrument(self.usdjpy)
-        data.add_bars(
+
+        self.engine.add_instrument(self.usdjpy)
+        self.engine.add_bars(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        data.add_bars(
+        self.engine.add_bars(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
-            use_data_cache=True,
-        )
-
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
         )
@@ -98,7 +100,8 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.assertEqual(2689, strategy.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
         self.assertEqual(
-            Money(997731.23, USD), self.engine.portfolio.account(self.venue).balance()
+            Money(997731.23, USD),
+            self.engine.portfolio.account(self.venue).balance_total(USD),
         )
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
@@ -154,45 +157,47 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.assertEqual(2689, strategy2.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
         self.assertEqual(
-            Money(994662.69, USD), self.engine.portfolio.account(self.venue).balance()
+            Money(992818.88, USD),
+            self.engine.portfolio.account(self.venue).balance_total(USD),
         )
 
 
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            use_data_cache=True,
+        )
+
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
-        data = BacktestDataContainer()
-        data.add_instrument(self.gbpusd)
-        data.add_bars(
+
+        self.engine.add_instrument(self.gbpusd)
+        self.engine.add_bars(
             self.gbpusd.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.gbpusd_1min_bid(),
         )
-        data.add_bars(
+        self.engine.add_bars(
             self.gbpusd.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
             TestDataProvider.gbpusd_1min_ask(),
         )
 
-        self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
-            use_data_cache=True,
-        )
-
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=GBP,
             starting_balances=[Money(1_000_000, GBP)],
             modules=[fx_rollover_interest],
         )
@@ -217,34 +222,36 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         self.assertEqual(8353, strategy.fast_ema.count)
         self.assertEqual(120467, self.engine.iteration)
         self.assertEqual(
-            Money(947226.84, GBP), self.engine.portfolio.account(self.venue).balance()
+            Money(947226.84, GBP),
+            self.engine.portfolio.account(self.venue).balance_total(GBP),
         )
 
 
 class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.venue = Venue("SIM")
-        self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        data = BacktestDataContainer()
-        data.add_instrument(self.audusd)
-        data.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
-
         self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
             bypass_logging=True,
             use_data_cache=True,
         )
 
+        self.venue = Venue("SIM")
+        self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+
+        self.engine.add_instrument(self.audusd)
+        self.engine.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
+
         interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
+            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.add_exchange(
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.ECN,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=AUD,
             starting_balances=[Money(1_000_000, AUD)],
             modules=[fx_rollover_interest],
         )
@@ -269,7 +276,8 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         self.assertEqual(1771, strategy.fast_ema.count)
         self.assertEqual(99999, self.engine.iteration)
         self.assertEqual(
-            Money(991360.19, AUD), self.engine.portfolio.account(self.venue).balance()
+            Money(991360.19, AUD),
+            self.engine.portfolio.account(self.venue).balance_total(AUD),
         )
 
     def test_run_ema_cross_with_tick_bar_spec(self):
@@ -289,29 +297,31 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         self.assertEqual(999, strategy.fast_ema.count)
         self.assertEqual(99999, self.engine.iteration)
         self.assertEqual(
-            Money(995431.92, AUD), self.engine.portfolio.account(self.venue).balance()
+            Money(995431.92, AUD),
+            self.engine.portfolio.account(self.venue).balance_total(AUD),
         )
 
 
 class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.venue = Venue("BINANCE")
-        self.ethusdt = TestInstrumentProvider.ethusdt_binance()
-        data = BacktestDataContainer()
-        data.add_instrument(self.ethusdt)
-        data.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
-
         self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
             bypass_logging=True,
             use_data_cache=True,
         )
 
-        self.engine.add_exchange(
+        self.venue = Venue("BINANCE")
+        self.ethusdt = TestInstrumentProvider.ethusdt_binance()
+
+        self.engine.add_instrument(self.ethusdt)
+        self.engine.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
+
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT)],
         )
 
@@ -335,32 +345,36 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.assertEqual(279, strategy.fast_ema.count)
         self.assertEqual(69806, self.engine.iteration)
         self.assertEqual(
-            Money(999744.86220000, USDT),
-            self.engine.portfolio.account(self.venue).balance(),
+            Money(999489.73009373, USDT),
+            self.engine.portfolio.account(self.venue).balance_total(USDT),
         )
 
 
 class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.venue = Venue("BINANCE")
-        self.instrument = TestInstrumentProvider.btcusdt_binance()
-        data = BacktestDataContainer()
-        data.add_instrument(self.instrument)
-        data.add_trade_ticks(self.instrument.id, TestDataProvider.tardis_trades())
-        data.add_quote_ticks(self.instrument.id, TestDataProvider.tardis_quotes())
-
         self.engine = BacktestEngine(
-            data=data,
-            strategies=[TradingStrategy("000")],
-            bypass_logging=True,
+            bypass_logging=False,
             use_data_cache=True,
         )
 
-        self.engine.add_exchange(
+        self.venue = Venue("BINANCE")
+        self.instrument = TestInstrumentProvider.btcusdt_binance()
+
+        self.engine.add_instrument(self.instrument)
+        self.engine.add_trade_ticks(
+            self.instrument.id, TestDataProvider.tardis_trades()
+        )
+        self.engine.add_quote_ticks(
+            self.instrument.id, TestDataProvider.tardis_quotes()
+        )
+        self.engine.add_venue(
             venue=self.venue,
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
-            starting_balances=[Money(1_000_000, USDT)],
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
         )
 
     def tearDown(self):
@@ -371,7 +385,7 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         strategy = EMACross(
             instrument_id=self.instrument.id,
             bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-            trade_size=Decimal(100),
+            trade_size=Decimal(1),
             fast_ema=10,
             slow_ema=20,
         )
@@ -383,6 +397,6 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.assertEqual(39, strategy.fast_ema.count)
         self.assertEqual(19998, self.engine.iteration)
         self.assertEqual(
-            Money(992256.83000000, USDT),
-            self.engine.portfolio.account(self.venue).balance(),
+            Money(999845.13660001, USDT),
+            self.engine.portfolio.account(self.venue).balance_total(USDT),
         )

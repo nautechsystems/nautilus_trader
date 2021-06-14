@@ -16,26 +16,26 @@
 
 from decimal import Decimal
 import os
-import pathlib
 import sys
 
 import pandas as pd
 
 
 sys.path.insert(
-    0, str(pathlib.Path(__file__).parents[2])
+    0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
-from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
@@ -44,16 +44,50 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
+    # Build the backtest engine
+    engine = BacktestEngine(
+        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
+        # exec_db_type="redis",
+        # bypass_logging=True
+    )
+
     # Setup trading instruments
     SIM = Venue("SIM")
     AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 
-    # Setup data container
-    data = BacktestDataContainer()
-    data.add_instrument(AUDUSD)
-    data.add_quote_ticks(
+    # Setup data
+    engine.add_instrument(AUDUSD)
+    engine.add_quote_ticks(
         instrument_id=AUDUSD.id,
         data=TestDataProvider.audusd_ticks(),  # Stub data from the test kit
+    )
+
+    # Create a fill model (optional)
+    fill_model = FillModel(
+        prob_fill_at_limit=0.2,
+        prob_fill_at_stop=0.95,
+        prob_slippage=0.5,
+        random_seed=42,
+    )
+
+    # Optional plug in module to simulate rollover interest,
+    # the data is coming from packaged test data.
+    interest_rate_data = pd.read_csv(
+        os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+    )
+    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+    # Add an exchange (multiple exchanges possible)
+    # Add starting balances for single-currency or multi-currency accounts
+    engine.add_venue(
+        venue=SIM,
+        venue_type=VenueType.ECN,
+        oms_type=OMSType.HEDGING,  # Venue will generate position_ids
+        account_type=AccountType.MARGIN,
+        base_currency=USD,  # Standard single-currency account
+        starting_balances=[Money(1_000_000, USD)],
+        fill_model=fill_model,
+        modules=[fx_rollover_interest],
     )
 
     # Instantiate your strategy
@@ -66,44 +100,10 @@ if __name__ == "__main__":
         order_id_tag="001",
     )
 
-    # Create a fill model (optional)
-    fill_model = FillModel(
-        prob_fill_at_limit=0.2,
-        prob_fill_at_stop=0.95,
-        prob_slippage=0.5,
-        random_seed=42,
-    )
-
-    # Build the backtest engine
-    engine = BacktestEngine(
-        data=data,
-        strategies=[strategy],  # List of 'any' number of strategies
-        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # exec_db_type="redis",
-        # bypass_logging=True
-    )
-
-    # Optional plug in module to simulate rollover interest,
-    # the data is coming from packaged test data.
-    interest_rate_data = pd.read_csv(
-        os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv")
-    )
-    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
-
-    # Add an exchange (multiple exchanges possible)
-    # Add starting balances for single-asset or multi-asset accounts
-    engine.add_exchange(
-        venue=SIM,
-        oms_type=OMSType.HEDGING,  # Exchange will generate position_ids
-        starting_balances=[Money(1_000_000, USD)],
-        fill_model=fill_model,
-        modules=[fx_rollover_interest],
-    )
-
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine from start to end of data
-    engine.run()
+    engine.run(strategies=[strategy])
 
     # Optionally view reports
     with pd.option_context(
@@ -118,5 +118,8 @@ if __name__ == "__main__":
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 
-    # Good practice to dispose of the object
+    # For repeated backtest runs make sure to reset the engine
+    engine.reset()
+
+    # Good practice to dispose of the object when done
     engine.dispose()

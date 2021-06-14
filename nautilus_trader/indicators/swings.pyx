@@ -71,7 +71,7 @@ cdef class Swings(Indicator):
         self.update_raw(
             bar.high.as_double(),
             bar.low.as_double(),
-            nanos_to_unix_dt(nanos=bar.timestamp_ns),
+            nanos_to_unix_dt(nanos=bar.ts_recv_ns),
         )
 
     cpdef void update_raw(

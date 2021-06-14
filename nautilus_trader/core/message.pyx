@@ -78,17 +78,17 @@ cdef class Message:
     """
     The abstract base class for all messages.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         MessageType msg_type,
         UUID identifier not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Message` class.
+        Initialize a new instance of the ``Message`` class.
 
         Parameters
         ----------
@@ -96,8 +96,8 @@ cdef class Message:
             The message type.
         identifier : UUID
             The message identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the message initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the message initialization.
 
         """
         self.type = msg_type
@@ -106,9 +106,6 @@ cdef class Message:
 
     def __eq__(self, Message other) -> bool:
         return self.type == other.type and self.id == other.id
-
-    def __ne__(self, Message other) -> bool:
-        return self.type != other.type or self.id != other.id
 
     def __hash__(self) -> int:
         return hash((self.type, self.id))
@@ -121,19 +118,19 @@ cdef class Command(Message):
     """
     The abstract base class for all commands.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
+    def __init__(self, UUID identifier not None, uint64_t timestamp_ns):
         """
-        Initialize a new instance of the `Command` class.
+        Initialize a new instance of the ``Command`` class.
 
         Parameters
         ----------
         identifier : UUID
             The command identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the command initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the command initialization.
 
         """
         super().__init__(MessageType.COMMAND, identifier, timestamp_ns)
@@ -143,23 +140,23 @@ cdef class Document(Message):
     """
     The abstract base class for all documents.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         UUID identifier not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Document` class.
+        Initialize a new instance of the ``Document`` class.
 
         Parameters
         ----------
         identifier : UUID
             The document identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the document initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the document initialization.
 
         """
         super().__init__(MessageType.DOCUMENT, identifier, timestamp_ns)
@@ -169,23 +166,23 @@ cdef class Event(Message):
     """
     The abstract base class for all events.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         UUID identifier not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Event` class.
+        Initialize a new instance of the ``Event`` class.
 
         Parameters
         ----------
         identifier : UUID
             The event identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         super().__init__(MessageType.EVENT, identifier, timestamp_ns)
@@ -195,19 +192,19 @@ cdef class Request(Message):
     """
     The abstract base class for all requests.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
+    def __init__(self, UUID identifier not None, uint64_t timestamp_ns):
         """
-        Initialize a new instance of the `Request` class.
+        Initialize a new instance of the ``Request`` class.
 
         Parameters
         ----------
         identifier : UUID
             The request identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the request initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the request initialization.
 
         """
         super().__init__(MessageType.REQUEST, identifier, timestamp_ns)
@@ -217,17 +214,17 @@ cdef class Response(Message):
     """
     The abstract base class for all responses.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         UUID correlation_id not None,
         UUID identifier not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `Response` class.
+        Initialize a new instance of the ``Response`` class.
 
         Parameters
         ----------
@@ -235,8 +232,8 @@ cdef class Response(Message):
             The correlation identifier.
         identifier : UUID
             The response identifier.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the response initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the response initialization.
 
         """
         super().__init__(MessageType.RESPONSE, identifier, timestamp_ns)

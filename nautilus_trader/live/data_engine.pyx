@@ -15,10 +15,10 @@
 
 import asyncio
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
@@ -40,12 +40,13 @@ cdef class LiveDataEngine(DataEngine):
         self,
         loop not None: asyncio.AbstractEventLoop,
         Portfolio portfolio not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveDataEngine` class.
+        Initialize a new instance of the ``LiveDataEngine`` class.
 
         Parameters
         ----------
@@ -53,26 +54,31 @@ cdef class LiveDataEngine(DataEngine):
             The event loop for the engine.
         portfolio : int
             The portfolio to register.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
-            The clock for the component.
+            The clock for the engine.
         logger : Logger
-            The logger for the component.
+            The logger for the engine.
         config : dict[str, object], optional
             The configuration options.
 
         """
         if config is None:
             config = {}
+        if "qsize" not in config:
+            config["qsize"] = 10000
         super().__init__(
-            portfolio,
-            clock,
-            logger,
-            config,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop = loop
-        self._data_queue = Queue(maxsize=config.get("qsize", 10000))
-        self._message_queue = Queue(maxsize=config.get("qsize", 10000))
+        self._data_queue = Queue(maxsize=config.get("qsize"))
+        self._message_queue = Queue(maxsize=config.get("qsize"))
 
         self._run_queues_task = None
         self.is_running = False
@@ -275,7 +281,7 @@ cdef class LiveDataEngine(DataEngine):
                 self._handle_data(data)
         except asyncio.CancelledError:
             if not self._data_queue.empty():
-                self._log.warning(f"Running cancelled "
+                self._log.warning(f"Running canceled "
                                   f"with {self.data_qsize()} data item(s) on queue.")
             else:
                 self._log.debug(f"Data queue processing stopped (qsize={self.data_qsize()}).")
@@ -298,12 +304,12 @@ cdef class LiveDataEngine(DataEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except asyncio.CancelledError:
             if not self._message_queue.empty():
-                self._log.warning(f"Running cancelled "
+                self._log.warning(f"Running canceled "
                                   f"with {self.message_qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
 
-    cdef inline void _enqueue_sentinels(self):
+    cdef void _enqueue_sentinels(self):
         self._data_queue.put_nowait(self._sentinel)
         self._message_queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on data queue.")

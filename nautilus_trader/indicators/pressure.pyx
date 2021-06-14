@@ -36,7 +36,7 @@ cdef class Pressure(Indicator):
         double atr_floor=0,
     ):
         """
-        Initialize a new instance of the `Pressure` class.
+        Initialize a new instance of the ``Pressure`` class.
 
         Parameters
         ----------

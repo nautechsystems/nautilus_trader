@@ -13,32 +13,48 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
-from nautilus_trader.core.correctness cimport Condition
+from libc.stdint cimport uint64_t
 
 
 cdef class Data:
     """
     The abstract base class for all data.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t timestamp_ns):
+    def __init__(self, uint64_t ts_event_ns, uint64_t ts_recv_ns):
         """
-        Initialize a new instance of the `Data` class.
+        Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the data.
+        ts_event_ns : uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns : uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        self.timestamp_ns = timestamp_ns
+        # Design-time invariant: correct ordering of timestamps
+        assert ts_recv_ns >= ts_event_ns
+        self.ts_event_ns = ts_event_ns
+        self.ts_recv_ns = ts_recv_ns
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(timestamp_ns={self.timestamp_ns})"
+        return (f"{type(self).__name__}("
+                f"ts_event_ns={self.ts_event_ns}, "
+                f"ts_recv_ns{self.ts_recv_ns})")
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class DataType:
@@ -48,12 +64,12 @@ cdef class DataType:
 
     def __init__(self, type data_type not None, dict metadata=None):
         """
-        Initialize a new instance of the `DataType` class.
+        Initialize a new instance of the ``DataType`` class.
 
         Parameters
         ----------
         data_type : type
-            The PyObject type of the data.
+            The ``Data`` type of the data.
         metadata : dict
             The data types metadata.
 
@@ -79,9 +95,6 @@ cdef class DataType:
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self.metadata == other.metadata
 
-    def __ne__(self, DataType other) -> bool:
-        return self.type != other.type or self.metadata != other.metadata
-
     def __hash__(self) -> int:
         return self._hash
 
@@ -100,29 +113,30 @@ cdef class GenericData(Data):
     def __init__(
         self,
         DataType data_type not None,
-        data not None,
-        int64_t timestamp_ns,
+        Data data not None,
     ):
         """
-        Initialize a new instance of the `GenericData` class.
+        Initialize a new instance of the ``GenericData`` class.
 
         Parameters
         ----------
         data_type : DataType
             The data type.
-        data : object
+        data : Data
             The data object to wrap.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the data.
-
-        Raises
-        ------
-        ValueError
-            If type(data) is not of type data_type.type.
 
         """
-        Condition.type(data, data_type.type, "data")
-        super().__init__(timestamp_ns)
-
+        super().__init__(data.ts_event_ns, data.ts_recv_ns)
         self.data_type = data_type
         self.data = data
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of the internal data object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return self.data.to_dict()

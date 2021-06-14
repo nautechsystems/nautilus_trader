@@ -33,13 +33,13 @@ cdef class SimpleMovingAverage(MovingAverage):
 
     def __init__(self, int period, PriceType price_type=PriceType.LAST):
         """
-        Initialize a new instance of the `SimpleMovingAverage` class.
+        Initialize a new instance of the ``SimpleMovingAverage`` class.
 
         Parameters
         ----------
         period : int
             The rolling window period for the indicator (> 0).
-        price_type : PriceType (Enum)
+        price_type : PriceType
             The specified price type for extracting values from quote ticks.
 
         Raises

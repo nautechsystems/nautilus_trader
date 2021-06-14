@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
-
 cdef inline Exception make_exception(ex_default, ex_type, str msg):
     if type(ex_type) == type(Exception):
         return ex_type(msg)
@@ -123,9 +120,6 @@ cdef class Condition:
 
     @staticmethod
     cdef void positive_int(int value, str param, ex_type=*) except *
-
-    @staticmethod
-    cdef void positive_int64(int64_t value, str param, ex_type=*) except *
 
     @staticmethod
     cdef void not_negative(double value, str param, ex_type=*) except *

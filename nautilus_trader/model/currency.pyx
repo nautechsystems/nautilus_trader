@@ -28,32 +28,32 @@ cdef class Currency:
     def __init__(
         self,
         str code,
-        int precision,
-        int iso4217,
+        uint8_t precision,
+        uint16_t iso4217,
         str name,
         CurrencyType currency_type,
     ):
         """
-        Initialize a new instance of the `Currency` class.
+        Initialize a new instance of the ``Currency`` class.
 
         Parameters
         ----------
         code : str
             The currency code.
-        precision : int
+        precision : uint8
             The currency decimal precision.
-        iso4217 : int
+        iso4217 : uint16
             The currency ISO 4217 code.
         name : str
             The currency name.
-        currency_type : CurrencyType (Enum)
+        currency_type : CurrencyType
             The currency type.
 
         Raises
         ------
         ValueError
             If code is not a valid string.
-        ValueError
+        OverflowError
             If precision is negative (< 0).
         ValueError
             If name is not a valid string.
@@ -72,9 +72,6 @@ cdef class Currency:
     def __eq__(self, Currency other) -> bool:
         return self.code == other.code and self.precision == other.precision
 
-    def __ne__(self, Currency other) -> bool:
-        return self.code != other.code or self.precision != other.precision
-
     def __hash__(self) -> int:
         return hash((self.code, self.precision))
 
@@ -90,8 +87,33 @@ cdef class Currency:
                 f"type={CurrencyTypeParser.to_str(self.currency_type)})")
 
     @staticmethod
+    cdef void register_c(Currency currency, bint overwrite=False):
+        if not overwrite and currency.code in _CURRENCY_MAP:
+            return
+        _CURRENCY_MAP[currency.code] = currency
+
+    @staticmethod
     cdef Currency from_str_c(str code):
         return _CURRENCY_MAP.get(code)
+
+    @staticmethod
+    def register(Currency currency, bint overwrite=False):
+        """
+        Register the given currency.
+
+        Will override the internal currency map.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency to register
+        overwrite : bool
+            If the currency in the internal currency map should be overwritten.
+
+        """
+        Condition.not_none(currency, "currency")
+
+        return Currency.register_c(currency, overwrite)
 
     @staticmethod
     def from_str(str code):
@@ -108,7 +130,7 @@ cdef class Currency:
         Currency or None
 
         """
-        return _CURRENCY_MAP.get(code)
+        return Currency.from_str_c(code)
 
     @staticmethod
     cdef bint is_fiat_c(str code):

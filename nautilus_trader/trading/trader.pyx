@@ -21,6 +21,8 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
+import pandas as pd
+
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -32,6 +34,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.risk.engine cimport RiskEngine
+from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -46,14 +49,14 @@ cdef class Trader(Component):
         list strategies not None,
         Portfolio portfolio not None,
         DataEngine data_engine not None,
-        ExecutionEngine exec_engine not None,
         RiskEngine risk_engine not None,
+        ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
         bint warn_no_strategies=True,
     ):
         """
-        Initialize a new instance of the `Trader` class.
+        Initialize a new instance of the ``Trader`` class.
 
         Parameters
         ----------
@@ -65,10 +68,10 @@ cdef class Trader(Component):
             The portfolio for the trader.
         data_engine : DataEngine
             The data engine for the trader.
-        exec_engine : ExecutionEngine
-            The execution engine for the trader.
         risk_engine : RiskEngine
             The risk engine for the trader.
+        exec_engine : ExecutionEngine
+            The execution engine for the trader.
         clock : Clock
             The clock for the trader.
         logger : Logger
@@ -97,17 +100,21 @@ cdef class Trader(Component):
         self._strategies = []
         self._portfolio = portfolio
         self._data_engine = data_engine
-        self._exec_engine = exec_engine
         self._risk_engine = risk_engine
+        self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
 
         self.id = trader_id
         self.analyzer = PerformanceAnalyzer()
 
-        self.initialize_strategies(
-            strategies=strategies,
-            warn_no_strategies=warn_no_strategies,
-        )
+        if strategies:
+            self.initialize_strategies(
+                strategies=strategies,
+                warn_no_strategies=warn_no_strategies,
+            )
+        else:
+            if warn_no_strategies:
+                self._log.warning(f"No strategies to initialize.")
 
     cdef list strategies_c(self):
         return self._strategies
@@ -200,10 +207,7 @@ cdef class Trader(Component):
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
-        if warn_no_strategies and not strategies:
-            self._log.warning(f"No strategies to initialize.")
-        else:
-            self._log.info(f"Initializing strategies...")
+        self._log.info(f"Initializing strategies...")
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -233,6 +237,7 @@ cdef class Trader(Component):
             self._exec_engine.register_strategy(strategy)
 
             client_order_ids = self._exec_engine.cache.client_order_ids(
+                venue=None,
                 instrument_id=None,
                 strategy_id=strategy.id,
             )
@@ -312,4 +317,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_account_report(self._exec_engine.cache.account_for_venue(venue))
+        cdef Account account = self._exec_engine.cache.account_for_venue(venue)
+        if account is None:
+            return pd.DataFrame()
+        return self._report_provider.generate_account_report(account)
