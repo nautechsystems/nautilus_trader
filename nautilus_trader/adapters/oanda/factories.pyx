@@ -61,8 +61,8 @@ cdef class OandaDataClientFactory(LiveDataClientFactory):
 
         """
         # Get credentials
-        oanda_api_token = os.getenv(config.get("api_token", ""), "")
-        oanda_account_id = os.getenv(config.get("account_id", ""), "001")
+        oanda_api_token = os.getenv("api_token", config.get("api_token", ""))
+        oanda_account_id = os.getenv("account_id", config.get("account_id", "001"))
 
         # Create client
         client = oandapyV20.API(access_token=oanda_api_token)
