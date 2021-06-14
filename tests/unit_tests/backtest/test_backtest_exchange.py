@@ -767,6 +767,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(100000),
             price=Price.from_str("110.000"),
+            trigger=None,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=0,
         )

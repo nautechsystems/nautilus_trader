@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.client cimport DataClient

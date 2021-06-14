@@ -16,17 +16,14 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orders.base cimport Order
+
+
+cdef dict _OBJECT_MAP
 
 
 cdef class InstrumentSerializer:
     cpdef bytes serialize(self, Instrument instrument)
     cpdef Instrument deserialize(self, bytes instrument_bytes)
-
-
-cdef class OrderSerializer:
-    cpdef bytes serialize(self, Order order)
-    cpdef Order deserialize(self, bytes order_bytes)
 
 
 cdef class CommandSerializer:

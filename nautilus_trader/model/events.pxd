@@ -55,6 +55,10 @@ cdef class AccountState(Event):
     cdef readonly uint64_t ts_updated_ns
     """The UNIX timestamp (nanoseconds) when the account was updated.\n\n:returns: `uint64`"""
 
+    @staticmethod
+    cdef AccountState from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderEvent(Event):
     cdef readonly ClientOrderId client_order_id
@@ -79,15 +83,27 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
 
+    @staticmethod
+    cdef OrderInitialized from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderInvalid(OrderEvent):
     cdef readonly str reason
     """The reason the order was invalid.\n\n:returns: `str`"""
 
+    @staticmethod
+    cdef OrderInvalid from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderDenied(OrderEvent):
     cdef readonly str reason
     """The reason the order was denied.\n\n:returns: `str`"""
+
+    @staticmethod
+    cdef OrderDenied from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -95,6 +111,10 @@ cdef class OrderSubmitted(OrderEvent):
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly uint64_t ts_submitted_ns
     """The order submitted time.\n\n:returns: `uint64`"""
+
+    @staticmethod
+    cdef OrderSubmitted from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class OrderRejected(OrderEvent):
@@ -105,12 +125,20 @@ cdef class OrderRejected(OrderEvent):
     cdef readonly uint64_t ts_rejected_ns
     """The UNIX timestamp (nanoseconds) when the order was rejected.\n\n:returns: `uint64`"""
 
+    @staticmethod
+    cdef OrderRejected from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly uint64_t ts_accepted_ns
     """The UNIX timestamp (nanoseconds) when the order was accepted.\n\n:returns: `uint64`"""
+
+    @staticmethod
+    cdef OrderAccepted from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class OrderPendingReplace(OrderEvent):
@@ -119,12 +147,20 @@ cdef class OrderPendingReplace(OrderEvent):
     cdef readonly uint64_t ts_pending_ns
     """The timestamp from which the replace was pending.\n\n:returns: `uint64`"""
 
+    @staticmethod
+    cdef OrderPendingReplace from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderPendingCancel(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly uint64_t ts_pending_ns
     """The timestamp from which the cancel was pending.\n\n:returns: `uint64`"""
+
+    @staticmethod
+    cdef OrderPendingCancel from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class OrderUpdateRejected(OrderEvent):
@@ -137,6 +173,10 @@ cdef class OrderUpdateRejected(OrderEvent):
     cdef readonly uint64_t ts_rejected_ns
     """The UNIX timestamp (nanoseconds) when the update was rejected.\n\n:returns: `uint64`"""
 
+    @staticmethod
+    cdef OrderUpdateRejected from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderCancelRejected(OrderEvent):
     cdef readonly AccountId account_id
@@ -148,6 +188,10 @@ cdef class OrderCancelRejected(OrderEvent):
     cdef readonly uint64_t ts_rejected_ns
     """The UNIX timestamp (nanoseconds) when the cancel was rejected.\n\n:returns: `uint64`"""
 
+    @staticmethod
+    cdef OrderCancelRejected from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderUpdated(OrderEvent):
     cdef readonly AccountId account_id
@@ -156,8 +200,14 @@ cdef class OrderUpdated(OrderEvent):
     """The orders current quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
+    cdef readonly Price trigger
+    """The orders current price.\n\n:returns: `Price` or None"""
     cdef readonly uint64_t ts_updated_ns
     """The UNIX timestamp (nanoseconds) when the order was updated.\n\n:returns: `uint64`"""
+
+    @staticmethod
+    cdef OrderUpdated from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class OrderCanceled(OrderEvent):
@@ -166,6 +216,10 @@ cdef class OrderCanceled(OrderEvent):
     cdef readonly uint64_t ts_canceled_ns
     """The UNIX timestamp (nanoseconds) when the order was canceled.\n\n:returns: `uint64`"""
 
+    @staticmethod
+    cdef OrderCanceled from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderTriggered(OrderEvent):
     cdef readonly AccountId account_id
@@ -173,12 +227,20 @@ cdef class OrderTriggered(OrderEvent):
     cdef readonly uint64_t ts_triggered_ns
     """The UNIX timestamp (nanoseconds) when the order was triggered.\n\n:returns: `uint64`"""
 
+    @staticmethod
+    cdef OrderTriggered from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class OrderExpired(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly uint64_t ts_expired_ns
     """The UNIX timestamp (nanoseconds) when the order expired.\n\n:returns: `uint64`"""
+
+    @staticmethod
+    cdef OrderExpired from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class OrderFilled(OrderEvent):
@@ -209,6 +271,9 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 
+    @staticmethod
+    cdef OrderFilled from_dict_c(dict values)
+    cpdef dict to_dict(self)
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
 
@@ -221,15 +286,21 @@ cdef class PositionEvent(Event):
 
 
 cdef class PositionOpened(PositionEvent):
-    pass
+    @staticmethod
+    cdef PositionOpened from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class PositionChanged(PositionEvent):
-    pass
+    @staticmethod
+    cdef PositionChanged from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class PositionClosed(PositionEvent):
-    pass
+    @staticmethod
+    cdef PositionClosed from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class StatusEvent(Event):
@@ -242,12 +313,20 @@ cdef class VenueStatusEvent(StatusEvent):
     cdef readonly VenueStatus status
     """The events venue status.\n\n:returns: `VenueStatus`"""
 
+    @staticmethod
+    cdef VenueStatusEvent from_dict_c(dict values)
+    cpdef dict to_dict(self)
+
 
 cdef class InstrumentStatusEvent(StatusEvent):
     cdef readonly InstrumentId instrument_id
     """The event instrument identifier.\n\n:returns: `InstrumentId`"""
     cdef readonly InstrumentStatus status
     """The events instrument status.\n\n:returns: `InstrumentStatus`"""
+
+    @staticmethod
+    cdef InstrumentStatusEvent from_dict_c(dict values)
+    cpdef dict to_dict(self)
 
 
 cdef class InstrumentClosePrice(Event):
@@ -257,3 +336,7 @@ cdef class InstrumentClosePrice(Event):
     """The events close price.\n\n:returns: `Price`"""
     cdef readonly InstrumentCloseType close_type
     """The events close type.\n\n:returns: `InstrumentCloseType`"""
+
+    @staticmethod
+    cdef InstrumentClosePrice from_dict_c(dict values)
+    cpdef dict to_dict(self)

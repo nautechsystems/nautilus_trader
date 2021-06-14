@@ -665,9 +665,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef uint64_t timestamp_ns = 0
         if event['timestamp'] is not None:
-            timestamp_ns = <uint64_t>(event["timestamp"])
+            timestamp_ns = <uint64_t>(millis_to_nanos(event["timestamp"]))
         else:
-            timestamp_ns = <uint64_t>(event["lastTradeTimestamp"])
+            timestamp_ns = <uint64_t>(millis_to_nanos(event["lastTradeTimestamp"]))
 
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`

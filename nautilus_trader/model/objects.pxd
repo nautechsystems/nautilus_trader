@@ -74,3 +74,7 @@ cdef class AccountBalance:
     """The account balance locked (assigned to pending orders).\n\n:returns: `Money`"""
     cdef readonly Money free
     """The account balance free for trading.\n\n:returns: `Money`"""
+
+    @staticmethod
+    cdef AccountBalance from_dict_c(dict values)
+    cpdef dict to_dict(self)

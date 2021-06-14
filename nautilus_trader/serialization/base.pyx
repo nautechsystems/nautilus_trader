@@ -15,8 +15,51 @@
 
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelRejected
+from nautilus_trader.model.events cimport OrderCanceled
+from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderPendingCancel
+from nautilus_trader.model.events cimport OrderPendingReplace
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdateRejected
+from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orders.base cimport Order
+
+
+_OBJECT_MAP = {
+    CancelOrder.__name__: CancelOrder.from_dict_c,
+    SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
+    SubmitOrder.__name__: SubmitOrder.from_dict_c,
+    UpdateOrder.__name__: UpdateOrder.from_dict_c,
+    AccountState.__name__: AccountState.from_dict_c,
+    OrderAccepted.__name__: OrderAccepted.from_dict_c,
+    OrderCancelRejected.__name__: OrderCancelRejected.from_dict_c,
+    OrderCanceled.__name__: OrderCanceled.from_dict_c,
+    OrderDenied.__name__: OrderDenied.from_dict_c,
+    OrderExpired.__name__: OrderExpired.from_dict_c,
+    OrderFilled.__name__: OrderFilled.from_dict_c,
+    OrderInitialized.__name__: OrderInitialized.from_dict_c,
+    OrderInvalid.__name__: OrderInvalid.from_dict_c,
+    OrderPendingCancel.__name__: OrderPendingCancel.from_dict_c,
+    OrderPendingReplace.__name__: OrderPendingReplace.from_dict_c,
+    OrderRejected.__name__: OrderRejected.from_dict_c,
+    OrderSubmitted.__name__: OrderSubmitted.from_dict_c,
+    OrderTriggered.__name__: OrderTriggered.from_dict_c,
+    OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
+    OrderUpdated.__name__: OrderUpdated.from_dict_c,
+}
 
 
 cdef class InstrumentSerializer:
@@ -40,29 +83,6 @@ cdef class InstrumentSerializer:
     cpdef Instrument deserialize(self, bytes instrument_bytes):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class OrderSerializer:
-    """
-    The abstract base class for all order serializers.
-
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the ``OrderSerializer`` class.
-
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Order order):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Order deserialize(self, bytes order_bytes):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass ")
 
 
 cdef class CommandSerializer:
