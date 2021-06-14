@@ -43,7 +43,7 @@ cython = "^3.0a7"
 empyrical = "^0.5.5"
 msgpack = "^1.0.2"
 numpy = "^1.20.3"
-orjson = "^3.5.1"  # Pinned at 3.5.1 due betfairlightweight
+orjson = "3.5.1"  # Pinned at 3.5.1 due betfairlightweight
 pandas = "^1.2.4"
 psutil = "^5.8.0"
 pyarrow = { version = "^4.0.1", markers = "sys_platform != 'win32'" }

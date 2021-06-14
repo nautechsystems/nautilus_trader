@@ -1198,7 +1198,7 @@ oanda = ["oandapyV20"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "3af37467cb4a65581419ae20a425c1a7830fc0b7b7cbf4da722e226b093919dd"
+content-hash = "eaa7dddb246a77cc5b84431d57ac5ab30a05aaa8a71f052fa24db3b757ac3e0a"
 
 [metadata.files]
 aiodns = [
