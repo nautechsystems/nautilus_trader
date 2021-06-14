@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
 from operator import itemgetter
 
+import orjson
 import pandas as pd
 from tabulate import tabulate
 
@@ -1096,8 +1096,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         return OrderBookSnapshot(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
-            bids=json.loads(values["bids"]),
-            asks=json.loads(values["asks"]),
+            bids=orjson.loads(values["bids"]),
+            asks=orjson.loads(values["asks"]),
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
         )
@@ -1132,8 +1132,8 @@ cdef class OrderBookSnapshot(OrderBookData):
             "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
             "level": BookLevelParser.to_str(self.level),
-            "bids": json.dumps(self.bids),
-            "asks": json.dumps(self.asks),
+            "bids": orjson.dumps(self.bids),
+            "asks": orjson.dumps(self.asks),
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }
@@ -1191,7 +1191,7 @@ cdef class OrderBookDeltas(OrderBookData):
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
-            deltas=[OrderBookDelta.from_dict_c(d) for d in json.loads(values["deltas"])],
+            deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
         )
@@ -1226,7 +1226,7 @@ cdef class OrderBookDeltas(OrderBookData):
             "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
             "level": BookLevelParser.to_str(self.level),
-            "deltas": json.dumps([d.to_dict() for d in self.deltas]),
+            "deltas": orjson.dumps([d.to_dict() for d in self.deltas]),
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }
@@ -1286,11 +1286,18 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
+        order = Order.from_dict_c({
+            "price": values["order_price"],
+            "size": values["order_size"],
+            "side": values["order_side"],
+            "id": values["order_id"],
+
+        })
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
             delta_type=DeltaTypeParser.from_str(values["delta_type"]),
-            order=Order.from_dict_c(json.loads(values["order"])),
+            order=order,
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
         )
@@ -1326,7 +1333,10 @@ cdef class OrderBookDelta(OrderBookData):
             "instrument_id": self.instrument_id.value,
             "level": BookLevelParser.to_str(self.level),
             "delta_type": DeltaTypeParser.to_str(self.type),
-            "order": json.dumps(self.order.to_dict()),
+            "order_price": self.order.price if self.order else None,
+            "order_size": self.order.size if self.order else None,
+            "order_side": self.order.side if self.order else None,
+            "order_id": self.order.id if self.order else None,
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }

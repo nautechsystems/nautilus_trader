@@ -68,8 +68,8 @@ class TestOrderBookSnapshot:
             "type": "OrderBookSnapshot",
             "instrument_id": "AUD/USD.SIM",
             "level": "L2",
-            "bids": "[[1010, 2], [1009, 1]]",
-            "asks": "[[1020, 2], [1021, 1]]",
+            "bids": b"[[1010,2],[1009,1]]",
+            "asks": b"[[1020,2],[1021,1]]",
             "ts_event_ns": 0,
             "ts_recv_ns": 0,
         }
@@ -137,7 +137,10 @@ class TestOrderBookDelta:
             "instrument_id": "AUD/USD.SIM",
             "level": "L2",
             "delta_type": "ADD",
-            "order": '{"type": "Order", "price": 10.0, "size": 5.0, "side": "BUY", "id": "1"}',
+            "order_id": "1",
+            "order_price": 10.0,
+            "order_side": 1,
+            "order_size": 5.0,
             "ts_event_ns": 0,
             "ts_recv_ns": 0,
         }
@@ -241,7 +244,7 @@ class TestOrderBookDeltas:
             "type": "OrderBookDeltas",
             "instrument_id": "AUD/USD.SIM",
             "level": "L2",
-            "deltas": '[{"type": "OrderBookDelta", "instrument_id": "AUD/USD.SIM", "level": "L2", "delta_type": "ADD", "order": "{\\"type\\": \\"Order\\", \\"price\\": 10.0, \\"size\\": 5.0, \\"side\\": \\"BUY\\", \\"id\\": \\"1\\"}", "ts_event_ns": 0, "ts_recv_ns": 0}, {"type": "OrderBookDelta", "instrument_id": "AUD/USD.SIM", "level": "L2", "delta_type": "ADD", "order": "{\\"type\\": \\"Order\\", \\"price\\": 10.0, \\"size\\": 15.0, \\"side\\": \\"BUY\\", \\"id\\": \\"2\\"}", "ts_event_ns": 0, "ts_recv_ns": 0}]',  # noqa
+            "deltas": b'[{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","level":"L2","delta_type":"ADD","order_price":10.0,"order_size":5.0,"order_side":1,"order_id":"1","ts_event_ns":0,"ts_recv_ns":0},{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","level":"L2","delta_type":"ADD","order_price":10.0,"order_size":15.0,"order_side":1,"order_id":"2","ts_event_ns":0,"ts_recv_ns":0}]',  # noqa
             "ts_event_ns": 0,
             "ts_recv_ns": 0,
         }

@@ -126,7 +126,7 @@ cdef class Order:
         return Order(
             price=values["price"],
             size=values["size"],
-            side=OrderSideParser.from_str(values["side"]),
+            side=values["side"],
             id=values["id"],
         )
 
