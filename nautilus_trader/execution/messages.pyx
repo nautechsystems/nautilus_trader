@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -40,7 +40,7 @@ cdef class OrderStatusReport:
         VenueOrderId venue_order_id not None,
         OrderState order_state,
         Quantity filled_qty not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `OrderStatusReport`` class.
@@ -55,8 +55,8 @@ cdef class OrderStatusReport:
             The reported order state at the exchange.
         filled_qty : Quantity
             The reported filled quantity at the exchange.
-        timestamp_ns : int64
-            The UNIX timestamp (nanos) of the report.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the report.
 
         """
         self.client_order_id = client_order_id
@@ -83,7 +83,7 @@ cdef class PositionStatusReport:
         InstrumentId instrument_id not None,
         PositionSide position_side,
         Quantity qty not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `PositionStatusReport`` class.
@@ -96,8 +96,8 @@ cdef class PositionStatusReport:
             The reported position side at the exchange.
         qty : Quantity
             The reported position quantity at the exchange.
-        timestamp_ns : int64
-            The UNIX timestamp (nanos) of the report.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the report.
 
         """
         self.instrument_id = instrument_id
@@ -127,8 +127,8 @@ cdef class ExecutionReport:
         Price last_px not None,
         Money commission,  # Can be None
         LiquiditySide liquidity_side,
-        int64_t ts_filled_ns,
-        int64_t timestamp_ns,
+        uint64_t ts_filled_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `ExecutionReport`` class.
@@ -149,8 +149,8 @@ cdef class ExecutionReport:
             The commission for the transaction (can be None).
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
-        ts_filled_ns : int64
-            The UNIX timestamp (nanos) of the execution.
+        ts_filled_ns : uint64
+            The UNIX timestamp (nanoseconds) of the execution.
 
         """
         self.client_order_id = client_order_id
@@ -185,7 +185,7 @@ cdef class ExecutionMassStatus:
         self,
         ClientId client_id not None,
         AccountId account_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
     ):
         """
         Initializes a new instance of the `ExecutionMassStatus`` class.
@@ -196,8 +196,8 @@ cdef class ExecutionMassStatus:
             The client identifier for the report.
         account_id : AccountId
             The account identifier for the report.
-        timestamp_ns : int64
-            The UNIX timestamp (nanos) of the report.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the report.
 
         Raises
         ------

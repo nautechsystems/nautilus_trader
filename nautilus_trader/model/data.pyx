@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 
 cdef class Data:
@@ -23,22 +23,22 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t ts_event_ns, int64_t timestamp_ns):
+    def __init__(self, uint64_t ts_event_ns, uint64_t ts_recv_ns):
         """
         Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
-        ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
-        timestamp_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+        ts_event_ns : uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns : uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         # Design-time invariant: correct ordering of timestamps
-        assert timestamp_ns >= ts_event_ns
+        assert ts_recv_ns >= ts_event_ns
         self.ts_event_ns = ts_event_ns
-        self.ts_recv_ns = timestamp_ns
+        self.ts_recv_ns = ts_recv_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -95,9 +95,6 @@ cdef class DataType:
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self.metadata == other.metadata
 
-    def __ne__(self, DataType other) -> bool:
-        return self.type != other.type or self.metadata != other.metadata
-
     def __hash__(self) -> int:
         return self._hash
 
@@ -132,3 +129,14 @@ cdef class GenericData(Data):
         super().__init__(data.ts_event_ns, data.ts_recv_ns)
         self.data_type = data_type
         self.data = data
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of the internal data object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return self.data.to_dict()

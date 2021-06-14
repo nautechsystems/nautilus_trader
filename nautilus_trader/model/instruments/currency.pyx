@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -53,8 +53,8 @@ cdef class CurrencySpot(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
         dict info=None,
     ):
         """
@@ -98,10 +98,10 @@ cdef class CurrencySpot(Instrument):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        ts_event_ns : int64
-            The UNIX timestamp (nanos) when data event occurred.
-        ts_recv_ns : int64
-            The UNIX timestamp (nanos) when received by the Nautilus system.
+        ts_event_ns: uint64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: uint64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -182,3 +182,87 @@ cdef class CurrencySpot(Instrument):
 
         """
         return self.base_currency
+
+    @staticmethod
+    cdef CurrencySpot from_dict_c(dict values):
+        cdef str lot_s = values["lot_size"]
+        cdef str max_q = values["max_quantity"]
+        cdef str min_q = values["min_quantity"]
+        cdef str max_n = values["max_notional"]
+        cdef str min_n = values["min_notional"]
+        cdef str max_p = values["max_price"]
+        cdef str min_p = values["min_price"]
+        return CurrencySpot(
+            instrument_id=InstrumentId.from_str_c(values["id"]),
+            base_currency=Currency.from_str_c(values["base_currency"]),
+            quote_currency=Currency.from_str_c(values["quote_currency"]),
+            price_precision=values["price_precision"],
+            size_precision=values["size_precision"],
+            price_increment=Price.from_str_c(values["price_increment"]),
+            size_increment=Quantity.from_str_c(values["size_increment"]),
+            lot_size=Quantity.from_str_c(lot_s) if lot_s is not None else None,
+            max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
+            min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
+            max_notional=Money.from_str_c(max_n) if max_n is not None else None,
+            min_notional=Money.from_str_c(min_n) if min_n is not None else None,
+            max_price=Price.from_str_c(max_p) if max_p is not None else None,
+            min_price=Price.from_str_c(min_p) if min_p is not None else None,
+            margin_init=Decimal(values["margin_init"]),
+            margin_maint=Decimal(values["margin_maint"]),
+            maker_fee=Decimal(values["maker_fee"]),
+            taker_fee=Decimal(values["taker_fee"]),
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
+            info=values["info"],
+        )
+
+    @staticmethod
+    def from_dict(dict values) -> CurrencySpot:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        CurrencySpot
+
+        """
+        return CurrencySpot.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "id": self.id.value,
+            "base_currency": self.base_currency.code,
+            "quote_currency": self.quote_currency.code,
+            "price_precision": self.price_precision,
+            "price_increment": str(self.price_increment),
+            "size_precision": self.size_precision,
+            "size_increment": str(self.size_increment),
+            "lot_size": str(self.lot_size) if self.lot_size is not None else None,
+            "max_quantity": str(self.max_quantity) if self.max_quantity is not None else None,
+            "min_quantity": str(self.min_quantity) if self.min_quantity is not None else None,
+            "max_notional": self.max_notional.to_str() if self.max_notional is not None else None,
+            "min_notional": self.min_notional.to_str() if self.min_notional is not None else None,
+            "max_price": str(self.max_price) if self.max_price is not None else None,
+            "min_price": str(self.min_price) if self.min_price is not None else None,
+            "margin_init": str(self.margin_init),
+            "margin_maint": str(self.margin_maint),
+            "maker_fee": str(self.maker_fee),
+            "taker_fee": str(self.taker_fee),
+            "ts_event_ns": self.ts_event_ns,
+            "ts_recv_ns": self.ts_recv_ns,
+            "info": self.info,
+        }

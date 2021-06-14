@@ -974,6 +974,7 @@ class ExecutionEngineTests(unittest.TestCase):
             order.venue_order_id,
             Quantity.from_int(200000),
             order.price,
+            None,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -2045,6 +2046,7 @@ class ExecutionEngineTests(unittest.TestCase):
             venue_order_id=new_venue_id,
             quantity=order.quantity,
             price=order.price,
+            trigger=None,
             ts_updated_ns=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),

@@ -2,7 +2,7 @@
 
 In the interests of explicitness there is now a convention that timestamps are 
 named either `timestamp_ns`, or prepended with `ts`. Timestamps which are 
-represented with an `int64` are always in nanosecond resolution, and appended 
+represented with an `uint64` are always in nanosecond resolution, and appended 
 with `_ns` accordingly.
 
 ## Breaking Changes
@@ -17,12 +17,27 @@ with `_ns` accordingly.
 - Renamed `triggered_ns` to `ts_triggered_ns`.
 - Renamed `expired_ns` to `ts_expired_ns`.
 - Renamed `execution_ns` to `ts_filled_ns`.
+- Renamed `OrderBookLevel` to `BookLevel`.
+- Renamed `Order.volume` to `Order.size`.
 
 ## Enhancements
 - Adapters dependencies are now optional extras at installation.
+- Add object `to_dict()` and `from_dict()` methods.
+- Changed nanosecond timestamps type to `uint64_t`.
+- Changed nanosecond durations type to `uint64_t`.
+- Removed `TradeMatchId` in favour of bare string.
+- Removed redundant conversion to `pd.Timestamp` when checking timestamps.
+- Removed redundant data `to_serializable_str` methods.
+- Removed redundant data `from_serializable_str` methods.
+- Removed redundant `__ne__` implementations.
+- Removed redundant MsgPackSerializer cruft.
+- Removed redundant `ObjectCache` and `IdentifierCache`.
+- Removed redundant string constants.
 
 ## Fixes
-None
+- Fixed millis to nanos in CCXT execution.
+- Added missing trigger to `UpdateOrder` handling.
+- Removed all `import *`.
 
 ---
 
@@ -222,7 +237,7 @@ tick data a L1 order book is used as a proxy. A future release will include
 improved fill modelling assumptions and customizations.
 
 ## Breaking Changes
-- `OrderBook.create` now takes `Instrument` and `OrderBookLevel`.
+- `OrderBook.create` now takes `Instrument` and `BookLevel`.
 
 ## Enhancements
 - `SimulatedExchange` now maintains order books internally.
@@ -251,7 +266,7 @@ None
 - Builds for 32-bit platforms.
 
 ## Fixes
-- `OrderBook.create` for `OrderBookLevel.L3` now returns correct book.
+- `OrderBook.create` for `BookLevel.L3` now returns correct book.
 - Betfair handling of execution IDs.
 
 ---

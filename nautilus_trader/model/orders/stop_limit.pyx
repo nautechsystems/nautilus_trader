@@ -14,10 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -61,7 +61,7 @@ cdef class StopLimitOrder(PassiveOrder):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
         bint post_only=True,
         bint reduce_only=False,
         bint hidden=False,
@@ -91,8 +91,8 @@ cdef class StopLimitOrder(PassiveOrder):
             The order expiry time.
         init_id : UUID
             The order initialization event identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanos) of the order initialization.
+        timestamp_ns : uint64
+            The UNIX timestamp (nanoseconds) of the order initialization.
         post_only : bool, optional
             If the order will only make a market (once triggered).
         reduce_only : bool, optional
@@ -126,10 +126,10 @@ cdef class StopLimitOrder(PassiveOrder):
             init_id=init_id,
             timestamp_ns=timestamp_ns,
             options={
-                TRIGGER: str(trigger),
-                POST_ONLY: post_only,
-                REDUCE_ONLY: reduce_only,
-                HIDDEN: hidden,
+                "trigger": str(trigger),
+                "post_only": post_only,
+                "reduce_only": reduce_only,
+                "hidden": hidden,
             },
         )
 
@@ -177,15 +177,15 @@ cdef class StopLimitOrder(PassiveOrder):
             instrument_id=init.instrument_id,
             order_side=init.order_side,
             quantity=init.quantity,
-            price=Price.from_str_c(init.options[PRICE]),
-            trigger=Price.from_str_c(init.options[TRIGGER]),
+            price=Price.from_str_c(init.options["price"]),
+            trigger=Price.from_str_c(init.options["trigger"]),
             time_in_force=init.time_in_force,
-            expire_time=init.options.get(EXPIRE_TIME),
+            expire_time=maybe_nanos_to_unix_dt(init.options.get("expire_time")),
             init_id=init.id,
             timestamp_ns=init.timestamp_ns,
-            post_only=init.options[POST_ONLY],
-            reduce_only=init.options[REDUCE_ONLY],
-            hidden=init.options[HIDDEN],
+            post_only=init.options["post_only"],
+            reduce_only=init.options["reduce_only"],
+            hidden=init.options["hidden"],
         )
 
     cdef void _updated(self, OrderUpdated event) except *:

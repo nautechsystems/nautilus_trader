@@ -295,14 +295,14 @@ cpdef maybe_dt_to_unix_nanos(datetime dt):
 
 cpdef maybe_nanos_to_unix_dt(nanos):
     """
-    Return the datetime in UTC from the given UNIX time (nanos), or None.
+    Return the datetime in UTC from the given UNIX time (nanoseconds), or None.
 
     If nanos is None, then will return None.
 
     Parameters
     ----------
     nanos : int64 or None
-        The UNIX time (nanos) to convert.
+        The UNIX time (nanoseconds) to convert.
 
     Returns
     -------
@@ -394,13 +394,8 @@ cpdef datetime as_utc_timestamp(datetime dt):
     """
     Condition.not_none(datetime, "datetime")
 
-    if not isinstance(dt, pd.Timestamp):
-        dt = pd.Timestamp(dt)
-
-    if dt.tz is None:  # tz-naive
-        return dt.tz_localize(pytz.utc)
-    elif dt.tz != pytz.utc:
-        return dt.tz_convert(pytz.utc)
+    if dt.tzinfo is None:  # tz-naive
+        return pytz.utc.localize(dt)
     else:
         return dt  # Already UTC
 
@@ -424,10 +419,10 @@ cpdef object as_utc_index(data: pd.DataFrame):
     if data.empty:
         return data
 
-    if not hasattr(data.index, "tz") or data.index.tz is None:  # tz-naive
+    if data.index.tzinfo is None:  # tz-naive
         return data.tz_localize(pytz.utc)
-    elif data.index.tz != pytz.utc:
-        return data.tz_convert(pytz.utc)
+    elif data.index.tzinfo != pytz.utc:
+        return pytz.utc.localize(data)
     else:
         return data  # Already UTC
 

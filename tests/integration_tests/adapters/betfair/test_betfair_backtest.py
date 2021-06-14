@@ -20,8 +20,8 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.book import OrderBookData
@@ -76,7 +76,7 @@ def test_betfair_backtest(instrument_provider):
         account_type=AccountType.CASH,
         base_currency=GBP,
         starting_balances=[Money(100_000, GBP)],
-        order_book_level=OrderBookLevel.L2,
+        order_book_level=BookLevel.L2,
     )
 
     strategy = OrderBookImbalanceStrategy(instrument_id=instrument.id, trade_size=20)

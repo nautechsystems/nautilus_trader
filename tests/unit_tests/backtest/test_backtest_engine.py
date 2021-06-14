@@ -22,9 +22,9 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
@@ -107,7 +107,7 @@ class TestBacktestEngineData:
 
         snapshot1 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
             ts_event_ns=0,
@@ -116,7 +116,7 @@ class TestBacktestEngineData:
 
         snapshot2 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
             ts_event_ns=1_000_000_000,
@@ -141,11 +141,11 @@ class TestBacktestEngineData:
         deltas = [
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
                 delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("13.0"),
-                    volume=Quantity.from_str("40"),
+                    size=Quantity.from_str("40"),
                     side=OrderSide.SELL,
                 ),
                 ts_event_ns=0,
@@ -153,11 +153,11 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
                 delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("12.0"),
-                    volume=Quantity.from_str("30"),
+                    size=Quantity.from_str("30"),
                     side=OrderSide.SELL,
                 ),
                 ts_event_ns=0,
@@ -165,11 +165,11 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
                 delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("11.0"),
-                    volume=Quantity.from_str("20"),
+                    size=Quantity.from_str("20"),
                     side=OrderSide.SELL,
                 ),
                 ts_event_ns=0,
@@ -177,11 +177,11 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
                 delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("10.0"),
-                    volume=Quantity.from_str("20"),
+                    size=Quantity.from_str("20"),
                     side=OrderSide.BUY,
                 ),
                 ts_event_ns=0,
@@ -189,11 +189,11 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
                 delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("9.0"),
-                    volume=Quantity.from_str("30"),
+                    size=Quantity.from_str("30"),
                     side=OrderSide.BUY,
                 ),
                 ts_event_ns=0,
@@ -201,11 +201,11 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
                 delta_type=DeltaType.ADD,
                 order=Order(
                     price=Price.from_str("0.0"),
-                    volume=Quantity.from_str("40"),
+                    size=Quantity.from_str("40"),
                     side=OrderSide.BUY,
                 ),
                 ts_event_ns=0,
@@ -215,7 +215,7 @@ class TestBacktestEngineData:
 
         operations1 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             deltas=deltas,
             ts_event_ns=0,
             ts_recv_ns=0,
@@ -223,7 +223,7 @@ class TestBacktestEngineData:
 
         operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             deltas=deltas,
             ts_event_ns=1000,
             ts_recv_ns=1000,

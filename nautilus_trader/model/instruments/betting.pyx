@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from decimal import Decimal
 
@@ -56,8 +56,8 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str selection_handicap not None,
         str currency not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        uint64_t ts_event_ns,
+        uint64_t ts_recv_ns,
     ):
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
@@ -112,6 +112,27 @@ cdef class BettingInstrument(Instrument):
             info=dict(),  # TODO - Add raw response?
         )
 
+    @staticmethod
+    cdef BettingInstrument from_dict_c(dict values):
+        return BettingInstrument(**values)
+
+    @staticmethod
+    def from_dict(dict values) -> BettingInstrument:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        BettingInstrument
+
+        """
+        return BettingInstrument.from_dict_c(values)
+
     cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
@@ -143,23 +164,6 @@ cdef class BettingInstrument(Instrument):
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }
-
-    @staticmethod
-    def from_dict(dict values) -> BettingInstrument:
-        """
-        Return an instrument from the given initialization values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values to initialize the instrument with.
-
-        Returns
-        -------
-        BettingInstrument
-
-        """
-        return BettingInstrument(**values)
 
     def make_symbol(self):
         cdef tuple keys = (

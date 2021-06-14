@@ -26,12 +26,11 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -237,11 +236,11 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -361,7 +360,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -373,7 +372,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -385,7 +384,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type, "Partial": partial}),
+            data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

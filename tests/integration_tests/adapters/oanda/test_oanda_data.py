@@ -302,10 +302,10 @@ class OandaDataClientTests(unittest.TestCase):
                 data_type=DataType(
                     Bar,
                     metadata={
-                        "BarType": bar_type,
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 1000,
+                        "bar_type": bar_type,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 1000,
                     },
                 ),
                 callback=handler.store,

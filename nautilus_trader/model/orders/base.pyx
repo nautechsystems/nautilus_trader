@@ -20,12 +20,12 @@ Defines various order types used for trading.
 from decimal import Decimal
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -154,9 +154,6 @@ cdef class Order:
 
     def __eq__(self, Order other) -> bool:
         return self.client_order_id.value == other.client_order_id.value
-
-    def __ne__(self, Order other) -> bool:
-        return self.client_order_id.value != other.client_order_id.value
 
     def __hash__(self) -> int:
         return hash(self.client_order_id.value)
@@ -631,7 +628,7 @@ cdef class PassiveOrder(Order):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        int64_t timestamp_ns,
+        uint64_t timestamp_ns,
         dict options not None,
     ):
         """
@@ -659,7 +656,7 @@ cdef class PassiveOrder(Order):
             The order expiry time - applicable to GTD orders only.
         init_id : UUID
             The order initialization event identifier.
-        timestamp_ns : int64
+        timestamp_ns : uint64
             The order initialization timestamp.
         options : dict
             The order options.
@@ -680,9 +677,9 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        options[PRICE] = str(price)  # price checked not None
+        options["price"] = str(price)  # price checked not None
         if expire_time is not None:
-            options[EXPIRE_TIME] = expire_time
+            options["expire_time"] = maybe_dt_to_unix_nanos(expire_time)
 
         cdef OrderInitialized init = OrderInitialized(
             client_order_id=client_order_id,
@@ -706,6 +703,17 @@ cdef class PassiveOrder(Order):
         self.expire_time = expire_time
         self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
         self.slippage = Decimal()
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"

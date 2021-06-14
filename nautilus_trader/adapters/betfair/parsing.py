@@ -47,11 +47,11 @@ from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
@@ -61,7 +61,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import AccountBalance
@@ -230,7 +229,7 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
     else:
         asks = [(p, v) for _, p, v in selection.get(ask_keys[0], [])]
     snapshot = OrderBookSnapshot(
-        level=OrderBookLevel.L2,
+        level=BookLevel.L2,
         instrument_id=instrument.id,
         bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
         asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
@@ -269,7 +268,7 @@ def _handle_market_trades(
             price=price_to_probability(price, force=True),  # Already wrapping in Price
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
-            match_id=TradeMatchId(trade_id),
+            match_id=trade_id,
             ts_event_ns=ts_event_ns,
             ts_recv_ns=ts_recv_ns,
         )
@@ -289,13 +288,13 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
             deltas.append(
                 OrderBookDelta(
                     instrument_id=instrument.id,
-                    level=OrderBookLevel.L2,
+                    level=BookLevel.L2,
                     delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
                     order=Order(
                         price=price_to_probability(
                             price, side=B2N_MARKET_STREAM_SIDE[side]
                         ),
-                        volume=Quantity(volume, precision=8),
+                        size=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
                     ts_event_ns=ts_event_ns,
@@ -304,7 +303,7 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
             )
     if deltas:
         ob_update = OrderBookDeltas(
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             instrument_id=instrument.id,
             deltas=deltas,
             ts_event_ns=ts_event_ns,

@@ -13,17 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum OrderBookLevel:
-    L1 = 1,
-    L2 = 2,
-    L3 = 3,
+from nautilus_trader.model.orders.base cimport Order
 
 
-cdef class OrderBookLevelParser:
-
+cdef class OrderUnpacker:
     @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef OrderBookLevel from_str(str value) except *
+    cdef Order unpack_c(dict values)
