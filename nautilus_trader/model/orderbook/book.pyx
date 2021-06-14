@@ -1242,7 +1242,7 @@ cdef class OrderBookDelta(OrderBookData):
         InstrumentId instrument_id not None,
         BookLevel level,
         DeltaType delta_type,
-        Order order not None,
+        Order order,
         uint64_t ts_event_ns,
         uint64_t ts_recv_ns,
     ):
