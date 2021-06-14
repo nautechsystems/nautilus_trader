@@ -23,6 +23,7 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.serialization.base import CommandSerializer
 from nautilus_trader.serialization.base import EventSerializer
 from nautilus_trader.serialization.base import InstrumentSerializer
+from nautilus_trader.serialization.base import register_serializable_object
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -30,7 +31,30 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
+class TestObject:
+    """
+    Represents some generic user object which implements serialization value dicts.
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+    @staticmethod
+    def from_dict(values: dict[str, object]):
+        return TestObject(values["value"])
+
+    def to_dict(self):
+        return {"value": self.value}
+
+
 class TestSerializationBase:
+    def test_register_serializable_object(self):
+        # Arrange
+        # Act, Assert
+        register_serializable_object(TestObject)
+
+        # Does not raise exception
+
     def test_instrument_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         serializer = InstrumentSerializer()

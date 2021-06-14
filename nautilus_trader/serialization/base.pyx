@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.commands cimport CancelOrder
@@ -60,6 +61,33 @@ _OBJECT_MAP = {
     OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
     OrderUpdated.__name__: OrderUpdated.from_dict_c,
 }
+
+cpdef inline void register_serializable_object(object obj) except *:
+    """
+    Register the given object with the global serialization object map.
+
+    The object must implement ``to_dict()`` and ``from_dict()`` methods.
+
+    Parameters
+    ----------
+    obj : object
+        The object to register.
+
+    Raises
+    ------
+    ValueError
+        If obj does not implement the `to_dict` method.
+    ValueError
+        If obj does not implement the `from_dict` method.
+    KeyError
+        If obj already registered with the global object map.
+
+    """
+    Condition.true(hasattr(obj, "to_dict"), "The given object does not implement `to_dict`.")
+    Condition.true(hasattr(obj, "from_dict"), "The given object does not implement `from_dict`.")
+    Condition.not_in(obj.__name__, _OBJECT_MAP, "obj", "_OBJECT_MAP")
+
+    _OBJECT_MAP[obj.__name__] = obj.from_dict
 
 
 cdef class InstrumentSerializer:
