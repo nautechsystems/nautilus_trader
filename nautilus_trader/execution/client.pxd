@@ -38,7 +38,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -115,6 +114,7 @@ cdef class ExecutionClient:
         VenueOrderId venue_order_id,
         Quantity quantity,
         Price price,
+        Price trigger,
         uint64_t ts_updated_ns,
         bint venue_order_id_modified=*,
     ) except *

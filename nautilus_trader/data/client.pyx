@@ -26,7 +26,6 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
@@ -361,7 +360,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -373,7 +372,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -385,7 +384,7 @@ cdef class MarketDataClient(DataClient):
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
-            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type, "Partial": partial}),
+            data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

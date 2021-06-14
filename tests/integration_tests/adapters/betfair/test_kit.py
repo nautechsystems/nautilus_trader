@@ -510,6 +510,7 @@ class BetfairTestStubs(TestStubs):
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
+            trigger=None,
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )

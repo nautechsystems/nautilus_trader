@@ -22,7 +22,7 @@ with `_ns` accordingly.
 
 ## Enhancements
 - Adapters dependencies are now optional extras at installation.
-- Add some general `to_dict` and `from_dict` methods to objects.
+- Add object `to_dict()` and `from_dict()` methods.
 - Changed nanosecond timestamps type to `uint64_t`.
 - Changed nanosecond durations type to `uint64_t`.
 - Removed `TradeMatchId` in favour of bare string.
@@ -30,9 +30,14 @@ with `_ns` accordingly.
 - Removed redundant data `to_serializable_str` methods.
 - Removed redundant data `from_serializable_str` methods.
 - Removed redundant `__ne__` implementations.
+- Removed redundant MsgPackSerializer cruft.
+- Removed redundant `ObjectCache` and `IdentifierCache`.
+- Removed redundant string constants.
 
 ## Fixes
-None
+- Fixed millis to nanos in CCXT execution.
+- Added missing trigger to `UpdateOrder` handling.
+- Removed all `import *`.
 
 ---
 

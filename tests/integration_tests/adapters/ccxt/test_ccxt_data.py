@@ -450,10 +450,10 @@ class CCXTDataClientTests(unittest.TestCase):
                 data_type=DataType(
                     TradeTick,
                     metadata={
-                        "InstrumentId": ETHUSDT,
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 100,
+                        "instrument_id": ETHUSDT,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 100,
                     },
                 ),
                 callback=handler.store,
@@ -497,10 +497,10 @@ class CCXTDataClientTests(unittest.TestCase):
                 data_type=DataType(
                     Bar,
                     metadata={
-                        "BarType": bar_type,
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 100,
+                        "bar_type": bar_type,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 100,
                     },
                 ),
                 callback=handler.store,

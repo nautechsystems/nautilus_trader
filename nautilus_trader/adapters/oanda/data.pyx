@@ -28,7 +28,6 @@ from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601

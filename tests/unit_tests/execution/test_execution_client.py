@@ -180,6 +180,7 @@ class ExecutionClientTests(unittest.TestCase):
             VenueOrderId("001"),
             Quantity.from_int(120000),
             Price.from_str("1.00000"),
+            None,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

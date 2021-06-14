@@ -543,7 +543,7 @@ cdef class SimulatedExchange:
                 f"{repr(command.client_order_id)} not found",
             )
         else:
-            self._update_order(order, command.quantity, command.price)
+            self._update_order(order, command.quantity, command.price, command.trigger)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -583,7 +583,7 @@ cdef class SimulatedExchange:
         self._check_oco_order(order.client_order_id)
         self._clean_up_child_orders(order.client_order_id)
 
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *:
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *:
         # Generate event
         self._generate_order_pending_replace(order)
 
@@ -592,7 +592,7 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_MARKET:
             self._update_stop_market_order(order, qty, price)
         elif order.type == OrderType.STOP_LIMIT:
-            self._update_stop_limit_order(order, qty, price)
+            self._update_stop_limit_order(order, qty, price, trigger)
         else:
             raise RuntimeError(f"Invalid order type")
 
@@ -713,6 +713,7 @@ cdef class SimulatedExchange:
         PassiveOrder order,
         Quantity qty,
         Price price,
+        Price trigger,
     ) except *:
         # Generate event
         self.exec_client.generate_order_updated(
@@ -720,6 +721,7 @@ cdef class SimulatedExchange:
             venue_order_id=order.venue_order_id,
             quantity=qty,
             price=price,
+            trigger=trigger,
             ts_updated_ns=self._clock.timestamp_ns(),
         )
 
@@ -841,11 +843,11 @@ cdef class SimulatedExchange:
                 )
                 return  # Cannot update order
             else:
-                self._generate_order_updated(order, qty, price)
+                self._generate_order_updated(order, qty, price, None)
                 self._passively_fill_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
                 return  # Filled
 
-        self._generate_order_updated(order, qty, price)
+        self._generate_order_updated(order, qty, price, None)
 
     cdef void _update_stop_market_order(
         self,
@@ -864,13 +866,14 @@ cdef class SimulatedExchange:
             )
             return  # Cannot update order
 
-        self._generate_order_updated(order, qty, price)
+        self._generate_order_updated(order, qty, price, None)
 
     cdef void _update_stop_limit_order(
         self,
         StopLimitOrder order,
         Quantity qty,
         Price price,
+        Price trigger,
     ) except *:
         if not order.is_triggered:
             # Amending stop price
@@ -898,11 +901,11 @@ cdef class SimulatedExchange:
                     )
                     return  # Cannot update order
                 else:
-                    self._generate_order_updated(order, qty, price)
+                    self._generate_order_updated(order, qty, price, None)
                     self._passively_fill_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
                     return  # Filled
 
-        self._generate_order_updated(order, qty, price)
+        self._generate_order_updated(order, qty, price, trigger)
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 

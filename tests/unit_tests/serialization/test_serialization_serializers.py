@@ -59,10 +59,10 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
+from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
-from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -87,6 +87,16 @@ class TestInstrumentSerializer:
         print(b64encode(serialized))
         print(deserialized)
 
+    def test_serialize_and_deserialize_crypto_swap_instrument(self):
+        # Arrange, Act
+        serialized = self.serializer.serialize(ETHUSDT_BINANCE)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == ETHUSDT_BINANCE
+        print(b64encode(serialized))
+        print(deserialized)
+
     def test_serialize_and_deserialize_crypto_instrument(self):
         # Arrange, Act
         serialized = self.serializer.serialize(ETHUSDT_BINANCE)
@@ -98,17 +108,17 @@ class TestInstrumentSerializer:
         print(deserialized)
 
 
-class TestMsgPackOrderSerializer:
+class TestOrderUnpackerSerializer:
     def setup(self):
         # Fixture Setup
-        self.serializer = MsgPackOrderSerializer()
+        self.unpacker = OrderUnpacker()
         self.order_factory = OrderFactory(
             trader_id=TraderId("TESTER-000"),
             strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
-    def test_serialize_and_deserialize_market_orders(self):
+    def test_pack_and_unpack_market_orders(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -117,15 +127,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = order.last_event.to_dict()
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_limit_orders(self):
+    def test_pack_and_unpack_limit_orders(self):
         # Arrange
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -136,15 +144,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = order.last_event.to_dict()
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_limit_orders_with_expire_time(self):
         # Arrange
         order = LimitOrder(
             ClientOrderId("O-123456"),
@@ -160,15 +166,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = order.last_event.to_dict()
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_stop_market_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_market_orders_with_expire_time(self):
         # Arrange
         order = StopMarketOrder(
             ClientOrderId("O-123456"),
@@ -184,15 +188,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = order.last_event.to_dict()
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_stop_limit_orders(self):
+    def test_pack_and_unpack_stop_limit_orders(self):
         # Arrange
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
@@ -209,15 +211,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = order.last_event.to_dict()
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_limit_orders_with_expire_time(self):
         # Arrange
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
@@ -234,13 +234,11 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = order.last_event.to_dict()
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
 
 class TestMsgPackCommandSerializer:
@@ -364,6 +362,7 @@ class TestMsgPackCommandSerializer:
             VenueOrderId("001"),
             Quantity(100000, precision=0),
             Price(1.00001, precision=5),
+            None,
             uuid4(),
             0,
         )
@@ -732,6 +731,7 @@ class TestMsgPackEventSerializer:
             VenueOrderId("1"),
             Quantity(100000, precision=0),
             Price(0.80010, precision=5),
+            Price(0.80050, precision=5),
             0,
             uuid4(),
             0,

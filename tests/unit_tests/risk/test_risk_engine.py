@@ -248,10 +248,11 @@ class TestRiskEngine:
 
         self.exec_engine.register_strategy(strategy)
 
-        order = strategy.order_factory.market(
+        order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
+            Price.from_str("1.00010"),
         )
 
         submit = SubmitOrder(
@@ -271,6 +272,7 @@ class TestRiskEngine:
             order.venue_order_id,
             order.quantity,
             Price.from_str("1.00010"),
+            None,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
