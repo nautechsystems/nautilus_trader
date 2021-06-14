@@ -2,11 +2,9 @@ import itertools
 from itertools import repeat
 from typing import Dict, List
 
+from nautilus_trader.model.enums import BookLevelParser
 from nautilus_trader.model.enums import DeltaType
-from nautilus_trader.model.enums import DeltaTypeParser
-from nautilus_trader.model.enums import LevelParser
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orderbook.book import OrderBookDelta
@@ -21,35 +19,22 @@ from nautilus_trader.model.orderbook.order import Order
 # TODO (bm) cythonize
 class OrderBookDataTransformer:
     @staticmethod
-    def _parse_delta(msg, delta):
-        return {
-            "instrument_id": msg.instrument_id.value,
-            "ts_recv_ns": msg.ts_recv_ns,
-            "ts_event_ns": msg.ts_event_ns,
-            "type": DeltaTypeParser.to_str_py(delta.type),
-            "level": LevelParser.to_str_py(delta.level),
-            "id": delta.order.id if delta.order else None,
-            "price": delta.order.price if delta.order else None,
-            "size": delta.order.size if delta.order else None,
-            "side": OrderSideParser.to_str_py(delta.order.side)
-            if delta.order
-            else None,
-        }
+    def _parse_delta(delta: OrderBookDelta):
+        return delta.to_dict()
 
     @staticmethod
     def serialize(data: OrderBookData):
         def inner():
             if isinstance(data, OrderBookDeltas):
                 yield from [
-                    OrderBookDataTransformer._parse_delta(msg=data, delta=delta)
+                    OrderBookDataTransformer._parse_delta(delta=delta)
                     for delta in data.deltas
                 ]
             elif isinstance(data, OrderBookDelta):
-                yield OrderBookDataTransformer._parse_delta(msg=data, delta=data.delta)
+                yield OrderBookDataTransformer._parse_delta(delta=data.delta)
             elif isinstance(data, OrderBookSnapshot):
                 # For a snapshot, we store the individual deltas required to rebuild, namely a CLEAR, followed by ADDs
                 yield OrderBookDataTransformer._parse_delta(
-                    data,
                     OrderBookDelta(
                         instrument_id=data.instrument_id,
                         level=data.level,
@@ -64,7 +49,6 @@ class OrderBookDataTransformer:
                 )
                 yield from [
                     OrderBookDataTransformer._parse_delta(
-                        data,
                         OrderBookDelta(
                             instrument_id=data.instrument_id,
                             level=data.level,
@@ -84,22 +68,24 @@ class OrderBookDataTransformer:
         def _is_orderbook_snapshot(values: list):
             if len(values) < 2:
                 return False
-            return values[0]["type"] == "CLEAR" and values[1]["type"] == "ADD"
+            return (
+                values[0]["delta_type"] == "CLEAR" and values[1]["delta_type"] == "ADD"
+            )
 
         def _build_orderbook_snapshot(values):
             # First value is a CLEAR message, which we ignore
             return OrderBookSnapshot(
                 instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
-                level=LevelParser.from_str_py(values[1]["level"]),
+                level=BookLevelParser.from_str_py(values[1]["level"]),
                 bids=[
-                    (order["price"], order["size"])
+                    (order["order_price"], order["order_size"])
                     for order in data[1:]
-                    if order["side"] == "BUY"
+                    if order["order_side"] == OrderSide.BUY
                 ],
                 asks=[
-                    (order["price"], order["size"])
+                    (order["order_price"], order["order_size"])
                     for order in data[1:]
-                    if order["side"] == "SELL"
+                    if order["order_side"] == OrderSide.SELL
                 ],
                 ts_event_ns=data[1]["ts_event_ns"],
                 ts_recv_ns=data[1]["ts_recv_ns"],
