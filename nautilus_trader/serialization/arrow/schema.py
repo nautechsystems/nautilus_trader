@@ -57,7 +57,7 @@ TYPE_TO_SCHEMA[OrderBookData] = pa.schema(
         "ts_event_ns": pa.uint64(),
         "ts_recv_ns": pa.uint64(),
         "delta_type": pa.string(),
-        "order_side": pa.uint8(),
+        "order_side": pa.string(),
         "order_price": pa.float64(),
         "order_size": pa.float64(),
         "order_id": pa.string(),

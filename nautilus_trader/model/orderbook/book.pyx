@@ -1335,7 +1335,7 @@ cdef class OrderBookDelta(OrderBookData):
             "delta_type": DeltaTypeParser.to_str(self.type),
             "order_price": self.order.price if self.order else None,
             "order_size": self.order.size if self.order else None,
-            "order_side": self.order.side if self.order else None,
+            "order_side": OrderSideParser.to_str(self.order.side) if self.order else None,
             "order_id": self.order.id if self.order else None,
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
