@@ -134,7 +134,7 @@ cdef class SimulatedExchange:
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef void _reject_order(self, Order order, str reason) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
     cdef void _cancel_order(self, PassiveOrder order) except *
     cdef void _expire_order(self, PassiveOrder order) except *
 
@@ -146,7 +146,7 @@ cdef class SimulatedExchange:
     cdef void _generate_order_pending_cancel(self, Order order) except *
     cdef void _generate_order_update_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
     cdef void _generate_order_cancel_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
-    cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
     cdef void _generate_order_canceled(self, PassiveOrder order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
     cdef void _generate_order_expired(self, PassiveOrder order) except *
@@ -158,7 +158,7 @@ cdef class SimulatedExchange:
     cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
     cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price) except *
+    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 

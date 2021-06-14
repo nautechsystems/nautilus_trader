@@ -129,10 +129,10 @@ class LiveDataEngineTests(unittest.TestCase):
             data_type=DataType(
                 QuoteTick,
                 metadata={
-                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
+                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "from_datetime": None,
+                    "to_datetime": None,
+                    "limit": 1000,
                 },
             ),
             callback=handler.append,
@@ -281,12 +281,12 @@ class LiveDataEngineTests(unittest.TestCase):
                 data_type=DataType(
                     QuoteTick,
                     metadata={
-                        "InstrumentId": InstrumentId(
+                        "instrument_id": InstrumentId(
                             Symbol("SOMETHING"), Venue("RANDOM")
                         ),
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 1000,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 1000,
                     },
                 ),
                 callback=handler.append,

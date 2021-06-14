@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.orders.base cimport Order
 

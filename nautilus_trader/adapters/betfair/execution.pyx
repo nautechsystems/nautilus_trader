@@ -318,6 +318,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=VenueOrderId(instructions["betId"]),
             quantity=Quantity(instructions["instruction"]['limitOrder']["size"], precision=4),
             price=price_to_probability(instructions["instruction"]['limitOrder']["price"]),
+            trigger=None,  # Not applicable for Betfair
             ts_updated_ns=self._clock.timestamp_ns(),
             venue_order_id_modified=True,
         )
