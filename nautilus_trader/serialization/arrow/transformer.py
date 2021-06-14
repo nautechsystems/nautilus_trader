@@ -2,9 +2,9 @@ import itertools
 from itertools import repeat
 from typing import Dict, List
 
+from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import DeltaTypeParser
-from nautilus_trader.model.enums import OrderBookDeltaType
-from nautilus_trader.model.enums import OrderBookLevelParser
+from nautilus_trader.model.enums import LevelParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.identifiers import InstrumentId
@@ -27,7 +27,7 @@ class OrderBookDataTransformer:
             "ts_recv_ns": msg.ts_recv_ns,
             "ts_event_ns": msg.ts_event_ns,
             "type": DeltaTypeParser.to_str_py(delta.type),
-            "level": OrderBookLevelParser.to_str_py(delta.level),
+            "level": LevelParser.to_str_py(delta.level),
             "id": delta.order.id if delta.order else None,
             "price": delta.order.price if delta.order else None,
             "size": delta.order.size if delta.order else None,
@@ -54,7 +54,7 @@ class OrderBookDataTransformer:
                         instrument_id=data.instrument_id,
                         level=data.level,
                         order=None,
-                        delta_type=OrderBookDeltaType.CLEAR,
+                        delta_type=DeltaType.CLEAR,
                         ts_event_ns=data.ts_event_ns,
                         ts_recv_ns=data.ts_recv_ns,
                     ),
@@ -71,7 +71,7 @@ class OrderBookDataTransformer:
                             ts_event_ns=data.ts_event_ns,
                             ts_recv_ns=data.ts_recv_ns,
                             order=Order(price=price, size=volume, side=side),
-                            delta_type=OrderBookDeltaType.ADD,
+                            delta_type=DeltaType.ADD,
                         ),
                     )
                     for side, (price, volume) in orders
@@ -90,7 +90,7 @@ class OrderBookDataTransformer:
             # First value is a CLEAR message, which we ignore
             return OrderBookSnapshot(
                 instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
-                level=OrderBookLevelParser.from_str_py(values[1]["level"]),
+                level=LevelParser.from_str_py(values[1]["level"]),
                 bids=[
                     (order["price"], order["size"])
                     for order in data[1:]

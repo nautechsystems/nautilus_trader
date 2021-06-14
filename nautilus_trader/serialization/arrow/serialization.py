@@ -12,7 +12,7 @@ from nautilus_trader.serialization.arrow.transformer import serialize
 
 class ArrowSerializer:
     """
-    Provides a serializer for the MessagePack specification.
+    Provides a serializer for the Arrow / Parquet specification.
     """
 
     @staticmethod
