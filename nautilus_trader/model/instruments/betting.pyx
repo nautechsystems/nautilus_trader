@@ -161,6 +161,7 @@ cdef class BettingInstrument(Instrument):
             "selection_id": self.selection_id,
             "selection_name": self.selection_name,
             "selection_handicap": self.selection_handicap,
+            "currency": self.quote_currency.code,
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }
@@ -169,12 +170,12 @@ cdef class BettingInstrument(Instrument):
         cdef tuple keys = (
             "event_type_name",
             "competition_name",
-            "event_name",
+            "event_id",
             "event_open_date",
             "betting_type",
             "market_type",
-            "market_name",
-            "selection_name",
+            "market_id",
+            "selection_id",
             "selection_handicap",
         )
         return Symbol(value="|".join([str(getattr(self, k)) for k in keys]))

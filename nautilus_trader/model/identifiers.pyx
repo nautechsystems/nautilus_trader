@@ -153,12 +153,12 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value):
         Condition.valid_string(value, "value")
 
-        cdef tuple pieces = value.partition('.')
+        cdef list pieces = value.rsplit('.', maxsplit=1)
 
-        if len(pieces) != 3:
+        if len(pieces) != 2:
             raise ValueError(f"The InstrumentId string value was malformed, was {value}")
 
-        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[2]))
+        return InstrumentId(symbol=Symbol(pieces[0]), venue=Venue(pieces[1]))
 
     @staticmethod
     def from_str(value: str) -> InstrumentId:
