@@ -61,7 +61,7 @@ from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
-from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
+from nautilus_trader.serialization.arrow.serialization import ArrowSerializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer

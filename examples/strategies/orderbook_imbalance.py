@@ -16,7 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDelta
@@ -78,11 +78,11 @@ class OrderbookImbalance(TradingStrategy):
         # )
         self.subscribe_order_book_deltas(
             instrument_id=self.instrument.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
         )
         self._book = OrderBook.create(
             instrument=self.instrument,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
         )
 
     def on_order_book_delta(self, delta: OrderBookDelta):
@@ -98,6 +98,8 @@ class OrderbookImbalance(TradingStrategy):
     def check_trigger(self):
         bid_volume = self._book.best_bid_qty()
         ask_volume = self._book.best_ask_qty()
+        if not (bid_volume and ask_volume):
+            return
         smaller = min(bid_volume, ask_volume)
         larger = max(bid_volume, ask_volume)
         ratio = smaller / larger

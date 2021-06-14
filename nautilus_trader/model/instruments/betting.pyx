@@ -161,6 +161,7 @@ cdef class BettingInstrument(Instrument):
             "selection_id": self.selection_id,
             "selection_name": self.selection_name,
             "selection_handicap": self.selection_handicap,
+            "currency": self.quote_currency.code,
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }

@@ -20,8 +20,8 @@ from nautilus_trader.backtest.data_loader import parse_timestamp
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
@@ -127,7 +127,7 @@ def test_data_catalogue_backtest_data(catalogue_dir, data_loader):
     catalogue = DataCatalog()
     catalogue.import_from_data_loader(loader=data_loader)
     data = catalogue.load_backtest_data()
-    assert len(sum(data.values(), list())) == 2698
+    assert len(sum(data.values(), list())) == 2323
 
 
 def test_data_catalogue_backtest_run(catalogue_dir, data_loader):
@@ -143,7 +143,7 @@ def test_data_catalogue_backtest_run(catalogue_dir, data_loader):
         base_currency=GBP,
         oms_type=OMSType.NETTING,
         starting_balances=[Money(10000, GBP)],
-        order_book_level=OrderBookLevel.L2,
+        order_book_level=BookLevel.L2,
     )
     strategy = OrderbookImbalance(
         instrument=instruments[1], max_trade_size=Decimal("50"), order_id_tag="OI"

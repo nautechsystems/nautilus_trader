@@ -15,10 +15,6 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.storage.parsing import _unparse
-from nautilus_trader.backtest.storage.parsing import _unparse_value
-from nautilus_trader.backtest.storage.parsing import dictionary_columns
-from nautilus_trader.backtest.storage.parsing import nautilus_to_dict
 from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.book import OrderBookDelta
@@ -26,6 +22,8 @@ from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.serialization.arrow.transformer import deserialize
+from nautilus_trader.serialization.arrow.transformer import serialize
 
 
 NewFile = namedtuple("NewFile", "name")
@@ -34,6 +32,11 @@ EOStream = namedtuple("EOStream", "")
 # TODO (bm) - Line preprocessor not called / used - implement a simple log example
 # TODO (bm) - Implement chunking in CSVParser
 # TODO (bm) - Implement chunking in ParquetParser
+
+
+dictionary_columns = {
+    TradeTick: ["instrument_id", "aggressor_side"],
+}
 
 
 class ByteParser:
@@ -264,8 +267,8 @@ class DataCatalog:
 
             # TODO (bm) - better handling of instruments -> currency we're writing a file per instrument
             cls = type_conv.get(type(obj), type(obj))
-            for data in nautilus_to_dict(obj):
-                instrument_id = data["instrument_id"]
+            for data in maybe_list(serialize(obj)):
+                instrument_id = data.get("instrument_id", None)
                 if instrument_id not in tables[cls]:
                     tables[cls][instrument_id] = []
                 tables[cls][instrument_id].append(data)
@@ -301,7 +304,7 @@ class DataCatalog:
                     table=table,
                     root_path=str(fn),
                     filesystem=self.fs,
-                    partition_cols=["instrument_id"],
+                    partition_cols=["instrument_id"] if ins_id else None,
                     use_legacy_dataset=True,
                     version="2.0",
                     **kwargs,
@@ -378,6 +381,7 @@ class DataCatalog:
         :param end_timestamp: The ending timestamp of the data to load
         :param order_book_deltas: Whether to load order book delta
         :param trade_ticks: Whether to load trade ticks
+        :param quote_ticks: Whether to load quote ticks
         :param instrument_status_events: Whether to load instrument status events
         :param chunksize: The chunksize to return (used for streaming backtest). Use None for a loading all the data.
         :return:
@@ -436,24 +440,14 @@ class DataCatalog:
         return dataset.to_table(**kw).to_pandas()
 
     @staticmethod
-    def _make_objects(df, cls, ignore_keys=None):
-        rows = [
-            {
-                k: _unparse_value(cls=cls, k=k, v=v)
-                for k, v in r.items()
-                if k not in (ignore_keys or ())
-            }
-            for _, r in df.iterrows()
-        ]
-        return [_unparse(cls, r) for r in rows]
+    def _make_objects(df, cls):
+        return deserialize(cls, data=df.to_dict("records"))
 
     def instruments(self, filters=None, as_nautilus=False):
         df = self._query("betting_instrument", filters=filters)
         if not as_nautilus:
             return df
-        return self._make_objects(
-            df=df, cls=BettingInstrument, ignore_keys=("instrument_id",)
-        )
+        return self._make_objects(df=df.drop(["type"], axis=1), cls=BettingInstrument)
 
     def instrument_status_events(
         self, instrument_ids=None, filters=None, as_nautilus=False
@@ -463,19 +457,19 @@ class DataCatalog:
         )
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=InstrumentStatusEvent, ignore_keys=None)
+        return self._make_objects(df=df, cls=InstrumentStatusEvent)
 
     def trade_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):
         df = self._query("trade_tick", instrument_ids=instrument_ids, filters=filters)
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=TradeTick, ignore_keys=None)
+        return self._make_objects(df=df, cls=TradeTick)
 
     def quote_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):
         df = self._query("quote_tick", instrument_ids=instrument_ids, filters=filters)
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=QuoteTick, ignore_keys=None)
+        return self._make_objects(df=df, cls=QuoteTick)
 
     def order_book_deltas(self, instrument_ids=None, filters=None, as_nautilus=False):
         df = self._query(
@@ -483,7 +477,7 @@ class DataCatalog:
         )
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=OrderBookDelta, ignore_keys=None)
+        return self._make_objects(df=df, cls=OrderBookDelta)
 
 
 def camel_to_snake_case(s):
@@ -492,6 +486,12 @@ def camel_to_snake_case(s):
 
 def parse_timestamp(t):
     return int(pd.Timestamp(t).timestamp() * 1e9)
+
+
+def maybe_list(obj):
+    if isinstance(obj, dict):
+        return [obj]
+    return obj
 
 
 # def get_digest(fs, path):
