@@ -18,7 +18,6 @@ from libc.stdint cimport uint64_t
 import json
 
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId

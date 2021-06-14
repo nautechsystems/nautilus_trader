@@ -577,9 +577,11 @@ cdef class OandaDataClient(LiveMarketDataClient):
         ]
 
         if granularity not in valid_granularities:
-            self._log.error(f"Requesting bars with invalid granularity `{granularity}`, "
-                            f"interpolation will be available in a future version, "
-                            f"valid_granularities={valid_granularities}.")
+            self._log.error(
+                f"Requesting bars with invalid granularity `{granularity}`, "
+                f"interpolation will be available in a future version, "
+                f"valid_granularities={valid_granularities}.",
+            )
 
         cdef dict params = {
             "dailyAlignment": 0,  # UTC

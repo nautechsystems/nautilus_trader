@@ -23,6 +23,7 @@ from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -404,7 +405,7 @@ class TestMsgPackEventSerializer:
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackEventSerializer()
 
-    def test_serialize_and_deserialize_account_state_events(self):
+    def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "000"),
@@ -425,7 +426,34 @@ class TestMsgPackEventSerializer:
         # Act
         serialized = self.serializer.serialize(event)
         deserialized = self.serializer.deserialize(serialized)
-        print(deserialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_account_state_without_base_currency_events(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USDT,
+                    Money(10000, USDT),
+                    Money(0, USDT),
+                    Money(10000, USDT),
+                )
+            ],
+            info={},
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=1_000_000_000,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         assert deserialized == event
