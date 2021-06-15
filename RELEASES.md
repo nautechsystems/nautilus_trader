@@ -6,6 +6,7 @@ represented with an `int64` are always in nanosecond resolution, and appended
 with `_ns` accordingly.
 
 ## Breaking Changes
+- Renamed `OrderState.PENDING_REPLACE` to `OrderState.PENDING_UPDATE`
 - Renamed `timestamp_origin_ns` to `ts_event_ns`.
 - Renamed `timestamp_ns` for data to `ts_recv_ns`.
 - Renamed `updated_ns` to `ts_updated_ns`.
@@ -22,7 +23,10 @@ with `_ns` accordingly.
 
 ## Enhancements
 - Adapters dependencies are now optional extras at installation.
-- Add object `to_dict()` and `from_dict()` methods.
+- Added arrow/parquet serialization.
+- Added object `to_dict()` and `from_dict()` methods.
+- Added `Order.is_pending_update`.
+- Added `Order.is_pending_cancel`.
 - Removed `TradeMatchId` in favour of bare string.
 - Removed redundant conversion to `pd.Timestamp` when checking timestamps.
 - Removed redundant data `to_serializable_str` methods.

@@ -103,6 +103,8 @@ cdef class Order:
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
     cdef bint is_working_c(self) except *
+    cdef bint is_pending_update_c(self) except *
+    cdef bint is_pending_cancel_c(self) except *
     cdef bint is_completed_c(self) except *
 
     @staticmethod
