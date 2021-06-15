@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.delta_type cimport DeltaType
@@ -40,8 +40,8 @@ cdef class OrderBook:
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
     """The order books asks.\n\n:returns: `Ladder`"""
-    cdef readonly uint64_t last_update_timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the last update.\n\n:returns: `uint64`"""
+    cdef readonly int64_t last_update_timestamp_ns
+    """The UNIX timestamp (nanoseconds) of the last update.\n\n:returns: `int64`"""
 
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *

@@ -25,7 +25,7 @@ import pandas as pd
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.datetime cimport as_utc_timestamp
@@ -44,7 +44,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
 
-UINT64_MAX = 18446744073709551615
+INT64_MAX = 9223372036854775807
 
 
 cdef class DataProducerFacade:
@@ -261,7 +261,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             min_timestamp = as_utc_timestamp(pd.Timestamp.max)
 
         if max_timestamp is None:
-            max_timestamp = as_utc_timestamp(pd.Timestamp(0))
+            max_timestamp = as_utc_timestamp(pd.Timestamp.min)
 
         self.min_timestamp_ns = dt_to_unix_nanos(min_timestamp)
         self.max_timestamp_ns = dt_to_unix_nanos(max_timestamp)
@@ -329,22 +329,22 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         return self._instruments.copy()
 
-    def setup(self, uint64_t start_ns, uint64_t stop_ns):
+    def setup(self, int64_t start_ns, int64_t stop_ns):
         """
         Setup tick data for a backtest run.
 
         Parameters
         ----------
-        start_ns : uint64
+        start_ns : int64
             The UNIX timestamp (nanoseconds) for the run start.
-        stop_ns : uint64
+        stop_ns : int64
             The UNIX timestamp (nanoseconds) for the run stop.
 
         """
         self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
-        cdef uint64_t total_size = 0
+        cdef int64_t total_size = 0
 
         if self._stream:
             # Set data stream start index
@@ -376,7 +376,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._quote_ask_sizes = quote_ticks_slice["ask_size"].values
             self._quote_timestamps = np.asarray(
                 [dt_to_unix_nanos(dt) for dt in quote_ticks_slice.index],
-                dtype=np.uint64,
+                dtype=np.int64,
             )
 
             # Set indexing
@@ -398,7 +398,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             self._trade_sides = trade_ticks_slice["aggressor_side"].values
             self._trade_timestamps = np.asarray(
                 [dt_to_unix_nanos(dt) for dt in trade_ticks_slice.index],
-                dtype=np.uint64,
+                dtype=np.int64,
             )
 
             # Set indexing
@@ -471,7 +471,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         """
         # Determine next data element
-        cdef uint64_t next_timestamp_ns = UINT64_MAX
+        cdef int64_t next_timestamp_ns = INT64_MAX
         cdef int choice = 0
 
         if self._next_quote_tick is not None:
@@ -592,15 +592,15 @@ cdef class CachedProducer(DataProducerFacade):
         """
         return self._producer.instruments()
 
-    def setup(self, uint64_t start_ns, uint64_t stop_ns):
+    def setup(self, int64_t start_ns, int64_t stop_ns):
         """
         Setup tick data for a backtest run.
 
         Parameters
         ----------
-        start_ns : uint64
+        start_ns : int64
             The UNIX timestamp (nanoseconds) for the run start.
-        stop_ns : uint64
+        stop_ns : int64
             The UNIX timestamp (nanoseconds) for the run stop.
 
         """

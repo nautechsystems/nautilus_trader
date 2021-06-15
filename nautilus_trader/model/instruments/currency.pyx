@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
@@ -54,8 +54,8 @@ cdef class CurrencySpot(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         dict info=None,
     ):
         """
@@ -99,9 +99,9 @@ cdef class CurrencySpot(Instrument):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        ts_event_ns: uint64
+        ts_event_ns: int64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: uint64
+        ts_recv_ns: int64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
