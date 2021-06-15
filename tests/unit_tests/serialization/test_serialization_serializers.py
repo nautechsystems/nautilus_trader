@@ -19,6 +19,8 @@ from io import BytesIO
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.c_enums.book_level import BookLevel
+from nautilus_trader.model.c_enums.delta_type import DeltaType
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
@@ -57,6 +59,8 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
@@ -855,7 +859,67 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == [tick]
 
+    def test_serialize_and_deserialize_order_book_delta(self):
+
+        delta = OrderBookDelta(
+            instrument_id=TestStubs.audusd_id(),
+            level=BookLevel.L2,
+            delta_type=DeltaType.CLEAR,
+            order=None,
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+        serialized = self.serializer.to_parquet(buff=self.buffer, objects=[delta])
+        deserialized = self.serializer.from_parquet(serialized)
+
+        # Assert
+        assert deserialized == [delta]
+
     def test_serialize_and_deserialize_order_book_deltas(self):
+
+        kw = {
+            "instrument_id": "AUD/USD.SIM",
+            "ts_event_ns": 0,
+            "ts_recv_ns": 0,
+            "level": "L2",
+        }
+        deltas = OrderBookDeltas(
+            instrument_id=TestStubs.audusd_id(),
+            level=BookLevel.L2,
+            deltas=[
+                OrderBookDelta.from_dict(
+                    {
+                        "delta_type": "ADD",
+                        "order_side": "BUY",
+                        "order_price": 8.0,
+                        "order_size": 30.0,
+                        "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",
+                        **kw,
+                    }
+                ),
+                OrderBookDelta.from_dict(
+                    {
+                        "delta_type": "ADD",
+                        "order_side": "SELL",
+                        "order_price": 15.0,
+                        "order_size": 10.0,
+                        "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",
+                        **kw,
+                    }
+                ),
+            ],
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+        serialized = self.serializer.to_parquet(buff=self.buffer, objects=[deltas])
+        deserialized = self.serializer.from_parquet(serialized)
+
+        # Assert
+        assert deserialized == [deltas]
+
+    def test_serialize_and_deserialize_order_book_snapshot(self):
 
         book = TestStubs.order_book_snapshot()
 
