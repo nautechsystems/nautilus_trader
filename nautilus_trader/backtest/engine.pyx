@@ -17,7 +17,7 @@ import pandas as pd
 import pytz
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
@@ -68,11 +68,13 @@ from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
+
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer  # isort:skip
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer  # isort:skip
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer  # isort:skip
 
 
 cdef class BacktestEngine:
@@ -797,8 +799,8 @@ cdef class BacktestEngine:
         # Reset engine to fresh state (in case already run)
         self.reset()
 
-        cdef uint64_t start_ns = dt_to_unix_nanos(start)
-        cdef uint64_t stop_ns = dt_to_unix_nanos(stop)
+        cdef int64_t start_ns = dt_to_unix_nanos(start)
+        cdef int64_t stop_ns = dt_to_unix_nanos(stop)
 
         # Setup clocks
         self._test_clock.set_time(start_ns)
@@ -844,7 +846,7 @@ cdef class BacktestEngine:
 
         self._log_footer(run_started, self._clock.utc_now(), start, stop)
 
-    cdef void _advance_time(self, uint64_t now_ns) except *:
+    cdef void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
@@ -855,7 +857,7 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    cdef void _process_modules(self, uint64_t now_ns) except *:
+    cdef void _process_modules(self, int64_t now_ns) except *:
         cdef SimulatedExchange exchange
         for exchange in self._exchanges.values():
             exchange.process_modules(now_ns)

@@ -2032,7 +2032,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_pending_replace(order))
+        self.exec_engine.process(TestStubs.event_order_pending_update(order))
 
         # Get order, check venue_order_id
         cached_order = self.cache.order(order.client_order_id)

@@ -38,9 +38,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers import MsgPackEventSerializer
-from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockStrategy

@@ -386,7 +386,7 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_pending_replace(order) -> OrderPendingReplace:
+    def event_order_pending_update(order) -> OrderPendingReplace:
         return OrderPendingReplace(
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,

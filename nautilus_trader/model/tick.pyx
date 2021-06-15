@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
@@ -36,8 +36,8 @@ cdef class Tick(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``Tick`` class.
@@ -46,9 +46,9 @@ cdef class Tick(Data):
         ----------
         instrument_id : InstrumentId
             The ticks instrument identifier.
-        ts_event_ns: uint64
+        ts_event_ns: int64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : uint64
+        ts_recv_ns : int64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
@@ -69,8 +69,8 @@ cdef class QuoteTick(Tick):
         Price ask not None,
         Quantity bid_size not None,
         Quantity ask_size not None,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``QuoteTick`` class.
@@ -87,9 +87,9 @@ cdef class QuoteTick(Tick):
             The size at the best bid.
         ask_size : Quantity
             The size at the best ask.
-        ts_event_ns: uint64
+        ts_event_ns: int64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: uint64
+        ts_recv_ns: int64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
@@ -225,8 +225,8 @@ cdef class TradeTick(Tick):
         Quantity size not None,
         AggressorSide aggressor_side,
         str match_id not None,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``TradeTick`` class.
@@ -243,9 +243,9 @@ cdef class TradeTick(Tick):
             The aggressor side of the trade.
         match_id : str
             The trade match identifier.
-        ts_event_ns: uint64
+        ts_event_ns: int64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: uint64
+        ts_recv_ns: int64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         Raises

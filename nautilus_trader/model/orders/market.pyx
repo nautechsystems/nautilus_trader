@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
@@ -61,7 +61,7 @@ cdef class MarketOrder(Order):
         Quantity quantity not None,
         TimeInForce time_in_force,
         UUID init_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``MarketOrder`` class.
@@ -80,7 +80,7 @@ cdef class MarketOrder(Order):
             The order quantity (> 0).
         init_id : UUID
             The order initialization event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the order initialization.
 
         Raises

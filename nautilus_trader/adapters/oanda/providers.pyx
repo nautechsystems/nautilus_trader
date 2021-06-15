@@ -79,7 +79,7 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
         req = AccountInstruments(accountID=self._account_id)
         res = self._client.request(req)
 
-        cdef list instruments = res.get("instruments", {})
+        cdef list instruments = res.get("instruments", [])
         cdef dict values
         cdef Instrument instrument
         for values in instruments:

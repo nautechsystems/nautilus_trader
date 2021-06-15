@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.core.uuid cimport UUID
 
@@ -85,7 +84,7 @@ cdef class Message:
         self,
         MessageType msg_type,
         UUID identifier not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``Message`` class.
@@ -96,7 +95,7 @@ cdef class Message:
             The message type.
         identifier : UUID
             The message identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the message initialization.
 
         """
@@ -121,7 +120,7 @@ cdef class Command(Message):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, uint64_t timestamp_ns):
+    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
         """
         Initialize a new instance of the ``Command`` class.
 
@@ -129,7 +128,7 @@ cdef class Command(Message):
         ----------
         identifier : UUID
             The command identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command initialization.
 
         """
@@ -146,7 +145,7 @@ cdef class Document(Message):
     def __init__(
         self,
         UUID identifier not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``Document`` class.
@@ -155,7 +154,7 @@ cdef class Document(Message):
         ----------
         identifier : UUID
             The document identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the document initialization.
 
         """
@@ -172,7 +171,7 @@ cdef class Event(Message):
     def __init__(
         self,
         UUID identifier not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``Event`` class.
@@ -181,7 +180,7 @@ cdef class Event(Message):
         ----------
         identifier : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -195,7 +194,7 @@ cdef class Request(Message):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, uint64_t timestamp_ns):
+    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
         """
         Initialize a new instance of the ``Request`` class.
 
@@ -203,7 +202,7 @@ cdef class Request(Message):
         ----------
         identifier : UUID
             The request identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the request initialization.
 
         """
@@ -221,7 +220,7 @@ cdef class Response(Message):
         self,
         UUID correlation_id not None,
         UUID identifier not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``Response`` class.
@@ -232,7 +231,7 @@ cdef class Response(Message):
             The correlation identifier.
         identifier : UUID
             The response identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the response initialization.
 
         """

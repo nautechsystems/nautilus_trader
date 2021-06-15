@@ -17,7 +17,7 @@ import json
 
 import pandas as pd
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
@@ -69,8 +69,8 @@ cdef class AccountState(Event):
         list balances not None,
         dict info not None,
         UUID event_id not None,
-        uint64_t ts_updated_ns,
-        uint64_t timestamp_ns,
+        int64_t ts_updated_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``AccountState`` class.
@@ -91,9 +91,9 @@ cdef class AccountState(Event):
             The additional implementation specific account information.
         event_id : UUID
             The event identifier.
-        ts_updated_ns : uint64
+        ts_updated_ns : int64
             The UNIX timestamp (nanoseconds) when the account was updated.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -183,7 +183,7 @@ cdef class OrderEvent(Event):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderEvent` base class.
@@ -196,7 +196,7 @@ cdef class OrderEvent(Event):
             The venue order identifier.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -226,7 +226,7 @@ cdef class OrderInitialized(OrderEvent):
         Quantity quantity not None,
         TimeInForce time_in_force,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
         dict options not None,
     ):
         """
@@ -250,7 +250,7 @@ cdef class OrderInitialized(OrderEvent):
             The order time-in-force.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.
         options : dict[str, str]
             The order initialization options. Contains mappings for specific
@@ -350,7 +350,7 @@ cdef class OrderInvalid(OrderEvent):
         ClientOrderId client_order_id not None,
         str reason not None,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderInvalid`` class.
@@ -363,7 +363,7 @@ cdef class OrderInvalid(OrderEvent):
             The order invalid reason.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -445,7 +445,7 @@ cdef class OrderDenied(OrderEvent):
         ClientOrderId client_order_id not None,
         str reason not None,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderDenied`` class.
@@ -458,7 +458,7 @@ cdef class OrderDenied(OrderEvent):
             The order denied reason.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -537,9 +537,9 @@ cdef class OrderSubmitted(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
-        uint64_t ts_submitted_ns,
+        int64_t ts_submitted_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderSubmitted`` class.
@@ -550,11 +550,11 @@ cdef class OrderSubmitted(OrderEvent):
             The account identifier.
         client_order_id : ClientOrderId
             The client order identifier.
-        ts_submitted_ns : uint64
+        ts_submitted_ns : int64
             The UNIX timestamp (nanoseconds) when the order was submitted.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -630,9 +630,9 @@ cdef class OrderRejected(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         str reason not None,
-        uint64_t ts_rejected_ns,
+        int64_t ts_rejected_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderRejected`` class.
@@ -645,11 +645,11 @@ cdef class OrderRejected(OrderEvent):
             The client order identifier.
         reason : datetime
             The order rejected reason.
-        ts_rejected_ns : uint64
+        ts_rejected_ns : int64
             The UNIX timestamp (nanoseconds) when the order was rejected.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -743,9 +743,9 @@ cdef class OrderAccepted(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        uint64_t ts_accepted_ns,
+        int64_t ts_accepted_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderAccepted`` class.
@@ -758,11 +758,11 @@ cdef class OrderAccepted(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        ts_accepted_ns : uint64
+        ts_accepted_ns : int64
             The UNIX timestamp (nanoseconds) when the order was accepted.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -848,9 +848,9 @@ cdef class OrderPendingReplace(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        uint64_t ts_pending_ns,
+        int64_t ts_pending_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderPendingReplace`` class.
@@ -867,7 +867,7 @@ cdef class OrderPendingReplace(OrderEvent):
             The UNIX timestamp (nanoseconds) when the replace was pending.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -954,9 +954,9 @@ cdef class OrderPendingCancel(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        uint64_t ts_pending_ns,
+        int64_t ts_pending_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderPendingCancel`` class.
@@ -973,7 +973,7 @@ cdef class OrderPendingCancel(OrderEvent):
             The UNIX timestamp (nanoseconds) when the cancel was pending.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -1061,9 +1061,9 @@ cdef class OrderUpdateRejected(OrderEvent):
         VenueOrderId venue_order_id not None,
         str response_to not None,
         str reason not None,
-        uint64_t ts_rejected_ns,
+        int64_t ts_rejected_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderUpdateRejected`` class.
@@ -1084,7 +1084,7 @@ cdef class OrderUpdateRejected(OrderEvent):
             The UNIX timestamp (nanoseconds) when the order update was rejected.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -1182,9 +1182,9 @@ cdef class OrderCancelRejected(OrderEvent):
         VenueOrderId venue_order_id not None,
         str response_to not None,
         str reason not None,
-        uint64_t ts_rejected_ns,
+        int64_t ts_rejected_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderCancelRejected`` class.
@@ -1205,7 +1205,7 @@ cdef class OrderCancelRejected(OrderEvent):
             The UNIX timestamp (nanoseconds) when the order cancel was rejected.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -1303,9 +1303,9 @@ cdef class OrderUpdated(OrderEvent):
         Quantity quantity not None,
         Price price not None,
         Price trigger,  # Can be None
-        uint64_t ts_updated_ns,
+        int64_t ts_updated_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderUpdated`` class.
@@ -1324,11 +1324,11 @@ cdef class OrderUpdated(OrderEvent):
             The orders current price.
         trigger : Price, optional
             The orders current trigger.
-        ts_updated_ns : uint64
+        ts_updated_ns : int64
             The UNIX timestamp (nanoseconds) when the order was updated.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -1426,9 +1426,9 @@ cdef class OrderCanceled(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        uint64_t ts_canceled_ns,
+        int64_t ts_canceled_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderCanceled`` class.
@@ -1441,11 +1441,11 @@ cdef class OrderCanceled(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        ts_canceled_ns : uint64
+        ts_canceled_ns : int64
             The UNIX timestamp (nanoseconds) when order was canceled.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -1530,9 +1530,9 @@ cdef class OrderTriggered(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        uint64_t ts_triggered_ns,
+        int64_t ts_triggered_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderTriggered`` class.
@@ -1545,11 +1545,11 @@ cdef class OrderTriggered(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        ts_triggered_ns : uint64
+        ts_triggered_ns : int64
             The UNIX timestamp (nanoseconds) when the order was triggered.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -1634,9 +1634,9 @@ cdef class OrderExpired(OrderEvent):
         AccountId account_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        uint64_t ts_expired_ns,
+        int64_t ts_expired_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``OrderExpired`` class.
@@ -1649,11 +1649,11 @@ cdef class OrderExpired(OrderEvent):
             The client order identifier.
         venue_order_id : VenueOrderId
             The venue order identifier.
-        ts_expired_ns : uint64
+        ts_expired_ns : int64
             The UNIX timestamp (nanoseconds) when the order expired.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         Raises
@@ -1748,9 +1748,9 @@ cdef class OrderFilled(OrderEvent):
         Currency currency not None,
         Money commission not None,
         LiquiditySide liquidity_side,
-        uint64_t ts_filled_ns,
+        int64_t ts_filled_ns,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
         dict info=None,
     ):
         """
@@ -1784,11 +1784,11 @@ cdef class OrderFilled(OrderEvent):
             The fill commission.
         liquidity_side : LiquiditySide
             The execution liquidity side.
-        ts_filled_ns : uint64
+        ts_filled_ns : int64
             The UNIX timestamp (nanoseconds) when the order was filled.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
         info : dict[str, object], optional
             The additional fill information.
@@ -1955,7 +1955,7 @@ cdef class PositionEvent(Event):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``PositionEvent`` class.
@@ -1968,7 +1968,7 @@ cdef class PositionEvent(Event):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -1988,7 +1988,7 @@ cdef class PositionOpened(PositionEvent):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``PositionOpened`` class.
@@ -2001,7 +2001,7 @@ cdef class PositionOpened(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -2078,7 +2078,7 @@ cdef class PositionChanged(PositionEvent):
         Position position not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``PositionChanged`` class.
@@ -2091,7 +2091,7 @@ cdef class PositionChanged(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -2171,7 +2171,7 @@ cdef class PositionClosed(PositionEvent):
         Position position not None,
         OrderEvent order_fill not None,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``PositionClosed`` class.
@@ -2184,7 +2184,7 @@ cdef class PositionClosed(PositionEvent):
             The order fill event which triggered the event.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -2264,7 +2264,7 @@ cdef class StatusEvent(Event):
     def __init__(
         self,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``StatusEvent` base class.
@@ -2273,7 +2273,7 @@ cdef class StatusEvent(Event):
         ----------
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -2289,7 +2289,7 @@ cdef class VenueStatusEvent(StatusEvent):
         Venue venue,
         VenueStatus status,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``VenueStatusEvent` base class.
@@ -2300,7 +2300,7 @@ cdef class VenueStatusEvent(StatusEvent):
             The venue status.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -2367,7 +2367,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
         InstrumentId instrument_id,
         InstrumentStatus status,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``InstrumentStatusEvent` base class.
@@ -2378,7 +2378,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
             The instrument status.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
@@ -2447,7 +2447,7 @@ cdef class InstrumentClosePrice(Event):
         Price close_price not None,
         InstrumentCloseType close_type,
         UUID event_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
     ):
         """
         Initialize a new instance of the ``InstrumentClosePrice` base class.
@@ -2460,7 +2460,7 @@ cdef class InstrumentClosePrice(Event):
             The type of closing price.
         event_id : UUID
             The event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """

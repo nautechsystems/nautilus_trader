@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
@@ -52,8 +52,8 @@ cdef class Option(Instrument):
         str trading_hours not None,
         str liquid_hours not None,
         str last_trade_time not None,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
     ):
         """
         Initialize a new instance of the ``Option`` class.
@@ -70,7 +70,7 @@ cdef class Option(Instrument):
             The price decimal precision.
         price_increment : Price
             The minimum price increment (tick size).
-        ts_recv_ns: uint64
+        ts_recv_ns: int64
             The timestamp the instrument was created/updated at.
 
         Raises

@@ -668,8 +668,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
             instrument_id,
             Price(values["bids"][0]["price"]),
             Price(values["asks"][0]["price"]),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
+            Quantity.from_int_c(1),
+            Quantity.from_int_c(1),
             dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
             self._clock.timestamp_ns(),
         )
