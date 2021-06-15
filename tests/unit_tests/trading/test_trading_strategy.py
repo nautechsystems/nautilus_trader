@@ -1914,10 +1914,165 @@ class TradingStrategyTests(unittest.TestCase):
             order.client_order_id,
             strategy.cache.orders_completed()[0].client_order_id,
         )
-        self.assertNotIn(order.client_order_id, strategy.cache.orders_working())
+        self.assertNotIn(order, strategy.cache.orders_working())
         self.assertTrue(strategy.cache.order_exists(order.client_order_id))
         self.assertFalse(strategy.cache.is_order_working(order.client_order_id))
         self.assertTrue(strategy.cache.is_order_completed(order.client_order_id))
+
+    def test_cancel_order_when_pending_cancel_does_not_submit_command(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.stop_market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.006"),
+        )
+
+        strategy.submit_order(order)
+        self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
+
+        # Act
+        strategy.cancel_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.PENDING_CANCEL, strategy.cache.orders()[0].state)
+        self.assertIn(order, strategy.cache.orders_working())
+        self.assertTrue(strategy.cache.order_exists(order.client_order_id))
+        self.assertTrue(strategy.cache.is_order_working(order.client_order_id))
+        self.assertFalse(strategy.cache.is_order_completed(order.client_order_id))
+
+    def test_cancel_order_when_completed_does_not_submit_command(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.stop_market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.006"),
+        )
+
+        strategy.submit_order(order)
+        self.exec_engine.process(TestStubs.event_order_expired(order))
+
+        # Act
+        strategy.cancel_order(order)
+
+        # Assert
+        self.assertEqual(OrderState.EXPIRED, strategy.cache.orders()[0].state)
+        self.assertNotIn(order, strategy.cache.orders_working())
+        self.assertTrue(strategy.cache.order_exists(order.client_order_id))
+        self.assertFalse(strategy.cache.is_order_working(order.client_order_id))
+        self.assertTrue(strategy.cache.is_order_completed(order.client_order_id))
+
+    def test_update_order_when_pending_update_does_not_submit_command(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.001"),
+        )
+
+        strategy.submit_order(order)
+        self.exec_engine.process(TestStubs.event_order_pending_update(order))
+
+        # Act
+        strategy.update_order(
+            order=order,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("90.000"),
+        )
+
+        # Assert
+        self.assertEqual(1, self.exec_engine.command_count)
+
+    def test_update_order_when_pending_cancel_does_not_submit_command(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.001"),
+        )
+
+        strategy.submit_order(order)
+        self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
+
+        # Act
+        strategy.update_order(
+            order=order,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("90.000"),
+        )
+
+        # Assert
+        self.assertEqual(1, self.exec_engine.command_count)
+
+    def test_update_order_when_completed_does_not_submit_command(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("90.001"),
+        )
+
+        strategy.submit_order(order)
+        self.exec_engine.process(TestStubs.event_order_expired(order))
+
+        # Act
+        strategy.update_order(
+            order=order,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("90.000"),
+        )
+
+        # Assert
+        self.assertEqual(1, self.exec_engine.command_count)
 
     def test_update_order_when_no_changes_does_not_submit_command(self):
         # Arrange
@@ -1941,7 +2096,9 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         strategy.update_order(
-            order, Quantity.from_int(100000), Price.from_str("90.001")
+            order=order,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("90.001"),
         )
 
         # Assert
@@ -1969,7 +2126,9 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         strategy.update_order(
-            order, Quantity.from_int(110000), Price.from_str("90.001")
+            order=order,
+            quantity=Quantity.from_int(110000),
+            price=Price.from_str("90.001"),
         )
 
         # Assert
