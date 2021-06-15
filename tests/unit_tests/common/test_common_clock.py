@@ -837,7 +837,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(0.9)
+        time.sleep(1.5)
 
         # Assert
         assert len(self.handler) >= 8
