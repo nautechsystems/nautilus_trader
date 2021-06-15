@@ -245,7 +245,7 @@ def make_instruments(market_definition, currency):
             competition_id=market_definition.get("competition_id", ""),
             competition_name=market_definition.get("competition_name", ""),
             event_id=market_definition["event_id"],
-            event_name=market_definition.get("event_name", '').strip(),
+            event_name=(market_definition.get("event_name") or '').strip(),
             event_country_code=market_definition.get("country_code") or "",
             event_open_date=market_definition["event_open_date"],
             betting_type=market_definition["betting_type"],
