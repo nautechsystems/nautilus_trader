@@ -771,7 +771,7 @@ class OrderTests(unittest.TestCase):
         order.apply(TestStubs.event_order_accepted(order))
 
         # Act
-        order.apply(TestStubs.event_order_pending_replace(order))
+        order.apply(TestStubs.event_order_pending_update(order))
 
         # Assert
         self.assertEqual(OrderState.PENDING_UPDATE, order.state)
@@ -792,7 +792,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_replace(order))
+        order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
             self.account_id,
@@ -829,7 +829,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_replace(order))
+        order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
             self.account_id,
