@@ -1,13 +1,12 @@
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-# TODO - use cytoolz?
-from toolz.dicttoolz import merge_with
-
 from nautilus_trader.serialization.arrow.schema import SCHEMA_TO_TYPE
 from nautilus_trader.serialization.arrow.schema import TYPE_TO_SCHEMA
 from nautilus_trader.serialization.arrow.transformer import deserialize
 from nautilus_trader.serialization.arrow.transformer import serialize
+from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
+from nautilus_trader.serialization.arrow.util import maybe_list
 
 
 class ArrowSerializer:
@@ -18,7 +17,9 @@ class ArrowSerializer:
     @staticmethod
     def to_parquet(buff, objects: list):
         schema = TYPE_TO_SCHEMA[objects[0].__class__]
-        mapping = merge_with(list, *[serialize(obj) for obj in objects])
+        mapping = list_dicts_to_dict_lists(
+            [x for obj in objects for x in maybe_list(serialize(obj))]
+        )
         table = pa.Table.from_pydict(mapping=mapping, schema=schema)
 
         with pq.ParquetWriter(buff, schema) as writer:

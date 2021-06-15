@@ -1306,27 +1306,22 @@ cdef class OrderBookDelta(OrderBookData):
     def from_dict(dict values):
         """
         Return an order book delta from the given dict values.
-
         Parameters
         ----------
         values : dict[str, object]
             The values for initialization.
-
         Returns
         -------
         OrderBookDelta
-
         """
         return OrderBookDelta.from_dict_c(values)
 
     cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
-
         Returns
         -------
         dict[str, object]
-
         """
         return {
             "type": type(self).__name__,

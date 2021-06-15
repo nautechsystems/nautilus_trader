@@ -108,8 +108,6 @@ class OrderBookDataTransformer:
             chunk = list(chunk)
             if _is_orderbook_snapshot(values=chunk):
                 results.append(_build_order_book_snapshot(values=chunk))
-            elif len(chunk) > 1:
-                results.append(_build_order_book_deltas(values=chunk))
             else:
                 results.append(_build_order_book_deltas(values=chunk))
         return results

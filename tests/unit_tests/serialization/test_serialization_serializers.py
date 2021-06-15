@@ -884,6 +884,7 @@ class TestParquetSerializer:
         assert deserialized == [tick]
 
     def test_serialize_and_deserialize_order_book_deltas(self):
+
         book = TestStubs.order_book_snapshot()
 
         serialized = self.serializer.to_parquet(buff=self.buffer, objects=[book])
