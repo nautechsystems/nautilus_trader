@@ -49,7 +49,7 @@ pandas = "^1.2.4"
 psutil = "^5.8.0"
 pyarrow = { version = "^4.0.1", markers = "sys_platform != 'win32'" }
 pytz = "^2021.1"
-redis = "3.5.3"
+redis = "^3.5.3"
 scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9
 tabulate = "^0.8.9"
 uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
