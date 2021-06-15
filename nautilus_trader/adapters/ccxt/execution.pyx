@@ -819,7 +819,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             if order.side == OrderSide.BUY:
                 order_type = "STOP_LOSS"
             elif order.side == OrderSide.SELL:
-                order_type = "TAKE_PROFIT"
+                order_type = "STOP_LOSS"
             params["stopPrice"] = str(order.price)
         else:
             raise ValueError(f"Invalid OrderType, "
