@@ -145,7 +145,7 @@ class TestOrderBookDelta:
             "ts_recv_ns": 0,
         }
 
-    def test_from_dict_returns_expected_tick(self):
+    def test_from_dict_returns_expected_delta(self):
         # Arrange
         order = Order(price=10, size=5, side=OrderSide.BUY)
         delta = OrderBookDelta(
@@ -153,6 +153,23 @@ class TestOrderBookDelta:
             level=BookLevel.L2,
             delta_type=DeltaType.ADD,
             order=order,
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+        # Act
+        result = OrderBookDelta.from_dict(delta.to_dict())
+
+        # Assert
+        assert result == delta
+
+    def test_from_dict_returns_expected_clear(self):
+        # Arrange
+        delta = OrderBookDelta(
+            instrument_id=AUDUSD,
+            level=BookLevel.L2,
+            delta_type=DeltaType.CLEAR,
+            order=None,
             ts_event_ns=0,
             ts_recv_ns=0,
         )
