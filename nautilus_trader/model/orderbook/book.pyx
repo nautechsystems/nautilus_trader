@@ -1286,16 +1286,17 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
-        order = Order.from_dict_c({
+        cdef DeltaType delta_type = DeltaTypeParser.from_str(values["delta_type"])
+        cdef Order order = Order.from_dict_c({
             "price": values["order_price"],
             "size": values["order_size"],
             "side": values["order_side"],
             "id": values["order_id"],
-        }) if values['delta_type'] != "CLEAR" else None
+        }) if delta_type != DeltaType.CLEAR else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
-            delta_type=DeltaTypeParser.from_str(values["delta_type"]),
+            delta_type=delta_type,
             order=order,
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
