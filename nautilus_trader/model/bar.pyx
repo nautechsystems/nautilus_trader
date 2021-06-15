@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -291,8 +291,8 @@ cdef class Bar(Data):
         Price low_price not None,
         Price close_price not None,
         Quantity volume not None,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         bint check=False,
     ):
         """
@@ -312,9 +312,9 @@ cdef class Bar(Data):
             The bars close price.
         volume : Quantity
             The bars volume.
-        ts_event_ns : uint64
+        ts_event_ns : int64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: uint64
+        ts_recv_ns: int64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
         check : bool
             If bar parameters should be checked valid.

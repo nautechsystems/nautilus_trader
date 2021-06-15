@@ -13,14 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 
 cdef class Data:
-    cdef readonly uint64_t ts_event_ns
-    """The UNIX timestamp (nanoseconds) when data event occurred.\n\n:returns: `uint64`"""
-    cdef readonly uint64_t ts_recv_ns
-    """The UNIX timestamp (nanoseconds) when received by the Nautilus system.\n\n:returns: `uint64`"""
+    cdef readonly int64_t ts_event_ns
+    """The UNIX timestamp (nanoseconds) when data event occurred.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_recv_ns
+    """The UNIX timestamp (nanoseconds) when received by the Nautilus system.\n\n:returns: `int64`"""
 
     cpdef dict to_dict(self)
 

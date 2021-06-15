@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 
 cdef class Data:
@@ -23,15 +23,15 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, uint64_t ts_event_ns, uint64_t ts_recv_ns):
+    def __init__(self, int64_t ts_event_ns, int64_t ts_recv_ns):
         """
         Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
-        ts_event_ns : uint64
+        ts_event_ns : int64
             The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : uint64
+        ts_recv_ns : int64
             The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """

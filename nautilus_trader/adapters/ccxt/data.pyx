@@ -647,7 +647,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef void _log_ccxt_error(self, ex, str method_name) except *:
         self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
-    cdef uint64_t _ccxt_to_timestamp_ns(self, uint64_t millis) except *:
+    cdef int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *:
         return millis_to_nanos(millis)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
@@ -787,8 +787,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -854,8 +854,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double amount,
         str aggressor_side,
         str match_id,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -890,8 +890,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
-        cdef uint64_t last_timestamp = 0
-        cdef uint64_t this_timestamp = 0
+        cdef int64_t last_timestamp = 0
+        cdef int64_t this_timestamp = 0
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
@@ -946,8 +946,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        uint64_t ts_event_ns,
-        uint64_t ts_recv_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
