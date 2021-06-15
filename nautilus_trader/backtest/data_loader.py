@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 from typing import Generator
+import warnings
 
 import fsspec
 import orjson
@@ -12,7 +13,12 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-from tqdm import tqdm
+
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    pass
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.events import InstrumentStatusEvent
@@ -146,6 +152,11 @@ class DataLoader:
         self._path = path
         self.parser = parser
         self.fs_protocol = fs_protocol
+        if progress and tqdm is None:
+            warnings.warn(
+                "tqdm not installed, can't use progress. Install tqdm extra with `pip install nautilus_trader[tqdm]`"
+            )
+            progress = False
         self.progress = progress
         self.chunk_size = chunksize
         self.compression = compression

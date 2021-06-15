@@ -85,6 +85,7 @@ ccxt = ["ccxt"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
 ib = ["ib_insync"]
 oanda = ["oandapyV20"]
+tqdm = ["tqdm"]
 
 
 #################
