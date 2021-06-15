@@ -304,36 +304,6 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {len(data)} GenericData points.")
 
-    def add_other_data(self, list data) -> None:
-        """
-        Add the generic data to the container.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The data client identifier to associate with the generic data.
-        data : list[GenericData]
-            The data to add.
-
-        Raises
-        ------
-        ValueError
-            If data is empty.
-
-        """
-        Condition.not_none(data, "data")
-        Condition.not_empty(data, "data")
-
-        # Check client has been registered
-
-        # Add data
-        self._generic_data = sorted(
-            self._generic_data + data,
-            key=lambda x: x.timestamp_ns,
-        )
-
-        self._log.info(f"Added {len(data)} other data points.")
-
     def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the backtest engine.
