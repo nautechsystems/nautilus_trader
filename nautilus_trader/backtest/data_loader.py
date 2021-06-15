@@ -40,8 +40,9 @@ EOStream = namedtuple("EOStream", "")
 # TODO (bm) - Implement chunking in ParquetParser
 
 
-dictionary_columns = {
-    TradeTick: ["instrument_id", "aggressor_side"],
+category_attributes = {
+    "TradeTick": ["instrument_id", "type", "aggressor_side"],
+    "OrderBookDelta": ["instrument_id", "type", "level", "delta_type", "order_size"],
 }
 
 
@@ -305,7 +306,9 @@ class DataCatalog:
                         # Remove file, will be written again
                         self.fs.rm(fn, recursive=True)
 
-                df = df.astype({k: "category" for k in dictionary_columns.get(cls, [])})
+                df = df.astype(
+                    {k: "category" for k in category_attributes.get(cls.__name__, [])}
+                )
                 for col in ("ts_event_ns", "ts_recv_ns", "timestamp_ns"):
                     if col in df.columns:
                         df = df.sort_values(col)
@@ -473,7 +476,7 @@ class DataCatalog:
     def trade_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):
         df = self._query("trade_tick", instrument_ids=instrument_ids, filters=filters)
         if not as_nautilus:
-            return df
+            return df.astype({"price": float, "size": float})
         return self._make_objects(df=df, cls=TradeTick)
 
     def quote_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):

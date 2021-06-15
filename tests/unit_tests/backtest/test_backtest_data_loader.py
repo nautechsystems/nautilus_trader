@@ -3,7 +3,9 @@ import os
 import pathlib
 
 import fsspec
+from numpy import dtype
 import orjson
+from pandas import CategoricalDtype
 import pytest
 
 from examples.strategies.orderbook_imbalance import OrderbookImbalance
@@ -28,7 +30,7 @@ from tests.test_kit import PACKAGE_ROOT
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
-CATALOGUE_DIR = TEST_DATA_DIR + "/catalogue"
+catalog_DIR = TEST_DATA_DIR + "/catalog"
 
 
 @pytest.mark.parametrize(
@@ -87,16 +89,16 @@ def test_parse_timestamp():
 
 
 @pytest.fixture(scope="function")
-def catalogue_dir():
-    # Ensure we have a catalogue directory, and its cleaned up after use
+def catalog_dir():
+    # Ensure we have a catalog directory, and its cleaned up after use
     fs = fsspec.filesystem("file")
-    catalogue = str(pathlib.Path(CATALOGUE_DIR))
-    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(catalogue)})
-    if fs.exists(catalogue):
-        fs.rm(catalogue, recursive=True)
-    fs.mkdir(catalogue)
+    catalog = str(pathlib.Path(catalog_DIR))
+    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(catalog)})
+    if fs.exists(catalog):
+        fs.rm(catalog, recursive=True)
+    fs.mkdir(catalog)
     yield
-    fs.rm(catalogue, recursive=True)
+    fs.rm(catalog, recursive=True)
 
 
 @pytest.fixture(scope="function")
@@ -116,26 +118,27 @@ def data_loader():
     )
 
 
-def test_data_catalogue_import(catalogue_dir, data_loader):
-    catalogue = DataCatalog()
-    catalogue.import_from_data_loader(loader=data_loader)
-    instruments = catalogue.instruments()
+@pytest.fixture(scope="function")
+def catalog(catalog_dir, data_loader):
+    catalog = DataCatalog()
+    catalog.import_from_data_loader(loader=data_loader)
+    return catalog
+
+
+def test_data_catalog_import(catalog):
+    instruments = catalog.instruments()
     assert len(instruments) == 2
 
 
-def test_data_catalogue_backtest_data(catalogue_dir, data_loader):
-    catalogue = DataCatalog()
-    catalogue.import_from_data_loader(loader=data_loader)
-    data = catalogue.load_backtest_data()
+def test_data_catalog_backtest_data(catalog):
+    data = catalog.load_backtest_data()
     assert len(sum(data.values(), list())) == 2323
 
 
-def test_data_catalogue_backtest_run(catalogue_dir, data_loader):
-    catalogue = DataCatalog()
-    catalogue.import_from_data_loader(loader=data_loader)
-    instruments = catalogue.instruments(as_nautilus=True)
+def test_data_catalog_backtest_run(catalog):
+    instruments = catalog.instruments(as_nautilus=True)
     engine = BacktestEngine()
-    engine = catalogue.setup_engine(engine=engine, instruments=[instruments[1]])
+    engine = catalog.setup_engine(engine=engine, instruments=[instruments[1]])
     engine.add_venue(
         venue=BETFAIR_VENUE,
         venue_type=VenueType.EXCHANGE,
@@ -149,3 +152,24 @@ def test_data_catalogue_backtest_run(catalogue_dir, data_loader):
         instrument=instruments[1], max_trade_size=Decimal("50"), order_id_tag="OI"
     )
     engine.run(strategies=[strategy])
+
+
+def test_data_catalog_queries(catalog):
+    trd = catalog.trade_ticks()
+    expected = {
+        "aggressor_side": CategoricalDtype(categories=["UNKNOWN"], ordered=False),
+        "instrument_id": CategoricalDtype(
+            categories=[
+                "Basketball||29628709|2019-12-21 00:10:00+00:00|ODDS|MATCH_ODDS|1.166564490|237491|.BETFAIR",
+                "Basketball||29628709|2019-12-21 00:10:00+00:00|ODDS|MATCH_ODDS|1.166564490|60424|.BETFAIR",
+            ],
+            ordered=False,
+        ),
+        "match_id": dtype("O"),
+        "price": dtype("float64"),
+        "size": dtype("float64"),
+        "ts_event_ns": dtype("int64"),
+        "ts_recv_ns": dtype("int64"),
+        "type": dtype("O"),
+    }
+    assert trd.dtypes.to_dict() == expected
