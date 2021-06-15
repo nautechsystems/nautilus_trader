@@ -12,13 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-cdef class UUID:
-    cdef readonly object int_val
-    """The UUID integer value.\n\n:returns: `int64`"""
-    cdef readonly str value
-    """The UUID string value.\n\n:returns: `str`"""
-
-    @staticmethod
-    cdef UUID from_str_c(str value)

@@ -30,7 +30,7 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from decimal import Decimal
 from typing import Optional
@@ -484,7 +484,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef uint64_t ts = unix_timestamp_ms()
+        cdef int64_t ts = unix_timestamp_ms()
 
         self.cache.cache_currencies()
         self.cache.cache_instruments()

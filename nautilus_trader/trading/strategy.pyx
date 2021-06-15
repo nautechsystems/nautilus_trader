@@ -1412,7 +1412,7 @@ cdef class TradingStrategy(Component):
             updating = True
 
         if trigger is not None:
-            if order.is_triggered:
+            if order.is_triggered_c():
                 self.log.warning(f"Cannot update order: "
                                  f"{repr(order.client_order_id)} already triggered.")
                 return
@@ -1429,6 +1429,16 @@ cdef class TradingStrategy(Component):
         if order.account_id is None:
             self.log.error(f"Cannot update order: "
                            f"no account assigned to order yet, {order}.")
+            return  # Cannot send command
+
+        if (
+            order.is_completed_c()
+            or order.is_pending_update_c()
+            or order.is_pending_cancel_c()
+        ):
+            self.log.warning(
+                f"Cannot update order: state is {order.state_string_c()}, {order}.",
+            )
             return  # Cannot send command
 
         cdef UpdateOrder command = UpdateOrder(
@@ -1467,8 +1477,13 @@ cdef class TradingStrategy(Component):
 
         if order.venue_order_id.is_null():
             self.log.error(
-                f"Cannot cancel order (no venue_order_id assigned yet), "
-                f"{order}.",
+                f"Cannot cancel order: no venue_order_id assigned yet, {order}.",
+            )
+            return  # Cannot send command
+
+        if order.is_completed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot cancel order: state is {order.state_string_c()}, {order}.",
             )
             return  # Cannot send command
 

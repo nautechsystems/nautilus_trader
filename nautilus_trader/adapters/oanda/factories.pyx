@@ -61,8 +61,15 @@ cdef class OandaDataClientFactory(LiveDataClientFactory):
 
         """
         # Get credentials
-        oanda_api_token = os.getenv(config.get("api_token", ""), "")
-        oanda_account_id = os.getenv(config.get("account_id", ""), "001")
+        env_var_name_api_token = config.get("api_token", "")
+        env_var_name_account_id = config.get("account_id")
+        oanda_api_token = os.getenv(env_var_name_api_token)
+        oanda_account_id = os.getenv(env_var_name_account_id)
+
+        if oanda_api_token is None:
+            raise RuntimeError(f"No value for environment variable {env_var_name_api_token}")
+        if oanda_account_id is None:
+            raise RuntimeError(f"No value for environment variable {env_var_name_account_id}")
 
         # Create client
         client = oandapyV20.API(access_token=oanda_api_token)

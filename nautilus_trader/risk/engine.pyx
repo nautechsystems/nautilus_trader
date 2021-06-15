@@ -19,7 +19,7 @@ The `RiskEngine` is responsible for global strategy and portfolio risk within th
 Alternative implementations can be written on top of the generic engine.
 """
 
-from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
@@ -58,7 +58,7 @@ cdef class RiskEngine(Component):
         self,
         ExecutionEngine exec_engine not None,
         Portfolio portfolio not None,
-        CacheFacade cache not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -72,8 +72,8 @@ cdef class RiskEngine(Component):
             The execution engine for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
-        cache : CacheFacade
-            The read-only cache for the engine.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
@@ -112,7 +112,7 @@ cdef class SimulatedExchange:
     cpdef void adjust_account(self, Money adjustment) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
-    cpdef void process_modules(self, uint64_t now_ns) except *
+    cpdef void process_modules(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
 
@@ -164,7 +164,7 @@ cdef class SimulatedExchange:
 
     cdef void _add_order(self, PassiveOrder order) except *
     cdef void _delete_order(self, Order order) except *
-    cdef void _iterate_matching_engine(self, InstrumentId instrument_id, uint64_t timestamp_ns) except *
+    cdef void _iterate_matching_engine(self, InstrumentId instrument_id, int64_t timestamp_ns) except *
     cdef void _match_order(self, PassiveOrder order) except *
     cdef void _match_limit_order(self, LimitOrder order) except *
     cdef void _match_stop_market_order(self, StopMarketOrder order) except *

@@ -16,7 +16,7 @@
 import asyncio
 from decimal import Decimal
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
@@ -663,11 +663,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             self._cache_order(venue_order_id, order)
 
-        cdef uint64_t timestamp_ns = 0
+        cdef int64_t timestamp_ns = 0
         if event['timestamp'] is not None:
-            timestamp_ns = <uint64_t>(millis_to_nanos(event["timestamp"]))
+            timestamp_ns = <int64_t>(millis_to_nanos(event["timestamp"]))
         else:
-            timestamp_ns = <uint64_t>(millis_to_nanos(event["lastTradeTimestamp"]))
+            timestamp_ns = <int64_t>(millis_to_nanos(event["lastTradeTimestamp"]))
 
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`
@@ -819,7 +819,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             if order.side == OrderSide.BUY:
                 order_type = "STOP_LOSS"
             elif order.side == OrderSide.SELL:
-                order_type = "TAKE_PROFIT"
+                order_type = "STOP_LOSS"
             params["stopPrice"] = str(order.price)
         else:
             raise ValueError(f"Invalid OrderType, "

@@ -620,6 +620,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(submitted, order.last_event)
         self.assertFalse(order.is_working)
         self.assertFalse(order.is_completed)
+        self.assertFalse(order.is_pending_update)
+        self.assertFalse(order.is_pending_cancel)
 
     def test_apply_order_accepted_event(self):
         # Arrange
@@ -712,6 +714,28 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
 
+    def test_order_state_pending_cancel(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+
+        # Act
+        order.apply(TestStubs.event_order_pending_cancel(order))
+
+        # Assert
+        self.assertEqual(OrderState.PENDING_CANCEL, order.state)
+        self.assertTrue(order.is_working)
+        self.assertFalse(order.is_completed)
+        self.assertFalse(order.is_pending_update)
+        self.assertTrue(order.is_pending_cancel)
+        self.assertEqual(4, order.event_count)
+
     def test_apply_order_canceled_event(self):
         # Arrange
         order = self.order_factory.market(
@@ -731,7 +755,31 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.CANCELED, order.state)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
+        self.assertFalse(order.is_pending_update)
+        self.assertFalse(order.is_pending_cancel)
         self.assertEqual(5, order.event_count)
+
+    def test_order_state_pending_replace(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+
+        # Act
+        order.apply(TestStubs.event_order_pending_update(order))
+
+        # Assert
+        self.assertEqual(OrderState.PENDING_UPDATE, order.state)
+        self.assertTrue(order.is_working)
+        self.assertFalse(order.is_completed)
+        self.assertTrue(order.is_pending_update)
+        self.assertFalse(order.is_pending_cancel)
+        self.assertEqual(4, order.event_count)
 
     def test_apply_order_updated_event_to_stop_order(self):
         # Arrange
@@ -744,7 +792,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_replace(order))
+        order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
             self.account_id,
@@ -781,7 +829,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_replace(order))
+        order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
             self.account_id,
