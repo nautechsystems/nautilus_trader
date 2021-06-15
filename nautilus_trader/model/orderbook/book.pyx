@@ -1291,8 +1291,7 @@ cdef class OrderBookDelta(OrderBookData):
             "size": values["order_size"],
             "side": values["order_side"],
             "id": values["order_id"],
-
-        })
+        }) if values['delta_type'] != "CLEAR" else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),

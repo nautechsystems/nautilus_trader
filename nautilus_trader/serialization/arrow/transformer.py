@@ -31,7 +31,7 @@ class OrderBookDataTransformer:
                     for delta in data.deltas
                 ]
             elif isinstance(data, OrderBookDelta):
-                yield OrderBookDataTransformer._parse_delta(delta=data.delta)
+                yield OrderBookDataTransformer._parse_delta(delta=data)
             elif isinstance(data, OrderBookSnapshot):
                 # For a snapshot, we store the individual deltas required to rebuild, namely a CLEAR, followed by ADDs
                 yield OrderBookDataTransformer._parse_delta(
@@ -91,6 +91,9 @@ class OrderBookDataTransformer:
                 ts_recv_ns=data[1]["ts_recv_ns"],
             )
 
+        def _build_order_book_delta(values):
+            return OrderBookDelta.from_dict(values[0])
+
         def _build_order_book_deltas(values):
             return OrderBookDeltas(
                 instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
@@ -106,11 +109,13 @@ class OrderBookDataTransformer:
         results = []
         for _, chunk in itertools.groupby(data, key=timestamp_key):
             chunk = list(chunk)
-            if _is_orderbook_snapshot(values=chunk):
+            if _is_orderbook_snapshot(values=data):
                 results.append(_build_order_book_snapshot(values=chunk))
-            else:
+            elif len(chunk) > 1:
                 results.append(_build_order_book_deltas(values=chunk))
-        return results
+            else:
+                results.append(_build_order_book_delta(values=chunk))
+            return results
 
 
 TRANSFORMERS = {**{x: OrderBookDataTransformer for x in OrderBookData.__subclasses__()}}
