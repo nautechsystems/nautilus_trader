@@ -109,7 +109,7 @@ class OrderBookDataTransformer:
         results = []
         for _, chunk in itertools.groupby(data, key=timestamp_key):
             chunk = list(chunk)
-            if _is_orderbook_snapshot(values=data):
+            if _is_orderbook_snapshot(values=chunk):
                 results.append(_build_order_book_snapshot(values=chunk))
             elif len(chunk) > 1:
                 results.append(_build_order_book_deltas(values=chunk))
