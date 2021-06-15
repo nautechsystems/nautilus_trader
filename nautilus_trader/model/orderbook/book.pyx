@@ -1242,7 +1242,7 @@ cdef class OrderBookDelta(OrderBookData):
         InstrumentId instrument_id not None,
         BookLevel level,
         DeltaType delta_type,
-        Order order not None,
+        Order order,
         uint64_t ts_event_ns,
         uint64_t ts_recv_ns,
     ):
@@ -1286,11 +1286,17 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
+        order = Order.from_dict_c({
+            "price": values["order_price"],
+            "size": values["order_size"],
+            "side": values["order_side"],
+            "id": values["order_id"],
+        }) if values['delta_type'] != "CLEAR" else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
             delta_type=DeltaTypeParser.from_str(values["delta_type"]),
-            order=Order.from_dict_c(json.loads(values["order"])),
+            order=order,
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
         )
@@ -1299,34 +1305,32 @@ cdef class OrderBookDelta(OrderBookData):
     def from_dict(dict values):
         """
         Return an order book delta from the given dict values.
-
         Parameters
         ----------
         values : dict[str, object]
             The values for initialization.
-
         Returns
         -------
         OrderBookDelta
-
         """
         return OrderBookDelta.from_dict_c(values)
 
     cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
-
         Returns
         -------
         dict[str, object]
-
         """
         return {
             "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
             "level": BookLevelParser.to_str(self.level),
             "delta_type": DeltaTypeParser.to_str(self.type),
-            "order": json.dumps(self.order.to_dict()),
+            "order_price": self.order.price if self.order else None,
+            "order_size": self.order.size if self.order else None,
+            "order_side": OrderSideParser.to_str(self.order.side) if self.order else None,
+            "order_id": self.order.id if self.order else None,
             "ts_event_ns": self.ts_event_ns,
             "ts_recv_ns": self.ts_recv_ns,
         }
