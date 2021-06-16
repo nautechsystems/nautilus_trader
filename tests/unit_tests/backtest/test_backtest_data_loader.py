@@ -5,6 +5,7 @@ import pathlib
 import fsspec
 from numpy import dtype
 import orjson
+import pandas as pd
 from pandas import CategoricalDtype
 import pyarrow.dataset as ds
 import pytest
@@ -21,8 +22,10 @@ from nautilus_trader.backtest.data_loader import ParquetParser
 from nautilus_trader.backtest.data_loader import TextParser
 from nautilus_trader.backtest.data_loader import parse_timestamp
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.c_enums.account_type import AccountType
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.data import Data
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
@@ -44,7 +47,7 @@ catalog_DIR = TEST_DATA_DIR + "/catalog"
     ],
 )
 def test_data_loader_paths(glob, num_files):
-    d = DataLoader(path=TEST_DATA_DIR, parser=CSVParser(), glob_pattern=glob)
+    d = DataLoader(path=TEST_DATA_DIR, parser=TextParser(parser=len), glob_pattern=glob)
     assert len(d.path) == num_files
 
 
@@ -58,7 +61,7 @@ def test_data_loader_json_betting_parser():
     instrument_provider = BetfairInstrumentProvider.from_instruments([])
 
     parser = TextParser(
-        line_parser=lambda x: on_market_update(
+        parser=lambda x, state: on_market_update(
             instrument_provider=instrument_provider, update=orjson.loads(x)
         ),
         instrument_provider_update=historical_instrument_provider_loader,
@@ -106,7 +109,7 @@ def catalog_dir():
 def data_loader():
     instrument_provider = BetfairInstrumentProvider.from_instruments([])
     parser = TextParser(
-        line_parser=lambda x: on_market_update(
+        parser=lambda x, state: on_market_update(
             instrument_provider=instrument_provider, update=orjson.loads(x)
         ),
         instrument_provider_update=historical_instrument_provider_loader,
@@ -182,6 +185,47 @@ def test_data_catalog_queries(catalog):
         "type": CategoricalDtype(categories=["TradeTick"], ordered=False),
     }
     assert result == expected
+
+
+def test_data_loader_generic_data(catalog_dir):
+    class NewsEvent(Data):
+        def __init__(self, name, impact, currency, ts_event_ns):
+            super().__init__(ts_event_ns=ts_event_ns, ts_recv_ns=ts_event_ns)
+            self.name = name
+            self.impact = impact
+            self.currency = currency
+
+        def to_dict(self):
+            return {
+                "name": self.name,
+                "impact": self.impact,
+                "currency": self.currency,
+                "ts_event_ns": self.ts_event_ns,
+            }
+
+        def from_dict(self, data):
+            return NewsEvent(**data)
+
+    def make_news_event(df, state=None):
+        for _, row in df.iterrows():
+            yield NewsEvent(
+                name=row["Name"],
+                impact=row["Impact"],
+                currency=row["Currency"],
+                ts_event_ns=millis_to_nanos(pd.Timestamp(row["Start"]).timestamp()),
+            )
+
+    loader = DataLoader(
+        path=TEST_DATA_DIR,
+        parser=CSVParser(parser=make_news_event),
+        glob_pattern="news_events.csv",
+    )
+    catalog = DataCatalog()
+    catalog.import_from_data_loader(loader=loader)
+    df = catalog.generic_data(
+        name="news_event", filter_expr=ds.field("currency") == "USD"
+    )
+    assert len(df) == 22925
 
 
 def test_data_catalog_backtest_data_no_filter(catalog):

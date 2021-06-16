@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections import namedtuple
+from io import BytesIO
 from itertools import takewhile
 import os
 import pathlib
@@ -13,6 +14,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+
+from nautilus_trader.model.data import Data
 
 
 try:
@@ -34,7 +37,7 @@ from nautilus_trader.serialization.arrow.transformer import serialize
 
 NewFile = namedtuple("NewFile", "name")
 EOStream = namedtuple("EOStream", "")
-
+GENERIC_DATA_PREFIX = "genericdata_"
 # TODO (bm) - Line preprocessor not called / used - implement a simple log example
 # TODO (bm) - Implement chunking in CSVParser
 # TODO (bm) - Implement chunking in ParquetParser
@@ -57,16 +60,10 @@ class ByteParser:
         raise NotImplementedError
 
 
-class CSVParser(ByteParser):
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:
-        for chunk in stream:
-            yield pd.read_csv(chunk)
-
-
 class TextParser(ByteParser):
     def __init__(
         self,
-        line_parser: callable,
+        parser: callable,
         line_preprocessor=None,
         instrument_provider_update=None,
     ):
@@ -80,11 +77,17 @@ class TextParser(ByteParser):
         :param instrument_provider_update (Optional) : An optional hook/callable to update instrument provider before
                data is passed to `line_parser` (in many cases instruments need to be known ahead of parsing)
         """
-        self.line_parser = line_parser
+        self.parser = parser
         self.line_preprocessor = line_preprocessor
+        self.state = None
         super().__init__(instrument_provider_update=instrument_provider_update)
 
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:
+    def on_new_file(self, new_file):
+        pass
+
+    def read(  # noqa: C901
+        self, stream: Generator, instrument_provider=None
+    ) -> Generator:
         raw = b""
         fn = None
         for chunk in stream:
@@ -93,6 +96,7 @@ class TextParser(ByteParser):
                 assert not raw, f"Data remaining at end of file: {fn}"
                 fn = chunk.name
                 raw = b""
+                self.on_new_file(chunk)
                 yield chunk
                 continue
             elif chunk is EOStream:
@@ -105,15 +109,48 @@ class TextParser(ByteParser):
                 # This is probably EOF? Append a newline to ensure we emit the previous line
                 chunk = b"\n"
             raw += chunk
+            process, raw = raw.rsplit(b"\n", maxsplit=1)
+            if process:
+                for x in self.process_chunk(
+                    chunk=process, instrument_provider=instrument_provider
+                ):
+                    try:
+                        self.state, x = x
+                    except TypeError as e:
+                        if not e.args[0].startswith("cannot unpack non-iterable"):
+                            raise e
+                        yield x
 
-            lines = raw.split(b"\n")
-            raw = lines[-1]
-            for line in lines[:-1]:
-                if not line:
-                    continue
-                if self.instrument_provider_update is not None:
-                    self.instrument_provider_update(instrument_provider, line)
-                yield from self.line_parser(line)
+    def process_chunk(self, chunk, instrument_provider):
+        for line in chunk.split(b"\n"):
+            if self.instrument_provider_update is not None:
+                self.instrument_provider_update(instrument_provider, line)
+            yield from self.parser(line, state=self.state)
+
+
+class CSVParser(TextParser):
+    def __init__(
+        self,
+        parser: callable,
+        line_preprocessor=None,
+        instrument_provider_update=None,
+    ):
+        super().__init__(
+            parser=parser,
+            line_preprocessor=line_preprocessor,
+            instrument_provider_update=instrument_provider_update,
+        )
+        self.header = None
+
+    def on_new_file(self, new_file):
+        self.header = None
+
+    def process_chunk(self, chunk, instrument_provider):
+        if self.header is None:
+            header, chunk = chunk.split(b"\n", maxsplit=1)
+            self.header = header.decode().split(",")
+        df = pd.read_csv(BytesIO(chunk), names=self.header)
+        yield from self.parser(df, state=self.state)
 
 
 class ParquetParser(ByteParser):
@@ -287,7 +324,10 @@ class DataCatalog:
 
         for cls in tables:
             for ins_id in tables[cls]:
-                fn = self.root.joinpath(f"{camel_to_snake_case(cls.__name__)}.parquet")
+                name = f"{camel_to_snake_case(cls.__name__)}.parquet"
+                if is_custom_data(cls):
+                    name = f"{GENERIC_DATA_PREFIX}{camel_to_snake_case(cls.__name__)}.parquet"
+                fn = self.root.joinpath(name)
 
                 df = pd.DataFrame(tables[cls][ins_id])
 
@@ -565,6 +605,16 @@ class DataCatalog:
             return df
         return self._make_objects(df=df, cls=OrderBookDelta)
 
+    def generic_data(self, name, filter_expr=None, as_nautilus=False, **kwargs):
+        df = self._query(
+            f"{GENERIC_DATA_PREFIX}{name}",
+            filter_expr=filter_expr,
+            **kwargs,
+        )
+        if not as_nautilus:
+            return df
+        return self._make_objects(df=df, cls=OrderBookDelta)
+
 
 def camel_to_snake_case(s):
     return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
@@ -591,6 +641,13 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
+
+
+def is_custom_data(cls):
+    builtin_paths = ("nautilus_trader.models",)
+    return cls in Data.__subclasses__() and not any(
+        (cls.__name__.startswith(p) for p in builtin_paths)
+    )
 
 
 # def get_digest(fs, path):

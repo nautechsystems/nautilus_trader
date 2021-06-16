@@ -140,3 +140,9 @@ cdef class GenericData(Data):
 
         """
         return self.data.to_dict()
+
+
+class ExternalData(Data):
+    """
+    Provides a subclass of data for
+    """
