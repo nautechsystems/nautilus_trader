@@ -314,15 +314,23 @@ class DataCatalog:
                         df = df.sort_values(col)
                         break
                 table = pa.Table.from_pandas(df)
+
+                metadata_collector = []
                 pq.write_to_dataset(
                     table=table,
                     root_path=str(fn),
                     filesystem=self.fs,
-                    partition_cols=["instrument_id"] if ins_id else None,
-                    use_legacy_dataset=True,
+                    partition_cols=["instrument_id"] if ins_id is not None else None,
+                    # use_legacy_dataset=True,
                     version="2.0",
+                    metadata_collector=metadata_collector,
                     **kwargs,
                 )
+                # Write the ``_common_metadata`` parquet file without row groups statistics
+                pq.write_metadata(table.schema, fn / "_common_metadata", version="2.0")
+
+                # Write the ``_metadata`` parquet file with row groups statistics of all files
+                pq.write_metadata(table.schema, fn / "_metadata", version="2.0")
 
             # Save any new processed files
         self._save_processed_raw_files(files=processed_raw_files)
@@ -393,6 +401,7 @@ class DataCatalog:
     #     :param filters:
     #     :return:
     #     """
+    #     # TODO - look at dask.dataframe.aggregate_row_groups for chunking solution
     #     dataset = query(instrument_ids=instrument_ids, filters=filters, return_dataset=True)
     #     ts_column_idx = ds.schema.names.index('ts_recv_ns')
     #     for piece in ds.pieces:
@@ -424,34 +433,23 @@ class DataCatalog:
         :param trade_ticks: Whether to load trade ticks
         :param quote_ticks: Whether to load quote ticks
         :param instrument_status_events: Whether to load instrument status events
-        :param chunksize: The chunksize to return (used for streaming backtest). Use None for a loading all the data.
+        :param chunk_size: The chunksize to return (used for streaming backtest). Use None for a loading all the data.
         :return:
         """
         assert instrument_ids is None or isinstance(
             instrument_ids, list
         ), "instrument_ids must be list"
         queries = [
-            ("order_book_deltas", order_book_deltas, self.order_book_deltas),
-            ("trade_ticks", trade_ticks, self.trade_ticks),
+            ("order_book_deltas", order_book_deltas, self.order_book_deltas, {}),
+            ("trade_ticks", trade_ticks, self.trade_ticks, {}),
             (
                 "instrument_status_events",
                 instrument_status_events,
                 self.instrument_status_events,
+                {"ts_column": "timestamp_ns"},
             ),
-            ("quote_ticks", quote_ticks, self.quote_ticks),
+            ("quote_ticks", quote_ticks, self.quote_ticks, {}),
         ]
-        start_timestamp_filter = (
-            [("timestamp_ns", ">=", parse_timestamp(start_timestamp))]
-            if start_timestamp
-            else []
-        )
-        end_timestamp_filter = (
-            [("timestamp_ns", "<=", parse_timestamp(end_timestamp))]
-            if end_timestamp
-            else []
-        )
-        filters = (start_timestamp_filter + end_timestamp_filter) or None
-
         data = {}
 
         if chunk_size:
@@ -460,69 +458,108 @@ class DataCatalog:
             #     chunk_size=chunk_size, name=name, query=query, instrument_ids=instrument_ids, filters=filters,
             # )
 
-        for name, to_load, query in queries:
+        for name, to_load, query, kw in queries:
             if to_load:
                 data[name] = query(
-                    instrument_ids=instrument_ids, filters=filters, as_nautilus=True
+                    instrument_ids=instrument_ids,
+                    as_nautilus=True,
+                    start=start_timestamp,
+                    end=end_timestamp,
+                    **kw,
                 )
 
         return data
 
-    def _query(self, filename, filters=None, instrument_ids=None, return_dataset=False):
-        if instrument_ids is not None and not isinstance(instrument_ids, list):
-            instrument_ids = [instrument_ids]
+    def _query(
+        self,
+        filename,
+        filter_expr=None,
+        instrument_ids=None,
+        start=None,
+        end=None,
+        ts_column="ts_event_ns",
+    ):
+        filters = [filter_expr] if filter_expr is not None else []
+        if instrument_ids is not None:
+            if not isinstance(instrument_ids, list):
+                instrument_ids = [instrument_ids]
+            filters.append(ds.field("instrument_id").isin(list(set(instrument_ids))))
+        if start is not None:
+            filters.append(ds.field(ts_column) >= start)
+        if end is not None:
+            filters.append(ds.field(ts_column) <= end)
 
-        kw = {}
-        if instrument_ids:
-            kw["filter"] = ds.field("instrument_id").isin(instrument_ids)
-        for filt in filters or []:
-            assert isinstance(filt, ds.Expression)
-            kw["filter"] = kw["filter"] & filt
-
-        dataset = pq.ParquetDataset(
-            f"{self.root}/{filename}.parquet",
+        dataset = ds.dataset(
+            f"{self.root}/{filename}.parquet/",
             partitioning="hive",
             filesystem=self.fs,
         )
-        if return_dataset:
-            return dataset
-        return dataset.to_table(**kw).to_pandas()
+        df = (
+            dataset.to_table(filter=combine_filters(*filters))
+            .to_pandas()
+            .drop_duplicates()
+        )
+        if "instrument_id" in df.columns:
+            df = df.astype({"instrument_id": "category"})
+        return df
 
     @staticmethod
     def _make_objects(df, cls):
         return deserialize(cls, data=df.to_dict("records"))
 
-    def instruments(self, filters=None, as_nautilus=False):
-        df = self._query("betting_instrument", filters=filters)
+    def instruments(self, filter_expr=None, as_nautilus=False, **kwargs):
+        df = self._query("betting_instrument", filter_expr=filter_expr, **kwargs)
         if not as_nautilus:
             return df
         return self._make_objects(df=df.drop(["type"], axis=1), cls=BettingInstrument)
 
     def instrument_status_events(
-        self, instrument_ids=None, filters=None, as_nautilus=False
+        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
         df = self._query(
-            "instrument_status_event", instrument_ids=instrument_ids, filters=filters
+            "instrument_status_event",
+            instrument_ids=instrument_ids,
+            filter_expr=filter_expr,
+            **kwargs,
         )
         if not as_nautilus:
             return df
         return self._make_objects(df=df, cls=InstrumentStatusEvent)
 
-    def trade_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):
-        df = self._query("trade_tick", instrument_ids=instrument_ids, filters=filters)
+    def trade_ticks(
+        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
+    ):
+        df = self._query(
+            "trade_tick",
+            instrument_ids=instrument_ids,
+            filter_expr=filter_expr,
+            **kwargs,
+        )
         if not as_nautilus:
             return df.astype({"price": float, "size": float})
         return self._make_objects(df=df, cls=TradeTick)
 
-    def quote_ticks(self, instrument_ids=None, filters=None, as_nautilus=False):
-        df = self._query("quote_tick", instrument_ids=instrument_ids, filters=filters)
+    def quote_ticks(
+        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
+    ):
+        df = self._query(
+            "quote_tick",
+            instrument_ids=instrument_ids,
+            filter_expr=filter_expr,
+            **kwargs,
+        )
         if not as_nautilus:
             return df
         return self._make_objects(df=df, cls=QuoteTick)
 
-    def order_book_deltas(self, instrument_ids=None, filters=None, as_nautilus=False):
+    def order_book_deltas(
+        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
+    ):
         df = self._query(
-            "order_book_delta", instrument_ids=instrument_ids, filters=filters
+            "order_book_delta",
+            instrument_ids=instrument_ids,
+            filter_expr=filter_expr,
+            **kwargs,
         )
         if not as_nautilus:
             return df
@@ -541,6 +578,19 @@ def maybe_list(obj):
     if isinstance(obj, dict):
         return [obj]
     return obj
+
+
+def combine_filters(*filters):
+    filters = tuple(x for x in filters if x is not None)
+    if len(filters) == 0:
+        return
+    elif len(filters) == 1:
+        return filters[0]
+    else:
+        expr = filters[0]
+        for f in filters[1:]:
+            expr = expr & f
+        return expr
 
 
 # def get_digest(fs, path):
