@@ -135,6 +135,11 @@ def test_data_catalog_backtest_data(catalog):
     assert len(sum(data.values(), list())) == 2323
 
 
+def test_data_catalog_instruments_single_parquet_file(catalog):
+    data = catalog.load_backtest_data()
+    assert len(sum(data.values(), list())) == 2323
+
+
 def test_data_catalog_backtest_run(catalog):
     instruments = catalog.instruments(as_nautilus=True)
     engine = BacktestEngine()

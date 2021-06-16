@@ -342,6 +342,7 @@ class DataCatalog:
         self,
         engine: BacktestEngine,
         instruments,
+        chunk_size=None,
         **kwargs,
     ) -> BacktestEngine:
         """
@@ -353,8 +354,14 @@ class DataCatalog:
         :return:
         """
         data = self.load_backtest_data(
-            instrument_ids=[ins.id.value for ins in instruments], **kwargs
+            instrument_ids=[ins.id.value for ins in instruments],
+            chunk_size=chunk_size,
+            **kwargs,
         )
+
+        # TODO (bm) - Handle chunksize
+        if chunk_size is not None:
+            pass
 
         # Add instruments & data to engine
         for instrument in instruments:
@@ -376,6 +383,26 @@ class DataCatalog:
 
     # ---- Queries ---------------------------------------------------------------------------------------- #
 
+    # def _load_chunked_backtest_data(self, name, query, instrument_ids, filters, chunk_size):
+    #     """
+    #     Stream chunked data from parquet dataset
+    #
+    #     :param name:
+    #     :param query:
+    #     :param instrument_ids:
+    #     :param filters:
+    #     :return:
+    #     """
+    #     dataset = query(instrument_ids=instrument_ids, filters=filters, return_dataset=True)
+    #     ts_column_idx = ds.schema.names.index('ts_recv_ns')
+    #     for piece in ds.pieces:
+    #         meta = piece.get_metadata()
+    #         for i in range(meta.num_row_groups):
+    #             rg = meta.row_group(i)
+    #             rg_size = rg.total_byte_size
+    #             ts_stats = rg.column(ts_column_idx).statistics
+    #     return
+
     def load_backtest_data(
         self,
         instrument_ids=None,
@@ -385,7 +412,7 @@ class DataCatalog:
         trade_ticks=True,
         quote_ticks=False,
         instrument_status_events=True,
-        chunksize=None,
+        chunk_size=None,
     ):
         """
         Load backtest data objects from the catalogue
@@ -427,6 +454,12 @@ class DataCatalog:
 
         data = {}
 
+        if chunk_size:
+            raise KeyError
+            # data[name] = self._load_chunked_backtest_data(
+            #     chunk_size=chunk_size, name=name, query=query, instrument_ids=instrument_ids, filters=filters,
+            # )
+
         for name, to_load, query in queries:
             if to_load:
                 data[name] = query(
@@ -435,7 +468,7 @@ class DataCatalog:
 
         return data
 
-    def _query(self, filename, filters=None, instrument_ids=None):
+    def _query(self, filename, filters=None, instrument_ids=None, return_dataset=False):
         if instrument_ids is not None and not isinstance(instrument_ids, list):
             instrument_ids = [instrument_ids]
 
@@ -446,11 +479,13 @@ class DataCatalog:
             assert isinstance(filt, ds.Expression)
             kw["filter"] = kw["filter"] & filt
 
-        dataset = ds.dataset(
-            source=f"{self.root}/{filename}.parquet",
+        dataset = pq.ParquetDataset(
+            f"{self.root}/{filename}.parquet",
             partitioning="hive",
             filesystem=self.fs,
         )
+        if return_dataset:
+            return dataset
         return dataset.to_table(**kw).to_pandas()
 
     @staticmethod
