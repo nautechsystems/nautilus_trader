@@ -817,9 +817,9 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             params["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
         elif order.type == OrderType.STOP_MARKET:
             if order.side == OrderSide.BUY:
-                order_type = "STOP_LOSS"
+                order_type = "STOP_LOSS_LIMIT"
             elif order.side == OrderSide.SELL:
-                order_type = "STOP_LOSS"
+                order_type = "TAKE_PROFIT_LIMIT"
             params["stopPrice"] = str(order.price)
         else:
             raise ValueError(f"Invalid OrderType, "
