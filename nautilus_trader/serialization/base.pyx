@@ -21,6 +21,7 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.events cimport InstrumentStatusEvent
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCanceled
@@ -37,57 +38,92 @@ from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
+from nautilus_trader.model.tick cimport TradeTick
 
 
-_OBJECT_MAP = {
-    CancelOrder.__name__: CancelOrder.from_dict_c,
-    SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
-    SubmitOrder.__name__: SubmitOrder.from_dict_c,
-    UpdateOrder.__name__: UpdateOrder.from_dict_c,
-    AccountState.__name__: AccountState.from_dict_c,
-    OrderAccepted.__name__: OrderAccepted.from_dict_c,
-    OrderCancelRejected.__name__: OrderCancelRejected.from_dict_c,
-    OrderCanceled.__name__: OrderCanceled.from_dict_c,
-    OrderDenied.__name__: OrderDenied.from_dict_c,
-    OrderExpired.__name__: OrderExpired.from_dict_c,
-    OrderFilled.__name__: OrderFilled.from_dict_c,
-    OrderInitialized.__name__: OrderInitialized.from_dict_c,
-    OrderInvalid.__name__: OrderInvalid.from_dict_c,
-    OrderPendingCancel.__name__: OrderPendingCancel.from_dict_c,
-    OrderPendingReplace.__name__: OrderPendingReplace.from_dict_c,
-    OrderRejected.__name__: OrderRejected.from_dict_c,
-    OrderSubmitted.__name__: OrderSubmitted.from_dict_c,
-    OrderTriggered.__name__: OrderTriggered.from_dict_c,
-    OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
-    OrderUpdated.__name__: OrderUpdated.from_dict_c,
+def to_dict(obj):
+    return obj.to_dict()
+
+
+OBJECT_TO_DICT_MAP = {
+    CancelOrder: to_dict,
+    SubmitBracketOrder: to_dict,
+    SubmitOrder: to_dict,
+    UpdateOrder: to_dict,
+    AccountState: to_dict,
+    OrderAccepted: to_dict,
+    OrderCancelRejected: to_dict,
+    OrderCanceled: to_dict,
+    OrderDenied: to_dict,
+    OrderExpired: to_dict,
+    OrderFilled: to_dict,
+    OrderInitialized: to_dict,
+    OrderInvalid: to_dict,
+    OrderPendingCancel: to_dict,
+    OrderPendingReplace: to_dict,
+    OrderRejected: to_dict,
+    OrderSubmitted: to_dict,
+    OrderTriggered: to_dict,
+    OrderUpdateRejected: to_dict,
+    OrderUpdated: to_dict,
 }
 
-cpdef inline void register_serializable_object(object obj) except *:
+OBJECT_FROM_DICT_MAP = {
+    CancelOrder: CancelOrder.from_dict_c,
+    SubmitBracketOrder: SubmitBracketOrder.from_dict_c,
+    SubmitOrder: SubmitOrder.from_dict_c,
+    UpdateOrder: UpdateOrder.from_dict_c,
+    AccountState: AccountState.from_dict_c,
+    OrderAccepted: OrderAccepted.from_dict_c,
+    OrderCancelRejected: OrderCancelRejected.from_dict_c,
+    OrderCanceled: OrderCanceled.from_dict_c,
+    OrderDenied: OrderDenied.from_dict_c,
+    OrderExpired: OrderExpired.from_dict_c,
+    OrderFilled: OrderFilled.from_dict_c,
+    OrderInitialized: OrderInitialized.from_dict_c,
+    OrderInvalid: OrderInvalid.from_dict_c,
+    OrderPendingCancel: OrderPendingCancel.from_dict_c,
+    OrderPendingReplace: OrderPendingReplace.from_dict_c,
+    OrderRejected: OrderRejected.from_dict_c,
+    OrderSubmitted: OrderSubmitted.from_dict_c,
+    OrderTriggered: OrderTriggered.from_dict_c,
+    OrderUpdateRejected: OrderUpdateRejected.from_dict_c,
+    OrderUpdated: OrderUpdated.from_dict_c,
+    TradeTick: TradeTick.from_dict_c,
+    InstrumentStatusEvent: InstrumentStatusEvent.from_dict_c,
+    BettingInstrument: BettingInstrument.from_dict_c,
+}
+
+
+cpdef inline void register_serializable_object(
+    object obj,
+    to_dict: callable,
+    from_dict: callable,
+) except *:
     """
-    Register the given object with the global serialization object map.
-
-    The object must implement ``to_dict()`` and ``from_dict()`` methods.
-
+    Register the given object with the global serialization object maps.
     Parameters
     ----------
     obj : object
         The object to register.
-
+    to_dict : callable
+        The delegate to instantiate a dict of primitive types from the object.
+    from_dict : callable
+        The delegate to instantiate the object from a dict of primitive types.
     Raises
     ------
-    ValueError
-        If obj does not implement the `to_dict` method.
-    ValueError
-        If obj does not implement the `from_dict` method.
+    TypeError
+        If `to_dict` or `from_dict` are not of type callable.
     KeyError
-        If obj already registered with the global object map.
-
+        If obj already registered with the global object maps.
     """
-    Condition.true(hasattr(obj, "to_dict"), "The given object does not implement `to_dict`.")
-    Condition.true(hasattr(obj, "from_dict"), "The given object does not implement `from_dict`.")
-    Condition.not_in(obj.__name__, _OBJECT_MAP, "obj", "_OBJECT_MAP")
-
-    _OBJECT_MAP[obj.__name__] = obj.from_dict
+    Condition.callable(to_dict, "to_dict")
+    Condition.callable(from_dict, "from_dict")
+    Condition.not_in(obj.__class__, OBJECT_TO_DICT_MAP, "obj.__class__", "_OBJECT_TO_DICT_MAP")
+    Condition.not_in(obj.__class__, OBJECT_FROM_DICT_MAP, "obj.__class__", "_OBJECT_FROM_DICT_MAP")
+    OBJECT_TO_DICT_MAP[obj.__class__.__name__] = to_dict
+    OBJECT_FROM_DICT_MAP[obj.__class__.__name__] = from_dict
 
 
 cdef class InstrumentSerializer:
@@ -112,7 +148,6 @@ cdef class InstrumentSerializer:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-
 cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
@@ -133,7 +168,6 @@ cdef class CommandSerializer:
     cpdef Command deserialize(self, bytes command_bytes):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
-
 
 cdef class EventSerializer:
     """

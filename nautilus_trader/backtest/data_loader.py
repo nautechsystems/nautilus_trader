@@ -31,8 +31,8 @@ from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.serialization.arrow.transformer import deserialize
-from nautilus_trader.serialization.arrow.transformer import serialize
+from nautilus_trader.serialization.arrow.core import _deserialize
+from nautilus_trader.serialization.arrow.core import _serialize
 
 
 NewFile = namedtuple("NewFile", "name")
@@ -78,7 +78,7 @@ class TextParser(ByteParser):
                data is passed to `line_parser` (in many cases instruments need to be known ahead of parsing)
         """
         self.parser = parser
-        self.line_preprocessor = line_preprocessor
+        self.line_preprocessor = line_preprocessor or identity
         self.state = None
         super().__init__(instrument_provider_update=instrument_provider_update)
 
@@ -122,7 +122,7 @@ class TextParser(ByteParser):
                         yield x
 
     def process_chunk(self, chunk, instrument_provider):
-        for line in chunk.split(b"\n"):
+        for line in map(self.line_preprocessor, chunk.split(b"\n")):
             if self.instrument_provider_update is not None:
                 self.instrument_provider_update(instrument_provider, line)
             yield from self.parser(line, state=self.state)
@@ -168,7 +168,6 @@ class DataLoader:
         fs_protocol="file",
         glob_pattern="**",
         progress=False,
-        line_preprocessor: callable = None,
         chunksize=-1,
         compression="infer",
         instrument_provider=None,
@@ -199,7 +198,6 @@ class DataLoader:
         self.chunk_size = chunksize
         self.compression = compression
         self.glob_pattern = glob_pattern
-        self.line_preprocessor = line_preprocessor
         self.fs = fsspec.filesystem(self.fs_protocol)
         self.instrument_provider = instrument_provider
         self.instrument_loader = instrument_loader
@@ -316,7 +314,7 @@ class DataCatalog:
 
             # TODO (bm) - better handling of instruments -> currency we're writing a file per instrument
             cls = type_conv.get(type(obj), type(obj))
-            for data in maybe_list(serialize(obj)):
+            for data in maybe_list(_serialize(obj)):
                 instrument_id = data.get("instrument_id", None)
                 if instrument_id not in tables[cls]:
                     tables[cls][instrument_id] = []
@@ -545,7 +543,7 @@ class DataCatalog:
 
     @staticmethod
     def _make_objects(df, cls):
-        return deserialize(cls, data=df.to_dict("records"))
+        return _deserialize(name=cls, chunk=df.to_dict("records"))
 
     def instruments(self, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query("betting_instrument", filter_expr=filter_expr, **kwargs)
@@ -650,6 +648,11 @@ def is_custom_data(cls):
     )
 
 
+def identity(x):
+    return x
+
+
+# TODO - https://github.com/leonidessaguisagjr/filehash ?
 # def get_digest(fs, path):
 #     h = hashlib.sha256()
 #

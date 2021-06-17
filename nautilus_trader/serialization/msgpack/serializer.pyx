@@ -101,8 +101,11 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         """
         Condition.not_none(command, "command")
+        delegate = _OBJECT_MAP.get(command.__class__)[0]
+        if delegate is None:
+            raise RuntimeError("Cannot deserialize command: unrecognized type")
 
-        return msgpack.packb(command.to_dict())
+        return msgpack.packb(delegate(command))
 
     cpdef Command deserialize(self, bytes command_bytes):
         """
@@ -129,7 +132,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         cdef dict unpacked = msgpack.unpackb(command_bytes)  # type: dict[str, object]
 
-        delegate = _OBJECT_MAP.get(unpacked["type"])
+        delegate = _OBJECT_MAP.get(unpacked["type"])[1]
         if delegate is None:
             raise RuntimeError("Cannot deserialize command: unrecognized type")
 
@@ -162,8 +165,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         """
         Condition.not_none(event, "event")
+        delegate = _OBJECT_MAP.get(event.__class__)[0]
 
-        return msgpack.packb(event.to_dict())
+        if delegate is None:
+            raise RuntimeError("Cannot deserialize event: unrecognized type")
+
+        return msgpack.packb(delegate(event))
 
     cpdef Event deserialize(self, bytes event_bytes):
         """
@@ -190,7 +197,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef dict unpacked = msgpack.unpackb(event_bytes)  # type: dict[str, object]
 
-        delegate = _OBJECT_MAP.get(unpacked["type"])
+        delegate = _OBJECT_MAP.get(unpacked["type"])[1]
         if delegate is None:
             raise RuntimeError("Cannot deserialize event: unrecognized type")
 

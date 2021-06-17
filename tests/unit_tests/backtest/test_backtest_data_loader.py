@@ -30,6 +30,7 @@ from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.objects import Money
+from nautilus_trader.serialization.arrow.core import register_parquet
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -188,6 +189,17 @@ def test_data_catalog_queries(catalog):
 
 
 def test_data_loader_generic_data(catalog_dir):
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "impact": self.impact,
+            "currency": self.currency,
+            "ts_event_ns": self.ts_event_ns,
+        }
+
+    def from_dict(data):
+        return NewsEvent(**data)
+
     class NewsEvent(Data):
         def __init__(self, name, impact, currency, ts_event_ns):
             super().__init__(ts_event_ns=ts_event_ns, ts_recv_ns=ts_event_ns)
@@ -195,16 +207,7 @@ def test_data_loader_generic_data(catalog_dir):
             self.impact = impact
             self.currency = currency
 
-        def to_dict(self):
-            return {
-                "name": self.name,
-                "impact": self.impact,
-                "currency": self.currency,
-                "ts_event_ns": self.ts_event_ns,
-            }
-
-        def from_dict(self, data):
-            return NewsEvent(**data)
+    register_parquet(NewsEvent, to_dict, from_dict)
 
     def make_news_event(df, state=None):
         for _, row in df.iterrows():
