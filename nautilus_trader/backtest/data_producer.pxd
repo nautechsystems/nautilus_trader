@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.data cimport Data
@@ -26,8 +26,8 @@ cdef class DataProducerFacade:
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
     cdef readonly datetime max_timestamp
-    cdef readonly uint64_t min_timestamp_ns
-    cdef readonly uint64_t max_timestamp_ns
+    cdef readonly int64_t min_timestamp_ns
+    cdef readonly int64_t max_timestamp_ns
     cdef readonly bint has_data
 
     cpdef list instruments(self)
@@ -54,7 +54,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef str[:] _quote_asks
     cdef str[:] _quote_bid_sizes
     cdef str[:] _quote_ask_sizes
-    cdef uint64_t[:] _quote_timestamps
+    cdef int64_t[:] _quote_timestamps
     cdef int _quote_index
     cdef int _quote_index_last
     cdef QuoteTick _next_quote_tick
@@ -64,7 +64,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef str[:] _trade_sizes
     cdef str[:] _trade_match_ids
     cdef str[:] _trade_sides
-    cdef uint64_t[:] _trade_timestamps
+    cdef int64_t[:] _trade_timestamps
     cdef int _trade_index
     cdef int _trade_index_last
     cdef TradeTick _next_trade_tick

@@ -37,9 +37,9 @@ cdef class OrderStateParser:
         elif value == 9:
             return "TRIGGERED"
         elif value == 10:
-            return "PENDING_CANCEL"
+            return "PENDING_UPDATE"
         elif value == 11:
-            return "PENDING_REPLACE"
+            return "PENDING_CANCEL"
         elif value == 12:
             return "PARTIALLY_FILLED"
         elif value == 13:
@@ -67,10 +67,10 @@ cdef class OrderStateParser:
             return OrderState.EXPIRED
         elif value == "TRIGGERED":
             return OrderState.TRIGGERED
+        elif value == "PENDING_UPDATE":
+            return OrderState.PENDING_UPDATE
         elif value == "PENDING_CANCEL":
             return OrderState.PENDING_CANCEL
-        elif value == "PENDING_REPLACE":
-            return OrderState.PENDING_REPLACE
         elif value == "PARTIALLY_FILLED":
             return OrderState.PARTIALLY_FILLED
         elif value == "FILLED":

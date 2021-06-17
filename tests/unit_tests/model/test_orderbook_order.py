@@ -64,3 +64,41 @@ def test_signed_volume():
 def test_exposure():
     order = Order(price=100.0, size=10.0, side=OrderSide.BUY)
     assert order.exposure() == 1000.0
+
+
+def test_hash_str_and_repr():
+    # Arrange
+    order = Order(price=10, size=5, side=OrderSide.BUY)
+
+    # Act, Assert
+    assert isinstance(hash(order), int)
+    assert str(order) == f"Order(10.0, 5.0, BUY, {order.id})"
+    assert repr(order) == f"Order(10.0, 5.0, BUY, {order.id})"
+
+
+def test_to_dict_returns_expected_dict():
+    # Arrange
+    order = Order(price=10, size=5, side=OrderSide.BUY, id="1")
+
+    # Act
+    result = order.to_dict()
+
+    # Assert
+    assert result == {
+        "type": "Order",
+        "id": "1",
+        "price": 10.0,
+        "side": "BUY",
+        "size": 5.0,
+    }
+
+
+def test_from_dict_returns_expected_order():
+    # Arrange
+    order = Order(price=10, size=5, side=OrderSide.BUY)
+
+    # Act
+    result = Order.from_dict(order.to_dict())
+
+    # Assert
+    assert result == order

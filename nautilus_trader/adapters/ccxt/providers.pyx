@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 import ccxt
 
@@ -208,7 +208,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         else:
             taker_fee = Decimal(f"{taker_fee:.4f}")
 
-        cdef uint64_t timestamp = unix_timestamp_ns()
+        cdef int64_t timestamp = unix_timestamp_ns()
 
         if is_spot or is_future:  # TODO(cs): Use CurrencySpot for futures for now
             return CurrencySpot(

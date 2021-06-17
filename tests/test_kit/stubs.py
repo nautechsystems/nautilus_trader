@@ -303,8 +303,14 @@ class TestStubs:
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
             level=level,
-            bids=[(bid_price - i, bid_volume * (1 + i)) for i in range(bid_levels)],
-            asks=[(ask_price + i, ask_volume * (1 + i)) for i in range(ask_levels)],
+            bids=[
+                (float(bid_price - i), float(bid_volume * (1 + i)))
+                for i in range(bid_levels)
+            ],
+            asks=[
+                (float(ask_price + i), float(ask_volume * (1 + i)))
+                for i in range(ask_levels)
+            ],
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -380,7 +386,7 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_pending_replace(order) -> OrderPendingReplace:
+    def event_order_pending_update(order) -> OrderPendingReplace:
         return OrderPendingReplace(
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,

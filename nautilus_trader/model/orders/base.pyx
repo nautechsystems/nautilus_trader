@@ -20,7 +20,7 @@ Defines various order types used for trading.
 from decimal import Decimal
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
+from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
@@ -69,30 +69,30 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.SUBMITTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.SUBMITTED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.ACCEPTED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
+    (OrderState.ACCEPTED, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,
     (OrderState.ACCEPTED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.ACCEPTED, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.ACCEPTED, OrderState.TRIGGERED): OrderState.TRIGGERED,
     (OrderState.ACCEPTED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.PENDING_REPLACE, OrderState.ACCEPTED): OrderState.ACCEPTED,
-    (OrderState.PENDING_REPLACE, OrderState.CANCELED): OrderState.CANCELED,
-    (OrderState.PENDING_REPLACE, OrderState.TRIGGERED): OrderState.TRIGGERED,
-    (OrderState.PENDING_REPLACE, OrderState.EXPIRED): OrderState.EXPIRED,
-    (OrderState.PENDING_REPLACE, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
-    (OrderState.PENDING_REPLACE, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PENDING_UPDATE, OrderState.ACCEPTED): OrderState.ACCEPTED,
+    (OrderState.PENDING_UPDATE, OrderState.CANCELED): OrderState.CANCELED,
+    (OrderState.PENDING_UPDATE, OrderState.TRIGGERED): OrderState.TRIGGERED,
+    (OrderState.PENDING_UPDATE, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.PENDING_UPDATE, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.PENDING_UPDATE, OrderState.FILLED): OrderState.FILLED,
     (OrderState.PENDING_CANCEL, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.PENDING_CANCEL, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PENDING_CANCEL, OrderState.FILLED): OrderState.FILLED,
     (OrderState.TRIGGERED, OrderState.REJECTED): OrderState.REJECTED,
-    (OrderState.TRIGGERED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
+    (OrderState.TRIGGERED, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,
     (OrderState.TRIGGERED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.TRIGGERED, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.TRIGGERED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.TRIGGERED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.TRIGGERED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderState.PENDING_REPLACE): OrderState.PENDING_REPLACE,
+    (OrderState.PARTIALLY_FILLED, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,
     (OrderState.PARTIALLY_FILLED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.PARTIALLY_FILLED, OrderState.CANCELED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
@@ -218,9 +218,15 @@ cdef class Order:
             self._fsm.state == OrderState.ACCEPTED
             or self._fsm.state == OrderState.TRIGGERED
             or self._fsm.state == OrderState.PENDING_CANCEL
-            or self._fsm.state == OrderState.PENDING_REPLACE
+            or self._fsm.state == OrderState.PENDING_UPDATE
             or self._fsm.state == OrderState.PARTIALLY_FILLED
         )
+
+    cdef bint is_pending_update_c(self) except *:
+        return self._fsm.state == OrderState.PENDING_UPDATE
+
+    cdef bint is_pending_cancel_c(self) except *:
+        return self._fsm.state == OrderState.PENDING_CANCEL
 
     cdef bint is_completed_c(self) except *:
         return (
@@ -389,7 +395,7 @@ cdef class Order:
          - `ACCEPTED`
          - `TRIGGERED`
          - `PENDING_CANCEL`
-         - `PENDING_REPLACE`
+         - `PENDING_UPDATE`
          - `PARTIALLY_FILLED`
 
         Returns
@@ -399,6 +405,32 @@ cdef class Order:
 
         """
         return self.is_working_c()
+
+    @property
+    def is_pending_update(self):
+        """
+        If the order is pending update.
+
+        Returns
+        -------
+        bool
+            True if order.state == OrderState.PENDING_UPDATE, else False.
+
+        """
+        return self.is_pending_update_c()
+
+    @property
+    def is_pending_cancel(self):
+        """
+        If the order is pending cancel.
+
+        Returns
+        -------
+        bool
+            True if order.state == OrderState.PENDING_CANCEL, else False.
+
+        """
+        return self.is_pending_cancel_c()
 
     @property
     def is_completed(self):
@@ -528,18 +560,18 @@ cdef class Order:
             self._accepted(event)
         elif isinstance(event, OrderPendingReplace):
             self._rollback_state = <OrderState>self._fsm.state
-            self._fsm.trigger(OrderState.PENDING_REPLACE)
+            self._fsm.trigger(OrderState.PENDING_UPDATE)
         elif isinstance(event, OrderPendingCancel):
             self._rollback_state = <OrderState>self._fsm.state
             self._fsm.trigger(OrderState.PENDING_CANCEL)
         elif isinstance(event, OrderUpdateRejected):
-            if self._fsm.state == OrderState.PENDING_REPLACE:
+            if self._fsm.state == OrderState.PENDING_UPDATE:
                 self._fsm.trigger(self._rollback_state)
         elif isinstance(event, OrderCancelRejected):
             if self._fsm.state == OrderState.PENDING_CANCEL:
                 self._fsm.trigger(self._rollback_state)
         elif isinstance(event, OrderUpdated):
-            if self._fsm.state == OrderState.PENDING_REPLACE:
+            if self._fsm.state == OrderState.PENDING_UPDATE:
                 self._fsm.trigger(self._rollback_state)
             self._updated(event)
         elif isinstance(event, OrderCanceled):
@@ -628,7 +660,7 @@ cdef class PassiveOrder(Order):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        uint64_t timestamp_ns,
+        int64_t timestamp_ns,
         dict options not None,
     ):
         """
@@ -656,7 +688,7 @@ cdef class PassiveOrder(Order):
             The order expiry time - applicable to GTD orders only.
         init_id : UUID
             The order initialization event identifier.
-        timestamp_ns : uint64
+        timestamp_ns : int64
             The order initialization timestamp.
         options : dict
             The order options.
