@@ -122,6 +122,9 @@ cdef class OrderBookSnapshot(OrderBookData):
     @staticmethod
     cdef OrderBookSnapshot from_dict_c(dict values)
 
+    @staticmethod
+    cdef dict to_dict_c(OrderBookSnapshot obj)
+
 
 cdef class OrderBookDeltas(OrderBookData):
     cdef readonly list deltas
@@ -129,6 +132,9 @@ cdef class OrderBookDeltas(OrderBookData):
 
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderBookDeltas obj)
 
 
 cdef class OrderBookDelta(OrderBookData):
@@ -139,3 +145,6 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderBookDelta obj)

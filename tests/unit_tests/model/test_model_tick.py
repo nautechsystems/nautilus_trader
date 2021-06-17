@@ -134,7 +134,7 @@ class TestQuoteTick:
         )
 
         # Act
-        result = tick.to_dict()
+        result = QuoteTick.to_dict(tick)
         print(result)
         # Assert
         assert result == {
@@ -161,7 +161,7 @@ class TestQuoteTick:
         )
 
         # Act
-        result = QuoteTick.from_dict(tick.to_dict())
+        result = QuoteTick.from_dict(QuoteTick.to_dict(tick))
 
         # Assert
         assert tick == result
@@ -198,7 +198,7 @@ class TestTradeTick:
         )
 
         # Act
-        result = tick.to_dict()
+        result = TradeTick.to_dict(tick)
 
         # Assert
         assert result == {
@@ -225,7 +225,7 @@ class TestTradeTick:
         )
 
         # Act
-        result = TradeTick.from_dict(tick.to_dict())
+        result = TradeTick.from_dict(TradeTick.to_dict(tick))
 
         # Assert
         assert tick == result

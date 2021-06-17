@@ -38,4 +38,6 @@ cdef class BettingInstrument(Instrument):
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(BettingInstrument obj)

@@ -347,7 +347,7 @@ class TestBar:
         )
 
         # Act
-        values = bar.to_dict()
+        values = Bar.to_dict(bar)
 
         # Assert
         assert values == {
@@ -367,7 +367,7 @@ class TestBar:
         bar = TestStubs.bar_5decimal()
 
         # Act
-        result = Bar.from_dict(bar.to_dict())
+        result = Bar.from_dict(Bar.to_dict(bar))
 
         # Assert
         assert result == bar

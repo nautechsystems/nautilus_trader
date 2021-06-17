@@ -66,3 +66,6 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef Bar from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(Bar obj)

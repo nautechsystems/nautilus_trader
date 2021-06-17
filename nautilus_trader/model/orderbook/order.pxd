@@ -34,4 +34,6 @@ cdef class Order:
 
     @staticmethod
     cdef Order from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(Order obj)

@@ -55,7 +55,7 @@ cdef class Order:
         return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.to_dict()))
+        return hash(frozenset(Order.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return f"{Order.__name__}({self.price}, {self.size}, {OrderSideParser.to_str(self.side)}, {self.id})"
@@ -131,6 +131,16 @@ cdef class Order:
         )
 
     @staticmethod
+    cdef dict to_dict_c(Order obj):
+        return {
+            "type": "Order",
+            "price": obj.price,
+            "size": obj.size,
+            "side": OrderSideParser.to_str(obj.side),
+            "id": obj.id,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order from the given dict values.
@@ -147,7 +157,8 @@ cdef class Order:
         """
         return Order.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(Order obj):
         """
         Return a dictionary representation of this object.
 
@@ -156,10 +167,4 @@ cdef class Order:
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "price": self.price,
-            "size": self.size,
-            "side": OrderSideParser.to_str(self.side),
-            "id": self.id,
-        }
+        return Order.to_dict_c(obj)

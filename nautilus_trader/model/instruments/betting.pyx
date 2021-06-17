@@ -117,6 +117,31 @@ cdef class BettingInstrument(Instrument):
         return BettingInstrument(**values)
 
     @staticmethod
+    cdef dict to_dict_c(BettingInstrument obj):
+        return {
+            "type": "BettingInstrument",
+            "venue_name": obj.id.venue.value,
+            "event_type_id": obj.event_type_id,
+            "event_type_name": obj.event_type_name,
+            "competition_id": obj.competition_id,
+            "competition_name": obj.competition_name,
+            "event_id": obj.event_id,
+            "event_name": obj.event_name,
+            "event_country_code": obj.event_country_code,
+            "event_open_date": obj.event_open_date,
+            "betting_type": obj.betting_type,
+            "market_id": obj.market_id,
+            "market_name": obj.market_name,
+            "market_start_time": obj.market_start_time,
+            "market_type": obj.market_type,
+            "selection_id": obj.selection_id,
+            "selection_name": obj.selection_name,
+            "selection_handicap": obj.selection_handicap,
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values) -> BettingInstrument:
         """
         Return an instrument from the given initialization values.
@@ -133,7 +158,8 @@ cdef class BettingInstrument(Instrument):
         """
         return BettingInstrument.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(BettingInstrument obj):
         """
         Return a dictionary representation of this object.
 
@@ -142,28 +168,7 @@ cdef class BettingInstrument(Instrument):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "venue_name": self.id.venue.value,
-            "event_type_id": self.event_type_id,
-            "event_type_name": self.event_type_name,
-            "competition_id": self.competition_id,
-            "competition_name": self.competition_name,
-            "event_id": self.event_id,
-            "event_name": self.event_name,
-            "event_country_code": self.event_country_code,
-            "event_open_date": self.event_open_date,
-            "betting_type": self.betting_type,
-            "market_id": self.market_id,
-            "market_name": self.market_name,
-            "market_start_time": self.market_start_time,
-            "market_type": self.market_type,
-            "selection_id": self.selection_id,
-            "selection_name": self.selection_name,
-            "selection_handicap": self.selection_handicap,
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
+        return BettingInstrument.to_dict_c(obj)
 
     def make_symbol(self):
         cdef tuple keys = (
