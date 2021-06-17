@@ -24,3 +24,9 @@ cdef class CryptoSwap(Instrument):
     """The settlement currency for the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_quanto
     """If the instrument is quanto.\n\n:returns: `bool`"""
+
+    @staticmethod
+    cdef CryptoSwap from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(CryptoSwap obj)

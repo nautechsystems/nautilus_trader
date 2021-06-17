@@ -43,15 +43,18 @@ class TestObject:
     def from_dict(values: dict):
         return TestObject(values["value"])
 
-    def to_dict(self):
-        return {"value": self.value}
+    @staticmethod
+    def to_dict(obj):
+        return {"value": obj.value}
 
 
 class TestSerializationBase:
     def test_register_serializable_object(self):
         # Arrange
         # Act, Assert
-        register_serializable_object(TestObject)
+        register_serializable_object(
+            TestObject, TestObject.to_dict, TestObject.from_dict
+        )
 
         # Does not raise exception
 

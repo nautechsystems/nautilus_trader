@@ -20,4 +20,6 @@ cdef class CFDInstrument(Instrument):
 
     @staticmethod
     cdef CFDInstrument from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(CFDInstrument obj)

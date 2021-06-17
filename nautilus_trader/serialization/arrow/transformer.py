@@ -26,6 +26,7 @@ from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.serialization.base import get_to_dict
 
 
 # Transform/simplify complex objects into something we can store in a parquet file
@@ -35,7 +36,7 @@ from nautilus_trader.model.orderbook.order import Order
 class OrderBookDataTransformer:
     @staticmethod
     def _parse_delta(delta: OrderBookDelta):
-        return delta.to_dict()
+        return OrderBookDelta.to_dict(delta)
 
     @staticmethod
     def serialize(data: OrderBookData):
@@ -140,7 +141,7 @@ def serialize(obj: object):
     transformer = TRANSFORMERS.get(type(obj))
     if transformer is not None:
         return transformer.serialize(obj)
-    return obj.to_dict()
+    return get_to_dict(type(obj).__name__).to_dict(obj)
 
 
 def deserialize(cls, data: List[Dict]):

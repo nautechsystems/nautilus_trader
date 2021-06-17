@@ -344,10 +344,10 @@ cdef class Bar(Data):
         self.checked = check
 
     def __eq__(self, Bar other) -> bool:
-        return self.to_dict() == other.to_dict()
+        return Bar.to_dict_c(self) == Bar.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.to_dict()))
+        return hash(frozenset(Bar.to_dict_c(self)))
 
     def __str__(self) -> str:
         return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event_ns}"
@@ -369,6 +369,20 @@ cdef class Bar(Data):
         )
 
     @staticmethod
+    cdef dict to_dict_c(Bar obj):
+        return {
+            "type": type(obj).__name__,
+            "bar_type": str(obj.type),
+            "open": str(obj.open),
+            "high": str(obj.high),
+            "low": str(obj.low),
+            "close": str(obj.close),
+            "volume": str(obj.volume),
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values) -> Bar:
         """
         Return a bar parsed from the given values.
@@ -385,7 +399,8 @@ cdef class Bar(Data):
         """
         return Bar.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(Bar obj):
         """
         Return a dictionary representation of this object.
 
@@ -394,14 +409,4 @@ cdef class Bar(Data):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "bar_type": str(self.type),
-            "open": str(self.open),
-            "high": str(self.high),
-            "low": str(self.low),
-            "close": str(self.close),
-            "volume": str(self.volume),
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
+        return Bar.to_dict_c(obj)

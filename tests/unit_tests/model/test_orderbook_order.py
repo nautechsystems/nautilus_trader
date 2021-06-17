@@ -81,7 +81,7 @@ def test_to_dict_returns_expected_dict():
     order = Order(price=10, size=5, side=OrderSide.BUY, id="1")
 
     # Act
-    result = order.to_dict()
+    result = Order.to_dict(order)
 
     # Assert
     assert result == {
@@ -98,7 +98,7 @@ def test_from_dict_returns_expected_order():
     order = Order(price=10, size=5, side=OrderSide.BUY)
 
     # Act
-    result = Order.from_dict(order.to_dict())
+    result = Order.from_dict(Order.to_dict(order))
 
     # Assert
     assert result == order

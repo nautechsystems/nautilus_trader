@@ -57,7 +57,9 @@ cdef class AccountState(Event):
 
     @staticmethod
     cdef AccountState from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(AccountState obj)
 
 
 cdef class OrderEvent(Event):
@@ -85,7 +87,9 @@ cdef class OrderInitialized(OrderEvent):
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderInitialized obj)
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -94,7 +98,9 @@ cdef class OrderInvalid(OrderEvent):
 
     @staticmethod
     cdef OrderInvalid from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderInvalid obj)
 
 
 cdef class OrderDenied(OrderEvent):
@@ -103,7 +109,9 @@ cdef class OrderDenied(OrderEvent):
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderDenied obj)
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -114,7 +122,9 @@ cdef class OrderSubmitted(OrderEvent):
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderSubmitted obj)
 
 
 cdef class OrderRejected(OrderEvent):
@@ -127,7 +137,9 @@ cdef class OrderRejected(OrderEvent):
 
     @staticmethod
     cdef OrderRejected from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderRejected obj)
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -138,7 +150,9 @@ cdef class OrderAccepted(OrderEvent):
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderAccepted obj)
 
 
 cdef class OrderPendingReplace(OrderEvent):
@@ -149,7 +163,9 @@ cdef class OrderPendingReplace(OrderEvent):
 
     @staticmethod
     cdef OrderPendingReplace from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderPendingReplace obj)
 
 
 cdef class OrderPendingCancel(OrderEvent):
@@ -160,7 +176,9 @@ cdef class OrderPendingCancel(OrderEvent):
 
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderPendingCancel obj)
 
 
 cdef class OrderUpdateRejected(OrderEvent):
@@ -175,7 +193,9 @@ cdef class OrderUpdateRejected(OrderEvent):
 
     @staticmethod
     cdef OrderUpdateRejected from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderUpdateRejected obj)
 
 
 cdef class OrderCancelRejected(OrderEvent):
@@ -190,7 +210,9 @@ cdef class OrderCancelRejected(OrderEvent):
 
     @staticmethod
     cdef OrderCancelRejected from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderCancelRejected obj)
 
 
 cdef class OrderUpdated(OrderEvent):
@@ -207,7 +229,9 @@ cdef class OrderUpdated(OrderEvent):
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderUpdated obj)
 
 
 cdef class OrderCanceled(OrderEvent):
@@ -218,7 +242,9 @@ cdef class OrderCanceled(OrderEvent):
 
     @staticmethod
     cdef OrderCanceled from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderCanceled obj)
 
 
 cdef class OrderTriggered(OrderEvent):
@@ -229,7 +255,9 @@ cdef class OrderTriggered(OrderEvent):
 
     @staticmethod
     cdef OrderTriggered from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderTriggered obj)
 
 
 cdef class OrderExpired(OrderEvent):
@@ -240,7 +268,9 @@ cdef class OrderExpired(OrderEvent):
 
     @staticmethod
     cdef OrderExpired from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderExpired obj)
 
 
 cdef class OrderFilled(OrderEvent):
@@ -273,7 +303,9 @@ cdef class OrderFilled(OrderEvent):
 
     @staticmethod
     cdef OrderFilled from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderFilled obj)
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
 
@@ -288,19 +320,25 @@ cdef class PositionEvent(Event):
 cdef class PositionOpened(PositionEvent):
     @staticmethod
     cdef PositionOpened from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(PositionOpened obj)
 
 
 cdef class PositionChanged(PositionEvent):
     @staticmethod
     cdef PositionChanged from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(PositionChanged obj)
 
 
 cdef class PositionClosed(PositionEvent):
     @staticmethod
     cdef PositionClosed from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(PositionClosed obj)
 
 
 cdef class StatusEvent(Event):
@@ -315,7 +353,9 @@ cdef class VenueStatusEvent(StatusEvent):
 
     @staticmethod
     cdef VenueStatusEvent from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(VenueStatusEvent obj)
 
 
 cdef class InstrumentStatusEvent(StatusEvent):
@@ -326,7 +366,9 @@ cdef class InstrumentStatusEvent(StatusEvent):
 
     @staticmethod
     cdef InstrumentStatusEvent from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(InstrumentStatusEvent obj)
 
 
 cdef class InstrumentClosePrice(Event):
@@ -339,4 +381,6 @@ cdef class InstrumentClosePrice(Event):
 
     @staticmethod
     cdef InstrumentClosePrice from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(InstrumentClosePrice obj)

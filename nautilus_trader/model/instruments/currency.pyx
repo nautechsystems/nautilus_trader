@@ -219,6 +219,33 @@ cdef class CurrencySpot(Instrument):
         )
 
     @staticmethod
+    cdef dict to_dict_c(CurrencySpot obj):
+        return {
+            "type": "CurrencySpot",
+            "id": obj.id.value,
+            "base_currency": obj.base_currency.code,
+            "quote_currency": obj.quote_currency.code,
+            "price_precision": obj.price_precision,
+            "price_increment": str(obj.price_increment),
+            "size_precision": obj.size_precision,
+            "size_increment": str(obj.size_increment),
+            "lot_size": str(obj.lot_size) if obj.lot_size is not None else None,
+            "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
+            "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
+            "max_notional": obj.max_notional.to_str() if obj.max_notional is not None else None,
+            "min_notional": obj.min_notional.to_str() if obj.min_notional is not None else None,
+            "max_price": str(obj.max_price) if obj.max_price is not None else None,
+            "min_price": str(obj.min_price) if obj.min_price is not None else None,
+            "margin_init": str(obj.margin_init),
+            "margin_maint": str(obj.margin_maint),
+            "maker_fee": str(obj.maker_fee),
+            "taker_fee": str(obj.taker_fee),
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+            "info": json.dumps(obj.info) if obj.info is not None else None,
+        }
+
+    @staticmethod
     def from_dict(dict values) -> CurrencySpot:
         """
         Return an instrument from the given initialization values.
@@ -235,7 +262,8 @@ cdef class CurrencySpot(Instrument):
         """
         return CurrencySpot.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(CurrencySpot obj):
         """
         Return a dictionary representation of this object.
 
@@ -244,27 +272,4 @@ cdef class CurrencySpot(Instrument):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "id": self.id.value,
-            "base_currency": self.base_currency.code,
-            "quote_currency": self.quote_currency.code,
-            "price_precision": self.price_precision,
-            "price_increment": str(self.price_increment),
-            "size_precision": self.size_precision,
-            "size_increment": str(self.size_increment),
-            "lot_size": str(self.lot_size) if self.lot_size is not None else None,
-            "max_quantity": str(self.max_quantity) if self.max_quantity is not None else None,
-            "min_quantity": str(self.min_quantity) if self.min_quantity is not None else None,
-            "max_notional": self.max_notional.to_str() if self.max_notional is not None else None,
-            "min_notional": self.min_notional.to_str() if self.min_notional is not None else None,
-            "max_price": str(self.max_price) if self.max_price is not None else None,
-            "min_price": str(self.min_price) if self.min_price is not None else None,
-            "margin_init": str(self.margin_init),
-            "margin_maint": str(self.margin_maint),
-            "maker_fee": str(self.maker_fee),
-            "taker_fee": str(self.taker_fee),
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-            "info": json.dumps(self.info) if self.info is not None else None,
-        }
+        return CurrencySpot.to_dict_c(obj)

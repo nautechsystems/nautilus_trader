@@ -43,7 +43,9 @@ cdef class SubmitOrder(TradingCommand):
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(SubmitOrder obj)
 
 
 cdef class SubmitBracketOrder(TradingCommand):
@@ -52,7 +54,9 @@ cdef class SubmitBracketOrder(TradingCommand):
 
     @staticmethod
     cdef SubmitBracketOrder from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(SubmitBracketOrder obj)
 
 
 cdef class UpdateOrder(TradingCommand):
@@ -69,7 +73,9 @@ cdef class UpdateOrder(TradingCommand):
 
     @staticmethod
     cdef UpdateOrder from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(UpdateOrder obj)
 
 
 cdef class CancelOrder(TradingCommand):
@@ -80,4 +86,6 @@ cdef class CancelOrder(TradingCommand):
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(CancelOrder obj)
