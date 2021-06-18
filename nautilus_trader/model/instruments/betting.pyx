@@ -183,4 +183,4 @@ cdef class BettingInstrument(Instrument):
             "selection_id",
             "selection_handicap",
         )
-        return Symbol(value=",".join([str(getattr(self, k)) for k in keys]).replace(' ', ''))
+        return Symbol(value=",".join([str(getattr(self, k)) for k in keys]).replace(' ', '').replace(':', ''))
