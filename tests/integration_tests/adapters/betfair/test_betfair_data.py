@@ -57,15 +57,15 @@ async def test_betfair_data_client(betfair_data_client, data_engine):
     def printer(x):
         print(x)
 
-    # TODO - mock betfairlightweight.APIClient.login won't let this pass, need to comment out to run
+    # mock betfairlightweight.APIClient.login won't let this pass, need to comment out to run
     socket = BetfairMarketStreamClient(client=betfair_client, message_handler=printer)
     await socket.connect()
     await socket.send_subscription_message(market_ids=["1.180634014"])
     await socket.start()
 
 
+# TODO - Subscribe to a couple of markets individually
 def test_individual_market_subscriptions():
-    # TODO - Subscribe to a couple of markets individually
     pass
 
 
@@ -132,12 +132,12 @@ def test_market_update(betfair_data_client, data_engine):
     assert update_op.order.price == 0.21277
 
 
-# TODO - waiting for market status implementation
+# TODO - waiting for market status event handling in engine
 @pytest.mark.skip
 def test_market_update_md(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_UPDATE_md())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookSnapshot"] * 7
+    expected = ["InstrumentStatusEvent"] * 7
     assert result == expected
 
 
@@ -177,7 +177,7 @@ async def test_request_search_instruments(betfair_data_client, data_engine, uuid
     betfair_data_client.request(req, uuid)
     await asyncio.sleep(0)
     resp = data_engine.responses[0]
-    assert len(resp.data.instruments) == 9383
+    assert len(resp.data.instruments) == 9416
 
 
 def test_orderbook_repr(betfair_data_client, data_engine):
@@ -306,7 +306,7 @@ def test_instrument_closing_events(data_engine, betfair_data_client):
     )
 
 
-#  TODO - Awaiting a response from betfair
+# TODO - This is caused by the currency rate changing and betfair republishing all the trades. Need a better fix.
 @pytest.mark.skip
 def test_duplicate_trades(betfair_data_client):
     messages = []

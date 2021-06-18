@@ -68,8 +68,8 @@ class TestOrderBookSnapshot:
             "type": "OrderBookSnapshot",
             "instrument_id": "AUD/USD.SIM",
             "level": "L2",
-            "bids": b"[[1010,2],[1009,1]]",
-            "asks": b"[[1020,2],[1021,1]]",
+            "bids": "[[1010, 2], [1009, 1]]",
+            "asks": "[[1020, 2], [1021, 1]]",
             "ts_event_ns": 0,
             "ts_recv_ns": 0,
         }

@@ -1224,7 +1224,7 @@ tqdm = []
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "ff6131c36f6a0440fffda7a799b92c69c2109e6ac8f016fa0863b28aa3e7f6a9"
+content-hash = "e3b4e313dd5e1ebd7312456d5c9f74944d3238c763862a9e0a74e12c352f3be8"
 
 [metadata.files]
 aiodns = [
