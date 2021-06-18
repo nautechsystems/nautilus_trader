@@ -171,7 +171,6 @@ class DataLoader:
         chunksize=-1,
         compression="infer",
         instrument_provider=None,
-        instrument_loader: callable = None,
     ):
         """
         Discover files and stream bytes of data from a local or remote filesystem
@@ -200,7 +199,6 @@ class DataLoader:
         self.glob_pattern = glob_pattern
         self.fs = fsspec.filesystem(self.fs_protocol)
         self.instrument_provider = instrument_provider
-        self.instrument_loader = instrument_loader
         self.path = sorted(self._resolve_path(path=self._path))
 
     def _resolve_path(self, path: str):

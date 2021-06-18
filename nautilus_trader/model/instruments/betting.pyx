@@ -137,6 +137,7 @@ cdef class BettingInstrument(Instrument):
             "selection_id": obj.selection_id,
             "selection_name": obj.selection_name,
             "selection_handicap": obj.selection_handicap,
+            "currency": obj.quote_currency.code,
             "ts_event_ns": obj.ts_event_ns,
             "ts_recv_ns": obj.ts_recv_ns,
         }

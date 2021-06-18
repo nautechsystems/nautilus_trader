@@ -21,8 +21,8 @@ from nautilus_trader.serialization.arrow.schema import SCHEMA_TO_TYPE
 from nautilus_trader.serialization.arrow.schema import TYPE_TO_SCHEMA
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 from nautilus_trader.serialization.arrow.util import maybe_list
-from nautilus_trader.serialization.base import OBJECT_FROM_DICT_MAP
-from nautilus_trader.serialization.base import OBJECT_TO_DICT_MAP
+from nautilus_trader.serialization.base import get_from_dict
+from nautilus_trader.serialization.base import get_to_dict
 
 
 _PARQUET_OBJECT_TO_DICT_MAP = {}
@@ -31,15 +31,15 @@ _chunk = {}
 
 
 def register_parquet(
-    type_,
+    cls_type,
     serializer: Optional[callable],
     deserializer: Optional[callable],
     chunk=False,
     **kwargs,
 ):
     assert isinstance(
-        type_, type
-    ), f"`name` should be <str> (i.e. Class.__name__) not {type(type_)}: {type_}"
+        cls_type, type
+    ), f"`name` should be <str> (i.e. Class.__name__) not {type(cls_type)}: {cls_type}"
     assert serializer is None or isinstance(
         serializer, Callable
     ), "Serializer must be callable"
@@ -50,26 +50,26 @@ def register_parquet(
     if not kwargs.get("force", False):
         if serializer is not None:
             assert (
-                type_ not in _PARQUET_OBJECT_TO_DICT_MAP
-            ), f"Serializer already exists for {type_}: {_PARQUET_OBJECT_TO_DICT_MAP[type_]}"
+                cls_type.__name__ not in _PARQUET_OBJECT_TO_DICT_MAP
+            ), f"Serializer already exists for {cls_type.__name__}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_type.__name__]}"
         if deserializer is not None:
             assert (
-                type_ not in _PARQUET_OBJECT_FROM_DICT_MAP
-            ), f"Deserializer already exists for {type_}: {_PARQUET_OBJECT_TO_DICT_MAP[type_]}"
-    _PARQUET_OBJECT_TO_DICT_MAP[type_] = serializer
-    _PARQUET_OBJECT_FROM_DICT_MAP[type_] = deserializer
-    _chunk[type_] = chunk
+                cls_type.__name__ not in _PARQUET_OBJECT_FROM_DICT_MAP
+            ), f"Deserializer already exists for {cls_type.__name__}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_type.__name__]}"
+    _PARQUET_OBJECT_TO_DICT_MAP[cls_type.__name__] = serializer
+    _PARQUET_OBJECT_FROM_DICT_MAP[cls_type.__name__] = deserializer
+    _chunk[cls_type.__name__] = chunk
 
 
 def _serialize(obj):
-    name = obj.__class__
+    name = obj.__class__.__name__
     if name in _PARQUET_OBJECT_TO_DICT_MAP:
         return _PARQUET_OBJECT_TO_DICT_MAP[name](obj)
-    elif name in OBJECT_TO_DICT_MAP:
-        return OBJECT_TO_DICT_MAP[name](obj)
+    elif get_to_dict(name) is not None:
+        return get_to_dict(name)(obj)
     else:
         try:
-            return obj.to_dict()
+            return obj.__class__.to_dict(obj)
         except (AttributeError, NotImplementedError):
             raise TypeError(
                 f"object {obj} cannot be serialized by ArrowSerializer, register a method via `register()`"
@@ -77,6 +77,7 @@ def _serialize(obj):
 
 
 def _deserialize(name, chunk):
+    name = name.__name__
     if not isinstance(chunk, list):
         chunk = [chunk]
     if name in _PARQUET_OBJECT_FROM_DICT_MAP:
@@ -84,8 +85,8 @@ def _deserialize(name, chunk):
             return _PARQUET_OBJECT_FROM_DICT_MAP[name](chunk)
         else:
             return [_PARQUET_OBJECT_FROM_DICT_MAP[name](c) for c in chunk]
-    elif name in OBJECT_FROM_DICT_MAP:
-        return [OBJECT_FROM_DICT_MAP[name](c) for c in chunk]
+    elif get_from_dict(name) is not None:
+        return [get_from_dict(name)(c) for c in chunk]
     raise TypeError(
         f"class {name} cannot be deserialized by arrow._deserialize, register a method via `register()`"
     )

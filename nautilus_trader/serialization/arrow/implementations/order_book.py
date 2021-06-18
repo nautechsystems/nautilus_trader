@@ -29,7 +29,7 @@ from nautilus_trader.model.orderbook.order import Order
 
 
 def _parse_delta(delta: OrderBookDelta):
-    return delta.to_dict()
+    return OrderBookDelta.to_dict(delta)
 
 
 def serialize(data: OrderBookData):
