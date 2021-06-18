@@ -101,10 +101,10 @@ cdef class QuoteTick(Tick):
         self.ask_size = ask_size
 
     def __eq__(self, QuoteTick other) -> bool:
-        return self.to_dict() == other.to_dict()
+        return QuoteTick.to_dict_c(self) == QuoteTick.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.to_dict()))
+        return hash(frozenset(QuoteTick.to_dict_c(self)))
 
     def __str__(self) -> str:
         return (f"{self.instrument_id},"
@@ -130,6 +130,19 @@ cdef class QuoteTick(Tick):
         )
 
     @staticmethod
+    cdef dict to_dict_c(QuoteTick obj):
+        return {
+            "type": type(obj).__name__,
+            "instrument_id": obj.instrument_id.value,
+            "bid": str(obj.bid),
+            "ask": str(obj.ask),
+            "bid_size": str(obj.bid_size),
+            "ask_size": str(obj.ask_size),
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values) -> QuoteTick:
         """
         Return a quote tick parsed from the given values.
@@ -146,7 +159,8 @@ cdef class QuoteTick(Tick):
         """
         return QuoteTick.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(QuoteTick obj):
         """
         Return a dictionary representation of this object.
 
@@ -155,16 +169,7 @@ cdef class QuoteTick(Tick):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "bid": str(self.bid),
-            "ask": str(self.ask),
-            "bid_size": str(self.bid_size),
-            "ask_size": str(self.ask_size),
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
+        return QuoteTick.to_dict_c(obj)
 
     cpdef Price extract_price(self, PriceType price_type):
         """
@@ -263,10 +268,10 @@ cdef class TradeTick(Tick):
         self.match_id = match_id
 
     def __eq__(self, TradeTick other) -> bool:
-        return self.to_dict() == other.to_dict()
+        return TradeTick.to_dict_c(self) == TradeTick.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.to_dict()))
+        return hash(frozenset(TradeTick.to_dict_c(self)))
 
     def __str__(self) -> str:
         return (f"{self.instrument_id},"
@@ -292,6 +297,19 @@ cdef class TradeTick(Tick):
         )
 
     @staticmethod
+    cdef dict to_dict_c(TradeTick obj):
+        return {
+            "type": type(obj).__name__,
+            "instrument_id": obj.instrument_id.value,
+            "price": str(obj.price),
+            "size": str(obj.size),
+            "aggressor_side": AggressorSideParser.to_str(obj.aggressor_side),
+            "match_id": obj.match_id,
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a trade tick from the given dict values.
@@ -308,7 +326,8 @@ cdef class TradeTick(Tick):
         """
         return TradeTick.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(TradeTick obj):
         """
         Return a dictionary representation of this object.
 
@@ -317,13 +336,4 @@ cdef class TradeTick(Tick):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "price": str(self.price),
-            "size": str(self.size),
-            "aggressor_side": AggressorSideParser.to_str(self.aggressor_side),
-            "match_id": self.match_id,
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
+        return TradeTick.to_dict_c(obj)

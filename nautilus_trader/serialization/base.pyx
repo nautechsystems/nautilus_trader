@@ -37,9 +37,44 @@ from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
+from nautilus_trader.model.instruments.cfd cimport CFDInstrument
+from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
 
 
-_OBJECT_MAP = {
+# Default mappings for Nautilus objects
+_OBJECT_TO_DICT_MAP = {
+    CancelOrder.__name__: CancelOrder.to_dict_c,
+    SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
+    SubmitOrder.__name__: SubmitOrder.to_dict_c,
+    UpdateOrder.__name__: UpdateOrder.to_dict_c,
+    AccountState.__name__: AccountState.to_dict_c,
+    OrderAccepted.__name__: OrderAccepted.to_dict_c,
+    OrderCancelRejected.__name__: OrderCancelRejected.to_dict_c,
+    OrderCanceled.__name__: OrderCanceled.to_dict_c,
+    OrderDenied.__name__: OrderDenied.to_dict_c,
+    OrderExpired.__name__: OrderExpired.to_dict_c,
+    OrderFilled.__name__: OrderFilled.to_dict_c,
+    OrderInitialized.__name__: OrderInitialized.to_dict_c,
+    OrderInvalid.__name__: OrderInvalid.to_dict_c,
+    OrderPendingCancel.__name__: OrderPendingCancel.to_dict_c,
+    OrderPendingReplace.__name__: OrderPendingReplace.to_dict_c,
+    OrderRejected.__name__: OrderRejected.to_dict_c,
+    OrderSubmitted.__name__: OrderSubmitted.to_dict_c,
+    OrderTriggered.__name__: OrderTriggered.to_dict_c,
+    OrderUpdateRejected.__name__: OrderUpdateRejected.to_dict_c,
+    OrderUpdated.__name__: OrderUpdated.to_dict_c,
+    Instrument.__name__: Instrument.to_dict_c,
+    BettingInstrument.__name__: BettingInstrument.to_dict_c,
+    CFDInstrument.__name__: CFDInstrument.to_dict_c,
+    CryptoSwap.__name__: CryptoSwap.to_dict_c,
+    CurrencySpot.__name__: CurrencySpot.to_dict_c,
+}
+
+
+# Default mappings for Nautilus objects
+_OBJECT_FROM_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
     SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
@@ -60,34 +95,53 @@ _OBJECT_MAP = {
     OrderTriggered.__name__: OrderTriggered.from_dict_c,
     OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
     OrderUpdated.__name__: OrderUpdated.from_dict_c,
+    Instrument.__name__: Instrument.from_dict_c,
+    BettingInstrument.__name__: BettingInstrument.from_dict_c,
+    CFDInstrument.__name__: CFDInstrument.from_dict_c,
+    CryptoSwap.__name__: CryptoSwap.from_dict_c,
+    CurrencySpot.__name__: CurrencySpot.from_dict_c,
 }
 
-cpdef inline void register_serializable_object(object obj) except *:
-    """
-    Register the given object with the global serialization object map.
 
-    The object must implement ``to_dict()`` and ``from_dict()`` methods.
+cpdef inline void register_serializable_object(
+    object obj,
+    to_dict: callable,
+    from_dict: callable,
+) except *:
+    """
+    Register the given object with the global serialization object maps.
 
     Parameters
     ----------
     obj : object
         The object to register.
+    to_dict : callable
+        The delegate to instantiate a dict of primitive types from the object.
+    from_dict : callable
+        The delegate to instantiate the object from a dict of primitive types.
 
     Raises
     ------
-    ValueError
-        If obj does not implement the `to_dict` method.
-    ValueError
-        If obj does not implement the `from_dict` method.
+    TypeError
+        If `to_dict` or `from_dict` are not of type callable.
     KeyError
-        If obj already registered with the global object map.
+        If obj already registered with the global object maps.
 
     """
-    Condition.true(hasattr(obj, "to_dict"), "The given object does not implement `to_dict`.")
-    Condition.true(hasattr(obj, "from_dict"), "The given object does not implement `from_dict`.")
-    Condition.not_in(obj.__name__, _OBJECT_MAP, "obj", "_OBJECT_MAP")
+    Condition.callable(to_dict, "to_dict")
+    Condition.callable(from_dict, "from_dict")
+    Condition.not_in(obj.__name__, _OBJECT_TO_DICT_MAP, "obj.__name__", "_OBJECT_TO_DICT_MAP")
+    Condition.not_in(obj.__name__, _OBJECT_FROM_DICT_MAP, "obj.__name__", "_OBJECT_FROM_DICT_MAP")
 
-    _OBJECT_MAP[obj.__name__] = obj.from_dict
+    _OBJECT_TO_DICT_MAP[obj.__name__] = to_dict
+    _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
+
+
+cpdef inline object get_to_dict(str obj_name):
+    return _OBJECT_TO_DICT_MAP.get(obj_name)
+
+cpdef inline object get_from_dict(str obj_name):
+    return _OBJECT_FROM_DICT_MAP.get(obj_name)
 
 
 cdef class InstrumentSerializer:

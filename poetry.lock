@@ -141,7 +141,7 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.51.46"
+version = "1.51.53"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -156,7 +156,7 @@ requests = ">=2.18.4"
 yarl = {version = "1.6.3", markers = "python_version >= \"3.5.2\""}
 
 [package.extras]
-doc = ["Sphinx (==1.7.0)"]
+doc = ["Sphinx (==1.7.0)", "m2r2 (==0.2.7)", "sphinx-rtd-theme (==0.5.2)"]
 qa = ["flake8 (==3.7.9)"]
 
 [[package]]
@@ -884,11 +884,11 @@ dev = ["pre-commit", "tox", "pytest-asyncio"]
 
 [[package]]
 name = "pytest-xdist"
-version = "2.2.1"
+version = "2.3.0"
 description = "pytest xdist plugin for distributed testing and loop-on-failing modes"
 category = "dev"
 optional = false
-python-versions = ">=3.5"
+python-versions = ">=3.6"
 
 [package.dependencies]
 execnet = ">=1.1"
@@ -1223,7 +1223,7 @@ oanda = ["oandapyV20"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "803c314ec0fb88368efc7dfeca7bd765ea2f2e79dce2ad612c15aed967c8bd15"
+content-hash = "d3d38ad034652005bcd5f23439dc3890a69e6f45753d66107a7af0689f51f8d1"
 
 [metadata.files]
 aiodns = [
@@ -1306,8 +1306,8 @@ black = [
     {file = "black-21.6b0.tar.gz", hash = "sha256:dc132348a88d103016726fe360cb9ede02cecf99b76e3660ce6c596be132ce04"},
 ]
 ccxt = [
-    {file = "ccxt-1.51.46-py2.py3-none-any.whl", hash = "sha256:09659f247a61122b80c4ef74b4bf36c1e3e6d2fc244628c0b4f9eb0d6a0f625e"},
-    {file = "ccxt-1.51.46.tar.gz", hash = "sha256:94baa90ae8482261f59941339cfb6d95365445551fbb6c123d6332d6e9967559"},
+    {file = "ccxt-1.51.53-py2.py3-none-any.whl", hash = "sha256:ae12c921d217f22d7aeb91186b9ff13183a9aaef164fbef0221146dd3b630e26"},
+    {file = "ccxt-1.51.53.tar.gz", hash = "sha256:60fb841cae0dcf7f096a3ee1ea39eb13bf91c9b3fffd7d18ac65b99316150da0"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
@@ -1959,8 +1959,8 @@ pytest-mock = [
     {file = "pytest_mock-3.6.1-py3-none-any.whl", hash = "sha256:30c2f2cc9759e76eee674b81ea28c9f0b94f8f0445a1b87762cadf774f0df7e3"},
 ]
 pytest-xdist = [
-    {file = "pytest-xdist-2.2.1.tar.gz", hash = "sha256:718887296892f92683f6a51f25a3ae584993b06f7076ce1e1fd482e59a8220a2"},
-    {file = "pytest_xdist-2.2.1-py3-none-any.whl", hash = "sha256:2447a1592ab41745955fb870ac7023026f20a5f0bfccf1b52a879bd193d46450"},
+    {file = "pytest-xdist-2.3.0.tar.gz", hash = "sha256:e8ecde2f85d88fbcadb7d28cb33da0fa29bca5cf7d5967fa89fc0e97e5299ea5"},
+    {file = "pytest_xdist-2.3.0-py3-none-any.whl", hash = "sha256:ed3d7da961070fce2a01818b51f6888327fb88df4379edeb6b9d990e789d9c8d"},
 ]
 python-dateutil = [
     {file = "python-dateutil-2.8.1.tar.gz", hash = "sha256:73ebfe9dbf22e832286dafa60473e4cd239f8592f699aa5adaf10050e6e1823c"},

@@ -18,7 +18,8 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
-cdef dict _OBJECT_MAP
+cdef dict _OBJECT_TO_DICT_MAP
+cdef dict _OBJECT_FROM_DICT_MAP
 
 
 cdef class InstrumentSerializer:

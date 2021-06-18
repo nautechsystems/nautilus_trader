@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 import json
 
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -142,6 +143,18 @@ cdef class SubmitOrder(TradingCommand):
         )
 
     @staticmethod
+    cdef dict to_dict_c(SubmitOrder obj):
+        return {
+            "type": "SubmitOrder",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "position_id": obj.position_id.value if obj.position_id is not None else None,
+            "order": json.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
+            "command_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a submit order command from the given dict values.
@@ -158,7 +171,8 @@ cdef class SubmitOrder(TradingCommand):
         """
         return SubmitOrder.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(SubmitOrder obj):
         """
         Return a dictionary representation of this object.
 
@@ -167,15 +181,7 @@ cdef class SubmitOrder(TradingCommand):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "trader_id": self.trader_id.value,
-            "strategy_id": self.strategy_id.value,
-            "position_id": self.position_id.value if self.position_id is not None else None,
-            "order": json.dumps(self.order.init_event_c().to_dict()),
-            "command_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return SubmitOrder.to_dict_c(obj)
 
 
 cdef class SubmitBracketOrder(TradingCommand):
@@ -247,6 +253,19 @@ cdef class SubmitBracketOrder(TradingCommand):
         )
 
     @staticmethod
+    cdef dict to_dict_c(SubmitBracketOrder obj):
+        return {
+            "type": "SubmitBracketOrder",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "entry": json.dumps(OrderInitialized.to_dict_c(obj.bracket_order.entry.init_event_c())),
+            "stop_loss": json.dumps(OrderInitialized.to_dict_c(obj.bracket_order.stop_loss.init_event_c())),
+            "take_profit": json.dumps(OrderInitialized.to_dict_c(obj.bracket_order.take_profit.init_event_c())),
+            "command_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a submit bracket order command from the given dict values.
@@ -261,9 +280,10 @@ cdef class SubmitBracketOrder(TradingCommand):
         SubmitBracketOrder
 
         """
-        return SubmitOrder.from_dict_c(values)
+        return SubmitBracketOrder.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(SubmitBracketOrder obj):
         """
         Return a dictionary representation of this object.
 
@@ -272,16 +292,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "trader_id": self.trader_id.value,
-            "strategy_id": self.strategy_id.value,
-            "entry": json.dumps(self.bracket_order.entry.init_event_c().to_dict()),
-            "stop_loss": json.dumps(self.bracket_order.stop_loss.init_event_c().to_dict()),
-            "take_profit": json.dumps(self.bracket_order.take_profit.init_event_c().to_dict()),
-            "command_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return SubmitBracketOrder.to_dict_c(obj)
 
 
 cdef class UpdateOrder(TradingCommand):
@@ -379,6 +390,22 @@ cdef class UpdateOrder(TradingCommand):
         )
 
     @staticmethod
+    cdef dict to_dict_c(UpdateOrder obj):
+        return {
+            "type": "UpdateOrder",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "quantity": str(obj.quantity) if obj.quantity is not None else None,
+            "price": str(obj.price) if obj.price is not None else None,
+            "trigger": str(obj.trigger) if obj.trigger is not None else None,
+            "command_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an update order command from the given dict values.
@@ -393,9 +420,10 @@ cdef class UpdateOrder(TradingCommand):
         UpdateOrder
 
         """
-        return SubmitOrder.from_dict_c(values)
+        return UpdateOrder.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(UpdateOrder obj):
         """
         Return a dictionary representation of this object.
 
@@ -404,19 +432,7 @@ cdef class UpdateOrder(TradingCommand):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "trader_id": self.trader_id.value,
-            "strategy_id": self.strategy_id.value,
-            "instrument_id": self.instrument_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "quantity": str(self.quantity) if self.quantity is not None else None,
-            "price": str(self.price) if self.price is not None else None,
-            "trigger": str(self.trigger) if self.trigger is not None else None,
-            "command_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return UpdateOrder.to_dict_c(obj)
 
 
 cdef class CancelOrder(TradingCommand):
@@ -493,6 +509,19 @@ cdef class CancelOrder(TradingCommand):
         )
 
     @staticmethod
+    cdef dict to_dict_c(CancelOrder obj):
+        return {
+            "type": "CancelOrder",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "command_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a cancel order command from the given dict values.
@@ -509,7 +538,8 @@ cdef class CancelOrder(TradingCommand):
         """
         return CancelOrder.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(CancelOrder obj):
         """
         Return a dictionary representation of this object.
 
@@ -518,13 +548,4 @@ cdef class CancelOrder(TradingCommand):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "trader_id": self.trader_id.value,
-            "strategy_id": self.strategy_id.value,
-            "instrument_id": self.instrument_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "command_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return CancelOrder.to_dict_c(obj)
