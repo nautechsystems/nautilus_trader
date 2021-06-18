@@ -132,6 +132,21 @@ cdef class AccountState(Event):
         )
 
     @staticmethod
+    cdef dict to_dict_c(AccountState obj):
+        return {
+            "type": "AccountState",
+            "account_id": obj.account_id.value,
+            "account_type": AccountTypeParser.to_str(obj.account_type),
+            "base_currency": obj.base_currency.code if obj.base_currency else None,
+            "balances": json.dumps([b.to_dict() for b in obj.balances]),
+            "reported": obj.is_reported,
+            "info": json.dumps(obj.info),
+            "event_id": obj.id.value,
+            "ts_updated_ns": obj.ts_updated_ns,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an account state event from the given dict values.
@@ -148,7 +163,8 @@ cdef class AccountState(Event):
         """
         return AccountState.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(AccountState obj):
         """
         Return a dictionary representation of this object.
 
@@ -157,18 +173,7 @@ cdef class AccountState(Event):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "account_type": AccountTypeParser.to_str(self.account_type),
-            "base_currency": self.base_currency.code if self.base_currency else None,
-            "balances": json.dumps([b.to_dict() for b in self.balances]),
-            "reported": self.is_reported,
-            "info": json.dumps(self.info),
-            "event_id": self.id.value,
-            "ts_updated_ns": self.ts_updated_ns,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return AccountState.to_dict_c(obj)
 
 
 cdef class OrderEvent(Event):
@@ -295,6 +300,22 @@ cdef class OrderInitialized(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderInitialized obj):
+        return {
+            "type": "OrderInitialized",
+            "client_order_id": obj.client_order_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "order_side": OrderSideParser.to_str(obj.order_side),
+            "order_type": OrderTypeParser.to_str(obj.order_type),
+            "quantity": str(obj.quantity),
+            "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+            "options": json.dumps(obj.options),
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order initialized event from the given dict values.
@@ -311,7 +332,8 @@ cdef class OrderInitialized(OrderEvent):
         """
         return OrderInitialized.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderInitialized obj):
         """
         Return a dictionary representation of this object.
 
@@ -320,19 +342,7 @@ cdef class OrderInitialized(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "client_order_id": self.client_order_id.value,
-            "strategy_id": self.strategy_id.value,
-            "instrument_id": self.instrument_id.value,
-            "order_side": OrderSideParser.to_str(self.order_side),
-            "order_type": OrderTypeParser.to_str(self.order_type),
-            "quantity": str(self.quantity),
-            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-            "options": json.dumps(self.options),
-        }
+        return OrderInitialized.to_dict_c(obj)
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -398,6 +408,16 @@ cdef class OrderInvalid(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderInvalid obj):
+        return {
+            "type": "OrderInvalid",
+            "client_order_id": obj.client_order_id.value,
+            "reason": obj.reason,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order invalid event from the given dict values.
@@ -414,7 +434,8 @@ cdef class OrderInvalid(OrderEvent):
         """
         return OrderInvalid.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderInvalid obj):
         """
         Return a dictionary representation of this object.
 
@@ -423,13 +444,7 @@ cdef class OrderInvalid(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "client_order_id": self.client_order_id.value,
-            "reason": self.reason,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderInvalid.to_dict_c(obj)
 
 
 cdef class OrderDenied(OrderEvent):
@@ -493,6 +508,16 @@ cdef class OrderDenied(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderDenied obj):
+        return {
+            "type": "OrderDenied",
+            "client_order_id": obj.client_order_id.value,
+            "reason": obj.reason,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order denied event from the given dict values.
@@ -509,7 +534,8 @@ cdef class OrderDenied(OrderEvent):
         """
         return OrderDenied.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderDenied obj):
         """
         Return a dictionary representation of this object.
 
@@ -518,13 +544,7 @@ cdef class OrderDenied(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "client_order_id": self.client_order_id.value,
-            "reason": self.reason,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderDenied.to_dict_c(obj)
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -585,6 +605,17 @@ cdef class OrderSubmitted(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderSubmitted obj):
+        return {
+            "type": "OrderSubmitted",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "ts_submitted_ns": obj.ts_submitted_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order submitted event from the given dict values.
@@ -601,7 +632,8 @@ cdef class OrderSubmitted(OrderEvent):
         """
         return OrderSubmitted.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderSubmitted obj):
         """
         Return a dictionary representation of this object.
 
@@ -610,14 +642,7 @@ cdef class OrderSubmitted(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "ts_submitted_ns": self.ts_submitted_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderSubmitted.to_dict_c(obj)
 
 
 cdef class OrderRejected(OrderEvent):
@@ -689,6 +714,18 @@ cdef class OrderRejected(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderRejected obj):
+        return {
+            "type": "OrderRejected",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "reason": obj.reason,
+            "ts_rejected_ns": obj.ts_rejected_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order rejected event from the given dict values.
@@ -705,7 +742,8 @@ cdef class OrderRejected(OrderEvent):
         """
         return OrderRejected.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderRejected obj):
         """
         Return a dictionary representation of this object.
 
@@ -714,15 +752,7 @@ cdef class OrderRejected(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "reason": self.reason,
-            "ts_rejected_ns": self.ts_rejected_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderRejected.to_dict_c(obj)
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -801,6 +831,18 @@ cdef class OrderAccepted(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderAccepted obj):
+        return {
+            "type": "OrderAccepted",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "ts_accepted_ns": obj.ts_accepted_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order accepted event from the given dict values.
@@ -817,7 +859,8 @@ cdef class OrderAccepted(OrderEvent):
         """
         return OrderAccepted.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderAccepted obj):
         """
         Return a dictionary representation of this object.
 
@@ -826,15 +869,7 @@ cdef class OrderAccepted(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "ts_accepted_ns": self.ts_accepted_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderAccepted.to_dict_c(obj)
 
 
 cdef class OrderPendingReplace(OrderEvent):
@@ -907,6 +942,18 @@ cdef class OrderPendingReplace(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderPendingReplace obj):
+        return {
+            "type": "OrderPendingReplace",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "ts_pending_ns": obj.ts_pending_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order pending replace event from the given dict values.
@@ -923,7 +970,8 @@ cdef class OrderPendingReplace(OrderEvent):
         """
         return OrderPendingReplace.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderPendingReplace obj):
         """
         Return a dictionary representation of this object.
 
@@ -932,15 +980,7 @@ cdef class OrderPendingReplace(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "ts_pending_ns": self.ts_pending_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderPendingReplace.to_dict_c(obj)
 
 
 cdef class OrderPendingCancel(OrderEvent):
@@ -1012,6 +1052,18 @@ cdef class OrderPendingCancel(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderPendingCancel obj):
+        return {
+            "type": "OrderPendingCancel",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "ts_pending_ns": obj.ts_pending_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order pending cancel event from the given dict values.
@@ -1028,7 +1080,8 @@ cdef class OrderPendingCancel(OrderEvent):
         """
         return OrderPendingCancel.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderPendingCancel obj):
         """
         Return a dictionary representation of this object.
 
@@ -1037,15 +1090,7 @@ cdef class OrderPendingCancel(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "ts_pending_ns": self.ts_pending_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderPendingCancel.to_dict_c(obj)
 
 
 cdef class OrderUpdateRejected(OrderEvent):
@@ -1131,6 +1176,20 @@ cdef class OrderUpdateRejected(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderUpdateRejected obj):
+        return {
+            "type": "OrderUpdateRejected",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "response_to": obj.response_to,
+            "reason": obj.reason,
+            "ts_rejected_ns": obj.ts_rejected_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order update rejected event from the given dict values.
@@ -1147,7 +1206,8 @@ cdef class OrderUpdateRejected(OrderEvent):
         """
         return OrderUpdateRejected.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderUpdateRejected obj):
         """
         Return a dictionary representation of this object.
 
@@ -1156,17 +1216,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "response_to": self.response_to,
-            "reason": self.reason,
-            "ts_rejected_ns": self.ts_rejected_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderUpdateRejected.to_dict_c(obj)
 
 
 cdef class OrderCancelRejected(OrderEvent):
@@ -1252,6 +1302,20 @@ cdef class OrderCancelRejected(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderCancelRejected obj):
+        return {
+            "type": "OrderCancelRejected",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "response_to": obj.response_to,
+            "reason": obj.reason,
+            "ts_rejected_ns": obj.ts_rejected_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order cancel rejected event from the given dict values.
@@ -1268,7 +1332,8 @@ cdef class OrderCancelRejected(OrderEvent):
         """
         return OrderCancelRejected.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderCancelRejected obj):
         """
         Return a dictionary representation of this object.
 
@@ -1277,17 +1342,7 @@ cdef class OrderCancelRejected(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "response_to": self.response_to,
-            "reason": self.reason,
-            "ts_rejected_ns": self.ts_rejected_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderCancelRejected.to_dict_c(obj)
 
 
 cdef class OrderUpdated(OrderEvent):
@@ -1377,6 +1432,21 @@ cdef class OrderUpdated(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderUpdated obj):
+        return {
+            "type": "OrderUpdated",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "quantity": str(obj.quantity),
+            "price": str(obj.price),
+            "trigger": str(obj.trigger) if obj.trigger is not None else None,
+            "ts_updated_ns": obj.ts_updated_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order updated event from the given dict values.
@@ -1393,7 +1463,8 @@ cdef class OrderUpdated(OrderEvent):
         """
         return OrderUpdated.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderUpdated obj):
         """
         Return a dictionary representation of this object.
 
@@ -1402,18 +1473,7 @@ cdef class OrderUpdated(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "quantity": str(self.quantity),
-            "price": str(self.price),
-            "trigger": str(self.trigger) if self.trigger is not None else None,
-            "ts_updated_ns": self.ts_updated_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderUpdated.to_dict_c(obj)
 
 
 cdef class OrderCanceled(OrderEvent):
@@ -1484,6 +1544,18 @@ cdef class OrderCanceled(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderCanceled obj):
+        return {
+            "type": "OrderCanceled",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "ts_canceled_ns": obj.ts_canceled_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order canceled event from the given dict values.
@@ -1500,7 +1572,8 @@ cdef class OrderCanceled(OrderEvent):
         """
         return OrderCanceled.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderCanceled obj):
         """
         Return a dictionary representation of this object.
 
@@ -1509,15 +1582,7 @@ cdef class OrderCanceled(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "ts_canceled_ns": self.ts_canceled_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderCanceled.to_dict_c(obj)
 
 
 cdef class OrderTriggered(OrderEvent):
@@ -1588,6 +1653,18 @@ cdef class OrderTriggered(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderTriggered obj):
+        return {
+            "type": "OrderTriggered",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "ts_triggered_ns": obj.ts_triggered_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order triggered event from the given dict values.
@@ -1604,7 +1681,8 @@ cdef class OrderTriggered(OrderEvent):
         """
         return OrderTriggered.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderTriggered obj):
         """
         Return a dictionary representation of this object.
 
@@ -1613,15 +1691,7 @@ cdef class OrderTriggered(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "ts_triggered_ns": self.ts_triggered_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderTriggered.to_dict_c(obj)
 
 
 cdef class OrderExpired(OrderEvent):
@@ -1692,6 +1762,18 @@ cdef class OrderExpired(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderExpired obj):
+        return {
+            "type": "OrderExpired",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "ts_expired_ns": obj.ts_expired_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order expired event from the given dict values.
@@ -1708,7 +1790,8 @@ cdef class OrderExpired(OrderEvent):
         """
         return OrderExpired.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderExpired obj):
         """
         Return a dictionary representation of this object.
 
@@ -1717,15 +1800,7 @@ cdef class OrderExpired(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "ts_expired_ns": self.ts_expired_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return OrderExpired.to_dict_c(obj)
 
 
 cdef class OrderFilled(OrderEvent):
@@ -1864,6 +1939,29 @@ cdef class OrderFilled(OrderEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderFilled obj):
+        return {
+            "type": "OrderFilled",
+            "account_id": obj.account_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "venue_order_id": obj.venue_order_id.value,
+            "execution_id": obj.execution_id.value,
+            "position_id": obj.position_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "order_side": OrderSideParser.to_str(obj.order_side),
+            "last_qty": str(obj.last_qty),
+            "last_px": str(obj.last_px),
+            "currency": obj.currency.code,
+            "commission": obj.commission.to_str(),
+            "liquidity_side": LiquiditySideParser.to_str(obj.liquidity_side),
+            "ts_filled_ns": obj.ts_filled_ns,
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+            "info": json.dumps(obj.info),
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order filled event from the given dict values.
@@ -1880,7 +1978,8 @@ cdef class OrderFilled(OrderEvent):
         """
         return OrderFilled.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderFilled obj):
         """
         Return a dictionary representation of this object.
 
@@ -1889,26 +1988,7 @@ cdef class OrderFilled(OrderEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "account_id": self.account_id.value,
-            "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "execution_id": self.execution_id.value,
-            "position_id": self.position_id.value,
-            "strategy_id": self.strategy_id.value,
-            "instrument_id": self.instrument_id.value,
-            "order_side": OrderSideParser.to_str(self.order_side),
-            "last_qty": str(self.last_qty),
-            "last_px": str(self.last_px),
-            "currency": self.currency.code,
-            "commission": self.commission.to_str(),
-            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
-            "ts_filled_ns": self.ts_filled_ns,
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-            "info": json.dumps(self.info),
-        }
+        return OrderFilled.to_dict_c(obj)
 
     cdef bint is_buy_c(self) except *:
         return self.order_side == OrderSide.BUY
@@ -2034,6 +2114,16 @@ cdef class PositionOpened(PositionEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(PositionOpened obj):
+        return {
+            "type": "PositionOpened",
+            "position": json.dumps(obj.position.to_dict()),
+            "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a position opened event from the given dict values.
@@ -2050,7 +2140,8 @@ cdef class PositionOpened(PositionEvent):
         """
         return PositionOpened.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(PositionOpened obj):
         """
         Return a dictionary representation of this object.
 
@@ -2059,13 +2150,7 @@ cdef class PositionOpened(PositionEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "position": json.dumps(self.position.to_dict()),
-            "order_fill": json.dumps(self.order_fill.to_dict()),
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return PositionOpened.to_dict_c(obj)
 
 
 cdef class PositionChanged(PositionEvent):
@@ -2127,6 +2212,16 @@ cdef class PositionChanged(PositionEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(PositionChanged obj):
+        return {
+            "type": "PositionChanged",
+            "position": json.dumps(obj.position.to_dict()),
+            "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a position changed event from the given dict values.
@@ -2143,7 +2238,8 @@ cdef class PositionChanged(PositionEvent):
         """
         return PositionChanged.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(PositionChanged obj):
         """
         Return a dictionary representation of this object.
 
@@ -2152,13 +2248,7 @@ cdef class PositionChanged(PositionEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "position": json.dumps(self.position.to_dict()),
-            "order_fill": json.dumps(self.order_fill.to_dict()),
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return PositionChanged.to_dict_c(obj)
 
 
 cdef class PositionClosed(PositionEvent):
@@ -2221,6 +2311,16 @@ cdef class PositionClosed(PositionEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(PositionClosed obj):
+        return {
+            "type": "PositionClosed",
+            "position": json.dumps(obj.position.to_dict()),
+            "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a position closed event from the given dict values.
@@ -2237,7 +2337,8 @@ cdef class PositionClosed(PositionEvent):
         """
         return PositionClosed.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(PositionClosed obj):
         """
         Return a dictionary representation of this object.
 
@@ -2246,13 +2347,7 @@ cdef class PositionClosed(PositionEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "position": json.dumps(self.position.to_dict()),
-            "order_fill": json.dumps(self.order_fill.to_dict()),
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return PositionClosed.to_dict_c(obj)
 
 
 cdef class StatusEvent(Event):
@@ -2324,6 +2419,16 @@ cdef class VenueStatusEvent(StatusEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(VenueStatusEvent obj):
+        return {
+            "type": "VenueStatusEvent",
+            "venue": obj.venue.value,
+            "status": VenueStatusParser.to_str(obj.status),
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a venue status event from the given dict values.
@@ -2340,7 +2445,8 @@ cdef class VenueStatusEvent(StatusEvent):
         """
         return VenueStatusEvent.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(VenueStatusEvent obj):
         """
         Return a dictionary representation of this object.
 
@@ -2349,13 +2455,7 @@ cdef class VenueStatusEvent(StatusEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "venue": self.venue.value,
-            "status": VenueStatusParser.to_str(self.status),
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return VenueStatusEvent.to_dict_c(obj)
 
 
 cdef class InstrumentStatusEvent(StatusEvent):
@@ -2402,6 +2502,16 @@ cdef class InstrumentStatusEvent(StatusEvent):
         )
 
     @staticmethod
+    cdef dict to_dict_c(InstrumentStatusEvent obj):
+        return {
+            "type": "InstrumentStatusEvent",
+            "instrument_id": obj.instrument_id.value,
+            "status": InstrumentStatusParser.to_str(obj.status),
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return a instrument status event from the given dict values.
@@ -2418,7 +2528,8 @@ cdef class InstrumentStatusEvent(StatusEvent):
         """
         return InstrumentStatusEvent.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(InstrumentStatusEvent obj):
         """
         Return a dictionary representation of this object.
 
@@ -2427,13 +2538,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "status": InstrumentStatusParser.to_str(self.status),
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return InstrumentStatusEvent.to_dict_c(obj)
 
 
 cdef class InstrumentClosePrice(Event):
@@ -2487,6 +2592,17 @@ cdef class InstrumentClosePrice(Event):
         )
 
     @staticmethod
+    cdef dict to_dict_c(InstrumentClosePrice obj):
+        return {
+            "type": "InstrumentClosePrice",
+            "instrument_id": obj.instrument_id.value,
+            "close_price": str(obj.close_price),
+            "close_type": InstrumentCloseTypeParser.to_str(obj.close_type),
+            "event_id": obj.id.value,
+            "timestamp_ns": obj.timestamp_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an instrument close price event from the given dict values.
@@ -2503,7 +2619,8 @@ cdef class InstrumentClosePrice(Event):
         """
         return InstrumentClosePrice.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(InstrumentClosePrice obj):
         """
         Return a dictionary representation of this object.
 
@@ -2512,11 +2629,4 @@ cdef class InstrumentClosePrice(Event):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "close_price": str(self.close_price),
-            "close_type": InstrumentCloseTypeParser.to_str(self.close_type),
-            "event_id": self.id.value,
-            "timestamp_ns": self.timestamp_ns,
-        }
+        return InstrumentClosePrice.to_dict_c(obj)

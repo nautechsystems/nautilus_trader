@@ -31,8 +31,8 @@ TYPE_TO_SCHEMA[TradeTick] = pa.schema(
         "size": pa.string(),
         "aggressor_side": pa.string(),
         "match_id": pa.string(),
-        "ts_event_ns": pa.uint64(),
-        "ts_recv_ns": pa.uint64(),
+        "ts_event_ns": pa.int64(),
+        "ts_recv_ns": pa.int64(),
     },
     metadata={"type": "TradeTick"},
 )
@@ -59,8 +59,8 @@ TYPE_TO_SCHEMA[BettingInstrument] = pa.schema(
         "selection_id": pa.string(),
         "selection_name": pa.string(),
         "selection_handicap": pa.string(),
-        "ts_recv_ns": pa.uint64(),
-        "ts_event_ns": pa.uint64(),
+        "ts_recv_ns": pa.int64(),
+        "ts_event_ns": pa.int64(),
     },
     metadata={"type": "BettingInstrument"},
 )
@@ -90,7 +90,7 @@ TYPE_TO_SCHEMA[OrderBookDelta] = pa.schema(
         "type": pa.string(),
         "side": pa.string(),
         "price": pa.float64(),
-        "volume": pa.float64(),
+        "size": pa.float64(),
     },
     metadata={"type": "OrderBookDelta"},
 )

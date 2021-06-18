@@ -61,7 +61,7 @@ class TestOrderBookSnapshot:
         )
 
         # Act
-        result = snapshot.to_dict()
+        result = OrderBookSnapshot.to_dict(snapshot)
 
         # Assert
         assert result == {
@@ -86,7 +86,7 @@ class TestOrderBookSnapshot:
         )
 
         # Act
-        result = OrderBookSnapshot.from_dict(snapshot.to_dict())
+        result = OrderBookSnapshot.from_dict(OrderBookSnapshot.to_dict(snapshot))
 
         # Assert
         assert result == snapshot
@@ -129,7 +129,7 @@ class TestOrderBookDelta:
         )
 
         # Act
-        result = delta.to_dict()
+        result = OrderBookDelta.to_dict(delta)
 
         # Assert
         assert result == {
@@ -158,7 +158,7 @@ class TestOrderBookDelta:
         )
 
         # Act
-        result = OrderBookDelta.from_dict(delta.to_dict())
+        result = OrderBookDelta.from_dict(OrderBookDelta.to_dict(delta))
 
         # Assert
         assert result == delta
@@ -175,7 +175,7 @@ class TestOrderBookDelta:
         )
 
         # Act
-        result = OrderBookDelta.from_dict(delta.to_dict())
+        result = OrderBookDelta.from_dict(OrderBookDelta.to_dict(delta))
 
         # Assert
         assert result == delta
@@ -254,7 +254,7 @@ class TestOrderBookDeltas:
         )
 
         # Act
-        result = deltas.to_dict()
+        result = OrderBookDeltas.to_dict(deltas)
 
         # Assert
         assert result == {
@@ -297,7 +297,7 @@ class TestOrderBookDeltas:
         )
 
         # Act
-        result = OrderBookDeltas.from_dict(deltas.to_dict())
+        result = OrderBookDeltas.from_dict(OrderBookDeltas.to_dict(deltas))
 
         # Assert
         assert result == deltas

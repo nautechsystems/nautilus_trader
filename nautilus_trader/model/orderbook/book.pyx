@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import json
 from operator import itemgetter
 
 import orjson
@@ -1078,10 +1078,10 @@ cdef class OrderBookSnapshot(OrderBookData):
         self.asks = asks
 
     def __eq__(self, OrderBookSnapshot other) -> bool:
-        return self.to_dict() == other.to_dict()
+        return OrderBookSnapshot.to_dict_c(self) == OrderBookSnapshot.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.to_dict()))
+        return hash(frozenset(OrderBookSnapshot.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -1103,6 +1103,18 @@ cdef class OrderBookSnapshot(OrderBookData):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderBookSnapshot obj):
+        return {
+            "type": "OrderBookSnapshot",
+            "instrument_id": obj.instrument_id.value,
+            "level": BookLevelParser.to_str(obj.level),
+            "bids": json.dumps(obj.bids),
+            "asks": json.dumps(obj.asks),
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order book snapshot from the given dict values.
@@ -1119,7 +1131,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         """
         return OrderBookSnapshot.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderBookSnapshot obj):
         """
         Return a dictionary representation of this object.
 
@@ -1128,15 +1141,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "level": BookLevelParser.to_str(self.level),
-            "bids": orjson.dumps(self.bids),
-            "asks": orjson.dumps(self.asks),
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
+        return OrderBookSnapshot.to_dict_c(obj)
 
 
 cdef class OrderBookDeltas(OrderBookData):
@@ -1174,10 +1179,10 @@ cdef class OrderBookDeltas(OrderBookData):
         self.deltas = deltas
 
     def __eq__(self, OrderBookDeltas other) -> bool:
-        return self.to_dict() == other.to_dict()
+        return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.to_dict()))
+        return hash(frozenset(OrderBookDeltas.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -1197,6 +1202,17 @@ cdef class OrderBookDeltas(OrderBookData):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderBookDeltas obj):
+        return {
+            "type": "OrderBookDeltas",
+            "instrument_id": obj.instrument_id.value,
+            "level": BookLevelParser.to_str(obj.level),
+            "deltas": json.dumps([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return order book deltas from the given dict values.
@@ -1213,7 +1229,8 @@ cdef class OrderBookDeltas(OrderBookData):
         """
         return OrderBookDeltas.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderBookDeltas obj):
         """
         Return a dictionary representation of this object.
 
@@ -1222,14 +1239,7 @@ cdef class OrderBookDeltas(OrderBookData):
         dict[str, object]
 
         """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "level": BookLevelParser.to_str(self.level),
-            "deltas": orjson.dumps([d.to_dict() for d in self.deltas]),
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
+        return OrderBookDeltas.to_dict_c(obj)
 
 
 cdef class OrderBookDelta(OrderBookData):
@@ -1271,10 +1281,10 @@ cdef class OrderBookDelta(OrderBookData):
         self.order = order
 
     def __eq__(self, OrderBookDelta other) -> bool:
-        return self.to_dict() == other.to_dict()
+        return OrderBookDelta.to_dict_c(self) == OrderBookDelta.to_dict_c(other)
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.to_dict()))
+        return hash(frozenset(OrderBookDelta.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -1303,35 +1313,45 @@ cdef class OrderBookDelta(OrderBookData):
         )
 
     @staticmethod
+    cdef dict to_dict_c(OrderBookDelta obj):
+        return {
+            "type": "OrderBookDelta",
+            "instrument_id": obj.instrument_id.value,
+            "level": BookLevelParser.to_str(obj.level),
+            "delta_type": DeltaTypeParser.to_str(obj.type),
+            "order_price": obj.order.price if obj.order else None,
+            "order_size": obj.order.size if obj.order else None,
+            "order_side": OrderSideParser.to_str(obj.order.side) if obj.order else None,
+            "order_id": obj.order.id if obj.order else None,
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+        }
+
+    @staticmethod
     def from_dict(dict values):
         """
         Return an order book delta from the given dict values.
+
         Parameters
         ----------
         values : dict[str, object]
             The values for initialization.
+
         Returns
         -------
         OrderBookDelta
+
         """
         return OrderBookDelta.from_dict_c(values)
 
-    cpdef dict to_dict(self):
+    @staticmethod
+    def to_dict(OrderBookDelta obj):
         """
         Return a dictionary representation of this object.
+
         Returns
         -------
         dict[str, object]
+
         """
-        return {
-            "type": type(self).__name__,
-            "instrument_id": self.instrument_id.value,
-            "level": BookLevelParser.to_str(self.level),
-            "delta_type": DeltaTypeParser.to_str(self.type),
-            "order_price": self.order.price if self.order else None,
-            "order_size": self.order.size if self.order else None,
-            "order_side": OrderSideParser.to_str(self.order.side) if self.order else None,
-            "order_id": self.order.id if self.order else None,
-            "ts_event_ns": self.ts_event_ns,
-            "ts_recv_ns": self.ts_recv_ns,
-        }
+        return OrderBookDelta.to_dict_c(obj)

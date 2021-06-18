@@ -280,7 +280,7 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
     deltas = []
     for side in B_SIDE_KINDS:
         for upd in runner.get(side, []):
-            # TODO(bm): - Clean this up
+            # TODO(bm): Clean this up
             if len(upd) == 3:
                 _, price, volume = upd
             else:

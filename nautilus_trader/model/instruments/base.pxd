@@ -75,7 +75,9 @@ cdef class Instrument(Data):
 
     @staticmethod
     cdef Instrument from_dict_c(dict values)
-    cpdef dict to_dict(self)
+
+    @staticmethod
+    cdef dict to_dict_c(Instrument obj)
 
     cpdef Currency get_base_currency(self)
     cpdef Currency get_cost_currency(self)

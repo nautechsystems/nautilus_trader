@@ -45,17 +45,6 @@ cdef class Data:
                 f"ts_event_ns={self.ts_event_ns}, "
                 f"ts_recv_ns{self.ts_recv_ns})")
 
-    cpdef dict to_dict(self):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")
-
 
 cdef class DataType:
     """
@@ -129,20 +118,3 @@ cdef class GenericData(Data):
         super().__init__(data.ts_event_ns, data.ts_recv_ns)
         self.data_type = data_type
         self.data = data
-
-    cpdef dict to_dict(self):
-        """
-        Return a dictionary representation of the internal data object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return self.data.to_dict()
-
-
-class ExternalData(Data):
-    """
-    Provides a subclass of data for
-    """
